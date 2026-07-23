@@ -285,9 +285,18 @@ def check_webdav(base, repo_id):
     record(entry, '/public 写入允许', status in (200, 201, 204),
            f'status={status}')
 
+    # 不可见目录与只读目录的拒绝**方式应当不同**，这条断言的价值就在这个区别：
+    #
+    #   /restricted 存在但不可写 → 403
+    #   /secret     根本不该被看见 → 404 / 409（父目录解析不到）
+    #
+    # 补上读侧补丁之前这里是 403，也就是说"目录不存在"和"目录存在但你不能写"
+    # 用状态码就能分辨——光凭这一点就能确认 /secret 的存在。现在 seafdav 解析
+    # 不到该路径，WebDAV 对"往不存在的父目录写"的标准回答就是 409。
     status, _ = request(f'{root}/{REPO_NAME}/secret/x.txt', method='PUT',
                         data=b'x', basic=cred)
-    record(entry, '/secret 写入被拒', status in (403, 401), f'status={status}')
+    record(entry, '/secret 写入被拒且不泄露存在（404/409，非 403）',
+           status in (404, 409), f'status={status}')
 
     # ── 读侧 ────────────────────────────────────────────────────────────
     #

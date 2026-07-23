@@ -48,6 +48,9 @@ diff <(sed 's/scripts_13.0/scripts_14.0/' image/seafile_13.0/Dockerfile) image/c
 release.yaml                       构建清单：各组件的 SHA/ref、镜像名、schema 版本
 BRANCHING.md                       三仓共用分支模型 + 上游改动文件清单
 docs/FEATURES.md                   特性清单与完成情况 —— 先看这个再动手
+docs/BRANCHES.md                   特性分支、依赖关系、上游成本、排期建议
+docs/upstream-patches/             各仓允许修改的上游文件登记
+tools/check-upstream-patches.sh    强制登记清单不被悄悄变长
 docs/acl-semantics.md              目录 ACL 规范（跨仓）
 docs/acl-cases.json                规范的可执行形式，Python 和 C 两端共用
 build/cloudfile_14.0/

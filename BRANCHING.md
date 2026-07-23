@@ -6,7 +6,7 @@
 |---|---|
 | `dev` | **CloudFile 主干**，也是三个仓库在 GitHub 上的默认分支 |
 | `sync/upstream-YYYYMMDD` | 周期性把上游合并进 `dev` 的工作分支 |
-| `feature/*`、`fix/*` | 常规开发 |
+| `feature/*`、`fix/*` | 常规开发，命名对齐 `CF_ENABLE_*`，见 [docs/BRANCHES.md](docs/BRANCHES.md) |
 
 上游的纯净副本**不需要本地分支**，`upstream/master` 这个 remote-tracking ref
 本身就是，且不可能被误提交——比维护一个"约定上不许提交"的本地镜像分支更可靠。
@@ -69,6 +69,12 @@ git merge upstream/master
 
 其余 CloudFile 代码都在新增文件里（`cloudfile_ext/`、`common/cf-acl.[ch]`、
 `build/cloudfile_14.0/`、`image/cloudfile_14.0/`、`deploy/compose/`），不参与合并冲突。
+
+合并前后都跑一次登记检查，确认清单没有变长：
+
+```bash
+./tools/check-upstream-patches.sh
+```
 
 合并完成后更新 `release.yaml` 的 `upstream:` SHA 并跑一遍
 [deploy/compose/README.md](deploy/compose/README.md) 里的原生 CE 回归。

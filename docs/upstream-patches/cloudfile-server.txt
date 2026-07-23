@@ -1,0 +1,18 @@
+# cloudfile-server 允许修改的上游文件。
+#
+# 这份清单是 fork 维护成本的度量：新增文件几乎零成本，改上游文件则每次同步
+# 都要再付一次。tools/check-upstream-patches.sh 会强制它不被悄悄变长。
+#
+# 往这里加一行之前先问：能不能改成新增文件？加行时必须同步更新
+# BRANCHING.md 的说明，并在 PR 里写清为什么没有别的办法。
+#
+# 注意：在已列出的文件里增加新的改动块（例如再注册一个 RPC）不需要改这份
+# 清单——成本已经付过了。这也是为什么"再加一个 RPC"远比"再动一个新文件"便宜。
+common/rpc-service.c
+fileserver/sync_api.go
+include/seafile-rpc.h
+python/seafile/rpcclient.py
+python/seaserv/api.py
+server/Makefile.am
+server/seaf-server.c
+server/seafile-session.c

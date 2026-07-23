@@ -110,8 +110,14 @@ function install_dependencies() {
         gettext \
         make \
         nodejs \
-        npm
+        npm \
+        libsasl2-dev \
+        python3-cffi
 }
+
+# 说明：libsasl2-dev 与 python3-cffi 是给 build_seahub_frontend 里那次完整依赖
+# 安装用的（python-ldap 编译需要 sasl/sasl.h）。上游的 dist workflow 装的正是
+# 这一组，这里保持一致。
 
 function install_python_dependencies() {
     cat "${code_path}/seafevents/requirements.txt" \

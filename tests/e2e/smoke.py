@@ -24,6 +24,9 @@ import urllib.parse
 import urllib.request
 import uuid
 
+#: 由 --insecure 设置；见 main() 里的说明。
+_SSL_CONTEXT = None
+
 results = []
 
 
@@ -49,7 +52,8 @@ def request(url, method='GET', token=None, data=None, form=None, basic=None,
 
     req = urllib.request.Request(url, data=body, method=method, headers=hdrs)
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=60,
+                                    context=_SSL_CONTEXT) as resp:
             payload = resp.read()
             return resp.status, payload if raw else payload.decode(errors='replace')
     except urllib.error.HTTPError as e:
@@ -100,7 +104,15 @@ def main():
     ap.add_argument('--admin', required=True)
     ap.add_argument('--admin-password', required=True)
     ap.add_argument('--timeout', type=int, default=600)
+    ap.add_argument('--insecure', action='store_true',
+                    help='接受自签证书。CADDY_TLS=internal 时必需——那是内网与'
+                         '试用部署的正常模式，CI 也用它。')
     args = ap.parse_args()
+
+    if args.insecure:
+        import ssl
+        global _SSL_CONTEXT
+        _SSL_CONTEXT = ssl._create_unverified_context()
 
     base = args.url.rstrip('/')
     if not wait_ready(base, args.timeout):

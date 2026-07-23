@@ -71,15 +71,17 @@ jobs:
 
       - name: 记录本次构建的实际来源
         run: |
-          cat "cloudfile-docker/build/cloudfile_14.0/seafile-server-$CF_VERSION/cloudfile-build-info.txt" \
-            >> "$GITHUB_STEP_SUMMARY" || true
+          info="cloudfile-docker/build/cloudfile_14.0/seafile-server-$CF_VERSION/cloudfile-build-info.txt"
+          # 同时写进日志：只进 step summary 的话，排查一次失败构建时还得回头
+          # 翻另一个页面才能知道用的是哪些 commit。
+          tee -a "$GITHUB_STEP_SUMMARY" < "$info" || true
 
       - name: 启动（开关全关）
         working-directory: cloudfile-docker/deploy/compose
         run: |
           cp .env.example .env
           sed -i "s|^SEAFILE_SERVER_HOSTNAME=.*|SEAFILE_SERVER_HOSTNAME=localhost|" .env
-          sed -i "s|^SEAFILE_SERVER_PROTOCOL=.*|SEAFILE_SERVER_PROTOCOL=http|" .env
+          sed -i "s|^SEAFILE_SERVER_PROTOCOL=.*|SEAFILE_SERVER_PROTOCOL=https|" .env
           sed -i "s|^INIT_SEAFILE_ADMIN_EMAIL=.*|INIT_SEAFILE_ADMIN_EMAIL=$ADMIN_EMAIL|" .env
           sed -i "s|^INIT_SEAFILE_ADMIN_PASSWORD=.*|INIT_SEAFILE_ADMIN_PASSWORD=$ADMIN_PASSWORD|" .env
           sed -i "s|^CADDY_TLS=.*|CADDY_TLS=internal|" .env
@@ -88,16 +90,19 @@ jobs:
           docker compose ps
 
       # ── 基线的两条验收：原生 CE 行为，以及扩展点确实存在但未启用 ──────
+      # 走 https 而不是绕过 proxy：CADDY_TLS=internal 会让 Caddy 把 http 跳转到
+      # 自签证书的 https，那正是内网/试用部署的正常形态。测这条路径比测一条
+      # 用户不会走的路径更有价值，所以显式接受自签证书。
       - name: 原生 CE 冒烟
         run: |
           python3 cloudfile-docker/tests/e2e/smoke.py \
-            --url http://localhost \
+            --url https://localhost --insecure \
             --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
 
       - name: 扩展点已装好，但没有能力启用
         run: |
           python3 cloudfile-docker/tests/e2e/baseline.py \
-            --url http://localhost \
+            --url https://localhost --insecure \
             --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
 
       - name: 失败时导出日志

@@ -1,0 +1,88 @@
+FROM ubuntu:24.04
+ARG server_version=
+ENV SEAFILE_SERVER=seafile-server SEAFILE_VERSION=$server_version
+
+# CloudFile CE image for the 14.0 line.
+#
+# Upstream ships image/seafile_13.0 (CE) and image/pro_seafile_14.0 (Pro) but
+# no CE 14.0 image, because 14.0 CE has not been released -- there are no
+# "-server" tags for it. This file is the 13.0 CE image with 14.0's dependency
+# pins applied, and deliberately without the Pro-only pieces: no clamav, no
+# rados, no boto3/oss2/twilio, and no IS_PRO_VERSION.
+
+# https://github.com/phusion/baseimage-docker
+COPY base_scripts /bd_build
+RUN /bd_build/prepare.sh && \
+    /bd_build/system_services.sh && \
+    /bd_build/utilities.sh && \
+    /bd_build/cleanup.sh
+ENV DEBIAN_FRONTEND="teletype" \
+    LANG="en_US.UTF-8" \
+    LANGUAGE="en_US:en" \
+    LC_ALL="en_US.UTF-8"
+
+RUN echo "deb http://nginx.org/packages/ubuntu `lsb_release -cs` nginx" \
+    | tee /etc/apt/sources.list.d/nginx.list \
+    && curl -fsSL https://nginx.org/keys/nginx_signing.key | apt-key add -
+
+# Security
+RUN apt-get update --fix-missing && apt-get upgrade -y
+
+# Utility tools
+RUN apt-get install -y vim htop net-tools psmisc wget curl git unzip
+
+# For suport set local time zone.
+RUN export DEBIAN_FRONTEND=noninteractive && apt-get install -y tzdata \
+    nginx \
+    libmysqlclient-dev \
+    libmemcached11 libmemcached-dev \
+    fuse poppler-utils \
+    ldap-utils libldap2-dev ca-certificates dnsutils pkg-config \
+    exiftool
+
+# Python3
+RUN apt-get install -y python3 python3-pip python3-setuptools python3-ldap && \
+    rm /usr/lib/python3.12/EXTERNALLY-MANAGED && \
+    rm -f /usr/bin/python && ln -s /usr/bin/python3 /usr/bin/python && \
+    pip3 install --no-cache-dir --ignore-installed -U setuptools cryptography && \
+    rm -rf /usr/lib/python3/dist-packages/setuptools* && rm -rf /usr/lib/python3/dist-packages/cryptography*
+
+# Version pins tracked from image/pro_seafile_14.0/Dockerfile. Keep them in
+# step when following upstream: the seahub in this image is built against them.
+RUN pip3 install --no-cache-dir --timeout=3600 --ignore-installed \
+    click termcolor colorlog pytz \
+    sqlalchemy==2.0.* pymysql==1.1.* jinja2 django-pylibmc pylibmc psd-tools lxml \
+    django==5.2.* cffi==2.0.* future==1.0.* mysqlclient==2.2.* captcha==0.7.* django_simple_captcha==0.6.* \
+    pyjwt==2.13.* djangosaml2==1.11.* pysaml2==7.5.* pycryptodome==3.23.* python-ldap==3.4.* \
+    pillow==12.2.* pillow-heif==1.2.* cairosvg==2.9.* scikit-learn==1.7.*
+
+# Scripts
+COPY scripts_14.0 /scripts
+COPY services /services
+
+RUN mkdir -p /etc/ldap/ && echo "TLS_REQCERT     allow" >> /etc/ldap/ldap.conf && \
+    echo "TLS_CACERT     /etc/ssl/certs/ca-certificates.crt" >> /etc/ldap/ldap.conf && \
+    chmod u+x /scripts/* && rm /scripts/cluster* && \
+    mkdir -p /etc/my_init.d && \
+    rm -f /etc/my_init.d/* && \
+    cp /scripts/create_data_links.sh /etc/my_init.d/01_create_data_links.sh && \
+    mkdir -p /etc/service/nginx && \
+    mkdir -p /etc/nginx/sites-enabled && mkdir -p /etc/nginx/sites-available && \
+    rm -f /etc/nginx/sites-enabled/* /etc/nginx/conf.d/* && \
+    mv /services/nginx.conf /etc/nginx/nginx.conf && \
+    mv /services/nginx.sh /etc/service/nginx/run && \
+    mv /services/seafile.nginx.conf /etc/nginx/sites-enabled/seafile.nginx.conf
+ENV MARIADB_TLS_DISABLE_PEER_VERIFICATION=1
+
+# CloudFile
+#
+# The build tree keeps upstream's seafile-server-<version> directory name: the
+# release layout, seafile.sh, seahub.sh and the bootstrap scripts all derive
+# paths from SEAFILE_SERVER, and renaming it would mean patching all of them
+# for no gain.
+WORKDIR /opt/seafile
+COPY seafile-server-${SEAFILE_VERSION} /opt/seafile/seafile-server-${SEAFILE_VERSION}
+
+EXPOSE 80
+
+CMD ["/sbin/my_init", "--", "/scripts/enterpoint.sh"]

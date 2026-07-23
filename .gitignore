@@ -16,3 +16,12 @@ custom/*/base_scripts
 
 build/src
 build/seafile-server-*
+
+# CloudFile
+build/*/src
+build/*/seafile-server-*
+
+# Deployment secrets and data. .env holds database and admin passwords, and
+# data/ is the live deployment -- neither belongs in the repo.
+deploy/compose/.env
+deploy/compose/data/

@@ -1,0 +1,20 @@
+# CloudFile reverse proxy.
+#
+# The application container already runs nginx on port 80 and does the
+# seahub/fileserver split internally, so this only terminates TLS and forwards.
+
+{$SEAFILE_SERVER_HOSTNAME} {
+	tls {$CADDY_TLS}
+
+	# Uploads and downloads stream through here; without this Caddy buffers
+	# large bodies to disk and large file uploads fail on a small host.
+	request_body {
+		max_size 0
+	}
+
+	reverse_proxy cloudfile:80 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-For {remote_host}
+		header_up Host {host}
+	}
+}

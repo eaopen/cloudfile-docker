@@ -52,6 +52,176 @@ def parse_args():
 
     return ap.parse_args()
 
+# CloudFile: every CF_ENABLE_* switch, defaulting to off. Turning them all off
+# has to restore native CE behaviour -- that is the acceptance criterion that
+# keeps upgrades cheap -- so nothing here may default to true.
+CF_FEATURE_SWITCHES = (
+    'CF_ENABLE_SSO',
+    'CF_ENABLE_DIR_ACL',
+    'CF_ENABLE_AUDIT',
+    'CF_ENABLE_METADATA',
+    'CF_ENABLE_TAGS',
+    'CF_ENABLE_MEILISEARCH',
+    'CF_ENABLE_ONLYOFFICE',
+    'CF_ENABLE_CHECKOUT',
+    'CF_ENABLE_S3_STORAGE',
+    'CF_ENABLE_EXTERNAL_SOURCES',
+)
+
+
+CF_BEGIN = '# --- CloudFile (generated, do not edit) ---'
+CF_END = '# --- end CloudFile ---'
+
+
+def cf_enabled(name):
+    return get_conf(name, 'false').lower() == 'true'
+
+
+def _replace_block(path, begin, end, body):
+    """Rewrite the region between `begin` and `end`, appending it if absent.
+
+    Written on every start rather than only at first bootstrap, because
+    init_seafile_server() returns early once seafile-data exists -- so a
+    switch flipped in .env would otherwise never take effect. Replacing a
+    delimited block instead of appending keeps repeated starts idempotent and
+    leaves an operator's own edits elsewhere in the file alone.
+    """
+    lines = []
+    if exists(path):
+        with open(path, 'r') as fp:
+            lines = fp.readlines()
+
+    out, skipping = [], False
+    for line in lines:
+        if line.strip() == begin:
+            skipping = True
+            continue
+        if skipping:
+            if line.strip() == end:
+                skipping = False
+            continue
+        out.append(line)
+
+    while out and out[-1].strip() == '':
+        out.pop()
+
+    with open(path, 'w') as fp:
+        fp.writelines(out)
+        if out:
+            fp.write('\n\n')
+        fp.write(begin + '\n')
+        fp.write(body)
+        fp.write(end + '\n')
+
+
+def write_cloudfile_settings():
+    """Write the CloudFile block into conf/seahub_settings.py.
+
+    cloudfile_ext registers itself through EXTRA_INSTALLED_APPS, which Seahub's
+    load_local_settings appends to INSTALLED_APPS -- no patch to settings.py
+    needed.
+
+    The cf_* tables live in seafile-db rather than seahub-db because
+    seaf-server and the Go fileserver have to read them and neither connects to
+    seahub-db, so a second connection plus a router is set up here.
+    """
+    body = 'from cloudfile_ext.settings_defaults import *  # noqa\n'
+
+    for name in CF_FEATURE_SWITCHES:
+        body += '%s = %s\n' % (name, cf_enabled(name))
+
+    body += (
+        "DATABASES['cloudfile'] = {\n"
+        "    'ENGINE': 'django.db.backends.mysql',\n"
+        "    'NAME': '%s',\n"
+        "    'USER': '%s',\n"
+        "    'PASSWORD': '%s',\n"
+        "    'HOST': '%s',\n"
+        "    'PORT': '%s',\n"
+        "    'OPTIONS': {'charset': 'utf8mb4'},\n"
+        "}\n"
+        "DATABASE_ROUTERS = ['cloudfile_ext.db_router.CloudFileRouter']\n"
+    ) % (
+        get_conf('SEAFILE_MYSQL_DB_SEAFILE_DB_NAME', 'seafile_db'),
+        get_conf('SEAFILE_MYSQL_DB_USER', 'seafile'),
+        get_conf('SEAFILE_MYSQL_DB_PASSWORD', ''),
+        get_conf('SEAFILE_MYSQL_DB_HOST', 'db'),
+        get_conf('SEAFILE_MYSQL_DB_PORT', '3306'),
+    )
+
+    _replace_block(join(topdir, 'conf', 'seahub_settings.py'),
+                   CF_BEGIN, CF_END, body)
+
+
+def write_cloudfile_seafile_conf():
+    """Tell seaf-server whether to enforce directory ACL.
+
+    Separate from the Seahub switch on purpose: Seahub's copy only decides what
+    the UI shows, while this one governs the authoritative check that WebDAV
+    and the sync client go through. Both are written from the same environment
+    variable so they cannot drift apart in a compose deployment.
+    """
+    body = ('[cloudfile]\ndir_acl_enabled = %s\n'
+            % ('true' if cf_enabled('CF_ENABLE_DIR_ACL') else 'false'))
+
+    _replace_block(join(topdir, 'conf', 'seafile.conf'),
+                   CF_BEGIN, CF_END, body)
+
+
+def apply_cloudfile_schema():
+    """Create the cf_* tables in seafile-db if they are missing.
+
+    Done here rather than in the fresh-install SQL or a versioned upgrade
+    script because all three entry points have to work: a new deployment, a
+    version upgrade, and an existing Seafile CE installation adopting
+    CloudFile. Only the last of those runs no setup or upgrade step at all, and
+    without the tables the ACL check fails closed and locks everyone out.
+
+    Every statement is IF NOT EXISTS, so running it on every start is cheap and
+    safe.
+    """
+    schema = join(installdir, 'sql', 'mysql', 'cloudfile.sql')
+    if not exists(schema):
+        logwarning('CloudFile schema %s not found; skipping' % schema)
+        return
+
+    import pymysql
+
+    with open(schema) as fp:
+        # Strip comments before splitting: a ';' inside one would otherwise
+        # cut a statement in half.
+        body = '\n'.join(line for line in fp.read().splitlines()
+                         if not line.strip().startswith('--'))
+
+    statements = [s.strip() for s in body.split(';') if s.strip()]
+    if not statements:
+        return
+
+    conn = pymysql.connect(
+        host=get_conf('SEAFILE_MYSQL_DB_HOST', 'db'),
+        port=int(get_conf('SEAFILE_MYSQL_DB_PORT', '3306')),
+        user=get_conf('SEAFILE_MYSQL_DB_USER', 'seafile'),
+        password=get_conf('SEAFILE_MYSQL_DB_PASSWORD', ''),
+        database=get_conf('SEAFILE_MYSQL_DB_SEAFILE_DB_NAME', 'seafile_db'),
+        charset='utf8mb4',
+    )
+    try:
+        with conn.cursor() as cursor:
+            for statement in statements:
+                cursor.execute(statement)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def write_cloudfile_config():
+    """Apply CloudFile configuration. Safe to call on every start."""
+    loginfo('Applying CloudFile configuration')
+    write_cloudfile_settings()
+    write_cloudfile_seafile_conf()
+    apply_cloudfile_schema()
+
+
 def init_seafile_server():
     version_stamp_file = get_version_stamp_file()
     if exists(join(shared_seafiledir, 'seafile-data')):

@@ -6,6 +6,7 @@ Bootstraping seafile server, letsencrypt (verification & cron job).
 """
 
 import argparse
+import json
 import os
 from os.path import abspath, basename, exists, dirname, join, isdir
 import shutil
@@ -154,8 +155,115 @@ def write_cloudfile_settings():
         get_conf('SEAFILE_MYSQL_DB_PORT', '3306'),
     )
 
+    body += _settings_block_sso()
+
     _replace_block(join(topdir, 'conf', 'seahub_settings.py'),
                    CF_BEGIN, CF_END, body)
+
+
+def _settings_block_sso():
+    """SSO settings, or nothing at all when CF_ENABLE_SSO is off.
+
+    Two halves with different owners:
+
+    **Login is upstream's.** Seafile CE 14.0 already ships OAuth2/OIDC, SAML,
+    CAS and LDAP, none of it Pro-gated. All CloudFile does is turn ENABLE_OAUTH
+    on and translate a handful of .env variables into the settings upstream
+    already reads -- writing a second login path would be maintaining a fork of
+    something the fork already contains.
+
+    **Group mapping is CloudFile's**, because upstream has none for a generic
+    directory. Those are the CF_SSO_* / CF_PROVIDER_SSO_DIRECTORY values, read
+    by cloudfile_ext.sso.
+
+    Everything written here is a self-contained assignment -- see the note
+    above about seahub_settings.py being an ordinary module.
+    """
+    if not cf_enabled('CF_ENABLE_SSO'):
+        # The iron rule: a switch that is off leaves the deployment byte for
+        # byte as native CE. In particular ENABLE_OAUTH is not written as
+        # False either -- upstream's own default is False, and writing it
+        # would silently override an operator who configured OAuth by hand
+        # before adopting CloudFile.
+        return ''
+
+    lines = []
+
+    client_id = get_conf('CF_SSO_OAUTH_CLIENT_ID', '')
+    if client_id:
+        proto = get_proto()
+        host = get_conf('SEAFILE_SERVER_HOSTNAME', 'seafile.example.com')
+
+        # Derived rather than configured. A redirect URL that disagrees with
+        # the deployment's own hostname fails at the identity provider, which
+        # reports it as a generic "invalid redirect_uri" -- a long way from the
+        # typo that caused it, and in a place the operator cannot see logs.
+        redirect_url = '%s://%s/oauth/callback/' % (proto, host)
+
+        uid_claim = get_conf('CF_SSO_OAUTH_UID_CLAIM', 'sub')
+        email_claim = get_conf('CF_SSO_OAUTH_EMAIL_CLAIM', 'email')
+        name_claim = get_conf('CF_SSO_OAUTH_NAME_CLAIM', 'name')
+
+        # Upstream's shape is {claim: (required, seahub_attr)}. The email claim
+        # is the required one: seahub/oauth/views.py falls back to it when no
+        # uid is mapped, and refuses the login when neither is present.
+        attribute_map = {
+            email_claim: (True, 'email'),
+            uid_claim: (False, 'uid'),
+            name_claim: (False, 'name'),
+        }
+        # A provider that puts the subject in `email` would otherwise lose one
+        # of the two entries to the dict, and which one it loses depends on
+        # insertion order.
+        if uid_claim == email_claim:
+            attribute_map = {email_claim: (True, 'email'),
+                             name_claim: (False, 'name')}
+
+        lines += [
+            'ENABLE_OAUTH = True',
+            'OAUTH_ENABLE_INSECURE_TRANSPORT = %r'
+            % (get_conf('CF_SSO_OAUTH_INSECURE', 'false').lower() == 'true',),
+            'OAUTH_CLIENT_ID = %r' % client_id,
+            'OAUTH_CLIENT_SECRET = %r' % get_conf('CF_SSO_OAUTH_CLIENT_SECRET', ''),
+            'OAUTH_AUTHORIZATION_URL = %r'
+            % get_conf('CF_SSO_OAUTH_AUTHORIZATION_URL', ''),
+            'OAUTH_TOKEN_URL = %r' % get_conf('CF_SSO_OAUTH_TOKEN_URL', ''),
+            'OAUTH_USER_INFO_URL = %r' % get_conf('CF_SSO_OAUTH_USER_INFO_URL', ''),
+            'OAUTH_SCOPE = %r' % get_conf('CF_SSO_OAUTH_SCOPE',
+                                          'openid email profile').split(),
+            'OAUTH_PROVIDER = %r' % get_conf('CF_SSO_OAUTH_PROVIDER', ''),
+            'OAUTH_REDIRECT_URL = %r' % redirect_url,
+            'OAUTH_ATTRIBUTE_MAP = %r' % (attribute_map,),
+        ]
+
+    lines += [
+        'CF_PROVIDER_SSO_DIRECTORY = %r'
+        % get_conf('CF_PROVIDER_SSO_DIRECTORY', ''),
+        'CF_SSO_GROUP_OWNER = %r' % get_conf('CF_SSO_GROUP_OWNER', ''),
+        'CF_SSO_SYNC_INTERVAL = %r' % get_conf('CF_SSO_SYNC_INTERVAL', '600'),
+        # Passed through as written, including an empty string, which is how an
+        # operator lifts the ceiling from a compose file where every value is
+        # text. cloudfile_ext.sso.service is what interprets it.
+        'CF_SSO_MAX_REMOVAL_RATIO = %r'
+        % get_conf('CF_SSO_MAX_REMOVAL_RATIO', '0.5'),
+        'CF_SERVICE_SSO_DIRECTORY_URL = %r'
+        % get_conf('CF_SERVICE_SSO_DIRECTORY_URL', ''),
+        'CF_SERVICE_SSO_DIRECTORY_SECRET = %r'
+        % get_conf('CF_SERVICE_SSO_DIRECTORY_SECRET', ''),
+    ]
+
+    static = get_conf('CF_SSO_DIRECTORY_STATIC', '')
+    if static:
+        # A JSON string in .env, because compose has no way to express a list.
+        # Parsed here rather than in Seahub so a malformed value fails at start
+        # -- where the operator is watching -- instead of at the first sync.
+        try:
+            lines.append('CF_SSO_DIRECTORY_STATIC = %r' % (json.loads(static),))
+        except ValueError as e:
+            raise Exception(
+                'CF_SSO_DIRECTORY_STATIC is not valid JSON: %s' % e)
+
+    return '\n'.join(lines) + '\n'
 
 
 def write_cloudfile_seafile_conf():

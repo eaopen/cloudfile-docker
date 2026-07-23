@@ -134,10 +134,53 @@ build_image() {
 # 加一个能力＝加一行，并保持与 .github/workflows/<能力>-e2e.yml 一致。
 CAPABILITIES=(
     "acl|CF_ENABLE_DIR_ACL|tests/e2e/acl_matrix.py"
+    "sso|CF_ENABLE_SSO|tests/e2e/sso_matrix.py"
 )
 
 # 由 capability 阶段设置：要在 .env 里打开的开关。
 ENABLE_SWITCHES=${ENABLE_SWITCHES:-}
+# 当前能力名，供 stage_compose 找到它的 cap_<名>_env / cap_<名>_run 钩子。
+CAP_NAME=${CAP_NAME:-}
+
+# ── 能力自己的配置与跑法 ─────────────────────────────────────────────────
+#
+# 光有开关不够：有的能力还要 provider 选型、外部服务地址这类配置，有的要跑不止
+# 一遍。约定用两个可选函数表达，而不是把字段越加越多——字段能表达的东西有限，
+# 而"改配置、重启、再断言"这种形状根本塞不进一行表格。
+#
+#   cap_<名>_env   往 .env 追加的行（每行 KEY=VALUE）
+#   cap_<名>_run   自定义跑法；不定义则跑一遍 <能力>_matrix.py
+#
+# 必须与 .github/workflows/<能力>-e2e.yml 保持一致——本地门禁存在的全部理由就是
+# 不要再手抄那份 workflow。
+
+cap_sso_env() {
+    cat <<EOF
+CF_PROVIDER_SSO_DIRECTORY=static
+CF_SSO_GROUP_OWNER=$ADMIN_EMAIL
+CF_SSO_DIRECTORY_STATIC=[{"external_id":"eng","name":"SSO Engineering","members":["sso-matrix-a@example.com","sso-matrix-b@example.com"]},{"external_id":"sales","name":"SSO Sales","members":["sso-matrix-b@example.com"]}]
+EOF
+}
+
+cap_sso_run() {
+    local base=$1
+
+    say "阶段 1 —— 组织结构落地"
+    python3 "$repo/tests/e2e/sso_matrix.py" --phase 1 --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
+
+    # 删除方向只有把目录改小才能测到，而"只加不删"的同步在阶段 1 里是全绿的。
+    # 重启这一步同时也在测配置每次启动重写——改了 .env 却不生效是这套部署
+    # 踩过的坑。后写的同名键覆盖先写的。
+    say "目录变小并重启（eng 只剩 A，sales 消失）"
+    echo 'CF_SSO_DIRECTORY_STATIC=[{"external_id":"eng","name":"SSO Engineering","members":["sso-matrix-a@example.com"]}]' \
+        >> "$STAGE_DIR/.env"
+    compose up -d || return 1
+
+    say "阶段 2 —— 删除方向与「解除映射不等于删除」"
+    python3 "$repo/tests/e2e/sso_matrix.py" --phase 2 --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
+}
 
 stage_compose() {
     # 先把还活着的栈拆掉，再动目录。
@@ -176,6 +219,19 @@ stage_compose() {
         grep -q "^$sw=true$" "$STAGE_DIR/.env" || fail "$sw 未能置为 true"
         ok "$sw=true"
     done
+
+    # 能力自己的配置。追加而不是替换：后写的同名键覆盖先写的，而 JSON 值里的
+    # 引号和方括号不必再去和 sed 表达式搏斗。
+    if [[ -n $CAP_NAME ]] && declare -F "cap_${CAP_NAME}_env" >/dev/null; then
+        local line
+        while IFS= read -r line; do
+            [[ -z $line ]] && continue
+            echo "$line" >> "$STAGE_DIR/.env"
+            # 同上：配置没写进去而门禁全绿，是最没有价值的一种绿。
+            grep -qxF "$line" "$STAGE_DIR/.env" || fail "未能写入 .env：${line%%=*}"
+            ok "${line%%=*} 已配置"
+        done < <("cap_${CAP_NAME}_env")
+    fi
 }
 
 compose() { docker compose -p "$PROJECT" --project-directory "$STAGE_DIR" "$@"; }
@@ -227,6 +283,7 @@ capability_e2e() {
     [[ -f $repo/$test_rel ]] || fail "找不到 $test_rel"
 
     ENABLE_SWITCHES=$switch
+    CAP_NAME=$name
     up
 
     local base; base=$(base_url)
@@ -235,8 +292,12 @@ capability_e2e() {
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
 
     say "能力门禁：$name"
-    python3 "$repo/$test_rel" --url "$base" --insecure \
-        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
+    if declare -F "cap_${name}_run" >/dev/null; then
+        "cap_${name}_run" "$base" || return 1
+    else
+        python3 "$repo/$test_rel" --url "$base" --insecure \
+            --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
+    fi
 }
 
 dump_logs() {

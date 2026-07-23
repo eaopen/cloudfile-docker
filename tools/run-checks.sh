@@ -149,7 +149,15 @@ run "构建脚本副本偏离" bash -c "
     echo '仅 1 处预期偏离'
 "
 
-# 8. release.yaml 可解析且关键键齐全
+# 8. bootstrap 生成的 seahub_settings.py 片段真的能加载
+#
+# preflight 那条是静态的，只认 `FOO['bar'] =` 这一种形状。这条把生成函数抠出来
+# 实际执行，覆盖引号、字面量、claim 冲突这些静态检查看不出的写法——它们的后果
+# 与当年那次一样：seahub 吞掉异常，**整个文件的 CloudFile 配置一起丢**，而服务
+# 看起来是好的。
+run "配置生成" python3 "$docker_repo/tools/test-bootstrap-settings.py"
+
+# 9. release.yaml 可解析且关键键齐全
 run "发布清单" bash -c "
     set -e
     for k in product image forks.cloudfile_server.ref forks.cloudfile_hub.ref \

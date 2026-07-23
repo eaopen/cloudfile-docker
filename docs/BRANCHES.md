@@ -291,7 +291,8 @@ graph LR
 
 | 特性 | 新增登记项 | 融入原生 UI | 依据 |
 |---|---|---|---|
-| SSO | **0** | ✅ 是 | `EXTRA_AUTHENTICATION_BACKENDS` + `register_urls()` |
+| SSO 登录 | **0** | ✅ 是 | **上游 CE 已自带**：`seahub/oauth/`（OAuth2/OIDC）、`adfs_auth/`（SAML）、`django_cas_ng/`、LDAP、REMOTE_USER，**一处 Pro 门控都没有**，依赖也在发行包里。打开它只是往配置块写标量。原先记的"`EXTRA_AUTHENTICATION_BACKENDS` + `register_urls()`"其实高估了——**连后端都不用写**。见 [upstream-reuse.md](upstream-reuse.md) 探针 0 |
+| SSO 组织映射 | **0** | ✅ 是 | 上游**没有**通用目录的组织映射（企业微信/钉钉那两个用的 `external_department.outer_id` 是 BIGINT，装不下 OIDC 组 claim 或 LDAP DN）。用现成扩展点：provider + `register_periodic_task` + `register_urls` + 上游自己的 `user_logged_in` 信号 |
 | 文件属性 / 标签 | **0** | ⚠️ 见下 | 纯 `cloudfile_ext` + `cf_*` 表 |
 | **操作日志 / 审计** | **⚠️ 待定** | ✅ 是 | **原先记的 0 不成立**：`file_op` 钩子无任何上游触发点，seahub 的 `signals.py` 也没有删除/移动/重命名/下载信号。建议改到 server 侧 `cf-ext.c`——那是一次基线改动。见 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 缺口 1 |
 | Meilisearch / 组合检索 | **0**（基线已付） | ✅ 是 | 基线已铺好 `register_search_provider()` + 两处上游改动；具体后端是 provider，零改动 |
@@ -300,7 +301,13 @@ graph LR
 | **文件锁** | **0（server 侧）+ ⚠️（Hub 侧）** | ✅ 是 | server 侧确实免费：`seafile_mark_file_locked` RPC 与 `FileLocks` 表上游都已存在。但 Hub 侧锁语义被 `is_pro_version()` 门控，散在 `views/file.py`、`onlyoffice/views.py`、`seadoc/apis.py`、`exdraw/apis.py`，**均未登记**。见缺口 5 |
 | **S3 主存储** | **1 新增登记项** | — | 新写 `common/obj-backend-s3.c`（新文件）+ 改 `common/obj-store.c:28` 的后端选择（目前硬编码 `obj_backend_fs_new`）。**seafobj 上游已自带 s3/ceph/swift/alioss 后端**，Python 读取侧无需 fork |
 
-### 四个反直觉结论
+### 五个反直觉结论
+
+0. **SSO 里贵的那一半，和原先以为的不是同一半。** 登录整套上游都有；缺的是
+   组织映射，而它原先根本没被单独计价。总量没变小，**形状变了**——按原计划
+   动工会得到一个能登录、但组织结构仍要手工维护的东西，而后者才是企业提这个
+   需求的原因。这条也是"先查上游再动工"这个习惯的第一个样本：花十分钟
+   `grep -rl is_pro_version`，省下一个认证后端的长期维护。
 
 1. **S3 比预想便宜。** 原以为要连 seafobj 一起 fork，实测上游已支持。
    代价收敛到一个 `obj-store.c` 的后端选择改动。
@@ -450,7 +457,7 @@ ln -s ../../../cloudfile-docker/tools/check-upstream-patches.sh .git/hooks/pre-p
 | 线 | 顺序 | 内容 | 备注 |
 |---|---|---|---|
 | **1** | 1.1 | 重建 `feature/dir-acl` → 六入口矩阵 → 合回 `dev` | **不是"只差验证"**：分支已腐坏，见第九节。含 WebDAV 读侧补丁（发布阻塞项） |
-| | 1.2 | SSO | 真正的零成本，企业部署准入条件 |
+| | 1.2 | SSO | **代码已完成于 `feature/sso`，门禁未跑过** —— 登录复用上游，CloudFile 只做配置与组织映射。规格 [sso-mapping.md](sso-mapping.md)，探针 [upstream-reuse.md](upstream-reuse.md)。合回 `dev` 前先跑 `verify-local.sh cap sso` |
 | | 1.3 | 审计 | ⚠️ **先补基线 `file_op` 分发点**，那是一次基线改动，按基线标准 review |
 | **2** | 2.1a | 元数据（属性 + 标签 + 移动跟随） | **规模待探针 1 定**：复用上游 `repo_metadata` 还是自研 |
 | | 2.1b | 检索后端（与 2.1a **真并行**） | **选型待探针 3 定**（meilisearch / seasearch）。扩展点与过滤契约已就位 |
@@ -468,7 +475,8 @@ ln -s ../../../cloudfile-docker/tools/check-upstream-patches.sh .git/hooks/pre-p
 ### 三个决策探针
 
 排期表里凡是标"待探针定"的，都在等这三件事。每个 1～2 天，产出写进
-`docs/upstream-reuse.md`：
+[upstream-reuse.md](upstream-reuse.md)——那份文档已经建立，
+里面还有一个原本不在计划内的**探针 0（SSO）**，它的结论改变了特性 36 的形状：
 
 | # | 探针 | 决定什么 |
 |---|---|---|

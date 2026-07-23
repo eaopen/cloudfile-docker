@@ -60,6 +60,7 @@ seasearch、Elasticsearch、企业自有检索服务都可以是同一个 kind �
 | 功能开关 | `features.py`，10 个 `CF_ENABLE_*` | 默认全关；未知开关名直接抛异常而非回落 false |
 | provider 选择 | `providers.py`，`CF_PROVIDER_<KIND>` | 设置名由 kind 推导，新增 kind 不需要改基线 |
 | 结构化过滤词汇 | `search_query.py` | 让元数据簇与检索簇能各自独立开发验收，见第六节 |
+| 身份解析 | `identity.py` | Seafile 14 之后身份 ≠ 邮箱，**每个存或比用户名的能力都撞上这一条**。放基线而不是放某个能力里：ACL 存规则主体、SSO 把目录成员变成组成员，用的是同一个答案，留在 `acl/` 会让 SSO 在运行时 import ACL、并让 ACL 的开关决定 SSO 能不能解析用户 |
 | 外部服务回调 | `external_service.py`，`CF_SERVICE_<NAME>_*` | 超时 / JWT 签名 / 重试 / fail-closed 或 fail-open |
 | `cf_*` 数据层 | `db_router.py` + `scripts/sql/*/cloudfile.sql` | 表落在 **seafile-db**，因为 seaf-server(C) 与 Go fileserver 只连 ccnet-db / seafile-db |
 | 注册密封 | `registry.seal()` | 启动后再注册直接报错，避免"半装上"的状态 |
@@ -86,7 +87,8 @@ seasearch、Elasticsearch、企业自有检索服务都可以是同一个 kind �
 | 簇 | 特性 | 开关 | urls | menu | perm_check | search_provider | indexer | file_op | ext_source | periodic | provider(kind) | cf_* 表 | server 钩子 |
 |---|---|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | **A** | 目录 ACL | `DIR_ACL` | ● | ● | ● | | | | | ● | ● 规则来源 | ● | ● 全三个 |
-| **B** | SSO | `SSO` | ● | | | | | | | | ○ 认证后端 | ○ | |
+| **B** | SSO 登录 | `SSO` | | | | | | | | | | | |
+| **B** | 组织映射 | `SSO` | ● | ● | | | | | | ● | ● `sso_directory` | ● | |
 | **C** | 操作日志 / 审计 | `AUDIT` | ● | ● | | | | ● | | ○ | ○ 落地目标 | ● | ⚠️ 见缺口 2 |
 | **D** | 文件属性 | `METADATA` | ● | ● | | | ● | ● | | ● | | ● | |
 | **D** | 标签 | `TAGS` | ● | ● | | | ● | ● | | | | ● | |
@@ -106,6 +108,13 @@ seasearch、Elasticsearch、企业自有检索服务都可以是同一个 kind �
 **两行标了跨簇**（`D×E` 组合检索、`G×D` Overlay），它们是仅有的两处会把两条
 分支绑死的特性。处理方式：前者经第六节的结构化过滤契约解耦（已实现），
 后者待 D 落地后再定归属。
+
+**簇 B 拆成两行是探针的结果**，不是排版。SSO **登录**整行为空——CE 14.0 自带
+OAuth2/SAML/CAS/LDAP 且无 Pro 门控，打开它只是往配置块里写标量，一个扩展点
+都不需要。真正用到扩展点的是**组织映射**，上游对通用目录没有。
+详见 [upstream-reuse.md](upstream-reuse.md) 探针 0。
+它同时是"**先查上游再登记扩展点**"的一个实例：按原计划，这一行会占掉一个
+`provider(认证后端)`，而那个扩展点根本不需要存在。
 
 **读法**：`periodic` 列被 9 个特性依赖——`cf-worker` 是仅次于 `permission_check`
 的第二关键投资。`file_op` 列被 8 个特性依赖，而它目前**没有任何触发点**，

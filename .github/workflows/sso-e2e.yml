@@ -1,0 +1,152 @@
+name: SSO 组织映射验收矩阵
+
+# 能力门禁：构建带 SSO 的镜像，**开着 CF_ENABLE_SSO** 跑两阶段矩阵。
+#
+# 与基线门禁（build-and-e2e.yml）的分工同 acl-e2e.yml：基线问"开关全关时是否
+# 等同原生 CE"，这条问"开着开关时，目录里的组织结构是不是真的变成了 ccnet 里
+# 的组和成员"。
+#
+# 为什么必须两个阶段、中间重启一次：
+#
+#   只加不删的同步在单阶段里全绿，而"离职的人还留在组里"是这套东西唯一真正
+#   危险的失效方式——它没有任何症状，直到有人发现前同事还能看见资料库。阶段 2
+#   把目录改小再重启，专测删除方向。
+#
+#   重启这一步顺带也是被测对象：配置是每次启动重写的，"改了 .env 却不生效"是
+#   这套部署踩过的坑（init_seafile_server 在 seafile-data 已存在时提前返回）。
+#
+# 它挂了不影响基线发布：把 CF_ENABLE_SSO 留在关闭状态即可。
+
+on:
+  push:
+    branches: [dev, 'feature/sso**']
+    paths-ignore: ['**.md', 'docs/**']
+  pull_request:
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '构建版本号'
+        default: '14.0.0-cf.0-sso'
+      server_ref:
+        description: 'cloudfile-server ref（留空则用 release.yaml）'
+        default: ''
+      hub_ref:
+        description: 'cloudfile-hub ref（留空则用 release.yaml）'
+        default: ''
+
+concurrency:
+  group: sso-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sso-matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    env:
+      CF_VERSION: ${{ inputs.version || '14.0.0-cf.0-sso' }}
+      ADMIN_EMAIL: admin@cloudfile.test
+      ADMIN_PASSWORD: CloudFile-CI-4417
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: cloudfile-docker
+
+      # runner 只有 ~14GB 可用磁盘，而构建要拉三个仓库、装完整工具链、再产出
+      # 一个 GB 级镜像。先腾出空间，否则会在最后一步 no space left。
+      - name: 腾出磁盘空间
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          df -h / | tail -1
+
+      - name: 构建发行包
+        working-directory: cloudfile-docker/build/cloudfile_14.0
+        env:
+          CF_SERVER_REF: ${{ inputs.server_ref }}
+          CF_HUB_REF: ${{ inputs.hub_ref }}
+        run: sudo -E ./cloudfile-build.sh "$CF_VERSION"
+
+      - name: 构建镜像
+        working-directory: cloudfile-docker/image/cloudfile_14.0
+        run: ./docker-build.sh "$CF_VERSION"
+
+      - name: 记录本次构建的实际来源
+        run: |
+          info="cloudfile-docker/build/cloudfile_14.0/seafile-server-$CF_VERSION/cloudfile-build-info.txt"
+          tee -a "$GITHUB_STEP_SUMMARY" < "$info" || true
+
+      - name: 启动（开启 CF_ENABLE_SSO，目录 = eng[A,B] + sales[B]）
+        working-directory: cloudfile-docker/deploy/compose
+        run: |
+          cp .env.example .env
+          # 不能用 localhost：上游 setup-seafile-mysql.py 要求主机名带点。
+          sed -i "s|^SEAFILE_SERVER_HOSTNAME=.*|SEAFILE_SERVER_HOSTNAME=127.0.0.1|" .env
+          sed -i "s|^SEAFILE_SERVER_PROTOCOL=.*|SEAFILE_SERVER_PROTOCOL=https|" .env
+          sed -i "s|^INIT_SEAFILE_ADMIN_EMAIL=.*|INIT_SEAFILE_ADMIN_EMAIL=$ADMIN_EMAIL|" .env
+          sed -i "s|^INIT_SEAFILE_ADMIN_PASSWORD=.*|INIT_SEAFILE_ADMIN_PASSWORD=$ADMIN_PASSWORD|" .env
+          sed -i "s|^CADDY_TLS=.*|CADDY_TLS=internal|" .env
+          sed -i "s|^CF_ENABLE_SSO=.*|CF_ENABLE_SSO=true|" .env
+          # 后写的同名键覆盖先写的，所以这里直接追加，不必和 JSON 里的引号
+          # 与方括号在 sed 表达式里搏斗。
+          {
+            echo "CLOUDFILE_IMAGE=cloudfile/cloudfile:$CF_VERSION"
+            echo "CF_PROVIDER_SSO_DIRECTORY=static"
+            echo "CF_SSO_GROUP_OWNER=$ADMIN_EMAIL"
+            echo 'CF_SSO_DIRECTORY_STATIC=[{"external_id":"eng","name":"SSO Engineering","members":["sso-matrix-a@example.com","sso-matrix-b@example.com"]},{"external_id":"sales","name":"SSO Sales","members":["sso-matrix-b@example.com"]}]'
+          } >> .env
+          grep '^CF_ENABLE_SSO=' .env       # 开关确实开着，别在红了之后才发现
+          docker compose up -d
+          docker compose ps
+
+      # 先证明开着 SSO 也没把原生功能弄坏，再测 SSO 本身。顺序有意为之：
+      # 冒烟先挂的话，矩阵的失败信息全是下游症状。
+      - name: 原生功能未被破坏
+        run: |
+          python3 cloudfile-docker/tests/e2e/smoke.py \
+            --url https://127.0.0.1 --insecure \
+            --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
+
+      - name: 阶段 1 —— 组织结构落地
+        run: |
+          python3 cloudfile-docker/tests/e2e/sso_matrix.py --phase 1 \
+            --url https://127.0.0.1 --insecure \
+            --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
+
+      - name: 目录变小并重启（eng 只剩 A，sales 消失）
+        working-directory: cloudfile-docker/deploy/compose
+        run: |
+          echo 'CF_SSO_DIRECTORY_STATIC=[{"external_id":"eng","name":"SSO Engineering","members":["sso-matrix-a@example.com"]}]' >> .env
+          docker compose up -d
+          docker compose ps
+
+      - name: 阶段 2 —— 删除方向与"解除映射不等于删除"
+        run: |
+          python3 cloudfile-docker/tests/e2e/sso_matrix.py --phase 2 \
+            --url https://127.0.0.1 --insecure \
+            --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
+
+      - name: 失败时导出日志
+        if: failure()
+        working-directory: cloudfile-docker/deploy/compose
+        continue-on-error: true
+        run: |
+          if [[ ! -f .env ]]; then
+            echo "栈尚未启动（构建阶段就失败了），没有容器日志可导出。"
+            exit 0
+          fi
+          docker compose ps -a
+          docker compose logs --tail 300 cloudfile || true
+          docker compose exec -T cloudfile \
+            tail -n 200 /opt/seafile/logs/seahub.log || true
+          docker compose exec -T cloudfile \
+            grep -n 'CloudFile\|CF_SSO\|ENABLE_OAUTH' \
+            /opt/seafile/conf/seahub_settings.py || true
+
+      - name: 停止
+        if: always()
+        working-directory: cloudfile-docker/deploy/compose
+        run: docker compose down -v || true

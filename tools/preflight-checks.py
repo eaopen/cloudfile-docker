@@ -156,21 +156,31 @@ def check_seahub_settings_block(repo):
         bad('读不到 bootstrap.py')
         return
 
-    # 只看写进 seahub_settings.py 的那段 body
+    # 写进 seahub_settings.py 的**全部**片段，不只是主函数那一段。
+    #
+    # 能力多起来之后 body 是拼出来的（`body += _settings_block_sso()`），
+    # 只查主函数等于查了个越来越小的子集——而一个不再覆盖被监视对象的检查，
+    # 比没有检查更危险，因为它读起来像覆盖。约定：凡是往 body 里拼的助手都叫
+    # `_settings_block_*`，这里连它们一起查。
+    chunks = []
     m = re.search(r'def write_cloudfile_settings\(\):(.*?)\n    _replace_block',
                   boot, re.S)
     if not m:
         print('  ⊘ 找不到 write_cloudfile_settings，跳过')
         return
+    chunks.append(m.group(1))
+    chunks += re.findall(r'\ndef _settings_block_\w+\(\):(.*?)(?=\ndef |\Z)',
+                         boot, re.S)
 
     # 先剥掉注释：本函数的注释里正好引用了当年那行错误代码作为反面例子，
     # 不剥的话检查会拿自己的说明文字当成违规。
-    body = '\n'.join(line for line in m.group(1).splitlines()
+    body = '\n'.join(line for chunk in chunks for line in chunk.splitlines()
                      if not line.lstrip().startswith('#'))
 
-    # 形如 FOO['bar'] = 或 FOO.setdefault( 都依赖 seahub settings 的命名空间
-    offenders = sorted(set(re.findall(r'"\s*([A-Z_]+)\[', body)) |
-                       set(re.findall(r'"\s*([A-Z_]+)\.\w+\(', body)))
+    # 形如 FOO['bar'] = 或 FOO.setdefault( 都依赖 seahub settings 的命名空间。
+    # 两种引号都要查：写出来的行既有 "..." 也有 '...'，只认一种就是留了个口子。
+    offenders = sorted(set(re.findall(r'["\']\s*([A-Z_]+)\[', body)) |
+                       set(re.findall(r'["\']\s*([A-Z_]+)\.\w+\(', body)))
     if offenders:
         bad(f'seahub_settings.py 段落引用了未定义的名字：{offenders}',
             '该文件是独立模块，没有 seahub 的 settings 命名空间；\n'
@@ -245,6 +255,39 @@ def check_extension_points_documented(repo, workspace):
             '扩展点加了却没登记，下一个特性会重复去改上游文件')
     else:
         ok(f'{len(declared)} 个扩展点均已登记')
+
+
+def check_capability_gates(repo):
+    """每个能力的本地门禁与 CI 门禁必须成对存在。
+
+    verify-local.sh 存在的全部理由是"不要再手抄 <能力>-e2e.yml"——而只抄了一半
+    正是它要防的事：acl_matrix.py 缺 --insecure 就是这么留下来的。两边缺任何
+    一边，本地和 CI 就在验不同的东西，而且没有任何信号。
+    """
+    script = read(os.path.join(repo, 'tools', 'verify-local.sh'))
+    if not script:
+        print('  ⊘ 读不到 verify-local.sh，跳过')
+        return
+
+    block = re.search(r'CAPABILITIES=\((.*?)\n\)', script, re.S)
+    if not block:
+        bad('verify-local.sh 里找不到 CAPABILITIES 表')
+        return
+
+    local = set(re.findall(r'"(\w+)\|', block.group(1)))
+
+    wf_dir = os.path.join(repo, '.github', 'workflows')
+    names = os.listdir(wf_dir) if os.path.isdir(wf_dir) else []
+    ci = {n[:-len('-e2e.yml')] for n in names if n.endswith('-e2e.yml')}
+    # 基线门禁不是能力门禁：它测的正是"一个能力都没启用"。
+    ci.discard('build-and')
+
+    if local != ci:
+        bad(f'能力门禁两边不一致：本地 {sorted(local)} / CI {sorted(ci)}',
+            '一个能力要么两边都有，要么两边都没有；\n'
+            '只有一边时，本地跑绿了并不代表 CI 在验同一件事')
+    else:
+        ok(f'{len(local)} 个能力门禁本地与 CI 成对（{", ".join(sorted(local))}）')
 
 
 def check_features_doc_freshness(repo):
@@ -335,6 +378,7 @@ def main():
     check_seahub_settings_block(repo)
     check_switch_lists(repo, workspace)
     check_extension_points_documented(repo, workspace)
+    check_capability_gates(repo)
     check_features_doc_freshness(repo)
 
     return 1 if failures else 0

@@ -80,6 +80,28 @@ services:
       CF_ENABLE_CHECKOUT: ${CF_ENABLE_CHECKOUT:-false}
       CF_ENABLE_S3_STORAGE: ${CF_ENABLE_S3_STORAGE:-false}
       CF_ENABLE_EXTERNAL_SOURCES: ${CF_ENABLE_EXTERNAL_SOURCES:-false}
+      # -- SSO (inert unless CF_ENABLE_SSO is true) --
+      # No `:?` on any of these: compose interpolates the whole file whatever
+      # profile is active, so a required marker here would break a plain
+      # `docker compose up` for every deployment that does not use SSO.
+      CF_SSO_OAUTH_CLIENT_ID: ${CF_SSO_OAUTH_CLIENT_ID:-}
+      CF_SSO_OAUTH_CLIENT_SECRET: ${CF_SSO_OAUTH_CLIENT_SECRET:-}
+      CF_SSO_OAUTH_AUTHORIZATION_URL: ${CF_SSO_OAUTH_AUTHORIZATION_URL:-}
+      CF_SSO_OAUTH_TOKEN_URL: ${CF_SSO_OAUTH_TOKEN_URL:-}
+      CF_SSO_OAUTH_USER_INFO_URL: ${CF_SSO_OAUTH_USER_INFO_URL:-}
+      CF_SSO_OAUTH_SCOPE: ${CF_SSO_OAUTH_SCOPE:-openid email profile}
+      CF_SSO_OAUTH_PROVIDER: ${CF_SSO_OAUTH_PROVIDER:-}
+      CF_SSO_OAUTH_UID_CLAIM: ${CF_SSO_OAUTH_UID_CLAIM:-sub}
+      CF_SSO_OAUTH_EMAIL_CLAIM: ${CF_SSO_OAUTH_EMAIL_CLAIM:-email}
+      CF_SSO_OAUTH_NAME_CLAIM: ${CF_SSO_OAUTH_NAME_CLAIM:-name}
+      CF_SSO_OAUTH_INSECURE: ${CF_SSO_OAUTH_INSECURE:-false}
+      CF_PROVIDER_SSO_DIRECTORY: ${CF_PROVIDER_SSO_DIRECTORY:-}
+      CF_SSO_GROUP_OWNER: ${CF_SSO_GROUP_OWNER:-}
+      CF_SSO_SYNC_INTERVAL: ${CF_SSO_SYNC_INTERVAL:-600}
+      CF_SSO_MAX_REMOVAL_RATIO: ${CF_SSO_MAX_REMOVAL_RATIO:-0.5}
+      CF_SSO_DIRECTORY_STATIC: ${CF_SSO_DIRECTORY_STATIC:-}
+      CF_SERVICE_SSO_DIRECTORY_URL: ${CF_SERVICE_SSO_DIRECTORY_URL:-}
+      CF_SERVICE_SSO_DIRECTORY_SECRET: ${CF_SERVICE_SSO_DIRECTORY_SECRET:-}
     depends_on:
       db:
         condition: service_healthy

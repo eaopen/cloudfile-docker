@@ -130,17 +130,54 @@ feature/* = 正在开发的能力。验收通过 → 合回 dev → 删除分支
 | 簇 | 特性 | 绑在一起的原因 |
 |---|---|---|
 | **A 目录权限** | 13–35, 66 | `cf_dir_acl` 表 +`acl-cases.json` 用例集**同时驱动 C 与 Python 两端**，改语义必须同时改两处 |
-| **B 身份接入** | 36 SSO | 无共享，最干净 |
+| **B 身份与目录同步** | 36, 76–88 | `cf_sso_*` 表 + 组织映射规格。**登录后端是打包不是构建**（见下），真正要构建的是目录/组同步 |
 | **C 操作日志** | 37 | `cf_audit_log` 表。⚠️ 阻塞在 `file_op` 基线缺口上 |
 | **D 元数据** | 38 属性, 39 标签, 42 移动跟随 | **同一张表**。标签是属性的特化；42 是 38/39 的正确性要求，不是独立特性 |
 | **E 检索** | 40 后端 | 自有索引，不碰 `cf_*` |
 | **F 协同** | 43–48 | 同一份**锁语义**：签入签出、超时解锁、OnlyOffice 并发都是"谁正持有这个文件"的不同表述 |
 | **G 外部源** | 50–52 | `cf_external_source` 表 + 同一套挂载语义 |
 | **H 存储后端** | 49 S3 | `common/obj-store.c` 后端选择，与 Hub 侧零交集 |
+| **I 反病毒** | Antivirus | server/pipeline 侧扫描，镜像已剥离 clamav。**Pro 对标里唯一"缺失机制"且未归簇的一项**——见 [pro-parity.md](pro-parity.md) |
 
 > **开关粒度 ≠ 分支粒度。** D 是一条分支、三个特性、两个开关
 > （`CF_ENABLE_METADATA` 与 `CF_ENABLE_TAGS`）。属性和标签共享同一张表，
 > 拆成两条分支等于两条分支各自定义同名表的 schema。
+
+### 一之二·五、打包 ≠ 构建：不是所有 Pro 特性都该开分支
+
+按 [Pro vs CE 对比](https://www.seafile.com/en/pricing/?produce=on-premises)
+逐项核对后（全表见 [pro-parity.md](pro-parity.md)），发现一个贯穿性的事实：
+**Pro/CE 是营销线，不是源码线**。对比页标成 Pro 独占的特性里，**大半代码本来
+就在 CE 开源仓里**——由普通 settings 开关或纯营销门控，而非 `is_pro_version()`：
+
+```bash
+grep -rln is_pro_version seahub/adfs_auth/ seahub/oauth/ \
+    seahub/role_permissions/ seahub/two_factor/ seahub/base/accounts.py   # → 空
+```
+
+LDAP 登录、ADFS/SAML、Shibboleth、角色管理、2FA、设备远程擦除、WebDAV——**源码俱在**。
+它们不是"要构建的机制"，是"要启用的配置"。据此，特性分成两层：
+
+| 层 | 判据 | 是不是 `feature/*` 分支？ |
+|---|---|---|
+| **打包** | CE 源码已有，只是默认关/营销门控 | **不是**。它是 bootstrap 的一段配置 + 一张启用清单 |
+| **构建** | CE 里没有这个机制，要写新代码 | **是**，就是上面八个（+I）耦合簇 |
+
+**这对"优化特性分支"的直接后果**：
+
+1. **打包层移出分支计划。** 给一个上游 settings 开关（如 `ENABLE_TWO_FACTOR_AUTH`）
+   再套一条分支和一个 `CF_ENABLE_*`，是纯粹的过度封装。做法与已落地的 OAuth
+   （bootstrap `_settings_block_sso` 从 `.env` 写上游设置）完全一致——加配置，
+   不加分支。铁律不变：默认关 = 原生 CE，只是这些开关是**上游自己的**。
+2. **簇 B 由"SSO"更名为"身份与目录同步"**：登录后端是打包，真正要构建的只有
+   目录/组同步。对比页把 "Authenticate against LDAP/AD" 与 "Syncing LDAP/AD
+   Users and Groups" 分成两行，正好印证——前者打包，后者才是 CloudFile 的组织
+   映射（特性 76–88）已经做的事。补一个 `ldap` 目录源即与 Pro 对齐。
+3. **Antivirus 立为簇 I**：它是"缺失机制"里唯一还没归簇、且较重的一项
+   （server 侧扫描、镜像已剥离 clamav）。落地前先做一次门控盘点。
+
+**净效果**：Pro 对比表约一半特性 CloudFile **已有源码、只差启用**（打包层，
+应最先清，拿下企业准入）；要真写的机制集中在既有耦合簇里，外加 Antivirus。
 
 ### 两个跨簇依赖，靠契约解开
 

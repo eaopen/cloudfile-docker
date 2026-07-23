@@ -2,6 +2,11 @@
 
 Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的实际状态。
 
+> **按 Pro 对标读这份清单**：哪些是"要构建的机制"、哪些只是"要启用的配置"，
+> 见 [pro-parity.md](pro-parity.md)——它把官方 Pro vs CE 对比逐项映射到这里。
+> 一句话结论：Pro 对比表约一半特性 CloudFile **已有源码、只差启用**（打包层，
+> 不开分支）；要真写的机制集中在下面的耦合簇里，外加一个 Antivirus。
+
 状态口径**刻意区分"写完"和"验证过"**——权限系统里这两者差别很大：
 
 | 标记 | 含义 |
@@ -175,6 +180,30 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 
 ---
 
+## 打包层 — Pro 特性中"源码已在 CE、只差启用"的部分
+
+**这些不是特性分支，也没有 `CF_ENABLE_*` 开关。** 它们的代码本来就在 CE 开源仓里，
+由上游自己的 settings 门控（不是 `is_pro_version()`）。启用 = 在 bootstrap 里从
+`.env` 写上游设置，做法与已落地的 OAuth（`_settings_block_sso`）完全一致。
+默认关 = 原生 CE 这条铁律不变，只是这里的开关是**上游的**。全表见
+[pro-parity.md](pro-parity.md)。
+
+| # | Pro 特性 | 启用方式 | 状态 |
+|---|---|---|---|
+| 89 | LDAP/AD 登录 | `ENABLE_LDAP` + `CustomLDAPBackend`（CE 已带） | ⬜ 待接 bootstrap |
+| 90 | ADFS（SAML）SSO | `ENABLE_ADFS_LOGIN`（`seahub/adfs_auth/`，无 `is_pro`） | ⬜ 待接 bootstrap |
+| 91 | Shibboleth SSO | `adfs_auth` 的 Shibboleth 路径 | ⬜ 待接 bootstrap |
+| 92 | 角色账号管理 | `ENABLED_ROLE_PERMISSIONS`（`seahub/role_permissions/`，无 `is_pro`） | ⬜ 待接 bootstrap |
+| 93 | 双因素认证 2FA | `ENABLE_TWO_FACTOR_AUTH`（`seahub/two_factor/` 无条件装载） | ⬜ 待接 bootstrap |
+| 94 | 远程擦除 | 设备管理端点已在（`utils/devices.py`），确认前端入口未被藏 | ⬜ 待核 |
+| 95 | WebDAV | `seafdav`，已在 CloudFile 构建里 | ✅ 已具备（ACL 读写补丁已测） |
+
+> 这一层应**最先清**：企业准入门槛（LDAP/角色/2FA）几乎零成本就能对齐 Pro，
+> 而它一行 `cloudfile_ext` 代码都不用写。它验证时并进现有 `smoke.py` 即可——
+> 都是"开关一开，上游功能是否照常工作"，不需要单独的能力门禁。
+
+---
+
 ## P2 — 信息管理能力
 
 **簇 D（`feature/metadata`）** —— 38 / 39 / 42 是一条分支，因为它们共享同一张表。
@@ -217,11 +246,12 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
 
 ---
 
-## P4 — 存储扩展
+## P4 — 存储扩展与 server 侧管线
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
 | 49 | S3 类主存储 | ⬜ | 1 个新增登记项（`common/obj-store.c:28` 的后端选择）。seafobj 上游已自带 s3/ceph/swift/alioss，Python 读取侧无需 fork |
+| 96 | 反病毒集成（簇 I） | ⬜ | **Pro 对标补入**（[pro-parity.md](pro-parity.md)）。Pro 的"缺失机制"里唯一没归簇的一项：上传/文件扫描在 server/pipeline 侧，**镜像已主动剥离 clamav**。落地前先做门控盘点（同 OnlyOffice 探针 2 的做法），确认哪些是真依赖、哪些只是商业门控 |
 | 50 | SMB/NFS 外部资料源 | ⬜ | 零上游改动，但**代价是另起一个入口**——不改上游就进不了原生库列表。见 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 缺口 3。这是产品决定，不是技术决定 |
 | 51 | 外部源增量扫描 | ⬜ | 依赖 50 + `cf-worker` |
 | 52 | 虚拟目录挂载 | ⬜ | 依赖 50；融入原生 UI 的问题同 50 |
@@ -259,6 +289,11 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
    方向是"写一个协议兼容的 metadata-server + 复用上游全部前端和 API"，检索的
    方向是"配上游已集成的 seasearch，零 CloudFile 代码"。**结论是省下工作量，
    不是待办**——只剩 OnlyOffice（探针 2）未盘点，属 P3。
+4.5. 🟢 **打包层是最便宜的 Pro 准入**（第 89–95 项，[pro-parity.md](pro-parity.md)）。
+   LDAP/ADFS/Shibboleth 登录、角色管理、2FA、远程擦除的代码**都在 CE 源码里、
+   不被 `is_pro_version` 挡**——启用只是在 bootstrap 里从 `.env` 写上游设置，
+   零 `cloudfile_ext` 代码、不开分支。**建议在推进构建层之前先清这一层**：
+   它几乎无成本地对齐了 Pro 的用户/安全管理，而那正是企业采购的门槛项。
 5. 🟡 **MySQL DDL 未对真实 MySQL 执行**（第 19 项），仅验证了语句切分与 SQLite 变体。
 6. 🟡 **上游遗留问题**：`seahub/api2/endpoints/repos_batch.py` 的
    `BatchMoveItemsUpdatePath` 完全没有权限校验（上游 docstring 自述

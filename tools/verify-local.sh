@@ -76,7 +76,7 @@ preflight() {
 # ── 构建发行包 ──────────────────────────────────────────────────────────
 build_dist() {
     need_docker
-    say "构建发行包 $VERSION（容器内，宿主机不受影响）"
+    say "构建发行包 ${VERSION}（容器内，宿主机不受影响）"
 
     # 默认构建**并排 checkout 的本地仓库**，而不是去 GitHub 拉。
     #
@@ -239,9 +239,9 @@ compose() { docker compose -p "$PROJECT" --project-directory "$STAGE_DIR" "$@"; 
 up() {
     need_docker
     docker image inspect "$IMAGE" >/dev/null 2>&1 \
-        || fail "本地没有镜像 $IMAGE，先跑 build"
+        || fail "本地没有镜像 ${IMAGE}，先跑 build"
     if [[ -n $ENABLE_SWITCHES ]]; then
-        say "启动（开启：$ENABLE_SWITCHES）"
+        say "启动（开启：${ENABLE_SWITCHES}）"
     else
         say "启动（开关全关）"
     fi
@@ -279,7 +279,7 @@ capability_e2e() {
         [[ $cap == "$name" ]] && break
         cap=''
     done
-    [[ -n ${cap:-} ]] || fail "未知能力：$name（已登记：$(printf '%s ' "${CAPABILITIES[@]%%|*}"))"
+    [[ -n ${cap:-} ]] || fail "未知能力：${name}（已登记：$(printf '%s ' "${CAPABILITIES[@]%%|*}"))"
     [[ -f $repo/$test_rel ]] || fail "找不到 $test_rel"
 
     ENABLE_SWITCHES=$switch
@@ -325,7 +325,7 @@ clean() {
     say "清理本地栈"
     [[ -d $STAGE_DIR ]] && compose down -v 2>/dev/null
     rm -rf "$STAGE_DIR"
-    ok "已清理（镜像保留，删除用 docker rmi $IMAGE）"
+    ok "已清理（镜像保留，删除用 docker rmi ${IMAGE}）"
 }
 
 case "${1:-all}" in

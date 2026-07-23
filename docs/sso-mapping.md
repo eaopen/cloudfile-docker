@@ -218,7 +218,8 @@ GET <url>/users/<login>/groups -> {"groups": ["eng", ...]}     # 可选
 资料库。重启这一步顺带也在测"改了 `.env` 重启是否生效"，那是这套部署踩过的坑。
 
 编排本身另有 14 项单元测试（`cloudfile_ext/sso/tests/test_reconcile.py`），
-五个变异全部被捕获；目录源 12 项（`test_directory.py`）。
+五个变异全部被捕获；目录源 12 项（`test_directory.py`）。2026-07-24 已从本地
+`feature/sso` 构建镜像并通过这套两阶段矩阵；CI 仍待跑一次。
 
 ---
 

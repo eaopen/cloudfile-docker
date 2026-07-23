@@ -78,7 +78,7 @@ for v in CF_SERVER_URL CF_HUB_URL; do
     mount_args+=(-v "$abs:/src/$name:ro")
     # 覆盖前面那一轮塞进去的宿主机路径
     env_args+=(-e "$v=file:///src/$name")
-    echo "本地源码：$v = $abs（容器内 /src/$name，只读）"
+    echo "本地源码：$v = ${abs}（容器内 /src/${name}，只读）"
 done
 
 echo "在容器内构建 CloudFile ${version}${platform:+ (${platform})}"

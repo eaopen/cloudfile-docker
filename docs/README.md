@@ -18,7 +18,7 @@ CE 扩展版的规格、规划与决策。每份文档只保留**最终版本**�
 | 文档 | 簇 | 对应 Pro 特性 | 状态 |
 |---|---|---|---|
 | [acl-semantics.md](acl-semantics.md) + [acl-cases.json](acl-cases.json) | A 目录 ACL | Fine-grained folder permission | ✅ 已落地 |
-| [sso-mapping.md](sso-mapping.md) | B 身份与目录同步 | Syncing LDAP/AD Users & Groups | ✅ 代码完成，门禁未跑 |
+| [sso-mapping.md](sso-mapping.md) | B 身份与目录同步 | Syncing LDAP/AD Users & Groups | ✅ 本机两阶段门禁通过；CI 待跑 |
 | [search.md](search.md) | E 检索 | Full text search | ⬜ 方案已定 |
 | [storage.md](storage.md) | H 存储 | AWS S3 / 多存储 | ⬜ 方案已定 |
 | [ai.md](ai.md) | AI | 自动属性/标签/摘要（非 Pro 表项） | ⬜ 方案已定 |

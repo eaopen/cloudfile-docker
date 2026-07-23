@@ -127,7 +127,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
-| 36 | SSO 登录与用户/组织映射 | 🟡 | 见下方「P1 — SSO 与组织映射」。**代码完整、单元层面验证充分，但门禁一次都没在真环境跑过** |
+| 36 | SSO 登录与用户/组织映射 | ✅ | 见下方「P1 — SSO 与组织映射」。本机真实栈已通过两阶段矩阵；签名 webhook、周期同步/登录后刷新与真实 MySQL DDL 仍各自保留验证项 |
 | 37 | 操作日志 / 审计 | ⬜ | 占位，`CF_ENABLE_AUDIT`。post 文件操作钩子已预留（吞异常，不影响写入），但 ⚠️ **它没有任何上游触发点**——见待办 3。落地前先定钩子位置 |
 | 66 | ACL 规则来源可扩展 | 🟡 | `acl/sources.py`：**终判永远读 `cf_dir_acl`**，来源才是 provider。`local-db` 已实现（就是原有行为，现在有了名字）并接上 cf-worker 周期任务；`external-service` **已设计、刻意不注册桩**——桩会让 `cf_dir_acl` 保持空表，而空表看起来是"没配规则"不是"这个来源没实现"。5 项测试 + 2 个变异验证。**周期任务未在容器中跑过** |
 
@@ -147,10 +147,10 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 > 按原计划动工会得到一个能登录、但组织结构仍要手工维护的产物——而后者才是
 > 企业提这个需求的原因。
 
-**🟡 的边界写在这里，别读成 ✅**：编排、目录源、配置生成三处都有单元测试且
-经变异确认会失败；**但两阶段验收矩阵一次都没跑过**——既没在 CI 上，也没在
-本机（本轮没有构建镜像）。按 ACL 那一轮的经验，这恰恰是缺陷会出现的地方：
-单元测试证明"算得对"，矩阵证明"算出来的东西真的落到了 ccnet 里"。
+**验证证据**：2026-07-24 已从本地 SSO 分支构建镜像，开着 `CF_ENABLE_SSO` 跑过
+两阶段验收矩阵；阶段 1 的目录创建、成员关系、重复同步、干跑与状态检查 12/12
+通过，阶段 2 改小目录并重启后验证成员移除、解除映射但保留组、管理员解除映射。
+这证明结果确实落到了 ccnet；CI 仍须跑一次以覆盖架构、磁盘配额和 PATH 差异。
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
@@ -163,9 +163,9 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | 81 | 配置生成检查 `test-bootstrap-settings.py` | ✅ | **本轮新增的门禁**。preflight 那条是静态的、只认 `FOO['bar'] =` 一种形状；这条把生成函数抠出来实际 `exec()`，覆盖引号、字面量、claim 冲突。**12 项断言，5 个变异全部被捕获**，其中一个（uid 与 email 取同一 claim）会让 email 悄悄从必需项降级——静态检查完全看不出 |
 | 82 | preflight 检查跟着扩大 | ✅ | `check_seahub_settings_block` 原本只扫主函数，而 body 现在是拼出来的——**一个不再覆盖被监视对象的检查比没有检查更危险，因为它读起来像覆盖**。改为连 `_settings_block_*` 一起扫，并补上单引号（原来只认双引号）。破坏新助手确认会红 |
 | 83 | `cf_sso_group_map` / `cf_sso_sync_state` | 🟡 | SQLite DDL 已执行并验证幂等；**MySQL 只验证了语句切分，未对真实 MySQL 执行**（同第 19 项）。这两张表**没有任何 Hub 以下的读者**——放在 seafile-db 只是因为那是 cf_* 唯一的建表通道 |
-| 84 | 管理接口与 webhook | 🟡 | 同步/干跑/映射列表/解除映射，外加签名 webhook。**未配 secret 时 webhook 返回 404**——它会触发对外调用，而没有 secret 就无法把目录服务和网络上其他人区分开。代码完整，**未在运行的部署上调用过** |
+| 84 | 管理接口与 webhook | 🟡 | 同步/干跑/映射列表/解除映射已随两阶段矩阵在真实栈验证；**未配 secret 时 webhook 返回 404**。签名 webhook 本身仍待独立验收 |
 | 85 | 周期同步与登录后刷新 | 🟡 | `register_periodic_task` + 上游自己的 `user_logged_in` 信号（零上游改动）。刷新失败一律吞掉：目录慢或挂了不能让人登不进来。**cf-worker 从未随栈跑过**（同第 11 项） |
-| 86 | 两阶段验收矩阵 | 🟡 | `tests/e2e/sso_matrix.py` + `sso-e2e.yml` + `verify-local.sh cap sso`。两阶段是必要的：**只加不删的同步在阶段 1 里全绿**，而"离职的人还留在组里"是这套东西唯一真正危险的失效方式。**一次都没跑过** |
+| 86 | 两阶段验收矩阵 | ✅ | `tests/e2e/sso_matrix.py` + `sso-e2e.yml` + `verify-local.sh cap sso`。2026-07-24 本机真实栈通过：阶段 1 12/12；阶段 2 在目录缩小并重启后验证删除方向与解除映射不删组。CI 待跑 |
 | 87 | 本地门禁支持按能力定制 | ✅ | 能力不止需要开关，还需要 provider 选型这类配置，且不止跑一遍。约定 `cap_<名>_env` / `cap_<名>_run` 两个可选钩子，而不是把表格字段越加越多——"改配置、重启、再断言"这种形状塞不进一行 |
 | 88 | 能力门禁两边成对的检查 | ✅ | verify-local 的 CAPABILITIES 与 `.github/workflows/<能力>-e2e.yml` 必须一一对应。本地门禁存在的全部理由就是不要手抄 workflow，而**只抄一半**正是它要防的事（`acl_matrix.py` 缺 `--insecure` 就是这么留下来的）。两个方向的变异都确认会红 |
 
@@ -287,33 +287,28 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
    > **一个都没被拦住**——它们证明的是"求解器算得对"，缺陷却在"存进去的东西
    > 根本进不了求解器"。只有把栈起起来、拿另一个用户的 token 去敲每个入口
    > 才会显形。
-2. 🟠 **SSO 的两阶段矩阵一次都没跑过**（第 86 项）。编排、目录源、配置生成三处
-   的单元测试都很扎实且经过变异确认，但 ACL 那一轮的教训正是：单元测试
-   （C 62 / Python 87）全绿、静态检查全绿，而第 71 项那个真实缺陷**一个都没被拦住**
-   ——它们证明的是"算得对"，缺陷却在"算出来的东西有没有真的落下去"。
-   跑法：`./tools/verify-local.sh build && ./tools/verify-local.sh cap sso`。
-3. 🔴 **`file_op` 钩子没有生产者**。`register_file_op_hook()` 注册得了，但上游
+2. 🔴 **`file_op` 钩子没有生产者**。`register_file_op_hook()` 注册得了，但上游
    没有任何地方调用 `run_file_op_hooks()`——注册了一个永不触发的回调。审计、
    文件属性、标签、元数据跟随、OnlyOffice、文件锁、签入签出，**七个特性依赖它**。
    见 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 缺口 1。
-4. 🟢 **上游 CE 14.0 已带了 P2/P3 的一大半**（`repo_metadata`、`tags`、
+3. 🟢 **上游 CE 14.0 已带了 P2/P3 的一大半**（`repo_metadata`、`tags`、
    `file_tags`、`repo_tags`、`onlyoffice`、seasearch），且大多**无 Pro 门控**。
    **探针 1、3 已做**（[upstream-reuse.md](upstream-reuse.md)）：属性/标签的
    方向是"写一个协议兼容的 metadata-server + 复用上游全部前端和 API"，检索的
    方向是"配上游已集成的 seasearch，零 CloudFile 代码"。**结论是省下工作量，
    不是待办**——只剩 OnlyOffice（探针 2）未盘点，属 P3。
-4.5. 🟢 **打包层是最便宜的 Pro 准入**（第 89–95 项，[pro-parity.md](pro-parity.md)）。
+3.5. 🟢 **打包层是最便宜的 Pro 准入**（第 89–95 项，[pro-parity.md](pro-parity.md)）。
    LDAP/ADFS/Shibboleth 登录、角色管理、2FA、远程擦除的代码**都在 CE 源码里、
    不被 `is_pro_version` 挡**——启用只是在 bootstrap 里从 `.env` 写上游设置，
    零 `cloudfile_ext` 代码、不开分支。**建议在推进构建层之前先清这一层**：
    它几乎无成本地对齐了 Pro 的用户/安全管理，而那正是企业采购的门槛项。
-5. 🟡 **MySQL DDL 未对真实 MySQL 执行**（第 19 项），仅验证了语句切分与 SQLite 变体。
-6. 🟡 **上游遗留问题**：`seahub/api2/endpoints/repos_batch.py` 的
+4. 🟡 **MySQL DDL 未对真实 MySQL 执行**（第 19 项），仅验证了语句切分与 SQLite 变体。
+5. 🟡 **上游遗留问题**：`seahub/api2/endpoints/repos_batch.py` 的
    `BatchMoveItemsUpdatePath` 完全没有权限校验（上游 docstring 自述
    "all authenticated user can perform this action"）。它只更新路径记录、
    不搬运数据，但允许任何登录用户对任意库提交路径更新。属于上游问题，
    不是 CloudFile 引入的回归，需单独评估。
-7. 🟡 **上游 `Seafile CI` 在 fork 上永远失败**：`ci/run.py` 写死
+6. 🟡 **上游 `Seafile CI` 在 fork 上永远失败**：`ci/run.py` 写死
    `join(TOPDIR, 'seafile-server')`，而仓库名是 `cloudfile-server`。与我们的代码
    无关。已改为从自己的 workflow 里把仓库 checkout 成那个目录名来获得 C 编译覆盖。
    **待办：在 GitHub 的 Actions 页面把 `Seafile CI` 这个 workflow 停用**

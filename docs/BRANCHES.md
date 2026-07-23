@@ -459,7 +459,7 @@ ln -s ../../../cloudfile-docker/tools/check-upstream-patches.sh .git/hooks/pre-p
 | **1** | 1.1 | 重建 `feature/dir-acl` → 六入口矩阵 → 合回 `dev` | **不是"只差验证"**：分支已腐坏，见第九节。含 WebDAV 读侧补丁（发布阻塞项） |
 | | 1.2 | SSO | **代码已完成于 `feature/sso`，门禁未跑过** —— 登录复用上游，CloudFile 只做配置与组织映射。规格 [sso-mapping.md](sso-mapping.md)，探针 [upstream-reuse.md](upstream-reuse.md)。合回 `dev` 前先跑 `verify-local.sh cap sso` |
 | | 1.3 | 审计 | ⚠️ **先补基线 `file_op` 分发点**，那是一次基线改动，按基线标准 review |
-| **2** | 2.1a | 元数据（属性 + 标签 + 移动跟随） | **探针 1 已定：写协议兼容的 metadata-server + 复用上游前端/API**。落地第一步是最小服务让原生前端连上 |
+| **2** | 2.1a | 元数据（属性 + 标签 + 移动跟随） | **探针 1 已定：CloudFile 自建存储引擎说 metadata-server 协议**（唯一闭源件）+ 复用上游前端/API/投喂管线。分两步：官方 server 先验证，长期权威模型归 CloudFile |
 | | 2.1b | 检索后端（与 2.1a **真并行**） | **探针 3 已定：默认 seasearch（上游已集成，零 CloudFile 代码）**，meilisearch 作可选 provider。扩展点与过滤契约已就位 |
 | | 2.2 | 组合检索 | 需 2.1a + 2.1b 都进了 `dev`，验收属集成门禁 |
 | **3** | 3.1 | 文件锁（含 Hub 侧 Pro 门控拆解） | 唯一有新增上游补丁的线，先过 review |

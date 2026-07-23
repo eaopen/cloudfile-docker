@@ -291,21 +291,34 @@ def check_webdav(base, repo_id):
 
 
 def check_move(b, repo_id):
+    """批量移动端点，源与目标都要校验。
+
+    走 batch-move-item 而不是 `/dir/?p=...&operation=move`：后者只支持
+    mkdir / rename / revert，请求会以 400 "operation can only be ..." 被拒，
+    而 400 不是 403——断言"被拒"如果只看状态码非 200，就会被这个 400 蒙混过去，
+    看起来 ACL 生效了，其实请求根本没到权限判定。第一版矩阵就是这么写的。
+
+    FEATURES.md 第 35 项审计的也正是这七个批量端点。
+    """
     entry = '移动/复制/重命名'
 
-    status, body = b.api(
-        f'/api/v2.1/repos/{repo_id}/dir/?p=/public/ok', method='POST',
-        form={'operation': 'move', 'dst_repo_id': repo_id,
-              'dst_parent_dir': '/restricted'})
-    record(entry, '移动到 /restricted 被拒', status == 403,
-           f'status={status} {body[:120]}')
+    def batch_move(src, dst):
+        # 这个端点收 JSON（paths 是对象数组），表单编码表达不了。
+        payload = json.dumps({
+            'src_repo_id': repo_id, 'dst_repo_id': repo_id,
+            'paths': [{'src_path': src, 'dst_path': dst}],
+        })
+        return b.api('/api/v2.1/repos/batch-move-item/', method='POST',
+                     data=payload,
+                     headers={'Content-Type': 'application/json'})
 
-    status, body = b.api(
-        f'/api/v2.1/repos/{repo_id}/dir/?p=/restricted/sub', method='POST',
-        form={'operation': 'move', 'dst_repo_id': repo_id,
-              'dst_parent_dir': '/public'})
+    status, body = batch_move('/public/ok', '/restricted')
+    record(entry, '移动到 /restricted 被拒', status == 403,
+           f'status={status} {body[:160]}')
+
+    status, body = batch_move('/restricted/sub', '/public')
     record(entry, '从 /restricted 移出被拒', status == 403,
-           f'status={status} {body[:120]}')
+           f'status={status} {body[:160]}')
 
 
 def check_invariant(admin, b, repo_id):
@@ -318,6 +331,23 @@ def check_invariant(admin, b, repo_id):
         data = json_body(body) or {}
         native = data.get('native_permission')
         eff = data.get('effective_permission')
+
+        # 先确认这个断言有东西可断。
+        #
+        # 少了这一条，接口报错或查错了用户时 native 与 eff 都是 None，
+        # "收紧"于是平凡成立，四条全绿——而实际上什么都没验证。上一轮就是这样：
+        # 规则一条都没生效，这四项却全部通过。**恒真的断言比没有断言更糟，
+        # 因为它读起来像覆盖。**
+        if status != 200:
+            record(entry, f'{path}: 有效权限接口可用', False,
+                   f'status={status} {body[:160]}')
+            continue
+        if native is None:
+            record(entry, f'{path}: B 有原生权限可供收紧', False,
+                   f'native=None——共享没生效或查的是另一个用户；'
+                   f'此时"未放宽"恒真，等于没测。body={body[:160]}')
+            continue
+
         order = {None: 0, 'invisible': 0, 'none': 0, 'r': 1, 'rw': 2}
         ok = order.get(eff, 99) <= order.get(native, 99)
         record(entry, f'{path}: {native} → {eff} 未放宽', ok,

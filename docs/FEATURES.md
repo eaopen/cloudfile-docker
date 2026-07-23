@@ -115,7 +115,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 |---|---|---|---|
 | 36 | SSO 登录与用户/组织映射 | ⬜ | 占位，`CF_ENABLE_SSO`。真正的零上游成本 |
 | 37 | 操作日志 / 审计 | ⬜ | 占位，`CF_ENABLE_AUDIT`。post 文件操作钩子已预留（吞异常，不影响写入），但 ⚠️ **它没有任何上游触发点**——见待办 3。落地前先定钩子位置 |
-| 66 | ACL 规则来源可扩展 | ⬜ | 设计已定：`local-db` 与 `external-service` 两个 provider，**终判永远读本地表**，外部系统经 cf-worker 周期拉取 + webhook 推送喂表，C 侧不引入 HTTP。见 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 第五节。基线机制已就位，实现归 `feature/dir-acl` |
+| 66 | ACL 规则来源可扩展 | 🟡 | `acl/sources.py`：**终判永远读 `cf_dir_acl`**，来源才是 provider。`local-db` 已实现（就是原有行为，现在有了名字）并接上 cf-worker 周期任务；`external-service` **已设计、刻意不注册桩**——桩会让 `cf_dir_acl` 保持空表，而空表看起来是"没配规则"不是"这个来源没实现"。5 项测试 + 2 个变异验证。**周期任务未在容器中跑过** |
 
 ---
 

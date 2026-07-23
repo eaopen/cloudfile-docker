@@ -289,6 +289,34 @@ def check_webdav(base, repo_id):
                         data=b'x', basic=cred)
     record(entry, '/secret 写入被拒', status in (403, 401), f'status={status}')
 
+    # ── 读侧 ────────────────────────────────────────────────────────────
+    #
+    # 这几条对应 patches/seafdav/0001。写侧一直是好的（上面三条），读侧却完全
+    # 没有校验：`invisible` 的目录照样被列出、照样能 GET。**一个只在部分入口
+    # 生效的"不可见"不是不可见**，所以这是 ACL 的发布阻塞项，不是待办。
+    propfind = {'Depth': '1', 'Content-Type': 'application/xml'}
+
+    status, body = request(f'{root}/{REPO_NAME}/', method='PROPFIND',
+                           basic=cred, headers=propfind)
+    listed = status in (207, 200)
+    record(entry, '库根可列举（对照）', listed, f'status={status}')
+    # 没有这个对照，下面两条会在"WebDAV 整个坏掉"时一起变绿。
+    record(entry, '/secret 不出现在 PROPFIND 结果中',
+           listed and '/secret' not in body, f'status={status} {body[:200]}')
+    record(entry, '/public 出现在 PROPFIND 结果中',
+           listed and '/public' in body, f'status={status} {body[:200]}')
+
+    status, _ = request(f'{root}/{REPO_NAME}/secret/', method='PROPFIND',
+                        basic=cred, headers=propfind)
+    # 404 而不是 403：不可见的目录应当与"不存在"无法区分，否则 404/403 的
+    # 差异本身就泄露了它的存在。
+    record(entry, '/secret 直接列举返回 404', status == 404, f'status={status}')
+
+    status, _ = request(f'{root}/{REPO_NAME}/restricted/', method='PROPFIND',
+                        basic=cred, headers=propfind)
+    record(entry, '/restricted 只读仍可列举', status in (207, 200),
+           f'status={status}')
+
 
 def check_move(b, repo_id):
     """批量移动端点，源与目标都要校验。

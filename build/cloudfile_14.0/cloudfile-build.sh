@@ -240,6 +240,42 @@ function fetch() {
     checkout_ref seafevents     "$seafevents_ref"
     checkout_ref seafile-server "$cloudfile_server_ref"
     checkout_ref seahub         "$cloudfile_hub_ref"
+
+    apply_patches seafdav
+}
+
+# apply_patches <component>
+#
+# Apply patches/<component>/*.patch to the checked-out source.
+#
+# Used for upstream components CloudFile does not fork. seafdav needs one --
+# its read paths never consulted check_permission_by_path, so a folder the
+# directory ACL made invisible was still listed over WebDAV. Forking it for a
+# fifty-line change would mean a fourth repository to keep synced forever;
+# a patch that must apply cleanly is the cheaper contract.
+#
+# Failure to apply is fatal on purpose. Skipping a security patch because
+# upstream moved a line is how a fixed hole silently reopens -- and the whole
+# point of pinning these components by SHA is that this cannot happen without
+# someone bumping the pin, at which point they are the right person to rebase
+# the patch.
+function apply_patches() {
+    local component=$1
+    local dir="${repo_root}/patches/${component}"
+    [[ -d $dir ]] || return 0
+
+    local patch
+    for patch in "$dir"/*.patch; do
+        [[ -e $patch ]] || continue
+        echo "Applying $(basename "$patch") to ${component}"
+        if ! git -C "${code_path}/${component}" apply "$patch"; then
+            echo "failed to apply $(basename "$patch") to ${component}" >&2
+            echo "the pinned ref may have moved -- rebase the patch against" >&2
+            echo "the new ref. Do not skip it: this one closes a hole in" >&2
+            echo "WebDAV read-side permission enforcement." >&2
+            exit 1
+        fi
+    done
 }
 
 # Record what actually went into this build. Reproducing a report against

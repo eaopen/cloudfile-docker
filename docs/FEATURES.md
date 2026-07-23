@@ -111,7 +111,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | 28 | Web UI | 🟡 | 经 `check_folder_permission`（与 REST 同一咽喉，已验证）；**浏览器中未实操** |
 | 29 | REST API | ✅ | 矩阵 7 项（列举过滤、读取拒绝、建目录拒绝、删除拒绝、正向对照）|
 | 30 | WebDAV **写** | ✅ | 矩阵 3 项：`/restricted` 与 `/secret` 写入被拒、`/public` 写入允许 |
-| 31 | WebDAV **读** | ⚠️ | **已知缺口**：seafdav 列举与 GET 不经过该 RPC，`invisible` 在读侧不生效 |
+| 31 | WebDAV **读** | 🟡 | **本轮补齐**：`patches/seafdav/0001` 给读路径（`get_resource_inst` / `get_member_names` / `get_member_list` / `get_member`）加上 `check_permission_by_path`，不可读一律当作不存在（404 而非 403，否则状态码差异本身就泄露了它的存在）。构建期 `git apply`，**不引入第四个 fork**。矩阵 5 项断言待验证 |
 | 32 | 分享链接 / 下载链接 | ✅ | 矩阵 3 项：`/restricted` 取上传链接被拒、`/secret` 取下载链接被拒、`/public` 允许 |
 | 33 | 目录打包下载 | ✅ | 矩阵 2 项：含不可读子树被拒、可读目录允许 |
 | 34 | 桌面同步客户端 | ✅ | 矩阵 1 项：含不可读内容的库拒绝同步 |
@@ -188,12 +188,10 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
 
 按阻塞程度排。
 
-1. 🔴 **WebDAV 读侧 `invisible` 缺口**（第 31 项）。这是 ACL 现在唯一的
-   **发布阻塞项**：一个"目录对某人不可见"的能力，在 WebDAV 入口下目录仍然可见，
-   这个能力就是不成立的。矩阵已经验证了 WebDAV **写**侧被正确拒绝，读侧则不经
-   `check_permission_by_path` RPC。修复要改 seafdav，建议在
-   `cloudfile-docker/patches/seafdav/` 放补丁由构建脚本 `git apply`，
-   避免引入第四个 fork。
+1. 🟠 **验证 WebDAV 读侧补丁**（第 31 项）。补丁已写好并确认能对 pinned ref
+   干净应用，矩阵也加了 5 条断言（PROPFIND 不含 `/secret`、含 `/public`、
+   直接列举 `/secret` 返回 404、只读目录仍可列举，外加一条防"WebDAV 整个坏掉
+   也全绿"的对照）。**尚未随镜像跑过。**
 
    > **矩阵这一关已经过了（23/23）**，而它的价值在第一次运行就兑现：单元测试
    > （C 62 / Python 87）全绿、静态检查全绿、基线门禁全绿，而第 71 项那个缺陷

@@ -234,15 +234,57 @@ function build_seahub_frontend() {
     npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund
     CI=false npm run build
 
-    echo "Making seahub dist files"
+    echo "Generating seahub static assets"
+
+    # compilejsi18n 与 collectstatic 都会 import seahub.settings，而它
+    # `from seaserv import FILE_SERVER_PORT`。所以 seafile-server 与 libsearpc
+    # 的 python 绑定必须先可导入——它们是纯 Python，不必等 C 编译完成。
+    #
+    # 不需要 ccnet-server：seaserv 自带 ccnet_api，seahub 从不 import ccnet 模块
+    # 本身（上游 dist 脚本带上它属于防御性冗余）。
+    local pypath=${code_path}/site-packages
+    rm -rf "$pypath"
+    mkdir -p "$pypath"
+    cp -r "${code_path}/seafile-server/python/seafile" "$pypath/"
+    cp -r "${code_path}/seafile-server/python/seaserv" "$pypath/"
+    cp -r "${code_path}/libsearpc/pysearpc" "$pypath/"
+
+    # seaserv 在 import 期读取这两个配置目录，没有就会报错。内容只要能解析，
+    # 这里不会真的连数据库。
+    local confdir=${code_path}/build-conf
+    mkdir -p "$confdir" "${code_path}/build-seafile-data"
+    cat > "$confdir/ccnet.conf" <<'CONF'
+[General]
+SERVICE_URL = http://127.0.0.1:8000
+[Database]
+CREATE_TABLES=true
+CONF
+    cat > "$confdir/seafile.conf" <<'CONF'
+[fileserver]
+port=8082
+[database]
+create_tables=true
+CONF
+    export SEAFILE_CENTRAL_CONF_DIR=$confdir
+    export SEAFILE_DATA_DIR=${code_path}/build-seafile-data
+    export PYTHONPATH="${pypath}:${code_path}/thirdpartdir:${seahub}/thirdpart:${PYTHONPATH:-}"
+
     cd "${seahub}"
-    # make dist = compilemessages + compilejsi18n + collectstatic，
-    # 三步都要 django 和 seahub 的依赖在 PYTHONPATH 上。
-    PYTHONPATH="${code_path}/thirdpartdir:${seahub}/thirdpart:${PYTHONPATH:-}" \
-        make dist
+
+    # 刻意不用 `make dist`：它的 locale 目标调 django-admin 这个 console
+    # script，而 pip install -t 把脚本装进 thirdpartdir/bin，不在 PATH 上，
+    # 于是 "django-admin: No such file or directory"。用 `python3 -m django`
+    # 调同一个命令，既不依赖 PATH，也不必修改上游 Makefile。
+    python3 -m django compilemessages
+    python3 manage.py compilejsi18n
+    python3 manage.py collectstatic --noinput -i admin -i termsandconditions
 
     if [[ ! -d ${seahub}/media/assets ]]; then
         echo "ERROR: media/assets 没有生成，镜像将没有 Web 界面" >&2
+        exit 1
+    fi
+    if [[ ! -d ${seahub}/frontend/build ]]; then
+        echo "ERROR: frontend/build 没有生成，前端未被打包" >&2
         exit 1
     fi
 

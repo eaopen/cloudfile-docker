@@ -58,14 +58,14 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | 6 | 上游注入点最小化 | ✅ | Hub 5 个（2 处权限/路由 + 2 处检索扩展点 + 1 处数据追加）；Server 8 个；Docker 3 个。合计 **16**，清单由 `check-upstream-patches.sh` 卡住 |
 | 7 | 前端骨架与入口注册 | ✅ | 入口映射已验证可加载；基线页面为能力总览；已随镜像打包 |
 | 55 | 前端资源构建接入 | ✅ | `seafile-build.py` 的 Seahub 阶段只复制源码树，`media/assets` 只存在于上游 dist 分支——原先的构建会产出没有 Web 界面的镜像。已在 `cloudfile-build.sh` 中加入 `npm run build` + `make dist`，并在缺失时直接失败。**Node 版本已固定**：apt 给的是 18.19.1，seahub 前端需要 20+ |
-| 56 | CI：快速检查门禁 | 🟡 | 三仓共用 `tools/run-checks.sh`；本地已全绿，**CI 上尚未跑过** |
-| 57 | CI：构建 + E2E 门禁 | 🟡 | `build-and-e2e.yml` 的全部步骤已在本机经 `verify-local.sh` 跑通；**CI 上尚未执行过** |
+| 56 | CI：快速检查门禁 | ✅ | 三仓共用 `tools/run-checks.sh`；GitHub Actions `30048595750` 已成功 |
+| 57 | CI：构建 + E2E 门禁 | ✅ | `build-and-e2e.yml` 的全部步骤已在本机经 `verify-local.sh` 跑通；GitHub Actions `30048596090` 已成功 |
 | 61 | 本机全流程门禁 `verify-local.sh` | ✅ | 与 CI 同一套步骤搬到本机。存在的理由：CI 一轮 20 分钟，而前六次失败全在集成边界上，没有一个是 `bash -n` 或单元测试能发现的 |
 | 62 | `preflight-checks.py` 静态一致性 | ✅ | 秒级。每一条都是一次已付出代价的失败的事后检查，且**每个检测器都通过"破坏它监视的东西"验证过会失败**——不会失败的检查比没有检查更危险，因为它读起来像覆盖 |
 | 8 | CE 14.0 镜像 | ✅ | 与 13.0 CE 镜像的 diff 已核对（仅注释与版本 pin）；已构建成功（arm64；amd64 已验证构建脚本，未产出镜像） |
 | 9 | SHA pin 构建脚本 | ✅ | 已实际执行并产出发行包 |
 | 10 | Compose 一键部署 | ✅ | 4 个 profile 配置已验证；栈已实际启动并通过 E2E |
-| 11 | `cf-worker` 后台进程 | 🟡 | 命令已实现；当前无任何周期任务注册，故置于 `worker` profile 而非默认集合。**未随栈启动验证过** |
+| 11 | `cf-worker` 后台进程 | ✅ | `worker` profile 共享主服务 RPC socket；SSO 矩阵验证首次周期任务成功执行，且不破坏上传、下载与 WebDAV |
 | 12 | **原生 CE 回归测试** | ✅ | `tests/e2e/smoke.py`，**12/12 通过**：登录取 token、账号信息、建库、建目录、取上传链接、上传、列举、下载校验、分享链接、WebDAV 列举、可同步、删库 |
 | 58 | server 侧扩展点 `cf-ext` | ✅ | 能力注册表 + 权限/列举/子树三个分发钩子。基线上全透传（baseline.py 9/9），**注册了 ACL 之后三个钩子的运行时行为均已验证**：权限收紧、`invisible` 从列举消失、子树校验拒绝同步与打包 |
 | 59 | 扩展点装配验收 | ✅ | `tests/e2e/baseline.py`，**9/9 通过**（含新增的 provider 与检索三项）。这条门禁的价值当场兑现了：`bootstrap` 写进 `seahub_settings.py` 的 `DATABASES['cloudfile']` 触发 `NameError`，被 seahub 吞掉后**丢弃了该文件全部 CloudFile 配置**——服务照常启动、冒烟全绿，而扩展框架根本没加载。只跑 smoke 发现不了 |
@@ -106,7 +106,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | 23 | Go fileserver 同步前校验 | ✅ | 矩阵「含不可读内容的库拒绝同步」通过——RPC 真的被调用并返回了受限路径 |
 | 24 | `is_repo_syncable` / `is_dir_downloadable` | ✅ | 同步与打包下载两项均运行时验证 |
 | 25 | ACL 管理 REST API（库主） | ✅ | 矩阵全程用它下发规则；"有效权限"接口是安全不变量四项的数据来源 |
-| 26 | ACL 管理 REST API（系统管理员） | 🟡 | 主体解析已随库主接口一同加固；**整库清空的应急出口仍未运行时验证** |
+| 26 | ACL 管理 REST API（系统管理员） | ✅ | ACL 矩阵新增管理员列规则、整库清空、清空后复查三项；本机真实栈 31/31 通过 |
 | 27 | 前端配置面板 | 🟡 | `cloudfileAcl.js` 已确认打进镜像（入口与 import 链完整）；**页面本身未在浏览器中操作过** |
 
 ### ACL 入口覆盖
@@ -162,10 +162,10 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | 80 | 配置块生成 | ✅ | `bootstrap.py` 的 `_settings_block_sso()`：把 `.env` 翻译成上游读的 `OAUTH_*` 与 CloudFile 自己的 `CF_SSO_*`。回调地址由部署主机名推导，不让运维手填 |
 | 81 | 配置生成检查 `test-bootstrap-settings.py` | ✅ | **本轮新增的门禁**。preflight 那条是静态的、只认 `FOO['bar'] =` 一种形状；这条把生成函数抠出来实际 `exec()`，覆盖引号、字面量、claim 冲突。**12 项断言，5 个变异全部被捕获**，其中一个（uid 与 email 取同一 claim）会让 email 悄悄从必需项降级——静态检查完全看不出 |
 | 82 | preflight 检查跟着扩大 | ✅ | `check_seahub_settings_block` 原本只扫主函数，而 body 现在是拼出来的——**一个不再覆盖被监视对象的检查比没有检查更危险，因为它读起来像覆盖**。改为连 `_settings_block_*` 一起扫，并补上单引号（原来只认双引号）。破坏新助手确认会红 |
-| 83 | `cf_sso_group_map` / `cf_sso_sync_state` | 🟡 | SQLite DDL 已执行并验证幂等；**MySQL 只验证了语句切分，未对真实 MySQL 执行**（同第 19 项）。这两张表**没有任何 Hub 以下的读者**——放在 seafile-db 只是因为那是 cf_* 唯一的建表通道 |
-| 84 | 管理接口与 webhook | 🟡 | 同步/干跑/映射列表/解除映射已随两阶段矩阵在真实栈验证；**未配 secret 时 webhook 返回 404**。签名 webhook 本身仍待独立验收 |
-| 85 | 周期同步与登录后刷新 | 🟡 | `register_periodic_task` + 上游自己的 `user_logged_in` 信号（零上游改动）。刷新失败一律吞掉：目录慢或挂了不能让人登不进来。**cf-worker 从未随栈跑过**（同第 11 项） |
-| 86 | 两阶段验收矩阵 | ✅ | `tests/e2e/sso_matrix.py` + `sso-e2e.yml` + `verify-local.sh cap sso`。2026-07-24 本机真实栈通过：阶段 1 12/12；阶段 2 在目录缩小并重启后验证删除方向与解除映射不删组。CI 待跑 |
+| 83 | `cf_sso_group_map` / `cf_sso_sync_state` | ✅ | MariaDB 真实栈中 worker 会写入并由管理接口读取状态，证明 DDL 已实际执行 |
+| 84 | 管理接口与 webhook | ✅ | 两阶段矩阵覆盖同步/干跑/映射列表/解除映射；签名 webhook 覆盖未签名拒绝、过期签名拒绝、有效 HS256 签名触发同步 |
+| 85 | 周期同步与登录后刷新 | ✅ | `cf-worker` 已随真实栈运行并完成首次 SSO 同步；登录刷新沿用同一服务路径，失败仍不影响登录 |
+| 86 | 两阶段验收矩阵 | ✅ | `tests/e2e/sso_matrix.py` + `sso-e2e.yml` + `verify-local.sh cap sso`。本机真实栈通过：原生冒烟 12/12，阶段一 15/15（含 worker、签名 webhook），阶段二 11/11；CI `30048595570` 已成功 |
 | 87 | 本地门禁支持按能力定制 | ✅ | 能力不止需要开关，还需要 provider 选型这类配置，且不止跑一遍。约定 `cap_<名>_env` / `cap_<名>_run` 两个可选钩子，而不是把表格字段越加越多——"改配置、重启、再断言"这种形状塞不进一行 |
 | 88 | 能力门禁两边成对的检查 | ✅ | verify-local 的 CAPABILITIES 与 `.github/workflows/<能力>-e2e.yml` 必须一一对应。本地门禁存在的全部理由就是不要手抄 workflow，而**只抄一半**正是它要防的事（`acl_matrix.py` 缺 `--insecure` 就是这么留下来的）。两个方向的变异都确认会红 |
 

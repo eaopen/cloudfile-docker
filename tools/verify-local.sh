@@ -158,6 +158,7 @@ cap_sso_env() {
     cat <<EOF
 CF_PROVIDER_SSO_DIRECTORY=static
 CF_SSO_GROUP_OWNER=$ADMIN_EMAIL
+CF_SERVICE_SSO_DIRECTORY_SECRET=CloudFile-Local-Sso-Webhook-4417
 CF_SSO_DIRECTORY_STATIC=[{"external_id":"eng","name":"SSO Engineering","members":["sso-matrix-a@example.com","sso-matrix-b@example.com"]},{"external_id":"sales","name":"SSO Sales","members":["sso-matrix-b@example.com"]}]
 EOF
 }
@@ -165,9 +166,14 @@ EOF
 cap_sso_run() {
     local base=$1
 
+    say "启动 SSO 周期 worker"
+    compose --profile worker up -d cf-worker || return 1
+
     say "阶段 1 —— 组织结构落地"
     python3 "$repo/tests/e2e/sso_matrix.py" --phase 1 --url "$base" --insecure \
-        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
+        --require-worker \
+        --webhook-secret CloudFile-Local-Sso-Webhook-4417 || return 1
 
     # 删除方向只有把目录改小才能测到，而"只加不删"的同步在阶段 1 里是全绿的。
     # 重启这一步同时也在测配置每次启动重写——改了 .env 却不生效是这套部署

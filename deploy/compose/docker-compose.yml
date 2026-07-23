@@ -68,6 +68,9 @@ services:
       INIT_SEAFILE_ADMIN_EMAIL: ${INIT_SEAFILE_ADMIN_EMAIL:?set INIT_SEAFILE_ADMIN_EMAIL in .env}
       INIT_SEAFILE_ADMIN_PASSWORD: ${INIT_SEAFILE_ADMIN_PASSWORD:?set INIT_SEAFILE_ADMIN_PASSWORD in .env}
       NON_ROOT: ${NON_ROOT:-false}
+      # The worker reaches Seafile through this Unix-domain RPC socket. It
+      # must live in /shared so the main and worker containers see one socket.
+      SEAFILE_RPC_PIPE_PATH: /shared/seafile/runtime
       # -- CloudFile switches --
       # Read on every start, so flipping one and restarting takes effect.
       CF_ENABLE_SSO: ${CF_ENABLE_SSO:-false}
@@ -107,6 +110,14 @@ services:
         condition: service_healthy
       cache:
         condition: service_healthy
+    healthcheck:
+      # The worker must not run a first sync until setup created the admin
+      # account and bootstrap wrote CloudFile's settings into the shared volume.
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/api2/ping/ | grep -qx '\"pong\"'"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
     restart: unless-stopped
 
   proxy:
@@ -135,21 +146,61 @@ services:
     image: ${CLOUDFILE_IMAGE:-cloudfile/cloudfile:14.0.0-cf.0}
     container_name: cloudfile-worker
     profiles: ["worker", "full"]
-    command: >
-      /opt/seafile/seafile-server-latest/seahub.sh python-env
-      python3 /opt/seafile/seafile-server-latest/seahub/manage.py cf_worker
+    command:
+      - /bin/bash
+      - -lc
+      - >
+        /scripts/create_data_links.sh &&
+        exec /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub.sh python-env
+        python3 /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub/manage.py cf_worker
     volumes:
       - ./data/seafile:/shared
     environment:
       SEAFILE_MYSQL_DB_HOST: db
       SEAFILE_MYSQL_DB_PORT: "3306"
+      SEAFILE_MYSQL_DB_USER: ${SEAFILE_MYSQL_DB_USER:-seafile}
+      SEAFILE_MYSQL_DB_PASSWORD: ${SEAFILE_MYSQL_DB_PASSWORD:?set SEAFILE_MYSQL_DB_PASSWORD in .env}
+      SEAFILE_MYSQL_DB_CCNET_DB_NAME: ${SEAFILE_MYSQL_DB_CCNET_DB_NAME:-ccnet_db}
+      SEAFILE_MYSQL_DB_SEAFILE_DB_NAME: ${SEAFILE_MYSQL_DB_SEAFILE_DB_NAME:-seafile_db}
+      SEAFILE_MYSQL_DB_SEAHUB_DB_NAME: ${SEAFILE_MYSQL_DB_SEAHUB_DB_NAME:-seahub_db}
       CACHE_PROVIDER: redis
       REDIS_HOST: cache
       REDIS_PORT: "6379"
       TIME_ZONE: ${TIME_ZONE:-Etc/UTC}
+      SEAFILE_RPC_PIPE_PATH: /shared/seafile/runtime
+      # Keep the worker's task registry in sync with the application. New
+      # periodic extension tasks can therefore be enabled with the same .env.
+      CF_ENABLE_SSO: ${CF_ENABLE_SSO:-false}
+      CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-false}
+      CF_ENABLE_AUDIT: ${CF_ENABLE_AUDIT:-false}
+      CF_ENABLE_METADATA: ${CF_ENABLE_METADATA:-false}
+      CF_ENABLE_TAGS: ${CF_ENABLE_TAGS:-false}
+      CF_ENABLE_MEILISEARCH: ${CF_ENABLE_MEILISEARCH:-false}
+      CF_ENABLE_ONLYOFFICE: ${CF_ENABLE_ONLYOFFICE:-false}
+      CF_ENABLE_CHECKOUT: ${CF_ENABLE_CHECKOUT:-false}
+      CF_ENABLE_S3_STORAGE: ${CF_ENABLE_S3_STORAGE:-false}
+      CF_ENABLE_EXTERNAL_SOURCES: ${CF_ENABLE_EXTERNAL_SOURCES:-false}
+      CF_SSO_OAUTH_CLIENT_ID: ${CF_SSO_OAUTH_CLIENT_ID:-}
+      CF_SSO_OAUTH_CLIENT_SECRET: ${CF_SSO_OAUTH_CLIENT_SECRET:-}
+      CF_SSO_OAUTH_AUTHORIZATION_URL: ${CF_SSO_OAUTH_AUTHORIZATION_URL:-}
+      CF_SSO_OAUTH_TOKEN_URL: ${CF_SSO_OAUTH_TOKEN_URL:-}
+      CF_SSO_OAUTH_USER_INFO_URL: ${CF_SSO_OAUTH_USER_INFO_URL:-}
+      CF_SSO_OAUTH_SCOPE: ${CF_SSO_OAUTH_SCOPE:-openid email profile}
+      CF_SSO_OAUTH_PROVIDER: ${CF_SSO_OAUTH_PROVIDER:-}
+      CF_SSO_OAUTH_UID_CLAIM: ${CF_SSO_OAUTH_UID_CLAIM:-sub}
+      CF_SSO_OAUTH_EMAIL_CLAIM: ${CF_SSO_OAUTH_EMAIL_CLAIM:-email}
+      CF_SSO_OAUTH_NAME_CLAIM: ${CF_SSO_OAUTH_NAME_CLAIM:-name}
+      CF_SSO_OAUTH_INSECURE: ${CF_SSO_OAUTH_INSECURE:-false}
+      CF_PROVIDER_SSO_DIRECTORY: ${CF_PROVIDER_SSO_DIRECTORY:-}
+      CF_SSO_GROUP_OWNER: ${CF_SSO_GROUP_OWNER:-}
+      CF_SSO_SYNC_INTERVAL: ${CF_SSO_SYNC_INTERVAL:-600}
+      CF_SSO_MAX_REMOVAL_RATIO: ${CF_SSO_MAX_REMOVAL_RATIO:-0.5}
+      CF_SSO_DIRECTORY_STATIC: ${CF_SSO_DIRECTORY_STATIC:-}
+      CF_SERVICE_SSO_DIRECTORY_URL: ${CF_SERVICE_SSO_DIRECTORY_URL:-}
+      CF_SERVICE_SSO_DIRECTORY_SECRET: ${CF_SERVICE_SSO_DIRECTORY_SECRET:-}
     depends_on:
       cloudfile:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
 
   meilisearch:

@@ -38,8 +38,9 @@ docker compose --profile full up -d
 | `worker` | `cf-worker` | 后台任务 |
 | `full` | 全部 | |
 
-`cf-worker` 不在默认集合里：目前还没有任何能力注册周期任务（都在 P2 及以后），
-启动它只会立即退出。等打开需要它的开关后再加 `--profile worker`。
+`cf-worker` 不在默认集合里。启用 SSO 后，它会按 `CF_SSO_SYNC_INTERVAL`
+执行目录同步；后续的搜索、审计等周期任务也使用同一 worker。它与主服务通过共享的
+Seafile RPC socket 通信，必须始终通过本 Compose 文件启动。
 
 ## 功能开关
 

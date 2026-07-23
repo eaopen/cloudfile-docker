@@ -410,6 +410,28 @@ def check_invariant(admin, b, repo_id):
                f'status={status} {body[:120]}')
 
 
+def check_system_admin(admin, repo_id):
+    """Verify the administrator recovery path for a library they do not own."""
+    entry = '系统管理员 ACL'
+    endpoint = f'/api/v2.1/admin/cloudfile/repos/{repo_id}/dir-acl/'
+    status, body = admin.api(endpoint)
+    data = json_body(body) or {}
+    record(entry, '可列出整库规则',
+           status == 200 and data.get('total') == 2,
+           f'status={status} {body[:200]}')
+
+    status, body = admin.api(endpoint, method='DELETE')
+    record(entry, '可清空整库规则（应急出口）',
+           status == 200 and (json_body(body) or {}).get('success') is True,
+           f'status={status} {body[:200]}')
+
+    status, body = admin.api(endpoint)
+    data = json_body(body) or {}
+    record(entry, '清空后规则数为零',
+           status == 200 and data.get('total') == 0,
+           f'status={status} {body[:200]}')
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--url', default='http://localhost')
@@ -447,6 +469,7 @@ def main():
     check_webdav(base, repo_id)
     check_move(b, repo_id)
     check_invariant(admin, b, repo_id)
+    check_system_admin(admin, repo_id)
 
     passed = sum(1 for *_, ok, _ in results if ok)
     total = len(results)

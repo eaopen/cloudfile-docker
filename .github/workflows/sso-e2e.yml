@@ -96,10 +96,12 @@ jobs:
             echo "CLOUDFILE_IMAGE=cloudfile/cloudfile:$CF_VERSION"
             echo "CF_PROVIDER_SSO_DIRECTORY=static"
             echo "CF_SSO_GROUP_OWNER=$ADMIN_EMAIL"
+            echo "CF_SERVICE_SSO_DIRECTORY_SECRET=CloudFile-CI-Sso-Webhook-4417"
             echo 'CF_SSO_DIRECTORY_STATIC=[{"external_id":"eng","name":"SSO Engineering","members":["sso-matrix-a@example.com","sso-matrix-b@example.com"]},{"external_id":"sales","name":"SSO Sales","members":["sso-matrix-b@example.com"]}]'
           } >> .env
           grep '^CF_ENABLE_SSO=' .env       # 开关确实开着，别在红了之后才发现
           docker compose up -d
+          docker compose --profile worker up -d cf-worker
           docker compose ps
 
       # 先证明开着 SSO 也没把原生功能弄坏，再测 SSO 本身。顺序有意为之：
@@ -114,7 +116,9 @@ jobs:
         run: |
           python3 cloudfile-docker/tests/e2e/sso_matrix.py --phase 1 \
             --url https://127.0.0.1 --insecure \
-            --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
+            --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
+            --require-worker \
+            --webhook-secret CloudFile-CI-Sso-Webhook-4417
 
       - name: 目录变小并重启（eng 只剩 A，sales 消失）
         working-directory: cloudfile-docker/deploy/compose

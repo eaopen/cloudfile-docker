@@ -83,6 +83,14 @@ ENV MARIADB_TLS_DISABLE_PEER_VERIFICATION=1
 WORKDIR /opt/seafile
 COPY seafile-server-${SEAFILE_VERSION} /opt/seafile/seafile-server-${SEAFILE_VERSION}
 
+# A background worker runs in a separate container. Keep the Seafile RPC
+# socket in the shared data volume when SEAFILE_RPC_PIPE_PATH is supplied, so
+# both containers can use the same server-side RPC endpoint.
+RUN sed -i 's|seafile_rpc_pipe_path=${INSTALLPATH}/runtime|seafile_rpc_pipe_path=${SEAFILE_RPC_PIPE_PATH:-${INSTALLPATH}/runtime}|' \
+      /opt/seafile/seafile-server-${SEAFILE_VERSION}/seafile.sh \
+      /opt/seafile/seafile-server-${SEAFILE_VERSION}/seahub.sh \
+      /opt/seafile/seafile-server-${SEAFILE_VERSION}/seafile-monitor.sh
+
 EXPOSE 80
 
 CMD ["/sbin/my_init", "--", "/scripts/enterpoint.sh"]

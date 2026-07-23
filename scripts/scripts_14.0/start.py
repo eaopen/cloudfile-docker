@@ -44,6 +44,9 @@ def watch_controller():
 def main():
     if not exists(shared_seafiledir):
         os.mkdir(shared_seafiledir)
+    rpc_pipe_dir = os.getenv('SEAFILE_RPC_PIPE_PATH')
+    if rpc_pipe_dir:
+        os.makedirs(rpc_pipe_dir, exist_ok=True)
     if not exists(generated_dir):
         os.makedirs(generated_dir)
 

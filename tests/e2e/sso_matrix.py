@@ -26,6 +26,9 @@
 """
 
 import argparse
+import base64
+import hashlib
+import hmac
 import json
 import sys
 import time
@@ -175,9 +178,34 @@ def check_enabled(admin):
            f'providers={data.get("providers")}')
 
 
+def check_worker(admin, timeout):
+    """Verify the scheduled path, not merely the admin button.
+
+    The worker's first task is due immediately.  It may run before this matrix
+    creates its sample users, which is intentional: a directory member that
+    is not yet a Seafile account is reported as unresolved but must not make
+    the scheduler or the shared RPC connection fail.
+    """
+    deadline = time.time() + timeout
+    last = ''
+    while time.time() < deadline:
+        status, body = admin.api('/api/v2.1/admin/cloudfile/sso/sync/')
+        data = json_body(body) or {}
+        if status == 200 and data.get('last_run') and data.get('last_status') == 'ok':
+            record('worker', '周期 worker 已完成首次 SSO 同步', True)
+            return
+        last = f'status={status} body={body[:240]}'
+        time.sleep(2)
+    record('worker', '周期 worker 已完成首次 SSO 同步', False, last)
+
+
 # -- 阶段 1 ----------------------------------------------------------------
 
-def phase_one(admin, base):
+def phase_one(admin, base, require_worker=False, worker_timeout=90,
+              webhook_secret=''):
+    if require_worker:
+        check_worker(admin, worker_timeout)
+
     a_token = ensure_user(admin, base, A_EMAIL, A_PASSWORD)
     b_token = ensure_user(admin, base, B_EMAIL, B_PASSWORD)
 
@@ -226,17 +254,45 @@ def phase_one(admin, base):
            bool(data.get('last_run')) and data.get('last_status') == 'ok',
            f'{body[:300]}')
 
-    check_webhook_closed(base)
+    check_webhook(base, webhook_secret)
 
 
-def check_webhook_closed(base):
-    """没有配 secret 时，webhook 必须不存在。
+def _webhook_token(secret, expired=False):
+    """Create the small HS256 token the webhook accepts without PyJWT."""
+    def encode(value):
+        raw = json.dumps(value, separators=(',', ':')).encode()
+        return base64.urlsafe_b64encode(raw).rstrip(b'=')
 
-    它会触发对外调用，而没有 secret 就没有任何办法把目录服务和网络上的其他人
-    区分开。此处断言的是"未配置时拒绝存在"，不是"未配置时放行"。
-    """
-    status, body = request(
-        base + '/api/v2.1/cloudfile/sso/directory-webhook/', method='POST')
+    header = encode({'alg': 'HS256', 'typ': 'JWT'})
+    payload = encode({'exp': int(time.time()) + (-60 if expired else 60)})
+    signed = header + b'.' + payload
+    signature = hmac.new(secret.encode(), signed, hashlib.sha256).digest()
+    return (signed + b'.' + base64.urlsafe_b64encode(signature).rstrip(b'=')).decode()
+
+
+def check_webhook(base, secret=''):
+    """Verify both safe-off and signed callback paths."""
+    endpoint = base + '/api/v2.1/cloudfile/sso/directory-webhook/'
+    if secret:
+        status, body = request(endpoint, method='POST')
+        record('webhook', '未签名回调被拒绝', status == 403,
+               f'status={status} {body[:200]}')
+        expired = _webhook_token(secret, expired=True)
+        status, body = request(endpoint, method='POST',
+                               headers={'Authorization': f'Token {expired}'})
+        record('webhook', '过期签名回调被拒绝', status == 403,
+               f'status={status} {body[:200]}')
+        valid = _webhook_token(secret)
+        status, body = request(endpoint, method='POST',
+                               headers={'Authorization': f'Token {valid}'})
+        result = json_body(body) or {}
+        record('webhook', '有效签名触发目录同步',
+               status == 200 and result.get('status') == 'ok',
+               f'status={status} {body[:200]}')
+        return
+
+    # It triggers outbound calls, so with no shared secret it must not exist.
+    status, body = request(endpoint, method='POST')
     record('webhook', '未配置 secret 时 webhook 不可用', status in (403, 404),
            f'status={status} {body[:200]}')
 
@@ -303,6 +359,11 @@ def main():
     ap.add_argument('--admin', required=True)
     ap.add_argument('--admin-password', required=True)
     ap.add_argument('--timeout', type=int, default=600)
+    ap.add_argument('--require-worker', action='store_true',
+                    help='require cf-worker to complete its first scheduled sync')
+    ap.add_argument('--worker-timeout', type=int, default=90)
+    ap.add_argument('--webhook-secret', default='',
+                    help='verify signed directory webhook with this shared secret')
     ap.add_argument('--insecure', action='store_true',
                     help='接受自签证书。CADDY_TLS=internal 时必需。')
     args = ap.parse_args()
@@ -325,7 +386,8 @@ def main():
     print(f'\n阶段 {args.phase}…', flush=True)
     check_enabled(admin)
     if args.phase == 1:
-        phase_one(admin, base)
+        phase_one(admin, base, args.require_worker, args.worker_timeout,
+                  args.webhook_secret)
     else:
         phase_two(admin, base)
 

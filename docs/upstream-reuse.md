@@ -16,7 +16,7 @@
 | 0 | SSO / 身份接入 | ✅ 已做 | 登录整套都在 CE 里，且无 Pro 门控。缺的只有**组织映射** |
 | 1 | metadata-server 协议 | ✅ 已做 | **CloudFile 自建存储引擎，说同一套 HTTP 协议**。唯一闭源的就是协议背后的存储引擎；前端、Hub API、**投喂管线**（seafevents）全部开源。分两步：官方 server 作可选适配组件先验证，长期权威模型归 CloudFile |
 | 2 | OnlyOffice 门控盘点 | ⬜ 未做 | 决定 3.2 的规模，顺带给 3.1 的 Hub 侧成本定量 |
-| 3 | seasearch vs meilisearch | ✅ 已做 | **seasearch，且不经我们的 provider**。它在 CE 里已完整集成、无 Pro 门控，走的是搜索视图里一条独立分支；meilisearch 作为可选 provider 保留 |
+| 3 | seasearch vs meilisearch | ✅ 已做 | **默认 seasearch（后端零新增代码），但接口的 Pro 门要 CloudFile 解除**（`Search` + `public_repos_search` 两个接口，URL 影子，零上游改动）；meilisearch 作可选 provider。完整方案见 [search.md](search.md) |
 
 探针 0 不在原来的三个里面——它是做簇 B 时顺手做的，而它的结论**改变了这个
 特性的形状**：原计划写一个认证后端，实际只需要写组织映射。所以它被补进来，
@@ -121,16 +121,26 @@ sed -n '105,115p' seahub/auth/__init__.py
 再从 seafevents 的 `repo_metadata/`（构建时 clone，SHA 锁在 release.yaml）取出
 SQL 生成逻辑，量一量 `/query` 那个端点到底要执行多复杂的 SQL。
 
-### 结论：由 CloudFile 自建元数据存储引擎，说同一套 HTTP 协议
+### 结论：默认用官方 metadata-server；自建存储引擎是"官方不满足需求时"的后备
 
-**先纠正这份探针早先的措辞。** 它最初把结论框成成本问题（"别重写前端所以写个
-兼容服务"）。真正承重的理由不是成本，是**归属**：如果 CloudFile 要"整套开源 /
-可独立构建 / 可自由改元数据模型 / 可重新品牌化商业分发"，那个闭源 metadata-server
-就**不能是不可替代的核心**。"写一个兼容服务"和"自己掌握权威数据模型"是**同一件
-产物**，后一种说法才点出了为什么要做它。成本只是顺带的好处。
+**这条结论经历过两次调整，把它记全，免得读起来自相矛盾。**
 
-好消息是：**唯一闭源的就是协议背后那个存储/查询引擎，整条投喂管线是开源的。**
-把这条边界钉死很重要——一份对"闭源边界"含糊的探针，正是日后误导实现者的东西。
+- 第一版（成本视角）：别重写前端，写个协议兼容的服务。
+- 第二版（归属视角）：为了整套开源/可自建/可分发，把权威模型收回自己手里，
+  自建存储引擎。
+- **第三版（现行原则）**：[search.md](search.md) 第一节把 CE 扩展版的原则正式定为
+  **优先复用官方组件，是否开源不是首要约束**。据此，**默认直接用官方
+  `seafileltd/seafile-md-server` 镜像**，自建协议兼容版本降级为**后备**——
+  只有当官方组件不能满足 CE 扩展需求时才做。
+
+三版不矛盾，是同一件事在不同优先级下的排序：**官方镜像是起点**（零成本、零 fork），
+**协议兼容的自建版是留好的退路**。而下面这条边界正是"退路随时可走"的保证——
+保留这层 seam 不花成本。
+
+**唯一闭源的就是协议背后那个存储/查询引擎，整条投喂管线是开源的。**
+把这条边界钉死很重要：它意味着**官方 server 只是"协议的一个实现"**，
+`METADATA_SERVER_URL` 指向谁都行——今天指官方镜像，哪天官方不够用，指自建后端，
+前端/API/投喂 worker 一个字节不用改。
 
 | 层 | 位置 | 开源？ |
 |---|---|---|
@@ -297,10 +307,19 @@ seahub/api2/views.py  搜索入口
 
 含义有三点：
 
-1. **seasearch 用起来零 CloudFile 代码。** 它在 CE 里已完整集成、**无 Pro
-   门控**，客户端在 seafevents，`[SEASEARCH]` 配置段 bootstrap 已经在写
-   （默认 `seasearch_url = http://seasearch:4080`、默认启用）。跟随上游意味着
-   连 provider 都不用注册——配 seafevents 即可。
+1. **seasearch 的索引与查询后端零 CloudFile 代码。** 它在 CE 里已完整集成、
+   客户端在 seafevents，`[SEASEARCH]` 配置段 bootstrap 已经在写（默认
+   `seasearch_url = http://seasearch:4080`、默认启用）。索引侧、查询侧都用上游，
+   连 provider 都不用注册。
+
+   > ⚠️ **更正一处早先的夸大**：这里最初写"seasearch 端到端零 CloudFile 代码"，
+   > **不准确**。全局搜索接口 `seahub/api2/views.py:458 class Search` 被
+   > `permission_classes = (IsAuthenticated, IsProVersion)` 挡着，CE 下恒 403——
+   > 即便 seasearch 配好了也搜不了。**接口那层 Pro 门必须由 CloudFile 解除**
+   > （只影响 `Search` 与 `public_repos_search` 两个接口，经 URL 影子子类覆盖
+   > `permission_classes`，零上游改动；**不要动全局 `is_pro_version()`**——它被
+   > 56 个文件引用，会连带放开 SAML/审计/组织管理）。零的是**后端**，不是端到端。
+   > 详见 [search.md](search.md)。
 2. **我们的 `register_search_provider` 扩展点，本质是"seasearch 之外的后端"。**
    meilisearch、企业自有检索走它；seasearch 不走。这不削弱特性 64 的价值——
    查询侧扩展点仍是让 meilisearch/企业检索零上游改动的地基——但它澄清了

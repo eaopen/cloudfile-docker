@@ -212,7 +212,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
-| 38 | 文件属性扩展 | ⬜ | **探针 1 已定方向：CloudFile 自建存储引擎，说 metadata-server 的 HTTP 协议。** 唯一闭源的是协议背后的存储引擎；前端（352 文件）、Hub API（3745 行）、投喂管线（seafevents）全部开源。分两步：官方 server 先作可选适配组件验证，长期权威模型归 CloudFile。见 [upstream-reuse.md](upstream-reuse.md) 探针 1 |
+| 38 | 文件属性扩展 | ⬜ | **默认直接用官方 `seafileltd/seafile-md-server` 镜像**（现行原则：优先复用官方组件）。前端（352 文件）、Hub API（3745 行）、投喂管线（seafevents）全部开源、可白拿；唯一闭源的存储引擎经 `METADATA_SERVER_URL` 挂载。自建协议兼容后端是**后备**——官方不满足需求时才做，seam 已留好。见 [upstream-reuse.md](upstream-reuse.md) 探针 1 |
 | 39 | 标签 | ⬜ | 与 38 同表同分支，同样白拿上游前端（`seahub/tags/`、`file_tags/`、`repo_tags/` + 88 个标签前端文件）。标签的递归 `sub_links` 在 Hub 侧就展开成 `IN (...)`，服务端不必特殊处理 |
 | 42 | 移动重命名时元数据关联更新 | ⬜ | 与 38 同分支。**探针 1 更正了此前的判断**：投喂走 seafevents 的提交遍历，很可能**不依赖 `file_op` 钩子**——移动/重命名本就在提交流里。落地前验证 |
 
@@ -220,7 +220,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
-| 40 | 索引与检索 | ⬜ | **探针 3 已定方向：默认用 seasearch，且它不经我们的 provider。** seasearch 在 CE 里已完整集成、无 Pro 门控，走搜索视图里一条独立分支（`ai_search_files`），配 seafevents 即可，零 CloudFile 代码。meilisearch 作为可选 provider 保留（填 `es_search` 槽）。⚠️ 两者同配时 `HAS_FILE_SEARCH` 分支优先，meilisearch 会盖过 seasearch——见 [upstream-reuse.md](upstream-reuse.md) 探针 3 |
+| 40 | 索引与检索 | ⬜ | **完整方案见 [search.md](search.md)。** 默认官方 seasearch（索引/查询后端零新增代码）；P0 精确解除全局搜索接口的 Pro 门（`Search` + `public_repos_search` 两个接口，经 URL 影子子类覆盖 `permission_classes`，**零上游改动**，**不动全局 `is_pro_version()`**）；P1 抽 `SearchBackend`；P2 meilisearch（索引侧走 cf-worker，不 fork seafevents）；P3 元数据组合检索。⚠️ provider 与 seasearch 同配时 `HAS_FILE_SEARCH` 分支优先——见 search.md |
 | 41 | 属性 / 标签 / 内容组合检索 | ⬜ | **跨簇（D × E）**。经第 67 项的契约解耦：D 喂字段、E 翻译过滤，各自独立验收；端到端验收属 `dev` 上的集成门禁，不归任一分支 |
 
 Compose 的 `search` profile 与 `cf-worker` 已就位，实现时不需要再动部署。

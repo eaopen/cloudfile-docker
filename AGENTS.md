@@ -21,10 +21,16 @@ workspace/
 
 ## 一个必须知道的前提：上游 14.0 CE 不存在
 
+> **⚠️ 基线正在从 14.0 退回 13.0**（已决策，见 [docs/decision-image-baseline.md](docs/decision-image-baseline.md)）。
+> 理由正是本节这个前提：14.0 CE 从未发布，而 13.0 已发布、有官方镜像、且已含
+> roadmap 依赖的全部栈（metadata/tags/seasearch，Django 5.2）。下面这段描述的
+> "从源码重构 14.0 CE"在迁移完成前仍然成立，迁移后本节将改写为"以已发布 13.0
+> 为基线"。
+
 - `haiwen/seafile-server` 只有 `13.0` 和 `master` 分支，**没有 `14.0` 分支**
 - 14.0 只有 `-pro` tag，**没有 `-server`（CE）tag**
 - 上游提供 `image/seafile_13.0`（CE）和 `image/pro_seafile_14.0`（Pro），
-  **没有 CE 14.0 镜像**
+  **没有 CE 14.0 镜像**——这也是退回 13.0 的直接依据
 
 两个后果贯穿整个构建：
 

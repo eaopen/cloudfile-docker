@@ -21,6 +21,10 @@ thumbnail、sdoc、seafile-ai……），不重新打包进 CloudFile 镜像—�
 > **这条修订了此前"自建元数据存储引擎"的表述**：默认用官方
 > `seafile-md-server`，自建协议兼容版本降级为后备。见 [upstream-reuse.md](upstream-reuse.md)
 > 探针 1 的第三版结论。
+>
+> **同一原则也推出了镜像基线退回 CE 13.0** 的决策——13.0 已发布、有官方镜像、
+> 已含全部栈，而 14.0 CE 从未发布、只能从源码重构。见
+> [decision-image-baseline.md](decision-image-baseline.md)。
 
 ---
 

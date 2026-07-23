@@ -269,8 +269,19 @@ def validate_args(usage, options):
 
     # [ version ]
     def check_project_version(version):
-        '''A valid version must be like 1.2.2, 1.3'''
-        if not re.match('^([0-9])+(\.([0-9])+)+$', version):
+        '''A valid version must be like 1.2.2, 1.3, or 14.0.0-cf.0
+
+        CloudFile releases carry a suffix after the upstream numeric version
+        -- 14.0.0-cf.0 for a release, 14.0.0-cf.0-dir-acl for a capability
+        branch build -- so upstream's numbers-and-dots-only check rejects
+        every build we make. The version is only ever used as a directory
+        name, a settings string and an image tag, none of which are parsed
+        numerically, so widening this is safe.
+
+        (Raw string: upstream's plain literal makes Python emit a
+        SyntaxWarning for the \\. escape on every run.)
+        '''
+        if not re.match(r'^[0-9]+(\.[0-9]+)+(-[0-9A-Za-z.\-]+)?$', version):
             error('%s is not a valid version' % version, usage=usage)
 
     version = get_option(CONF_VERSION)

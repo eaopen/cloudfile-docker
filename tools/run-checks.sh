@@ -121,7 +121,26 @@ run "脚本语法" bash -c "
     done
 "
 
-# 7. release.yaml 可解析且关键键齐全
+# 7. 构建脚本副本与上游的偏离没有变大
+#
+# build/cloudfile_14.0/cloudfile-build.py 是上游 seafile-build.py 的副本，只改
+# 了一处（放宽版本号校验以接受 14.0.0-cf.0）。上游更新那个文件时，我们的副本
+# 会**静默变旧**——和上游改动登记一样的问题，所以同样用脚本卡住。
+run "构建脚本副本偏离" bash -c "
+    upstream='$docker_repo/build/seafile_14.0/seafile-build.py'
+    ours='$docker_repo/build/cloudfile_14.0/cloudfile-build.py'
+    hunks=\$(diff -u \"\$upstream\" \"\$ours\" | grep -c '^@@' || true)
+    if [ \"\$hunks\" != '1' ]; then
+        echo \"副本与上游相差 \$hunks 处，预期 1 处（版本号校验）。\"
+        echo \"上游可能更新了 seafile-build.py：先 diff 确认，再决定是同步副本\"
+        echo \"还是接受新的偏离并更新这个检查。\"
+        diff -u \"\$upstream\" \"\$ours\" | head -40
+        exit 1
+    fi
+    echo '仅 1 处预期偏离'
+"
+
+# 8. release.yaml 可解析且关键键齐全
 run "发布清单" bash -c "
     set -e
     for k in product image forks.cloudfile_server.ref forks.cloudfile_hub.ref \

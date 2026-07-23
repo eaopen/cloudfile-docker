@@ -214,7 +214,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 |---|---|---|---|
 | 38 | 文件属性扩展 | ⬜ | **默认直接用官方 `seafileltd/seafile-md-server` 镜像**（现行原则：优先复用官方组件）。前端（352 文件）、Hub API（3745 行）、投喂管线（seafevents）全部开源、可白拿；唯一闭源的存储引擎经 `METADATA_SERVER_URL` 挂载。自建协议兼容后端是**后备**——官方不满足需求时才做，seam 已留好。见 [upstream-reuse.md](upstream-reuse.md) 探针 1 |
 | 39 | 标签 | ⬜ | 与 38 同表同分支，同样白拿上游前端（`seahub/tags/`、`file_tags/`、`repo_tags/` + 88 个标签前端文件）。标签的递归 `sub_links` 在 Hub 侧就展开成 `IN (...)`，服务端不必特殊处理 |
-| 42 | 移动重命名时元数据关联更新 | ⬜ | 与 38 同分支。**探针 1 更正了此前的判断**：投喂走 seafevents 的提交遍历，很可能**不依赖 `file_op` 钩子**——移动/重命名本就在提交流里。落地前验证 |
+| 42 | 移动重命名时元数据关联更新 | ⬜ | 与 38 同分支。投喂走 seafevents 的提交遍历，很可能**不依赖 `file_op` 钩子**——移动/重命名本就在提交流里。落地前验证 |
 
 **簇 E（`feature/search`）** —— 与簇 D **可真并行**，靠第 67 项的过滤契约解耦。
 
@@ -263,7 +263,7 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
-| 49 | S3 / 多存储 | ⬜ | **完整方案见 [storage.md](storage.md)。此前记"1 登记项"是严重低估。** 核心文件服务只有 FS：Go fileserver 仅 `backend_fs.go`、C 侧仅 `obj-backend-fs.c`（GC/FSCK 也经它）。要补 Go `backend_s3.go` + C `obj-backend-s3.c` + 两侧后端选择与多存储 `storage_id` 路由，覆盖上传/下载/同步/历史/GC/FSCK/迁移。seafobj（Python 读侧）已带 S3/OSS/Swift/Ceph，白捡。沿用官方 `SEAF_SERVER_STORAGE_TYPE`/`S3_*` 变量，不造私有格式。**roadmap 最重的构建项之一** |
+| 49 | S3 / 多存储 | ⬜ | **完整方案见 [storage.md](storage.md)。** 核心文件服务只有 FS：Go fileserver 仅 `backend_fs.go`、C 侧仅 `obj-backend-fs.c`（GC/FSCK 也经它）。要补 Go `backend_s3.go` + C `obj-backend-s3.c` + 两侧后端选择与多存储 `storage_id` 路由，覆盖上传/下载/同步/历史/GC/FSCK/迁移。seafobj（Python 读侧）已带 S3/OSS/Swift/Ceph，白捡。沿用官方 `SEAF_SERVER_STORAGE_TYPE`/`S3_*` 变量，不造私有格式。**roadmap 最重的构建项之一** |
 | 96 | 反病毒集成（簇 I） | ⬜ | **Pro 对标补入**（[pro-parity.md](pro-parity.md)）。Pro 的"缺失机制"里唯一没归簇的一项：上传/文件扫描在 server/pipeline 侧，**镜像已主动剥离 clamav**。落地前先做门控盘点（同 OnlyOffice 探针 2 的做法），确认哪些是真依赖、哪些只是商业门控 |
 | 50 | SMB/NFS 外部资料源 | ⬜ | 零上游改动，但**代价是另起一个入口**——不改上游就进不了原生库列表。见 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 缺口 3。这是产品决定，不是技术决定 |
 | 51 | 外部源增量扫描 | ⬜ | 依赖 50 + `cf-worker` |

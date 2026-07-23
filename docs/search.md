@@ -4,8 +4,7 @@
 [upstream-reuse.md](upstream-reuse.md)（探针 3）、[FEATURES.md](FEATURES.md)、
 [EXTENSION-POINTS.md](EXTENSION-POINTS.md)。
 
-本文是对一份外部方案的**核对与确认**——凡是"确认"的，都在下面给出可复现的
-代码位置；凡是与代码不符的，直接改正。
+下面每条结论都附可复现的代码位置。
 
 ---
 
@@ -16,10 +15,10 @@ CE 扩展版的原则正式调整为：
 > **优先复用 Seafile 官方镜像与现有实现——无论它是开源还是仅二进制依赖。
 > 只有当官方组件不能满足 CE 扩展需求时，才自行适配或替换。**
 
-这与"最小化上游改动"的成本模型一致：复用一个官方镜像 = 零 fork 成本。它也**收窄**
-了此前"自建元数据存储引擎"的表述——见 [upstream-reuse.md](upstream-reuse.md) 探针 1
-的修订：**默认用官方 metadata-server**，协议兼容的自建版本降级为"官方不满足需求时
-的后备"，而不是起点。保留协议这层 seam 不花成本，正好把后备选项一直留着。
+这与"最小化上游改动"的成本模型一致：复用一个官方镜像 = 零 fork 成本。元数据同理：
+**默认用官方 metadata-server**，协议兼容的自建版本作"官方不满足需求时的后备"，
+而不是起点（见 [upstream-reuse.md](upstream-reuse.md) 探针 1）。保留协议这层 seam
+不花成本，正好把后备选项一直留着。
 
 ### 默认复用的官方组件
 
@@ -43,7 +42,7 @@ Compose 里**直接引用官方镜像**，不重新打包进 CloudFile 镜像—
 
 ## 二、核对：CE 的搜索链路，绝大部分已经在了
 
-逐个确认外部方案里的判断，附代码位置：
+CE 搜索链路的现状，附代码位置：
 
 | 判断 | 结论 | 代码位置 |
 |---|---|---|
@@ -87,9 +86,9 @@ Pro 门。解除面非常小。
 
 ## 三、确认的做法：用 URL 影子解除门控，**零上游改动**
 
-外部方案说"改成 CloudFile 自己的 `IsSearchAvailable`"——方向对，但**不需要编辑
-`views.py`**。CloudFile 的 URL 注入点已经把扩展路由**排在原生路由之前**，注释里
-写明"让扩展在必要时遮蔽原生入口"：
+解除门控用 CloudFile 自己的 `IsSearchAvailable`，且**不需要编辑 `views.py`**：
+CloudFile 的 URL 注入点已经把扩展路由**排在原生路由之前**，注释里写明"让扩展在
+必要时遮蔽原生入口"：
 
 ```python
 # seahub/utils/rooturl.py  —— CloudFile patterns come first so an extension
@@ -127,10 +126,8 @@ registry.register_urls([
 **代价核对**：新增文件 + 一行 `register_urls`，三仓上游清单 **5/8/3 逐字节不变**。
 这比"编辑 `views.py` 的 permission_classes"更省——后者会把 Hub 登记项从 5 涨到 6。
 
-> **这同时纠正探针 3 的一处夸大**：此前 [upstream-reuse.md](upstream-reuse.md) 写
-> "seasearch 零 CloudFile 代码"。**不准确**——seasearch 的**索引与查询后端**确实
-> 零新增代码（都在 seafevents），但**接口那层 Pro 门必须由 CloudFile 解除**。
-> 零的是后端，不是端到端。已在探针 3 更正。
+> 所以 seasearch 的**索引与查询后端**零新增代码（都在 seafevents），但**接口那层
+> Pro 门必须由 CloudFile 解除**——零的是后端，不是端到端。
 
 前端入口：CE 本来就按搜索可用性显示/隐藏搜索框（读 `HAS_FILE_SEARCH` 一类信号），
 解除门控后它会自然出现，无需前端改造。
@@ -139,7 +136,7 @@ registry.register_urls([
 
 ## 四、搜索后端抽象（P1），以及它该住在哪
 
-外部方案建议的接口是对的：
+后端抽象接口：
 
 ```python
 class SearchBackend:

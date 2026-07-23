@@ -4,9 +4,9 @@
 [EXTENSION-POINTS.md](EXTENSION-POINTS.md)（缺口 4）、[FEATURES.md](FEATURES.md)、
 [BRANCHES.md](BRANCHES.md)。
 
-本文是对一份外部方案的**核对与确认**——凡"确认"的给出代码位置；凡与代码不符
-或此前文档记错的，直接改正。**本轮最重要的一条改正**：S3 **不是**"1 个新增登记项"，
-而是要在**核心文件服务里补齐存储驱动**。见第四节。
+**关键结论**：S3 **不是**"1 个新增登记项"，而是要在**核心文件服务里补齐存储
+驱动**——核心路径（Go fileserver + C seaf-server/GC/FSCK）目前只有 FS 后端，
+seafobj 的 S3 只在 Python 读侧。见第四节。
 
 ---
 
@@ -73,13 +73,12 @@ storage_classes_file = /shared/conf/seafile_storage_classes.json
 
 ---
 
-## 四、代码边界（本轮核对的重点）
+## 四、代码边界
 
-> **纠正 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 缺口 4 与 [BRANCHES.md](BRANCHES.md)
-> "S3 比预想便宜"那条。** 那两处基于"seafobj（Python 读取侧）上游已带 S3"就判断
-> S3 几乎白捡。**但 seafobj 只是 Python 读侧**（seahub 缩略图、seafevents 索引读对象），
-> **不在核心文件服务的写入/服务路径上**。核心路径是 Go fileserver（14.0 的 HTTP 文件
-> 服务）与 C 的 seaf-server / GC / FSCK——**这两处目前只有 FS 后端**。
+> **S3 不是"1 个新增登记项"，而是要在核心文件服务里补齐存储驱动。** seafobj
+> （Python 读侧，seahub 缩略图/seafevents 索引读对象）确实已带 S3，但它**不在核心
+> 文件服务的写入/服务路径上**。核心路径是 Go fileserver（14.0 的 HTTP 文件服务）
+> 与 C 的 seaf-server / GC / FSCK——**这两处目前只有 FS 后端**。
 
 实测（cloudfile-server，无 S3 后端存在）：
 
@@ -105,7 +104,7 @@ storage_classes_file = /shared/conf/seafile_storage_classes.json
 
 ## 五、镜像与许可边界
 
-外部方案提到"以官方 `seafileltd/seafile-mc` 为基础构建"。**核对后要澄清一处**：
+关于"以官方 `seafileltd/seafile-mc` 为基础构建"，有一处要澄清：
 
 - `seafile-mc` 是 **CE 13.0** 镜像。**上游没有 CE 14.0 镜像**（[AGENTS.md](../AGENTS.md)
   的既有前提），所以 CloudFile 的 14.0 镜像**不是**基于任何官方 CE 镜像，而是

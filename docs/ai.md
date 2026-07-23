@@ -4,7 +4,7 @@ CE 扩展版的 AI 能力规格，最低目标是**文件自动属性 / 自动�
 配套：[search.md](search.md)（检索）、[upstream-reuse.md](upstream-reuse.md)（元数据）、
 [pro-parity.md](pro-parity.md)、[FEATURES.md](FEATURES.md)、[BRANCHES.md](BRANCHES.md)。
 
-本文是对"需要哪些新代码"的核对与确认，凡"确认"的给出代码位置。
+下面每条结论都附代码位置，重点是分清"CE 已有、启用即可"与"需要新写"。
 
 ---
 

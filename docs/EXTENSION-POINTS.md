@@ -157,18 +157,17 @@ seahub 自带的 `seahub/signals.py` 只有 `repo_created`、`upload_file_succes
 **这就是"零上游成本"的真实前提**：代价为 0 是因为另起了一个入口，用户会看到两套
 文件浏览界面。要不要付这个成本，是产品决定，不是技术决定——写进 roadmap，别藏在一个 `0` 后面。
 
-### 缺口 4：核心文件服务只有 FS 后端 🔴（此前严重低估）
+### 缺口 4：核心文件服务只有 FS 后端 🔴
 
-**这条早先记成"S3 唯一的新增登记项"，是错的。** 完整核对见 [storage.md](storage.md)
-第四节。真实情况：
+完整核对见 [storage.md](storage.md)。核心文件服务两侧都只有 FS：
 
-- `common/obj-store.c:28` 写死 `obj_backend_fs_new`，且只有 `obj-backend-fs.c` +
+- `common/obj-store.c:28` 写死 `obj_backend_fs_new`，只有 `obj-backend-fs.c` +
   遗留 `riak`——**没有 S3**。C 侧的 seaf-server / GC（`server/gc/gc-core.c`）/
   FSCK（`fsck.c`）都经这个 `obj_store`。
 - **Go fileserver `fileserver/objstore/` 只有 `backend_fs.go`**（113 行），`New()`
   写死 `newFSBackend`，`option.go` 不解析 S3/multiple。14.0 的 HTTP 文件服务走这里。
-- seafobj（Python）确实已带 S3/OSS/Swift/Ceph——**但那只是 Python 读侧**
-  （seahub 缩略图、seafevents 索引读对象），**不在核心写入/服务路径上**。
+- seafobj（Python）已带 S3/OSS/Swift/Ceph，**但那只是 Python 读侧**（seahub 缩略图、
+  seafevents 索引读对象），**不在核心写入/服务路径上**。
 
 所以 S3 要补的是**核心文件服务的存储驱动**：Go `backend_s3.go` + C `obj-backend-s3.c`
 + 两侧的后端选择与多存储 `storage_id` 路由，覆盖上传/下载/同步/历史/GC/FSCK/迁移。

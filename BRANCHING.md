@@ -4,9 +4,27 @@
 
 | 分支 | 用途 |
 |---|---|
-| `dev` | **CloudFile 主干**，也是三个仓库在 GitHub 上的默认分支 |
+| `dev` | **CloudFile 主干** = 扩展基线 + 已验收能力（**全部开关默认关闭**），也是三个仓库在 GitHub 上的默认分支 |
 | `sync/upstream-YYYYMMDD` | 周期性把上游合并进 `dev` 的工作分支 |
-| `feature/*`、`fix/*` | 常规开发，命名对齐 `CF_ENABLE_*`，见 [docs/BRANCHES.md](docs/BRANCHES.md) |
+| `feature/*`、`fix/*` | 开发中的能力，一个耦合簇一条，**验收后合回 `dev` 并删除**，见 [docs/BRANCHES.md](docs/BRANCHES.md) |
+
+**能力不长期分叉。** 构建脚本每个仓库只认一个 ref，所以两个尚未合并的能力
+无法一起构建、也就无法一起交付；八个能力各占一条长期分支意味着 2⁸ 种交付组合
+全都没验证过。让能力住在 `dev` 上是安全的，因为**"全部开关关闭 = 原生 CE"**
+这条铁律保证未启用的能力对部署没有影响。完整论证见
+[docs/BRANCHES.md](docs/BRANCHES.md) 第一节。
+
+> ⚠️ **能力分支跟进 `dev` 前，先确认它不是 `dev` 的祖先。**
+>
+> ```bash
+> git merge-base --is-ancestor feature/<能力> dev && echo "危险：merge 会快进"
+> ```
+>
+> 如果是祖先，`git merge dev` 会**快进**而不是合并——分支指针直接跳到 `dev`，
+> 该能力的代码被"合并"掉，且 git 不会报任何冲突。三个仓库的
+> `feature/dir-acl` 当前正处于这个状态（能力代码是在 `dev` 上被剥离的，
+> 分支停在剥离前的那个提交，没有任何独有提交）。
+> 正确的恢复步骤见 [docs/BRANCHES.md](docs/BRANCHES.md) 第九节。
 
 上游的纯净副本**不需要本地分支**，`upstream/master` 这个 remote-tracking ref
 本身就是，且不可能被误提交——比维护一个"约定上不许提交"的本地镜像分支更可靠。
@@ -42,10 +60,19 @@ git merge upstream/master
 **cloudfile-hub**
 - `seahub/utils/rooturl.py` — 追加 CloudFile 路由
 - `seahub/views/__init__.py` — `check_folder_permission` 委派
+- `seahub/search/utils.py` — `search_files` 委派给已选中的检索 provider
+- `seahub/utils/__init__.py` — `HAS_FILE_SEARCH` 或上"provider 是否已配置"
 - `frontend/config/webpack.entry.js` — 注册 CloudFile 前端入口（纯数据追加，
   往 `entryFiles` 字典里加一个 key，不含逻辑）
 
-前两个是行为改动，需要逐行 review；第三个是数据追加，冲突时直接保留双方的 key 即可。
+前两个是行为改动，需要逐行 review。
+
+中间两个是检索扩展点，**必须成对存在**：只改 `search/utils.py` 的话，CE 部署上
+六个搜索入口都因为 `HAS_FILE_SEARCH=False` 而根本不会路由过来，provider 永远
+不被调用。两处都是加法（或上 / 未选中则回落原生路径），取舍见
+[docs/EXTENSION-POINTS.md](docs/EXTENSION-POINTS.md) 第六节。
+
+最后一个是数据追加，冲突时直接保留双方的 key 即可。
 
 **cloudfile-server**
 - `common/rpc-service.c` — `seafile_check_permission_by_path` 实现 +

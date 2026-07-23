@@ -8,6 +8,7 @@
 
 import os
 import re
+import subprocess
 import sys
 
 failures = []
@@ -216,6 +217,83 @@ def check_switch_lists(repo, workspace):
         ok(f'开关清单三处一致（{len(reference)} 个）')
 
 
+def check_extension_points_documented(repo, workspace):
+    """registry.py 声明的每个扩展点都要在 EXTENSION-POINTS.md 的矩阵里。
+
+    扩展点最容易出的问题不是写错，而是**加了却没人知道**——于是下一个特性
+    又去改上游文件，而它要的钩子其实早就有了。这个检查把"加扩展点"和
+    "登记扩展点"绑在一起。
+    """
+    registry = read(os.path.join(workspace, 'cloudfile-hub', 'cloudfile_ext',
+                                 'registry.py'))
+    doc = read(os.path.join(repo, 'docs', 'EXTENSION-POINTS.md'))
+    if not registry or not doc:
+        print('  ⊘ 读不到 registry.py 或 EXTENSION-POINTS.md，跳过')
+        return
+
+    declared = set(re.findall(r'def (register_\w+)\(self', registry))
+    # register_provider 是通用机制，kind 由能力自己声明，不逐个登记
+    declared.discard('register_provider')
+
+    # 必须按词边界匹配，不能用 `n in doc`：register_search_indexer 是
+    # register_search_indexerX 的子串，于是文档里写错名字时检查照样报"已登记"。
+    # 第一版就是这么写的，变异测试当场抓出来。
+    missing = sorted(n for n in declared
+                     if not re.search(r'%s\b' % re.escape(n), doc))
+    if missing:
+        bad(f'扩展点未登记到 EXTENSION-POINTS.md：{missing}',
+            '扩展点加了却没登记，下一个特性会重复去改上游文件')
+    else:
+        ok(f'{len(declared)} 个扩展点均已登记')
+
+
+def check_features_doc_freshness(repo):
+    """FEATURES.md 不能明显落后于它所描述的代码。
+
+    栽过一次（不是构建失败，是更隐蔽的一类）：基线跑通之后，FEATURES.md 仍然
+    写着"完整镜像从未成功构建过。所有 🟡 项的共同前提都是它"，而那时它已经
+    构建过、起过栈、跑过 12/12 冒烟。任何照着文档排期的人都会把力气花错地方。
+
+    文档自己写了"把未验证的标成已完成，是这份文档唯一会失去价值的方式"——
+    反过来同样成立。
+    """
+    doc_rel = 'docs/FEATURES.md'
+    # 只盯"一改动就意味着某个特性状态变了"的路径。
+    #
+    # 刻意不含 tools/：改一次 preflight 自己就要求更新特性表，是纯噪音，
+    # 而会误报的硬门禁最后一定会被人关掉——那比没有这个检查更糟。
+    watched = ['tests/e2e/', 'build/cloudfile_14.0/', 'image/',
+               'scripts/scripts_14.0/']
+
+    def last_commit(path):
+        try:
+            out = subprocess.run(
+                ['git', '-C', repo, 'log', '-1', '--format=%ct', '--', path],
+                capture_output=True, text=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        out = out.stdout.strip()
+        return int(out) if out.isdigit() else None
+
+    doc_at = last_commit(doc_rel)
+    if doc_at is None:
+        print('  ⊘ 取不到 FEATURES.md 的提交时间（非 git 或未提交），跳过')
+        return
+
+    stale = []
+    for path in watched:
+        at = last_commit(path)
+        if at is not None and at > doc_at:
+            stale.append(path)
+
+    if stale:
+        bad(f'FEATURES.md 落后于 {stale}',
+            '代码已经前进而状态表没跟上。照着旧文档排期会把力气花错地方——\n'
+            '基线跑通那次就是这样：文档仍写着"镜像从未构建过"。')
+    else:
+        ok('FEATURES.md 不落后于代码')
+
+
 def main():
     if len(sys.argv) != 3:
         sys.stderr.write(__doc__)
@@ -233,6 +311,8 @@ def main():
     check_node_pin(repo, workspace)
     check_seahub_settings_block(repo)
     check_switch_lists(repo, workspace)
+    check_extension_points_documented(repo, workspace)
+    check_features_doc_freshness(repo)
 
     return 1 if failures else 0
 

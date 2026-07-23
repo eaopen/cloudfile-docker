@@ -132,6 +132,21 @@ def main():
     on = sorted(k for k, v in features.items() if v)
     record('所有开关均为关闭', not on, f'意外开启: {on}')
 
+    # 2b. provider 机制装好了，但基线上一个都没选中
+    #
+    # 这两条分开测是有原因的：providers 键存在证明机制在位（能力可以插进来），
+    # selected 全空证明基线仍是原生行为。只测其中一条，另一半坏掉时看不出来。
+    providers = data.get('providers')
+    record('provider 机制已装配（features 接口返回 providers）',
+           isinstance(providers, dict),
+           f'实际: {type(providers).__name__} {str(providers)[:160]}')
+
+    if isinstance(providers, dict):
+        chosen = {k: v.get('selected') for k, v in providers.items()
+                  if v.get('selected')}
+        record('基线未选中任何 provider（检索等仍走原生路径）', not chosen,
+               f'意外选中: {chosen}')
+
     # 3. 基线不应带来任何能力路由
     status, body = request(base + '/api2/repos/', method='POST',
                            token=token, form={'name': 'baseline-' + uuid.uuid4().hex[:6]})
@@ -152,6 +167,17 @@ def main():
                            token=token)
     record('库可同步（子树校验钩子透传）', status == 200,
            f'status={status} {body[:160]}')
+
+    # 5. 检索扩展点没有改变原生行为
+    #
+    # 基线上没有 provider，CE 也没有 Elasticsearch，所以上游的正确行为是
+    # "搜索未启用"（404/400），而不是 500。会返回 500 说明 search_files 的
+    # 委派把 es_search 未定义的情况打穿了——这正是那两处上游改动最可能
+    # 引入的回归，值得单独盯一条。
+    status, body = request(f'{base}/api2/search/?q=baseline&per_page=1',
+                           token=token)
+    record('检索委派未破坏原生行为（不应 5xx）', status < 500,
+           f'status={status} {body[:200]}')
 
     request(f'{base}/api2/repos/{repo_id}/', method='DELETE', token=token)
 

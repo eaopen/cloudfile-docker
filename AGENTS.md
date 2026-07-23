@@ -49,6 +49,7 @@ release.yaml                       构建清单：各组件的 SHA/ref、镜像�
 BRANCHING.md                       三仓共用分支模型 + 上游改动文件清单
 docs/FEATURES.md                   特性清单与完成情况 —— 先看这个再动手
 docs/BRANCHES.md                   特性分支、依赖关系、上游成本、排期建议
+docs/EXTENSION-POINTS.md           扩展点清单 × 特性关联矩阵、已知缺口
 docs/upstream-patches/             各仓允许修改的上游文件登记
 tools/check-upstream-patches.sh    强制登记清单不被悄悄变长
 build/cloudfile_14.0/
@@ -120,13 +121,18 @@ python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_hub.r
 
 ## 基线与能力的边界
 
-`dev` 上是**扩展基线**：扩展点、构建、部署、发布机制，**没有任何具体能力**。
-能力活在自己的长期分支上，带着自己的规格、用例集和 E2E 门禁——例如
-`feature/dir-acl` 的 `docs/acl-semantics.md`、`docs/acl-cases.json`、
-`tests/e2e/acl_matrix.py`。
+```
+dev       = 扩展基线 + 已验收能力，全部开关默认关闭
+feature/* = 开发中的能力（一个耦合簇一条），验收后合回 dev 并删除
+```
 
-这样拆有两个理由：基线的发布不该被某个能力的验收结果卡住；能力要能持续改进，
-而不必每次都跟着基线一起过一遍完整门禁。
+能力带着自己的规格、用例集和 E2E 门禁一起进 `dev`——例如 ACL 的
+`docs/acl-semantics.md`、`docs/acl-cases.json`、`tests/e2e/acl_matrix.py`，
+以及一个开着 `CF_ENABLE_DIR_ACL` 跑的 CI job。
+
+**能力不长期分叉**：构建脚本每个仓库只认一个 ref，两个尚未合并的能力无法一起
+构建，也就无法一起交付。让能力住在 `dev` 上之所以安全，全靠下面那条铁律。
+论证与四条开发线的切分见 [docs/BRANCHES.md](docs/BRANCHES.md) 第一节。
 
 **基线的门禁只回答两个问题**（`build-and-e2e.yml`）：
 
@@ -137,9 +143,24 @@ python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_hub.r
 第 2 条的两半缺一不可：只跑 smoke 的话，一个 `cloudfile_ext` 根本没被加载的
 镜像也能通过。
 
+**能力门禁另跑一份，各开各的开关。** 两层互不阻塞：某个能力的门禁挂了，
+把它的开关留在关闭状态照样能发基线——这就是原先靠分支隔离想达到的效果，
+用开关达到，而且不会带来组合爆炸。
+
 跨层语义（同一套规则同时在 Hub 和 seafile-server 实现）必须用共享用例集驱动
 两端。改语义的正确顺序：先改规格 → 再改用例集 → 最后同时改两处实现。
 只改一处 = 引入漂移，而漂移在权限系统里意味着安全漏洞。
+
+**能力分支会腐坏，跟进不是可选项。** `feature/dir-acl` 就是活的反例：它停在
+基线剥离前的提交上，落后六个构建修复，那条分支上的镜像根本构建不出来；
+而且它是 `dev` 的祖先，`git merge dev` 会**快进并静默删光能力代码**。
+跟进前先查：
+
+```bash
+git merge-base --is-ancestor feature/<能力> dev && echo "危险：merge 会快进"
+```
+
+重建步骤见 [docs/BRANCHES.md](docs/BRANCHES.md) 第九节。
 
 ## 约定
 

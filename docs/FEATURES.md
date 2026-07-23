@@ -30,11 +30,11 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 > 架构、磁盘配额、PATH 都是 CI 与本机的已知差异面——十二次失败里有六次
 > 正是栽在这类边界上。
 
-> ⚠️ **`feature/dir-acl` 已腐坏**：它是 `dev` 的祖先，没有任何独有提交。
-> 对它执行 `git merge dev` 会**快进并静默删掉全部 ACL 代码**；且它落后
-> `dev` 六个构建修复，该分支上的镜像构建不出来。下面 P1 的状态标记
-> 反映的是**代码曾经的状态**，不代表那条分支现在能构建。
-> 重建步骤见 [BRANCHES.md](BRANCHES.md) 第九节。
+> **`feature/dir-acl` 已重建**（`feature/dir-acl-rebuild`）。原分支是 `dev` 的
+> 祖先、没有任何独有提交，`git merge dev` 会快进并静默删光 ACL 代码。
+> 新分支从最新基线重新接线，**三仓上游改动清单一个字节未变**（8 / 5 / 3），
+> 这是扩展点设计的实证。已跑通：C 62 项、Python 52 项、Go 编译与 vet。
+> **六入口矩阵仍未执行**——它需要构建镜像，见待办 1。
 
 ---
 
@@ -87,6 +87,8 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | 20 | 每次启动建表（覆盖新装/升级/存量切换） | 🟡 | 逻辑已写；**未在真实容器中执行** |
 | 21 | `check_permission_by_path` 接入扩展点 | ✅ | **C 编译已通过 CI**（`cf-acl.o` / `cf-acl-resolve.o`，零警告）；运行时未验证 |
 | 22 | `cf_find_restricted_path` RPC | ✅ | 同上 |
+| 68 | 经 `cf_ext_register` 接线（不再直连上游） | ✅ | 重建时改为在 `cf_acl_init()` 里注册三个函数，`rpc-service.c` 只认 `cf_ext_*`。**接线后三仓上游清单逐字节不变**（8 / 5 / 3），且 Go 侧零改动——seam 契约的实证 |
+| 69 | ACL 能力门禁 `acl-e2e.yml` | 🟡 | **本轮补齐**。此前只有孤立的 `acl_matrix.py`，没有任何东西调用它——"有测试文件"和"有门禁"在权限系统里差别巨大。顺带给 `acl_matrix.py` 补了 `--insecure`（它写于 TLS 改动之前，在自签证书下必然连不上）。**尚未执行** |
 | 23 | Go fileserver 同步前校验 | 🟡 | `go build` / `go vet` 通过；**未运行** |
 | 24 | `is_repo_syncable` / `is_dir_downloadable` | 🟡 | 替换了 CE 的恒真桩；仅字节编译 |
 | 25 | ACL 管理 REST API（库主） | 🟡 | 含"有效权限"排查接口；仅字节编译 |
@@ -177,10 +179,11 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
 
 按阻塞程度排。
 
-1. 🔴 **重建 `feature/dir-acl`**。它是 `dev` 的祖先，`git merge dev` 会快进并
-   静默删光 ACL 代码；且落后六个构建修复，镜像构建不出来。它**不是"只差验证"**。
-   步骤见 [BRANCHES.md](BRANCHES.md) 第九节。顺带补上该分支缺失的 `acl-e2e.yml`
-   （目前只有孤立的 `tests/e2e/acl_matrix.py`，没有任何东西调用它）。
+1. 🔴 **跑一次 ACL 六入口矩阵**。分支已重建、`acl-e2e.yml` 已补齐，静态与单元
+   层面全绿（C 62 / Python 52 / Go vet），但**矩阵本身从未执行过**——它需要一个
+   构建出来的镜像。这是 ACL 合回 `dev` 的最后一道门槛：单元测试证明求解器算得对，
+   只有矩阵能证明**每个入口真的执行了算出来的结果**，而 ACL 最容易出的问题恰恰
+   是某个入口压根没走校验。
 2. 🔴 **WebDAV 读侧 `invisible` 缺口**（第 31 项）。**这是发布阻塞项，不是待办**：
    一个"目录对某人不可见"的能力，在 WebDAV 入口下目录仍然可见，这个能力就是
    不成立的。修复需要改 seafdav，建议在 `cloudfile-docker/patches/seafdav/`

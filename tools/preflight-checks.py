@@ -294,20 +294,43 @@ def check_features_doc_freshness(repo):
         ok('FEATURES.md 不落后于代码')
 
 
+def stack_workflows(repo):
+    """起栈跑 E2E 的 workflow，按文件名排序。
+
+    刻意不写死 build-and-e2e.yml：每加一条能力门禁（acl-e2e.yml 及其后继），
+    它都要重新踩一遍同样的集成边界——TLS、主机名、脚本路径。第一版只查基线那
+    一条，于是 acl-e2e.yml 少了 --insecure 这个错误是人工发现的，而这恰好是
+    本文件存在的理由。凡是 `docker compose up` 的 workflow 都要过同一套检查。
+    """
+    wf_dir = os.path.join(repo, '.github', 'workflows')
+    found = []
+    for name in sorted(os.listdir(wf_dir)) if os.path.isdir(wf_dir) else []:
+        if not name.endswith(('.yml', '.yaml')):
+            continue
+        text = read(os.path.join(wf_dir, name))
+        if text and 'docker compose up' in text:
+            found.append((name, text))
+    return found
+
+
 def main():
     if len(sys.argv) != 3:
         sys.stderr.write(__doc__)
         return 2
 
     repo, workspace = sys.argv[1], sys.argv[2]
-    wf = read(os.path.join(repo, '.github', 'workflows', 'build-and-e2e.yml'))
-    if wf is None:
-        bad('读不到 build-and-e2e.yml')
+
+    workflows = stack_workflows(repo)
+    if not workflows:
+        bad('找不到任何起栈的 workflow')
         return 1
 
-    check_workflow_references(repo, wf)
-    check_tls_target(wf)
-    check_hostname(wf, workspace)
+    for name, wf in workflows:
+        print(f'  ── {name}')
+        check_workflow_references(repo, wf)
+        check_tls_target(wf)
+        check_hostname(wf, workspace)
+
     check_node_pin(repo, workspace)
     check_seahub_settings_block(repo)
     check_switch_lists(repo, workspace)

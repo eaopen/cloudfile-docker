@@ -1,9 +1,21 @@
+{
+	# 按 IP 直接访问时（内网部署、CI）客户端不会发送 SNI——RFC 不允许把 IP
+	# 字面量放进 SNI——Caddy 于是匹配不到证书，TLS 握手以 "internal error"
+	# 失败，客户端只看到连接被拒。指定默认 SNI 让它回退到本站点证书。
+	default_sni {$SEAFILE_SERVER_HOSTNAME}
+}
+
 # CloudFile reverse proxy.
 #
 # The application container already runs nginx on port 80 and does the
 # seahub/fileserver split internally, so this only terminates TLS and forwards.
 
 {$SEAFILE_SERVER_HOSTNAME} {
+	# 站点名是 IP 时（内网部署、CI）Caddy 默认只绑定那个 IP——在容器里那是
+	# 容器自己的 loopback，发布出去的端口根本连不上，表现为连接直接失败。
+	# 显式绑到 0.0.0.0，站点名仍用于路由和证书签发。
+	bind 0.0.0.0
+
 	tls {$CADDY_TLS}
 
 	# Uploads and downloads stream through here; without this Caddy buffers

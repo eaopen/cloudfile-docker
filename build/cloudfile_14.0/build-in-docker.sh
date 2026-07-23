@@ -29,9 +29,18 @@ version=$1
 here=$(cd "$(dirname "$0")" && pwd)
 repo_root=$(cd "$here/../.." && pwd)
 
-platform=${CF_PLATFORM:-}
-platform_arg=()
-[[ -n $platform ]] && platform_arg=(--platform "$platform")
+# 必须显式指定平台。不指定的话 docker 会沿用本地碰巧缓存的 ubuntu:24.04——
+# 如果那是 amd64 而宿主是 Apple Silicon，构建就会静默地跑在 QEMU 模拟下，
+# 慢一个数量级却没有任何提示。默认跟随宿主机。
+if [[ -z ${CF_PLATFORM:-} ]]; then
+    case "$(uname -m)" in
+        arm64|aarch64) CF_PLATFORM=linux/arm64 ;;
+        x86_64)        CF_PLATFORM=linux/amd64 ;;
+        *) echo "无法识别的宿主架构：$(uname -m)，请显式设置 CF_PLATFORM" >&2; exit 2 ;;
+    esac
+fi
+platform=$CF_PLATFORM
+platform_arg=(--platform "$platform")
 
 if ! docker info >/dev/null 2>&1; then
     echo "Docker 不可用。请先启动 Docker Desktop / OrbStack / colima。" >&2

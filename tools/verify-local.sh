@@ -15,7 +15,8 @@
 #
 # 与 CI 的差异（有意为之，且只有这些）：
 #   - 构建在 ubuntu 容器里跑（CI 的 runner 本身就是 ubuntu）
-#   - 端口用 8080/8443，避免和本机既有服务打架
+#   - 端口默认 80/443（与 CI 一致，绝对 URL 才对得上）；被占用时可用
+#     CF_LOCAL_HTTP_PORT / CF_LOCAL_HTTPS_PORT 覆盖
 #   - Compose 跑在临时目录里，不碰 deploy/compose/ 下你自己的 .env 和 data/
 #   - 架构跟随本机（Apple Silicon 上是 arm64）。上游 arm 与 x86 的 Dockerfile
 #     逐字节相同，所以这不影响结论；要验 amd64 就设 CF_PLATFORM=linux/amd64。
@@ -29,8 +30,15 @@ workspace=$(dirname "$repo")
 VERSION=${CF_VERSION:-14.0.0-cf.0-local}
 IMAGE=cloudfile/cloudfile:$VERSION
 PROJECT=cloudfile-local
-HTTP_PORT=${CF_LOCAL_HTTP_PORT:-8080}
-HTTPS_PORT=${CF_LOCAL_HTTPS_PORT:-8443}
+# 默认用 80/443，和 CI 保持一致。
+#
+# 改成 8080/8443 看似更"礼貌"，但会让验证失真：seahub 生成的是绝对 URL
+# （上传/下载链接指向 https://<hostname>/seafhttp/...，隐含默认端口），
+# 客户端连过去必然 Connection refused——报错落在"上传文件"上，离真因很远。
+# 端口被占用时用 CF_LOCAL_HTTP_PORT/CF_LOCAL_HTTPS_PORT 覆盖，但要知道
+# 上传下载那几项会因此失败。
+HTTP_PORT=${CF_LOCAL_HTTP_PORT:-80}
+HTTPS_PORT=${CF_LOCAL_HTTPS_PORT:-443}
 ADMIN_EMAIL=admin@cloudfile.test
 ADMIN_PASSWORD=CloudFile-Local-4417
 STAGE_DIR=${CF_LOCAL_STAGE:-$repo/.local-verify}
@@ -109,7 +117,9 @@ up() {
 }
 
 e2e() {
-    local base="https://127.0.0.1:$HTTPS_PORT"
+    # 443 时不带端口，让 URL 与 seahub 生成的绝对链接完全一致
+    local base="https://127.0.0.1"
+    [[ $HTTPS_PORT != 443 ]] && base="https://127.0.0.1:$HTTPS_PORT"
     say "原生 CE 冒烟 @ $base"
     python3 "$repo/tests/e2e/smoke.py" --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
@@ -127,6 +137,19 @@ dump_logs() {
     compose exec -T cloudfile tail -n 120 /opt/seafile/logs/seafile.log 2>/dev/null || true
 }
 
+# 构建树被中断过、或换过架构之后必须清。
+#
+# 踩过一次：amd64 构建被 kill 后残留的 src/ 被下一次 arm64 构建复用，vala 生成的
+# repo.c（上游是**提交进仓库**的）状态错乱，编译报一堆 "redefinition of ..."。
+# 症状离原因很远，所以宁可提供一条明确的命令。
+distclean() {
+    say "清理构建树"
+    rm -rf "$repo/build/cloudfile_14.0/src" \
+           "$repo/build/cloudfile_14.0/seafile-server" \
+           "$repo"/build/cloudfile_14.0/seafile-server-*
+    ok "构建树已清空（下次构建会重新 clone，慢但干净）"
+}
+
 clean() {
     say "清理本地栈"
     [[ -d $STAGE_DIR ]] && compose down -v 2>/dev/null
@@ -141,6 +164,7 @@ case "${1:-all}" in
     up)        up ;;
     e2e)       e2e || { dump_logs; fail "E2E 未通过"; } ;;
     clean)     clean ;;
+    distclean) clean; distclean ;;
     all)
         preflight
         build_dist
@@ -158,5 +182,5 @@ case "${1:-all}" in
             exit 1
         fi
         ;;
-    *) fail "未知阶段：$1（preflight|build|image|up|e2e|clean|all）" ;;
+    *) fail "未知阶段：$1（preflight|build|image|up|e2e|clean|distclean|all）" ;;
 esac

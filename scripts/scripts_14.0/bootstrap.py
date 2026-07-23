@@ -130,17 +130,22 @@ def write_cloudfile_settings():
     for name in CF_FEATURE_SWITCHES:
         body += '%s = %s\n' % (name, cf_enabled(name))
 
+    # 只写标量，不要碰 DATABASES。
+    #
+    # seahub_settings.py 是**独立模块**：seahub 的 load_local_settings() 把它
+    # import 进来再拷贝大写名字，所以它的命名空间里没有 DATABASES。早先写
+    # "DATABASES['cloudfile'] = {...}" 会抛 NameError，导致**整个**
+    # seahub_settings.py 加载失败、所有 CF 配置被静默丢弃——扩展框架压根没装上，
+    # 而唯一的痕迹只是日志里一行 NameError。
+    #
+    # 第二个数据库连接与 DATABASE_ROUTERS 改由 CloudFileConfig.ready() 组装，
+    # 那里能拿到真正的 settings 命名空间。
     body += (
-        "DATABASES['cloudfile'] = {\n"
-        "    'ENGINE': 'django.db.backends.mysql',\n"
-        "    'NAME': '%s',\n"
-        "    'USER': '%s',\n"
-        "    'PASSWORD': '%s',\n"
-        "    'HOST': '%s',\n"
-        "    'PORT': '%s',\n"
-        "    'OPTIONS': {'charset': 'utf8mb4'},\n"
-        "}\n"
-        "DATABASE_ROUTERS = ['cloudfile_ext.db_router.CloudFileRouter']\n"
+        "CF_DATABASE_NAME = '%s'\n"
+        "CF_DATABASE_USER = '%s'\n"
+        "CF_DATABASE_PASSWORD = '%s'\n"
+        "CF_DATABASE_HOST = '%s'\n"
+        "CF_DATABASE_PORT = '%s'\n"
     ) % (
         get_conf('SEAFILE_MYSQL_DB_SEAFILE_DB_NAME', 'seafile_db'),
         get_conf('SEAFILE_MYSQL_DB_USER', 'seafile'),
@@ -171,6 +176,61 @@ def write_cloudfile_seafile_conf():
 
     _replace_block(join(topdir, 'conf', 'seafile.conf'),
                    CF_BEGIN, CF_END, ''.join(lines))
+
+
+def write_seafile_env():
+    """生成 conf/.env —— Seafile 14.0 的 seafile.sh 启动前必须读到它。
+
+    14.0 的 seafile.sh 里 set_env_config() 在 JWT_PRIVATE_KEY 未设置时会去读
+    ${central_config_dir}/.env，读不到就 "Error: .env file not found" 并退出
+    255。而现有流程里没有任何一步生成它：setup-seafile-mysql.py 不写，
+    上游的 docker bootstrap 也不写——上游 14.0 的部署方式是让运维在 compose
+    里手工传这些变量。
+
+    对一条 `docker compose up -d` 就该跑起来的部署来说，让运维手工准备一个
+    密钥不合适，所以在这里生成。JWT_PRIVATE_KEY 必须随机且跨重启稳定，因此
+    只在缺失时生成，之后一直复用——conf/ 挂在 /shared 上，会持久化。
+
+    文件由 bash `source` 读取，所以值都保持 shell 安全（十六进制、简单标识符）。
+    """
+    import secrets
+
+    path = join(topdir, 'conf', '.env')
+
+    existing = {}
+    if exists(path):
+        with open(path) as fp:
+            for line in fp:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, _, value = line.partition('=')
+                    existing[key.strip()] = value.strip()
+
+    jwt_key = existing.get('JWT_PRIVATE_KEY') or secrets.token_hex(32)
+
+    values = [
+        ('JWT_PRIVATE_KEY', jwt_key),
+        ('SEAFILE_MYSQL_DB_CCNET_DB_NAME',
+         get_conf('SEAFILE_MYSQL_DB_CCNET_DB_NAME', 'ccnet_db')),
+        ('SEAFILE_MYSQL_DB_SEAFILE_DB_NAME',
+         get_conf('SEAFILE_MYSQL_DB_SEAFILE_DB_NAME', 'seafile_db')),
+        ('SEAFILE_MYSQL_DB_SEAHUB_DB_NAME',
+         get_conf('SEAFILE_MYSQL_DB_SEAHUB_DB_NAME', 'seahub_db')),
+        ('SEAFILE_SERVER_PROTOCOL', get_proto()),
+        ('SEAFILE_SERVER_HOSTNAME',
+         get_conf('SEAFILE_SERVER_HOSTNAME', 'seafile.example.com')),
+        ('SITE_ROOT', get_conf('SITE_ROOT', '/')),
+        ('ENABLE_GO_FILESERVER', get_conf('ENABLE_GO_FILESERVER', 'true')),
+        ('ENABLE_SEAFDAV', get_conf('ENABLE_SEAFDAV', 'true')),
+    ]
+
+    with open(path, 'w') as fp:
+        fp.write('# 由 CloudFile bootstrap 每次启动生成。\n')
+        fp.write('# JWT_PRIVATE_KEY 只在首次创建，之后保持不变。\n')
+        for key, value in values:
+            fp.write('%s=%s\n' % (key, value))
+
+    os.chmod(path, 0o600)
 
 
 def apply_cloudfile_schema():
@@ -225,6 +285,7 @@ def apply_cloudfile_schema():
 def write_cloudfile_config():
     """Apply CloudFile configuration. Safe to call on every start."""
     loginfo('Applying CloudFile configuration')
+    write_seafile_env()
     write_cloudfile_settings()
     write_cloudfile_seafile_conf()
     apply_cloudfile_schema()

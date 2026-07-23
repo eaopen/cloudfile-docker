@@ -109,10 +109,42 @@ function install_dependencies() {
         libargon2-dev \
         gettext \
         make \
-        nodejs \
-        npm \
         libsasl2-dev \
-        python3-cffi
+        python3-cffi \
+        xz-utils
+}
+
+# Node 必须显式装，不能用 apt 的。
+#
+# Ubuntu 24.04 的 apt nodejs 是 18.19.1，而 seahub 前端要 20+：
+# css-minimizer 依赖全局 crypto，Node 19 才把它变成全局，18 上构建会以
+# "ReferenceError: crypto is not defined" 失败。上游 seahub 的 CI 也是明确
+# 用 setup-node@v3 node-version 20.x。
+#
+# GitHub runner 预装了 Node 20+ 且排在 PATH 前面，所以 CI 上碰巧能过——
+# 也就是说这个构建其实不可复现：任何人在干净容器里构建都会失败。固定版本
+# 之后，CI 与本地拿到的是同一个 Node。
+NODE_VERSION=${CF_NODE_VERSION:-20.20.2}
+
+function install_nodejs() {
+    local arch
+    case "$(uname -m)" in
+        x86_64)        arch=x64 ;;
+        aarch64|arm64) arch=arm64 ;;
+        *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+    esac
+
+    local name=node-v${NODE_VERSION}-linux-${arch}
+    local prefix=/usr/local/lib/nodejs
+
+    echo "Installing Node ${NODE_VERSION} (${arch})"
+    mkdir -p "$prefix"
+    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/${name}.tar.xz" \
+        | tar -xJ -C "$prefix"
+
+    export PATH="${prefix}/${name}/bin:${PATH}"
+    node --version
+    npm --version
 }
 
 # 说明：libsasl2-dev 与 python3-cffi 是给 build_seahub_frontend 里那次完整依赖
@@ -326,6 +358,7 @@ echo "      cloudfile-hub    ${cloudfile_hub_url} @ ${cloudfile_hub_ref}"
 echo ''
 
 install_dependencies
+install_nodejs
 clone_code
 fetch
 install_python_dependencies

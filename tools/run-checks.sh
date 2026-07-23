@@ -108,8 +108,12 @@ fi
 # SyntaxWarning 不归我们管，混进来只会淹没真正的问题。
 run "脚本语法" bash -c "
     set -e
+    # -prune 掉 src/ 与构建产物：那里是 clone 下来的上游源码和发行包，不归
+    # 我们管，而且上游的 bash-4 语法（&>>）在 macOS 自带的 bash 3.2 上会误报。
     for f in \$(find '$docker_repo/tools' '$docker_repo/build/cloudfile_14.0' \
-                     '$docker_repo/image/cloudfile_14.0' -name '*.sh'); do
+                     '$docker_repo/image/cloudfile_14.0' \
+                     \\( -name src -o -name 'seafile-server-*' -o -name node_modules \\) -prune \
+                     -o -name '*.sh' -print); do
         bash -n \"\$f\"
     done
     for f in '$docker_repo/build/cloudfile_14.0/read-manifest.py' \

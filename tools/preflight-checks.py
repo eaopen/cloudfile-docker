@@ -95,6 +95,89 @@ def check_hostname(wf, workspace):
             '初始化会退出 255，症状表现为 Caddy 502')
 
 
+def check_node_pin(repo, workspace):
+    """构建必须固定 Node 版本，不能依赖发行版自带的。
+
+    本地首跑栽在这里：Ubuntu 24.04 的 apt nodejs 是 18.19.1，而 seahub 前端
+    需要 20+（css-minimizer 用全局 crypto，Node 19 才有），构建以
+    "ReferenceError: crypto is not defined" 失败。CI 上却是绿的——GitHub
+    runner 预装了 Node 20+ 且排在 PATH 前面。也就是说 CI 绿灯掩盖了构建不可
+    复现，任何人在干净容器里都构建不出来。
+    """
+    build = read(os.path.join(repo, 'build', 'cloudfile_14.0',
+                              'cloudfile-build.sh'))
+    if not build:
+        bad('读不到 cloudfile-build.sh')
+        return
+
+    if re.search(r'^\s+nodejs\s*\\?\s*$', build, re.M):
+        bad('构建脚本用 apt 装 nodejs',
+            'apt 给的是 Node 18，seahub 前端需要 20+；改为固定版本安装')
+        return
+
+    m = re.search(r'NODE_VERSION=\$\{CF_NODE_VERSION:-([0-9]+)\.', build)
+    if not m:
+        bad('构建脚本没有固定 Node 版本')
+        return
+
+    major = int(m.group(1))
+
+    # 与上游 seahub CI 要求的大版本对齐
+    wanted = None
+    dist = read(os.path.join(workspace, 'cloudfile-hub', '.github',
+                             'workflows', 'dist.yml'))
+    if dist:
+        dm = re.search(r"node-version:\s*['\"]?(\d+)", dist)
+        if dm:
+            wanted = int(dm.group(1))
+
+    if wanted and major < wanted:
+        bad(f'Node 固定为 {major}.x，低于上游要求的 {wanted}.x')
+    elif wanted:
+        ok(f'Node 固定为 {major}.x，满足上游要求的 {wanted}.x')
+    else:
+        ok(f'Node 固定为 {major}.x')
+
+
+def check_seahub_settings_block(repo):
+    """写进 seahub_settings.py 的内容只能是自包含的赋值。
+
+    栽过一次：bootstrap 写了 ``DATABASES['cloudfile'] = {...}``，但
+    seahub_settings.py 是被当作**普通模块** import 的——seahub 的
+    load_local_settings() 事后才去拷贝其中的大写名字——所以它的命名空间里根本
+    没有 DATABASES。结果是 NameError，seahub 捕获后只记一行日志，**整个文件
+    的 CloudFile 配置全被丢弃**，扩展框架压根没装上，而表面上服务是正常起来的。
+
+    这类错误只在真跑起来时才显形，且症状（能力接口 404）离原因很远。
+    """
+    boot = read(os.path.join(repo, 'scripts', 'scripts_14.0', 'bootstrap.py'))
+    if not boot:
+        bad('读不到 bootstrap.py')
+        return
+
+    # 只看写进 seahub_settings.py 的那段 body
+    m = re.search(r'def write_cloudfile_settings\(\):(.*?)\n    _replace_block',
+                  boot, re.S)
+    if not m:
+        print('  ⊘ 找不到 write_cloudfile_settings，跳过')
+        return
+
+    # 先剥掉注释：本函数的注释里正好引用了当年那行错误代码作为反面例子，
+    # 不剥的话检查会拿自己的说明文字当成违规。
+    body = '\n'.join(line for line in m.group(1).splitlines()
+                     if not line.lstrip().startswith('#'))
+
+    # 形如 FOO['bar'] = 或 FOO.setdefault( 都依赖 seahub settings 的命名空间
+    offenders = sorted(set(re.findall(r'"\s*([A-Z_]+)\[', body)) |
+                       set(re.findall(r'"\s*([A-Z_]+)\.\w+\(', body)))
+    if offenders:
+        bad(f'seahub_settings.py 段落引用了未定义的名字：{offenders}',
+            '该文件是独立模块，没有 seahub 的 settings 命名空间；\n'
+            '改为写标量，再在 CloudFileConfig.ready() 里组装')
+    else:
+        ok('seahub_settings.py 段落只含自包含赋值')
+
+
 def check_switch_lists(repo, workspace):
     """开关清单三处必须一致。"""
     sources = {
@@ -147,6 +230,8 @@ def main():
     check_workflow_references(repo, wf)
     check_tls_target(wf)
     check_hostname(wf, workspace)
+    check_node_pin(repo, workspace)
+    check_seahub_settings_block(repo)
     check_switch_lists(repo, workspace)
 
     return 1 if failures else 0

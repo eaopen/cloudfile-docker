@@ -1,0 +1,140 @@
+# AGENTS.md — cloudfile-docker
+
+给在本仓库工作的 AI coding agent。人类同样适用。
+
+## 这是什么
+
+`haiwen/seafile-docker` 的 fork，CloudFile（Seafile CE 企业扩展版）的
+**构建、镜像、部署，以及跨仓规格文档的归属地**。
+
+CloudFile 由三个仓库组成，通常并排 checkout：
+
+```
+workspace/
+├── cloudfile-server/   fork of haiwen/seafile-server —— 权限终判层
+├── cloudfile-hub/      fork of haiwen/seahub        —— Web/API 层
+└── cloudfile-docker/   fork of haiwen/seafile-docker —— 本仓库
+```
+
+本仓库同时是**发布的归属地**：`release.yaml` 决定每次构建用哪些代码，
+`BRANCHING.md` 定义三仓共用的分支模型。
+
+## 一个必须知道的前提：上游 14.0 CE 不存在
+
+- `haiwen/seafile-server` 只有 `13.0` 和 `master` 分支，**没有 `14.0` 分支**
+- 14.0 只有 `-pro` tag，**没有 `-server`（CE）tag**
+- 上游提供 `image/seafile_13.0`（CE）和 `image/pro_seafile_14.0`（Pro），
+  **没有 CE 14.0 镜像**
+
+两个后果贯穿整个构建：
+
+1. **各组件按 commit SHA 锁定，不是 tag**，因为根本没有可锁的 tag。SHA 写在
+   `release.yaml`，由 `build/cloudfile_14.0/cloudfile-build.sh` 读取。
+2. **`image/cloudfile_14.0/Dockerfile` 是我们自己写的**：以 13.0 CE 镜像为底，
+   套用 14.0 的 pip 版本 pin，去掉 Pro 专用部分（clamav、rados、boto3/oss2/twilio、
+   `IS_PRO_VERSION`）。
+
+跟随上游时，`image/cloudfile_14.0/Dockerfile` 与 `image/pro_seafile_14.0/Dockerfile`
+的版本 pin 要保持同步——seahub 是按那些版本构建的。用 diff 确认差异仍然只有
+注释和 Pro 专用项：
+
+```bash
+diff <(sed 's/scripts_13.0/scripts_14.0/' image/seafile_13.0/Dockerfile) image/cloudfile_14.0/Dockerfile
+```
+
+## 目录
+
+```
+release.yaml                       构建清单：各组件的 SHA/ref、镜像名、schema 版本
+BRANCHING.md                       三仓共用分支模型 + 上游改动文件清单
+docs/acl-semantics.md              目录 ACL 规范（跨仓）
+docs/acl-cases.json                规范的可执行形式，Python 和 C 两端共用
+build/cloudfile_14.0/
+├── cloudfile-build.sh             拉源码、按 SHA 检出、构建发行包
+├── cloudfile-build.py             上游 seafile-build.py 的副本（13.0/14.0 版本完全相同）
+└── read-manifest.py               读 release.yaml，不依赖 PyYAML
+image/cloudfile_14.0/
+├── Dockerfile                     CE 14.0 镜像
+└── docker-build.sh                暂存构建上下文并 docker build
+deploy/compose/                    一键部署，含 search/office/worker/full profile
+scripts/scripts_14.0/              容器内运行时脚本（上游文件，改动见下）
+```
+
+## 上游改动
+
+| 文件 | 改了什么 |
+|---|---|
+| `scripts/scripts_14.0/bootstrap.py` | 写 CloudFile 配置段、建 `cf_*` 表 |
+| `scripts/scripts_14.0/start.py` | 每次启动调用 `write_cloudfile_config()` |
+| `.gitignore` | 忽略构建产物与部署密钥 |
+
+其余全是新增文件，不参与合并冲突。改动这份清单时同步更新 `BRANCHING.md`。
+
+## 两个非显而易见的设计
+
+**配置在每次启动时重写，不是首次 bootstrap。**
+
+`init_seafile_server()` 在 `seafile-data` 已存在时会提前返回。配置如果写在那里面，
+运维改了 `.env` 里的开关重启后**什么都不会发生**——这是个很难排查的坑。
+所以 `write_cloudfile_config()` 从 `start.py` 每次调用，且写的是带标记的区块
+（`CF_BEGIN` / `CF_END`），重复执行幂等，运维在同一文件里的其它改动不受影响。
+
+**建表也在每次启动时执行。**
+
+`apply_cloudfile_schema()` 执行 `cloudfile.sql`，全部 `IF NOT EXISTS`。
+必须覆盖三条路径：新装、版本升级、**既有 CE 部署切换到 CloudFile**。
+最后一条不跑任何 setup 或 upgrade 脚本，没有表的话 ACL 会 fail closed 把所有人锁在外面。
+
+## 铁律
+
+**全部 `CF_ENABLE_*` 关闭 = 原生 CE 行为。** 这是 P0 的验收标准。
+新增开关时默认必须是 `false`，`.env.example` 里也是 `false`。
+
+`docker-compose.yml` 里**不要给 profile 专属变量加 `:?` 必填标记**。
+compose 会对整个文件做插值，与激活哪个 profile 无关，`:?` 会让默认的
+`docker compose up` 直接失败。
+
+## 验证
+
+```bash
+cd deploy/compose && cp .env.example .env && docker compose config --quiet
+```
+```bash
+for p in search office worker full; do docker compose --profile $p config --services; done
+```
+```bash
+python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_hub.ref
+```
+
+完整构建（需要 Linux）：
+
+```bash
+./build/cloudfile_14.0/cloudfile-build.sh 14.0.0-cf.0
+```
+```bash
+./image/cloudfile_14.0/docker-build.sh 14.0.0-cf.0
+```
+
+## 改 ACL 语义的顺序
+
+`docs/acl-semantics.md` 是**规范**，`docs/acl-cases.json` 是它的可执行形式。
+两份实现（cloudfile-hub 的 Python、cloudfile-server 的 C）都加载同一个 JSON。
+
+正确顺序：先改规范 → 再改用例集 → 最后同时改两处实现。
+只改一处 = 引入漂移，而漂移在权限系统里意味着安全漏洞。
+
+```bash
+cd ../cloudfile-hub && python3 -m pytest cloudfile_ext/ -q
+```
+```bash
+cd ../cloudfile-server && ./tests/cf-acl/run.sh
+```
+
+## 约定
+
+- 代码、注释、commit message 用英文；文档（`*.md`）用中文。
+- shell 脚本用 `set -e`，改完跑 `bash -n`。
+- `release.yaml` 是构建的唯一真相来源。**不要把 ref 或 SHA 写死在构建脚本里**，
+  加进 manifest 再用 `read-manifest.py` 读。
+- 绝不提交 `deploy/compose/.env` 和 `deploy/compose/data/`（含密码与实际数据，
+  已在 `.gitignore`）。

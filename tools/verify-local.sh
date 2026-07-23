@@ -7,11 +7,15 @@
 # 发现的。一次次"改一行、推一次、等二十分钟"太慢了。这个脚本把同样的步骤
 # 搬到本地，失败在几分钟内就能看见。
 #
-#   ./tools/verify-local.sh              # 全流程
+#   ./tools/verify-local.sh              # 基线全流程（开关全关 = 原生 CE）
 #   ./tools/verify-local.sh preflight    # 只做静态一致性检查（秒级）
 #   ./tools/verify-local.sh build        # 只构建发行包
 #   ./tools/verify-local.sh e2e          # 假设镜像已在，只跑起栈 + E2E
+#   ./tools/verify-local.sh cap acl      # 能力门禁：开着 ACL 跑六入口矩阵
 #   ./tools/verify-local.sh clean        # 清掉本地栈与数据
+#
+# 基线门禁与能力门禁问的是不同的问题，所以是两条命令：前者问"开关全关时是否
+# 等同原生 CE"，后者问"开着开关时，每个入口是否真的执行了规则"。
 #
 # 与 CI 的差异（有意为之，且只有这些）：
 #   - 构建在 ubuntu 容器里跑（CI 的 runner 本身就是 ubuntu）
@@ -106,6 +110,22 @@ build_image() {
 }
 
 # ── 起栈 + E2E ──────────────────────────────────────────────────────────
+#
+# 能力门禁登记表：<名字>|<开关>|<E2E 脚本>
+#
+# 基线门禁问"开关全关时是否等同原生 CE"，所以它一个能力都不测；能力门禁问
+# "规则算出来之后，每个入口是否真的执行了"。两者必须分开跑，而本地此前**只有
+# 前者**——于是每验证一个能力都要手抄一遍 acl-e2e.yml 的步骤，抄错了还看不出来
+# （acl_matrix.py 缺 --insecure 就是这么留到今天的）。
+#
+# 加一个能力＝加一行，并保持与 .github/workflows/<能力>-e2e.yml 一致。
+CAPABILITIES=(
+    "acl|CF_ENABLE_DIR_ACL|tests/e2e/acl_matrix.py"
+)
+
+# 由 capability 阶段设置：要在 .env 里打开的开关。
+ENABLE_SWITCHES=${ENABLE_SWITCHES:-}
+
 stage_compose() {
     rm -rf "$STAGE_DIR"
     mkdir -p "$STAGE_DIR"
@@ -121,6 +141,16 @@ stage_compose() {
             "$repo/deploy/compose/.env.example"
         echo "CLOUDFILE_IMAGE=$IMAGE"
     } > "$STAGE_DIR/.env"
+
+    for sw in $ENABLE_SWITCHES; do
+        grep -q "^$sw=" "$STAGE_DIR/.env" \
+            || fail "$sw 不在 .env.example 里——开关清单不同步"
+        sed -i.bak "s|^$sw=.*|$sw=true|" "$STAGE_DIR/.env" && rm -f "$STAGE_DIR/.env.bak"
+        # 确认真的写进去了。开着开关跑却其实没开，全绿的矩阵毫无意义——
+        # 而那种失败是完全静默的。
+        grep -q "^$sw=true$" "$STAGE_DIR/.env" || fail "$sw 未能置为 true"
+        ok "$sw=true"
+    done
 }
 
 compose() { docker compose -p "$PROJECT" --project-directory "$STAGE_DIR" "$@"; }
@@ -129,22 +159,58 @@ up() {
     need_docker
     docker image inspect "$IMAGE" >/dev/null 2>&1 \
         || fail "本地没有镜像 $IMAGE，先跑 build"
-    say "启动（开关全关）"
+    if [[ -n $ENABLE_SWITCHES ]]; then
+        say "启动（开启：$ENABLE_SWITCHES）"
+    else
+        say "启动（开关全关）"
+    fi
     stage_compose
     compose up -d || fail "compose 启动失败"
     compose ps
 }
 
-e2e() {
+base_url() {
     # 443 时不带端口，让 URL 与 seahub 生成的绝对链接完全一致
     local base="https://127.0.0.1"
     [[ $HTTPS_PORT != 443 ]] && base="https://127.0.0.1:$HTTPS_PORT"
+    echo "$base"
+}
+
+e2e() {
+    local base; base=$(base_url)
     say "原生 CE 冒烟 @ $base"
     python3 "$repo/tests/e2e/smoke.py" --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
 
     say "扩展点已装好，但没有能力启用"
     python3 "$repo/tests/e2e/baseline.py" --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
+}
+
+# 能力门禁：开着自己的开关起栈，先证明没把原生功能弄坏，再跑能力自己的用例。
+#
+# 顺序是有意的：冒烟先挂的话，能力矩阵的失败信息会指向一堆下游症状，
+# 排查时分不清"规则拦错了"还是"服务压根没起来"。与 <能力>-e2e.yml 同序。
+capability_e2e() {
+    local name=$1 switch test_rel entry
+    for entry in "${CAPABILITIES[@]}"; do
+        IFS='|' read -r cap switch test_rel <<< "$entry"
+        [[ $cap == "$name" ]] && break
+        cap=''
+    done
+    [[ -n ${cap:-} ]] || fail "未知能力：$name（已登记：$(printf '%s ' "${CAPABILITIES[@]%%|*}"))"
+    [[ -f $repo/$test_rel ]] || fail "找不到 $test_rel"
+
+    ENABLE_SWITCHES=$switch
+    up
+
+    local base; base=$(base_url)
+    say "原生功能未被破坏（$switch 已开启）"
+    python3 "$repo/tests/e2e/smoke.py" --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
+
+    say "能力门禁：$name"
+    python3 "$repo/$test_rel" --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
 }
 
@@ -184,6 +250,22 @@ case "${1:-all}" in
     e2e)       e2e || { dump_logs; fail "E2E 未通过"; } ;;
     clean)     clean ;;
     distclean) clean; distclean ;;
+    # 能力门禁。镜像必须已经在（先跑 build），因为能力代码来自被构建的那个
+    # 分支，不是运行时开关能变出来的。
+    cap|capability)
+        [[ $# -ge 2 ]] || fail "用法：$0 cap <能力名>（已登记：$(printf '%s ' "${CAPABILITIES[@]%%|*}"))"
+        if capability_e2e "$2"; then
+            say "能力门禁通过：$2"
+            clean
+        else
+            dump_logs
+            echo
+            echo "栈仍在运行，方便你继续排查：" >&2
+            echo "  docker compose -p $PROJECT --project-directory $STAGE_DIR logs -f cloudfile" >&2
+            echo "  ./tools/verify-local.sh clean" >&2
+            exit 1
+        fi
+        ;;
     all)
         preflight
         build_dist

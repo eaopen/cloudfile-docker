@@ -114,17 +114,50 @@ def get_token(base, email, password):
     return data.get('token'), status, body
 
 
+def resolve_identity(admin, email):
+    """把登录邮箱换成 seafile 内部身份。
+
+    Seafile 14 之后两者不是一回事：账号的主键是不透明 id（`...@auth.local`），
+    邮箱只是登录属性。共享接口要的是 id。
+
+    ACL 规则则**故意仍然用邮箱下发**——CloudFile 的 ACL 接口负责自己解析，
+    而"管理员填邮箱、规则却存了一个永远匹配不上的字符串"正是这一轮抓到的缺陷，
+    所以这条路径必须被测到。
+    """
+    status, body = admin.api('/api/v2.1/admin/users/')
+    for user in (json_body(body) or {}).get('data', []):
+        if email in (user.get('email'), user.get('contact_email'),
+                     user.get('login_id')):
+            return user.get('email')
+        # 14 把邮箱本地部分放进了 name，id 形如 <hex>@auth.local
+        if user.get('name') == email.split('@')[0]:
+            return user.get('email')
+    sys.exit(f'在用户列表里找不到 {email}: {status} {body[:200]}')
+
+
 def setup(admin, base):
     """建用户、建库、建目录、共享、下 ACL 规则。返回 (repo_id, b_token)。"""
     print('\n准备场景…', flush=True)
 
     # 用户 B —— 已存在则忽略
-    admin.api('/api/v2.1/admin/users/', method='POST',
-              form={'email': B_EMAIL, 'password': B_PASSWORD})
+    status, body = admin.api('/api/v2.1/admin/users/', method='POST',
+                             form={'email': B_EMAIL, 'password': B_PASSWORD})
+    if status not in (200, 201) and 'exist' not in body.lower():
+        sys.exit(f'建用户 B 失败: {status} {body}')
 
     b_token, status, body = get_token(base, B_EMAIL, B_PASSWORD)
     if not b_token:
         sys.exit(f'无法取得用户 B 的 token: {status} {body}')
+
+    # B 的**身份**，不是他的邮箱。
+    #
+    # Seafile 14 把身份和邮箱拆开了：账号拿到的是
+    # 0506008c...@auth.local 这样的不透明 id，邮箱降级为登录属性。共享接口和
+    # 权限判定拿到的都是那个 id。这里如果继续用邮箱，共享会以
+    # `{"failed":[{"error_msg":"User ... not found."}]}` **静态 200** 返回，
+    # 而下面的断言会因为"B 什么都看不到"而以看不懂的方式失败。
+    b_id = resolve_identity(admin, B_EMAIL)
+    print(f'  用户 B 身份 = {b_id}', flush=True)
 
     # 库
     status, body = admin.api('/api2/repos/', method='POST',
@@ -143,10 +176,17 @@ def setup(admin, base):
               form={'operation': 'mkdir'})
 
     # 共享给 B（rw）——ACL 只能在此基础上收紧
-    admin.api(f'/api2/repos/{repo_id}/dir/shared_items/?p=/',
-              method='PUT',
-              form={'share_type': 'user', 'username': B_EMAIL,
-                    'permission': 'rw'})
+    #
+    # 这个接口**失败也返回 200**，把错误装在 body 的 failed 数组里。不看 body
+    # 的话，整个矩阵会在一个根本没共享出去的库上跑，然后每一条都因为"B 无权限"
+    # 而失败——离真因很远。第一次跑就是这么挂的。
+    status, body = admin.api(f'/api2/repos/{repo_id}/dir/shared_items/?p=/',
+                             method='PUT',
+                             form={'share_type': 'user', 'username': b_id,
+                                   'permission': 'rw'})
+    failed = (json_body(body) or {}).get('failed') or []
+    if status != 200 or failed:
+        sys.exit(f'共享给 B 失败: {status} {body}')
 
     # ACL 规则
     for path, perm in (('/restricted', 'r'), ('/secret', 'invisible')):

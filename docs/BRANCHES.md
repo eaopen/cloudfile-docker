@@ -353,7 +353,7 @@ graph LR
 | OnlyOffice | **0** | ✅ 是 | **上游 CE 已自带 `seahub/onlyoffice/`**（views/converter/callback 全套），只有锁集成两行是 Pro 门控。规模远小于原估 |
 | SMB/NFS 及其派生 | **0** | ❌ **否** | `register_external_source_provider()` 只能经自有路由暴露。要出现在原生库列表里需改上游列举逻辑。见缺口 3 |
 | **文件锁** | **0（server 侧）+ ⚠️（Hub 侧）** | ✅ 是 | server 侧确实免费：`seafile_mark_file_locked` RPC 与 `FileLocks` 表上游都已存在。但 Hub 侧锁语义被 `is_pro_version()` 门控，散在 `views/file.py`、`onlyoffice/views.py`、`seadoc/apis.py`、`exdraw/apis.py`，**均未登记**。见缺口 5 |
-| **S3 主存储** | **1 新增登记项** | — | 新写 `common/obj-backend-s3.c`（新文件）+ 改 `common/obj-store.c:28` 的后端选择（目前硬编码 `obj_backend_fs_new`）。**seafobj 上游已自带 s3/ceph/swift/alioss 后端**，Python 读取侧无需 fork |
+| **S3 / 多存储** | **核心文件服务缺 S3 驱动**（Go + C 两侧） | — | **此前记"1 登记项"，是严重低估**——见 [storage.md](storage.md)。Go fileserver 只有 `backend_fs.go`、C 侧只有 `obj-backend-fs.c`，都缺 S3；GC/FSCK 也经 C 的 `obj_store`。seafobj 有 S3 但只是 Python 读侧，不在服务路径上。要补 Go `backend_s3.go` + C `obj-backend-s3.c` + 两侧后端选择与多存储路由 |
 
 ### 五个反直觉结论
 
@@ -363,8 +363,12 @@ graph LR
    需求的原因。这条也是"先查上游再动工"这个习惯的第一个样本：花十分钟
    `grep -rl is_pro_version`，省下一个认证后端的长期维护。
 
-1. **S3 比预想便宜。** 原以为要连 seafobj 一起 fork，实测上游已支持。
-   代价收敛到一个 `obj-store.c` 的后端选择改动。
+1. **S3 比预想贵——这条此前记反了。** 原以为 seafobj 上游已支持就近乎白捡，
+   代价收敛到一个 `obj-store.c` 改动。**实测错了**：seafobj 只是 Python 读侧，
+   而**核心文件服务（Go fileserver + C seaf-server/GC/FSCK）只有 FS 后端**。S3 要
+   在 Go 和 C 两侧各补一个存储驱动 + 多存储路由，是 roadmap 里最重的构建项之一。
+   教训与"审计比预想贵"同源：**只看一层（seafobj）会漏掉真正承担写入的那一层**。
+   见 [storage.md](storage.md) 第四节。
 
 2. **审计比预想贵。** 它是唯一一个原先记 0、实测**根本没有触发点**的特性。
    钩子注册得了，但没有任何上游代码会调用它——注册了一个永不触发的回调。
@@ -519,7 +523,7 @@ ln -s ../../../cloudfile-docker/tools/check-upstream-patches.sh .git/hooks/pre-p
 | **3** | 3.1 | 文件锁（含 Hub 侧 Pro 门控拆解） | 唯一有新增上游补丁的线，先过 review |
 | | 3.2 | 签入签出 → OnlyOffice → iTeam | **OnlyOffice 规模待探针 2 定**：上游 CE 已带 `seahub/onlyoffice/` |
 | **4** | 4.1a | 外部源 → 扫描 → 虚拟目录 | **先决定要不要付"另起入口"的产品代价**（缺口 3） |
-| | 4.1b | S3 主存储（与 4.1a 无关，可各自推进） | 唯一抬高长期维护成本的一项，落地前重新评估是否真的需要 |
+| | 4.1b | S3 / 多存储（与 4.1a 无关，可各自推进） | **最重的构建项之一**：核心文件服务缺 S3 驱动，要在 Go + C 两侧补。规格 [storage.md](storage.md) |
 | | 4.2 | Overlay 属性 | 跨线依赖线 2，**等 D 落地后再定归属**，不阻塞 4.1a |
 
 **人手不足时按线优先级取舍**：线 1 是企业准入的门槛，线 2 是产品差异化，

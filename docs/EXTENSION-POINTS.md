@@ -103,7 +103,7 @@ seasearch、Elasticsearch、企业自有检索服务都可以是同一个 kind �
 | **G** | 外部源增量扫描 | `EXTERNAL_SOURCES` | | | | | ● | | ● | ● | | ● | |
 | **G** | 虚拟目录挂载 | `EXTERNAL_SOURCES` | ● | ● | ● | | | | ● | | | ● | ○ |
 | **G×D** | Overlay 标签属性 | `EXTERNAL_SOURCES` | ● | | | | ● | | ● | | | ● | |
-| **H** | S3 主存储 | `S3_STORAGE` | | | | | | | | | | | ⚠️ 见缺口 4 |
+| **H** | S3 / 多存储 | `S3_STORAGE` | | | | | | | | | | | 🔴 见缺口 4：核心文件服务缺 S3 驱动 |
 
 **两行标了跨簇**（`D×E` 组合检索、`G×D` Overlay），它们是仅有的两处会把两条
 分支绑死的特性。处理方式：前者经第六节的结构化过滤契约解耦（已实现），
@@ -157,10 +157,23 @@ seahub 自带的 `seahub/signals.py` 只有 `repo_created`、`upload_file_succes
 **这就是"零上游成本"的真实前提**：代价为 0 是因为另起了一个入口，用户会看到两套
 文件浏览界面。要不要付这个成本，是产品决定，不是技术决定——写进 roadmap，别藏在一个 `0` 后面。
 
-### 缺口 4：S3 主存储的后端选择是硬编码 🟡
+### 缺口 4：核心文件服务只有 FS 后端 🔴（此前严重低估）
 
-`common/obj-store.c:28` 直接调 `obj_backend_fs_new`，没有分发点。这是 S3 唯一的
-新增登记项。**seafobj（Python 读取侧）上游已自带 s3/ceph/swift/alioss 后端**，不需要 fork。
+**这条早先记成"S3 唯一的新增登记项"，是错的。** 完整核对见 [storage.md](storage.md)
+第四节。真实情况：
+
+- `common/obj-store.c:28` 写死 `obj_backend_fs_new`，且只有 `obj-backend-fs.c` +
+  遗留 `riak`——**没有 S3**。C 侧的 seaf-server / GC（`server/gc/gc-core.c`）/
+  FSCK（`fsck.c`）都经这个 `obj_store`。
+- **Go fileserver `fileserver/objstore/` 只有 `backend_fs.go`**（113 行），`New()`
+  写死 `newFSBackend`，`option.go` 不解析 S3/multiple。14.0 的 HTTP 文件服务走这里。
+- seafobj（Python）确实已带 S3/OSS/Swift/Ceph——**但那只是 Python 读侧**
+  （seahub 缩略图、seafevents 索引读对象），**不在核心写入/服务路径上**。
+
+所以 S3 要补的是**核心文件服务的存储驱动**：Go `backend_s3.go` + C `obj-backend-s3.c`
++ 两侧的后端选择与多存储 `storage_id` 路由，覆盖上传/下载/同步/历史/GC/FSCK/迁移。
+接口本身干净（Go 四方法、C 照 fs 后端形状），但这是**实现驱动**，不是登记一行——
+是 roadmap 里最重的构建项之一。
 
 ### 缺口 5：文件锁的 Hub 侧被 `is_pro_version()` 门控 🟡
 

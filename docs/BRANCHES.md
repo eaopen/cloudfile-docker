@@ -448,7 +448,7 @@ ln -s ../../../cloudfile-docker/tools/check-upstream-patches.sh .git/hooks/pre-p
 | 顺序 | 内容 | 理由 |
 |---|---|---|
 | **0** | 基线门禁在 **CI 上**跑通一次 | 本机已通过；CI 与本机的差异（架构、磁盘、PATH）是最后一个未验证面 |
-| **0.5** | 三个决策探针 | 结论直接改写线 2 与线 3 的规模。**先做探针再投入**，见下 |
+| **0.5** | 三个决策探针 | 结论直接改写线 2 与线 3 的规模。**探针 1、3 已做**（[upstream-reuse.md](upstream-reuse.md)），线 2 已定型；探针 2（OnlyOffice）仍未做 |
 
 ### 四条线并行
 
@@ -459,8 +459,8 @@ ln -s ../../../cloudfile-docker/tools/check-upstream-patches.sh .git/hooks/pre-p
 | **1** | 1.1 | 重建 `feature/dir-acl` → 六入口矩阵 → 合回 `dev` | **不是"只差验证"**：分支已腐坏，见第九节。含 WebDAV 读侧补丁（发布阻塞项） |
 | | 1.2 | SSO | **代码已完成于 `feature/sso`，门禁未跑过** —— 登录复用上游，CloudFile 只做配置与组织映射。规格 [sso-mapping.md](sso-mapping.md)，探针 [upstream-reuse.md](upstream-reuse.md)。合回 `dev` 前先跑 `verify-local.sh cap sso` |
 | | 1.3 | 审计 | ⚠️ **先补基线 `file_op` 分发点**，那是一次基线改动，按基线标准 review |
-| **2** | 2.1a | 元数据（属性 + 标签 + 移动跟随） | **规模待探针 1 定**：复用上游 `repo_metadata` 还是自研 |
-| | 2.1b | 检索后端（与 2.1a **真并行**） | **选型待探针 3 定**（meilisearch / seasearch）。扩展点与过滤契约已就位 |
+| **2** | 2.1a | 元数据（属性 + 标签 + 移动跟随） | **探针 1 已定：写协议兼容的 metadata-server + 复用上游前端/API**。落地第一步是最小服务让原生前端连上 |
+| | 2.1b | 检索后端（与 2.1a **真并行**） | **探针 3 已定：默认 seasearch（上游已集成，零 CloudFile 代码）**，meilisearch 作可选 provider。扩展点与过滤契约已就位 |
 | | 2.2 | 组合检索 | 需 2.1a + 2.1b 都进了 `dev`，验收属集成门禁 |
 | **3** | 3.1 | 文件锁（含 Hub 侧 Pro 门控拆解） | 唯一有新增上游补丁的线，先过 review |
 | | 3.2 | 签入签出 → OnlyOffice → iTeam | **OnlyOffice 规模待探针 2 定**：上游 CE 已带 `seahub/onlyoffice/` |
@@ -472,20 +472,25 @@ ln -s ../../../cloudfile-docker/tools/check-upstream-patches.sh .git/hooks/pre-p
 线 3 与线 4 可以整条推迟而不影响前两条——四条线之间没有技术依赖，
 这正是按耦合切分的收益。
 
-### 三个决策探针
+### 决策探针
 
-排期表里凡是标"待探针定"的，都在等这三件事。每个 1～2 天，产出写进
-[upstream-reuse.md](upstream-reuse.md)——那份文档已经建立，
-里面还有一个原本不在计划内的**探针 0（SSO）**，它的结论改变了特性 36 的形状：
+产出都写进 [upstream-reuse.md](upstream-reuse.md)——那份文档里还有一个原本不在
+计划内的**探针 0（SSO）**，它的结论改变了特性 36 的形状。
 
-| # | 探针 | 决定什么 |
-|---|---|---|
-| 1 | **metadata-server 协议探针**：按 `seahub/repo_metadata/metadata_server_api.py` 的 SQL-over-HTTP 请求写一个最小实现，看原生前端能否跑起来 | 2.1a 是"实现一个兼容服务"还是"自研全套属性/标签系统"。**量级差一个数量级** |
-| 2 | **OnlyOffice 门控盘点**：数清 `is_pro_version()` 里哪些是真 Pro 依赖、哪些只是商业门控 | 3.2 的规模；顺带给 3.1 的 Hub 侧成本定量 |
-| 3 | **seasearch vs meilisearch 选型** | 2.1b 用哪个 provider。上游正在往 seasearch 走，跟随上游长期成本更低 |
+| # | 探针 | 状态 | 决定什么 |
+|---|---|---|---|
+| 1 | **metadata-server 协议探针** | ✅ 已做 | **实现一个兼容服务**。协议 316 行、完全已知；要重写的前端+API 是 352+88 前端文件 + 3745 行 apis.py，都在 CE。JWT 用 CloudFile 已生成的 `JWT_PRIVATE_KEY`。`/query` 的 SQL 方言贴近 SQLite、无真 JOIN，服务端只需执行不需生成 |
+| 2 | **OnlyOffice 门控盘点**：数清 `is_pro_version()` 里哪些是真 Pro 依赖、哪些只是商业门控 | ⬜ 未做 | 3.2 的规模；顺带给 3.1 的 Hub 侧成本定量 |
+| 3 | **seasearch vs meilisearch 选型** | ✅ 已做 | **seasearch，且不经我们的 provider**。它在 CE 里已完整集成、无 Pro 门控，走搜索视图里一条独立分支（`ai_search_files`），配 seafevents 即可。meilisearch 作可选 provider 保留 |
 
-**探针的价值在于它可能让整段排期消失。** 如果探针 1 成立，线 2 就从"五个特性
-从零做"变成"一个服务 + 配置"，而且白拿上游全部前端。
+**探针的价值在于它可能让整段排期消失，而它兑现了。** 探针 1、3 已把线 2 从
+"五个特性从零做"落定为"一个兼容服务 + 配置 seasearch，前端和 API 全部白拿
+上游"。剩探针 2（OnlyOffice，属 P3/线 3）未做。
+
+> **每个探针都是"先查上游再动工"的实证**：探针 0 省下一个认证后端，探针 1 省下
+> 一套属性/标签前端，探针 3 省下一个自研检索方案。三次都是花十分钟到两天读代码，
+> 换来砍掉数千行本要自己维护的重写。**这正是这个 fork 的成本模型：改动上游是
+> 唯一持续付费项，而重写上游已开源的东西是它更贵的变体——不冲突，但永久自担。**
 
 ---
 

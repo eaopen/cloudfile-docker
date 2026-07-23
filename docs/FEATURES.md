@@ -183,22 +183,22 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
-| 38 | 文件属性扩展 | ⬜ | ⚠️ **上游 CE 已带 `seahub/repo_metadata/`**（完整 API + 前端，无 Pro 门控），经 SQL-over-HTTP 连一个闭源 metadata-server。写一个协议兼容的服务可能比自研便宜一个数量级 —— **先做探针** |
-| 39 | 标签 | ⬜ | 与 38 同表同分支。上游还有 `seahub/tags/`、`file_tags/`、`repo_tags/` |
+| 38 | 文件属性扩展 | ⬜ | **探针 1 已定方向：实现一个协议兼容的 metadata-server，不自研。** 前端 352 文件 + apis.py 3745 行都在 CE，协议只有 316 行。落地第一步是按 [upstream-reuse.md](upstream-reuse.md) 探针 1 的端点表写最小服务，让原生前端连上 |
+| 39 | 标签 | ⬜ | 与 38 同表同分支，同样白拿上游前端（`seahub/tags/`、`file_tags/`、`repo_tags/` + 88 个标签前端文件）。标签的递归 `sub_links` 在 Hub 侧就展开成 `IN (...)`，服务端不必特殊处理 |
 | 42 | 移动重命名时元数据关联更新 | ⬜ | 与 38 同分支。依赖 `file_op` 钩子（待办 3） |
 
 **簇 E（`feature/search`）** —— 与簇 D **可真并行**，靠第 67 项的过滤契约解耦。
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
-| 40 | 索引与检索 | ⬜ | 查询侧扩展点**已就位**（第 64 项）。meilisearch 是其中一个 provider；**seasearch 也是**，而上游 CE 14.0 已自带其集成——选型待探针 3 |
+| 40 | 索引与检索 | ⬜ | **探针 3 已定方向：默认用 seasearch，且它不经我们的 provider。** seasearch 在 CE 里已完整集成、无 Pro 门控，走搜索视图里一条独立分支（`ai_search_files`），配 seafevents 即可，零 CloudFile 代码。meilisearch 作为可选 provider 保留（填 `es_search` 槽）。⚠️ 两者同配时 `HAS_FILE_SEARCH` 分支优先，meilisearch 会盖过 seasearch——见 [upstream-reuse.md](upstream-reuse.md) 探针 3 |
 | 41 | 属性 / 标签 / 内容组合检索 | ⬜ | **跨簇（D × E）**。经第 67 项的契约解耦：D 喂字段、E 翻译过滤，各自独立验收；端到端验收属 `dev` 上的集成门禁，不归任一分支 |
 
 Compose 的 `search` profile 与 `cf-worker` 已就位，实现时不需要再动部署。
 
-> **这一段的规模高度不确定，且不确定性是可以消除的**：三个探针各 1～2 天，
-> 结论可能让 P2 从"五个特性从零做"缩成"一个服务 + 配置"。
-> 见 [BRANCHES.md](BRANCHES.md) 第八节。
+> **不确定性已消除**：探针 1 与 3 都已完成（[upstream-reuse.md](upstream-reuse.md)），
+> P2 从"五个特性从零做"确认缩成"一个兼容服务 + 配置 seasearch"。原文这里写着
+> "三个探针各 1～2 天"——探针 1、3 已兑现那句承诺，探针 2（OnlyOffice）属 P3，仍未做。
 
 ---
 
@@ -253,11 +253,12 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
    没有任何地方调用 `run_file_op_hooks()`——注册了一个永不触发的回调。审计、
    文件属性、标签、元数据跟随、OnlyOffice、文件锁、签入签出，**七个特性依赖它**。
    见 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 缺口 1。
-4. 🟠 **上游 CE 14.0 已带了 P2/P3 的一大半**（`repo_metadata`、`tags`、
-   `file_tags`、`repo_tags`、`onlyoffice`、seasearch），且大多**无 Pro 门控**——
-   `repo_metadata` 只缺闭源的 metadata-server。在 `cloudfile_ext` 里另起一套
-   属性/标签系统等于重写上游已开源的前端和 API。**动工前先做探针**，
-   见 [BRANCHES.md](BRANCHES.md) 第八节。
+4. 🟢 **上游 CE 14.0 已带了 P2/P3 的一大半**（`repo_metadata`、`tags`、
+   `file_tags`、`repo_tags`、`onlyoffice`、seasearch），且大多**无 Pro 门控**。
+   **探针 1、3 已做**（[upstream-reuse.md](upstream-reuse.md)）：属性/标签的
+   方向是"写一个协议兼容的 metadata-server + 复用上游全部前端和 API"，检索的
+   方向是"配上游已集成的 seasearch，零 CloudFile 代码"。**结论是省下工作量，
+   不是待办**——只剩 OnlyOffice（探针 2）未盘点，属 P3。
 5. 🟡 **MySQL DDL 未对真实 MySQL 执行**（第 19 项），仅验证了语句切分与 SQLite 变体。
 6. 🟡 **上游遗留问题**：`seahub/api2/endpoints/repos_batch.py` 的
    `BatchMoveItemsUpdatePath` 完全没有权限校验（上游 docstring 自述

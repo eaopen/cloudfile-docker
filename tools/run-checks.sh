@@ -43,23 +43,38 @@ skip() {
 # 1. 上游改动登记 —— fork 维护成本的硬约束
 run "上游改动登记" "$docker_repo/tools/check-upstream-patches.sh"
 
-# 2. Hub 侧 ACL 求解器（与 C 端共用同一份用例集）
+# 2. Hub 侧扩展测试（能力分支上还包括与 C 端共用用例集的求解器测试）
 if [[ -d $hub ]]; then
-    run "Hub ACL 求解器 (Python)" bash -c \
-        "cd '$hub' && python3 -m pytest cloudfile_ext/ -q"
+    # pytest 收集不到用例时退出码是 5。基线上确实一个能力测试都没有，那是
+    # 正常状态，不该判为失败——但真正的失败（退出码 1）仍然要红。
+    run "Hub 扩展测试 (Python)" bash -c \
+        "cd '$hub' && python3 -m pytest cloudfile_ext/ -q; rc=\$?; [ \$rc -eq 0 ] || [ \$rc -eq 5 ]"
 else
-    skip "Hub ACL 求解器" "找不到 $hub"
+    skip "Hub 扩展测试" "找不到 $hub"
 fi
 
-# 3. Server 侧 ACL 求解器（只需要 glib，不需要完整构建）
+# 3. Server 侧能力测试（只需要 glib，不需要完整构建）
+#
+# 用发现而不是写死：基线上一个能力都没有，能力分支上则各有各的
+# tests/cf-<能力>/run.sh。写死某个能力的路径会让基线永远报"缺失"。
+server_cap_tests=()
+if [[ -d $server/tests ]]; then
+    while IFS= read -r t; do server_cap_tests+=("$t"); done \
+        < <(find "$server/tests" -mindepth 2 -maxdepth 2 -name run.sh 2>/dev/null | sort)
+fi
+
 if [[ ! -d $server ]]; then
-    skip "Server ACL 求解器" "找不到 $server"
+    skip "Server 能力测试" "找不到 $server"
+elif [[ ${#server_cap_tests[@]} -eq 0 ]]; then
+    skip "Server 能力测试" "基线无能力实现，无测试可跑"
 elif ! command -v cc >/dev/null; then
-    skip "Server ACL 求解器" "没有 C 编译器"
+    skip "Server 能力测试" "没有 C 编译器"
 elif ! pkg-config --exists glib-2.0 2>/dev/null; then
-    skip "Server ACL 求解器" "没有 glib-2.0（apt install libglib2.0-dev）"
+    skip "Server 能力测试" "没有 glib-2.0（apt install libglib2.0-dev）"
 else
-    run "Server ACL 求解器 (C)" "$server/tests/cf-acl/run.sh"
+    for t in "${server_cap_tests[@]}"; do
+        run "Server 能力测试 $(basename "$(dirname "$t")")" "$t"
+    done
 fi
 
 # 4. Go fileserver
@@ -97,10 +112,13 @@ run "脚本语法" bash -c "
                      '$docker_repo/image/cloudfile_14.0' -name '*.sh'); do
         bash -n \"\$f\"
     done
-    for f in '$docker_repo/build/cloudfile_14.0/read-manifest.py'; do
+    for f in '$docker_repo/build/cloudfile_14.0/read-manifest.py' \
+             \$(find '$docker_repo/tests' -name '*.py' 2>/dev/null); do
         python3 -m py_compile \"\$f\"
     done
-    python3 -c \"import json; json.load(open('$docker_repo/docs/acl-cases.json'))\"
+    for f in \$(find '$docker_repo/docs' -name '*.json'); do
+        python3 -c \"import json,sys; json.load(open(sys.argv[1]))\" \"\$f\"
+    done
 "
 
 # 7. release.yaml 可解析且关键键齐全

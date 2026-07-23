@@ -15,7 +15,12 @@ server_commit: ""
 hub_commit: ""
 docker_commit: ""
 
-# CloudFile forks. Overridden by CF_SERVER_REF / CF_HUB_REF for local builds.
+# CloudFile forks.
+#
+# `dev` is the extension baseline: seams, build and deploy machinery, and no
+# capabilities. A capability build points these at its own long-lived branch,
+# e.g. ref: feature/dir-acl on both. CF_SERVER_REF / CF_HUB_REF override them
+# without editing this file.
 forks:
   cloudfile_server:
     url: https://github.com/eaopen/cloudfile-server.git

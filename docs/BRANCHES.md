@@ -11,41 +11,68 @@
 CloudFile 是长期跟随上游的 fork，**唯一持续产生成本的东西是"修改了多少上游文件"**。
 新增文件永远不会和上游冲突；改一个上游文件，则每次同步都要再付一次。
 
-当前实测：
+当前实测（`dev`，即扩展基线）：
 
 | 仓库 | 修改上游文件 | 新增文件 |
 |---|---|---|
-| cloudfile-server | 8 | 12 |
-| cloudfile-hub | 3 | 34 |
-| cloudfile-docker | 3 | 16 |
-| **合计** | **14** | **62** |
+| cloudfile-server | 8 | 6 |
+| cloudfile-hub | 3 | 26 |
+| cloudfile-docker | 3 | 27 |
+| **合计** | **14** | **59** |
 
-62 个新增文件的维护成本接近于零，全部成本集中在那 14 个。分支因此分两类：
+新增文件的维护成本接近于零，全部成本集中在那 14 个。
 
-| 类型 | 定义 | Review 强度 |
-|---|---|---|
-| **基础分支** | 改动上游文件，或改动跨仓契约（规格、RPC、schema、构建） | 高。必须说明为何无法改成新增文件；同步更新登记清单与 BRANCHING.md |
-| **特性分支** | 只新增文件（`cloudfile_ext/`、`common/cf-*`、`docs/` …） | 常规。可并行、可乱序合并 |
+**把目录 ACL 整个剥到 `feature/dir-acl` 之后，这 14 个数字一个都没变**——
+变的只有新增文件数。这正是扩展点设计到位的证据：能力来去不影响 fork 成本。
 
-> 一个特性只要不动上游文件，它多大都不影响维护成本；只要动了，它多小都要按基础分支对待。
+分支因此分两类：
+
+| 类型 | 定义 | 归属 | Review 强度 |
+|---|---|---|---|
+| **扩展基线** | 扩展点、构建、部署、发布机制。改动上游文件或跨仓契约 | `dev` | 高。必须说明为何无法改成新增文件；同步更新登记清单与 BRANCHING.md |
+| **能力分支** | 一个具体能力，只新增文件 | `feature/*`，**长期存在** | 常规。可并行开发 |
+
+> 一个能力只要不动上游文件，它多大都不影响维护成本；只要动了，它多小都要按基线改动对待。
+
+### 能力分支是长期的，不是短命的
+
+能力（尤其是 ACL 这种安全控制）会持续改进。它们的分支**不预期很快合并回
+`dev`**，而是长期存在、周期性把 `dev` 合并进来。
+
+这对基线提出了一条硬要求：
+
+> **扩展点必须完整到让能力分支不再需要新增任何上游改动。**
+
+否则每次同步上游，代价要按能力分支的数量翻倍，而且多个分支会在同样的行上
+互相冲突。当前状态是达标的——把 ACL 从 `dev` 剥离出去时，三个仓的上游改动
+清单**一个字节都没变**。
+
+能力分支上如果发现必须新增上游改动，正确做法是**先给基线加扩展点**，
+而不是在分支上改上游文件。
 
 ---
 
-## 二、基础层（已完成，在 `dev`）
+## 二、扩展基线（在 `dev`）
 
-这六项是全部后续特性的地基，**不再单独开分支**，改动它们等同于改动跨仓契约：
+这些是全部能力的地基，**不再单独开分支**，改动它们等同于改动跨仓契约：
 
 | # | 基础能力 | 位置 | 谁依赖它 |
 |---|---|---|---|
 | B1 | 分支模型与发布清单 | `release.yaml`、`BRANCHING.md` | 全部 |
 | B2 | 扩展框架（开关 + 注册中心 + hooks） | `cloudfile_ext/{features,registry,hooks}.py` | 全部 Hub 侧特性 |
 | B3 | 三个上游注入点 | `rooturl.py`、`views/__init__.py`、`webpack.entry.js` | 全部 Hub 侧特性 |
-| B4 | `cf_*` 数据层约定 | `scripts/sql/*/cloudfile.sql`、`db_router.py`、每次启动建表 | 全部需要建表的特性 |
+| B4 | `cf_*` 数据层约定 | `db_router.py`、bootstrap 每次启动执行 `cloudfile.sql`（基线不带表，能力自带） | 全部需要建表的能力 |
 | B5 | 交付通道 | `build/`、`image/`、`deploy/compose/` | 全部 |
-| B6 | 规格 + 共享用例集模式 | `docs/acl-semantics.md`、`acl-cases.json`、双端测试 | 全部需要跨层一致的特性 |
+| B6 | server 侧扩展点 | `common/cf-ext.{c,h}`：能力注册表 + 权限/列举/子树三个分发钩子 | 全部需要底层强制的能力 |
+| B7 | 基线门禁 | `tests/e2e/smoke.py`（原生 CE 行为）+ `baseline.py`（扩展点已装好但未启用） | — |
 
-**B3 是关键投资**：`check_folder_permission` 一个钩子覆盖 255 处调用点，
-`register_urls` 覆盖全部路由。正因为它已经铺好，后面十几个特性才都能做到"零上游改动"。
+**B3 与 B6 是关键投资**：Hub 侧 `check_folder_permission` 一个钩子覆盖 255 处
+调用点；server 侧 8 个上游文件一次性改好后全部调进 `cf-ext.c`。正因为这两处已经
+铺好，后面十几个能力才都能做到"零上游改动"。
+
+`cf_ext_init()` 里不注册任何能力，所以基线上每个钩子都是透传。能力分支只需要
+新增 `common/cf-<能力>.c`、在 `cf-ext.c` 里加一行注册、在 `Makefile.am` 加一行
+（三者全部零成本）。
 
 ---
 
@@ -53,7 +80,7 @@ CloudFile 是长期跟随上游的 fork，**唯一持续产生成本的东西是
 
 ```mermaid
 graph LR
-  B["基础层 B1-B6<br/>已在 dev"]
+  B["扩展基线 B1-B7<br/>dev"]
 
   B --> SSO["SSO<br/>P1"]
   B --> AUDIT["操作日志<br/>P1"]
@@ -62,6 +89,7 @@ graph LR
   B --> LOCK["文件锁<br/>P3"]
   B --> EXT["SMB/NFS 外部源<br/>P4"]
   B --> S3["S3 主存储<br/>P4"]
+  B --> ACL["目录 ACL<br/>feature/dir-acl<br/>已实现，待验证"]
 
   ATTR --> MEILI["Meilisearch<br/>P2"]
   TAG --> MEILI
@@ -81,14 +109,16 @@ graph LR
   classDef cheap fill:#fff8e1,stroke:#fbc02d
   classDef costly fill:#ffebee,stroke:#e53935
   class SSO,AUDIT,ATTR,TAG,MEILI,SEARCH,MVMETA,OFFICE,CHECKOUT,ITEAM,EXT,SCAN,VDIR,OVERLAY free
-  class LOCK cheap
+  class ACL,LOCK cheap
   class S3 costly
 ```
 
 绿 = 零上游改动；黄 = 复用已登记文件；红 = 需要新增登记项。
 
-**七个特性没有任何前置依赖**（SSO、操作日志、文件属性、标签、文件锁、外部源、S3），
+**七个能力没有任何前置依赖**（SSO、操作日志、文件属性、标签、文件锁、外部源、S3），
 可以完全并行。其余都挂在它们后面。
+
+目录 ACL 已在 `feature/dir-acl` 上实现完毕，等待它自己的 E2E 门禁验证。
 
 ---
 
@@ -128,12 +158,14 @@ fix/<简述>
 sync/upstream-YYYYMMDD
 ```
 
-**跨仓特性用同名分支。** 构建脚本原生支持，不需要临时改 `release.yaml`：
+**跨仓能力用同名分支。** 构建脚本原生支持，不需要临时改 `release.yaml`：
 
 ```bash
-CF_SERVER_REF=feature/file-lock CF_HUB_REF=feature/file-lock \
-  ./build/cloudfile_14.0/cloudfile-build.sh 14.0.0-cf.0-dev
+CF_SERVER_REF=feature/dir-acl CF_HUB_REF=feature/dir-acl \
+  ./build/cloudfile_14.0/cloudfile-build.sh 14.0.0-cf.0-dir-acl
 ```
+
+能力分支的 CI 用同样的方式构建自己的镜像，再跑自己的 E2E 门禁。
 
 可覆盖的变量：`CF_SERVER_REF`、`CF_HUB_REF`、`CF_SERVER_URL`、`CF_HUB_URL`、
 `CF_SEAFOBJ_REF`、`CF_SEAFDAV_REF`、`CF_SEAFEVENTS_REF`、`CF_LIBSEARPC_REF`、
@@ -144,7 +176,7 @@ CF_SERVER_REF=feature/file-lock CF_HUB_REF=feature/file-lock \
 
 ## 六、合并门槛
 
-每个特性分支合并进 `dev` 前必须全部满足：
+能力分支要被认为"就绪"（可以随基线一起发布），必须全部满足：
 
 1. **开关默认关闭**，`.env.example` 里也是 `false`。
 2. **全部开关关闭时，行为与原生 CE 一致**。这是 P0 的验收项，也是每次合并的验收项。
@@ -153,14 +185,17 @@ CF_SERVER_REF=feature/file-lock CF_HUB_REF=feature/file-lock \
    ./tools/check-upstream-patches.sh
    ```
    清单变长则拒绝合并，除非同时更新了登记文件和 `BRANCHING.md` 并说明理由。
-4. **涉及跨层语义的，两端实现跑同一份用例集**：
+4. **涉及跨层语义的，两端实现跑同一份用例集**，规格与用例集放在能力分支的
+   `docs/` 下：
    ```bash
    cd cloudfile-hub && python3 -m pytest cloudfile_ext/ -q
    ```
    ```bash
-   cd cloudfile-server && ./tests/cf-acl/run.sh
+   cd cloudfile-server && ./tests/cf-<能力>/run.sh
    ```
-5. **[FEATURES.md](FEATURES.md) 状态已更新**，且严格区分 ✅（有验证证据）与
+5. **能力自己的 E2E 门禁通过**（例如 ACL 的六入口矩阵）。基线门禁不测试任何
+   具体能力，所以这一条只能由能力分支自己保证。
+6. **[FEATURES.md](FEATURES.md) 状态已更新**，且严格区分 ✅（有验证证据）与
    🟡（写完未验证）。把未验证的标成已完成，是这份文档唯一会失去价值的方式。
 
 ---
@@ -212,7 +247,8 @@ ln -s ../../../cloudfile-docker/tools/check-upstream-patches.sh .git/hooks/pre-p
 
 | 顺序 | 内容 | 理由 |
 |---|---|---|
-| **0** | 构建镜像 + 启动 Compose + 跑通 ACL 六入口矩阵 | 20 个 🟡 项全部卡在这一步，且它验证的是基础层本身。**在此之前不宜开新特性分支** |
+| **0** | 基线门禁跑通：构建镜像 + 原生 CE 冒烟 + 扩展点验收 | 它验证的是基线本身，全部能力都建立在其上 |
+| **0.5** | `feature/dir-acl` 的六入口矩阵跑通 | ACL 代码已完成，只差验证 |
 | 1 | SSO、操作日志（并行） | 零上游成本，且是企业部署的准入条件 |
 | 2 | 文件属性 + 标签（并行） | 零成本，解锁 P2 全部 |
 | 3 | 文件锁 | 零新增登记项，且解锁签入签出与 OnlyOffice 并发安全 |

@@ -51,8 +51,6 @@ docs/FEATURES.md                   特性清单与完成情况 —— 先看这�
 docs/BRANCHES.md                   特性分支、依赖关系、上游成本、排期建议
 docs/upstream-patches/             各仓允许修改的上游文件登记
 tools/check-upstream-patches.sh    强制登记清单不被悄悄变长
-docs/acl-semantics.md              目录 ACL 规范（跨仓）
-docs/acl-cases.json                规范的可执行形式，Python 和 C 两端共用
 build/cloudfile_14.0/
 ├── cloudfile-build.sh             拉源码、按 SHA 检出、构建发行包
 ├── cloudfile-build.py             上游 seafile-build.py 的副本（13.0/14.0 版本完全相同）
@@ -87,7 +85,8 @@ scripts/scripts_14.0/              容器内运行时脚本（上游文件，改
 
 `apply_cloudfile_schema()` 执行 `cloudfile.sql`，全部 `IF NOT EXISTS`。
 必须覆盖三条路径：新装、版本升级、**既有 CE 部署切换到 CloudFile**。
-最后一条不跑任何 setup 或 upgrade 脚本，没有表的话 ACL 会 fail closed 把所有人锁在外面。
+最后一条不跑任何 setup 或 upgrade 脚本，能力缺表时会 fail closed 把所有人锁在外面。
+基线不带任何表，文件不存在时这一步只告警并跳过。
 
 ## 铁律
 
@@ -119,20 +118,28 @@ python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_hub.r
 ./image/cloudfile_14.0/docker-build.sh 14.0.0-cf.0
 ```
 
-## 改 ACL 语义的顺序
+## 基线与能力的边界
 
-`docs/acl-semantics.md` 是**规范**，`docs/acl-cases.json` 是它的可执行形式。
-两份实现（cloudfile-hub 的 Python、cloudfile-server 的 C）都加载同一个 JSON。
+`dev` 上是**扩展基线**：扩展点、构建、部署、发布机制，**没有任何具体能力**。
+能力活在自己的长期分支上，带着自己的规格、用例集和 E2E 门禁——例如
+`feature/dir-acl` 的 `docs/acl-semantics.md`、`docs/acl-cases.json`、
+`tests/e2e/acl_matrix.py`。
 
-正确顺序：先改规范 → 再改用例集 → 最后同时改两处实现。
+这样拆有两个理由：基线的发布不该被某个能力的验收结果卡住；能力要能持续改进，
+而不必每次都跟着基线一起过一遍完整门禁。
+
+**基线的门禁只回答两个问题**（`build-and-e2e.yml`）：
+
+1. 镜像能不能构建出来
+2. 开关全关时，行为是否与原生 Seafile CE 一致（`tests/e2e/smoke.py`），
+   且扩展点确实装好了但未启用（`tests/e2e/baseline.py`）
+
+第 2 条的两半缺一不可：只跑 smoke 的话，一个 `cloudfile_ext` 根本没被加载的
+镜像也能通过。
+
+跨层语义（同一套规则同时在 Hub 和 seafile-server 实现）必须用共享用例集驱动
+两端。改语义的正确顺序：先改规格 → 再改用例集 → 最后同时改两处实现。
 只改一处 = 引入漂移，而漂移在权限系统里意味着安全漏洞。
-
-```bash
-cd ../cloudfile-hub && python3 -m pytest cloudfile_ext/ -q
-```
-```bash
-cd ../cloudfile-server && ./tests/cf-acl/run.sh
-```
 
 ## 约定
 

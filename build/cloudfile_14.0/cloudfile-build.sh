@@ -249,6 +249,18 @@ function build_seahub_frontend() {
     cp -r "${code_path}/seafile-server/python/seaserv" "$pypath/"
     cp -r "${code_path}/libsearpc/pysearpc" "$pypath/"
 
+    # collectstatic 会加载全部 INSTALLED_APPS，所以 seahub 的依赖必须都能 import。
+    # thirdpartdir 里是**不够**的：install_python_dependencies 刻意注释掉了
+    # captcha、djangosaml2、pillow 等——它们改由 Dockerfile 直接 pip 安装进镜像，
+    # 以便拿到平台相关的 wheel。构建期没有镜像，于是 `No module named 'captcha'`。
+    #
+    # 装一份完整依赖到只在构建期使用的目录，不污染最终会打包进发行版的
+    # thirdpartdir。PYTHONPATH 里放在 thirdpartdir 之后，发行版里的版本优先。
+    local builddeps=${code_path}/build-only-deps
+    if [[ ! -d $builddeps ]]; then
+        pip3 install -r "${seahub}/requirements.txt" -t "$builddeps"
+    fi
+
     # seaserv 在 import 期读取这两个配置目录，没有就会报错。内容只要能解析，
     # 这里不会真的连数据库。
     local confdir=${code_path}/build-conf
@@ -267,7 +279,7 @@ create_tables=true
 CONF
     export SEAFILE_CENTRAL_CONF_DIR=$confdir
     export SEAFILE_DATA_DIR=${code_path}/build-seafile-data
-    export PYTHONPATH="${pypath}:${code_path}/thirdpartdir:${seahub}/thirdpart:${PYTHONPATH:-}"
+    export PYTHONPATH="${pypath}:${code_path}/thirdpartdir:${seahub}/thirdpart:${builddeps}:${PYTHONPATH:-}"
 
     cd "${seahub}"
 

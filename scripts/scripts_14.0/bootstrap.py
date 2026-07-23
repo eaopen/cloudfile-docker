@@ -154,18 +154,23 @@ def write_cloudfile_settings():
 
 
 def write_cloudfile_seafile_conf():
-    """Tell seaf-server whether to enforce directory ACL.
+    """Mirror the capability switches into seafile.conf for seaf-server.
 
-    Separate from the Seahub switch on purpose: Seahub's copy only decides what
-    the UI shows, while this one governs the authoritative check that WebDAV
-    and the sync client go through. Both are written from the same environment
-    variable so they cannot drift apart in a compose deployment.
+    Seahub's copy only decides what the UI shows; this one governs the
+    authoritative checks that WebDAV and the sync client go through. Both are
+    derived from the same environment variables so they cannot drift apart.
+
+    The key name is derived mechanically -- CF_ENABLE_DIR_ACL becomes
+    dir_acl_enabled -- so a new capability needs no change here.
     """
-    body = ('[cloudfile]\ndir_acl_enabled = %s\n'
-            % ('true' if cf_enabled('CF_ENABLE_DIR_ACL') else 'false'))
+    lines = ['[cloudfile]\n']
+    for name in CF_FEATURE_SWITCHES:
+        key = name[len('CF_ENABLE_'):].lower() + '_enabled'
+        lines.append('%s = %s\n'
+                     % (key, 'true' if cf_enabled(name) else 'false'))
 
     _replace_block(join(topdir, 'conf', 'seafile.conf'),
-                   CF_BEGIN, CF_END, body)
+                   CF_BEGIN, CF_END, ''.join(lines))
 
 
 def apply_cloudfile_schema():
@@ -175,7 +180,10 @@ def apply_cloudfile_schema():
     script because all three entry points have to work: a new deployment, a
     version upgrade, and an existing Seafile CE installation adopting
     CloudFile. Only the last of those runs no setup or upgrade step at all, and
-    without the tables the ACL check fails closed and locks everyone out.
+    a capability whose tables are missing fails closed and locks everyone out.
+
+    The baseline ships no schema at all, so the file is simply absent and this
+    logs and returns; capabilities bring their own cloudfile.sql.
 
     Every statement is IF NOT EXISTS, so running it on every start is cheap and
     safe.

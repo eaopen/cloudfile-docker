@@ -1,13 +1,16 @@
-name: CloudFile build & E2E
+name: CloudFile baseline build & E2E
 
-# 构建镜像并跑目录 ACL 六入口验收矩阵。
+# 扩展基线的验收门禁：构建镜像，并证明**开关全关时行为与原生 Seafile CE 一致**。
 #
-# 这是 P0/P1 真正的验收门禁：单元测试证明求解器算得对，这里证明每个入口都
-# **真的执行了**校验。构建耗时较长（C + Go + 前端 npm build），所以不挂在每次
-# push 上，而是合并到 dev 时与手动触发时运行。
+# 这里刻意不测试任何具体能力。能力活在自己的长期分支上，带着自己的门禁
+# （例如 feature/dir-acl 的 acl-e2e.yml）。这样拆的理由很实际：
 #
-# 构建与 E2E 放在同一个 job：镜像有 1GB 级，拆成两个 job 之间来回传 artifact
-# 花的时间比省下的还多。
+#   - 基线能不能发布，不应该被某个能力的验收结果卡住；
+#   - 某个能力挂了，也要一眼看出基线是好的；
+#   - 第一次跑这条流水线时前端构建挂了，整条 job 红掉，关于能力的信息一条都
+#     没拿到——两件事混在一个 job 里就是这个后果。
+#
+# 构建耗时较长（C + Go + 前端 npm build），所以不挂在每次 push 上。
 
 on:
   push:
@@ -26,7 +29,7 @@ on:
         default: ''
 
 concurrency:
-  group: build-e2e-${{ github.ref }}
+  group: baseline-e2e-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -71,8 +74,7 @@ jobs:
           cat "cloudfile-docker/build/cloudfile_14.0/seafile-server-$CF_VERSION/cloudfile-build-info.txt" \
             >> "$GITHUB_STEP_SUMMARY" || true
 
-      # ── 回归一：全部开关关闭时必须与原生 CE 行为一致 ──────────────────
-      - name: 启动（全部开关关闭）
+      - name: 启动（开关全关）
         working-directory: cloudfile-docker/deploy/compose
         run: |
           cp .env.example .env
@@ -85,53 +87,30 @@ jobs:
           docker compose up -d
           docker compose ps
 
-      - name: 原生 CE 冒烟（开关全关）
+      # ── 基线的两条验收：原生 CE 行为，以及扩展点确实存在但未启用 ──────
+      - name: 原生 CE 冒烟
         run: |
           python3 cloudfile-docker/tests/e2e/smoke.py \
             --url http://localhost \
             --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
 
-      - name: 确认 ACL 关闭时不生效
+      - name: 扩展点已装好，但没有能力启用
         run: |
-          set -e
-          token=$(curl -s -X POST http://localhost/api2/auth-token/ \
-                  -d "username=$ADMIN_EMAIL&password=$ADMIN_PASSWORD" \
-                  | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"])')
-          code=$(curl -s -o /dev/null -w '%{http_code}' \
-                 -H "Authorization: Token $token" \
-                 "http://localhost/api/v2.1/cloudfile/features/")
-          echo "features endpoint: $code"
-          # 开关全关时 dir-acl 接口应当 404
-          repo=$(curl -s -H "Authorization: Token $token" \
-                 -X POST http://localhost/api2/repos/ -d 'name=off-check' \
-                 | python3 -c 'import sys,json; print(json.load(sys.stdin)["repo_id"])')
-          code=$(curl -s -o /dev/null -w '%{http_code}' \
-                 -H "Authorization: Token $token" \
-                 "http://localhost/api/v2.1/cloudfile/repos/$repo/dir-acl/?path=/")
-          echo "dir-acl endpoint with switch off: $code"
-          test "$code" = "404"
-
-      # ── 回归二：打开目录 ACL，跑六入口矩阵 ────────────────────────────
-      - name: 打开目录 ACL 并重启
-        working-directory: cloudfile-docker/deploy/compose
-        run: |
-          sed -i "s|^CF_ENABLE_DIR_ACL=.*|CF_ENABLE_DIR_ACL=true|" .env
-          docker compose up -d
-          # 配置每次启动重写，重启即生效，不需要重装
-          sleep 20
-          docker compose exec -T cloudfile \
-            grep -A3 'cloudfile' /opt/seafile/conf/seafile.conf || true
-
-      - name: ACL 六入口验收矩阵
-        run: |
-          python3 cloudfile-docker/tests/e2e/acl_matrix.py \
+          python3 cloudfile-docker/tests/e2e/baseline.py \
             --url http://localhost \
             --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
 
       - name: 失败时导出日志
+        # 构建阶段就失败时 .env 还不存在，compose 命令会因插值失败而报错，
+        # 把真正的构建错误淹掉。所以先判断，再整体容错。
         if: failure()
         working-directory: cloudfile-docker/deploy/compose
+        continue-on-error: true
         run: |
+          if [[ ! -f .env ]]; then
+            echo "栈尚未启动（构建阶段就失败了），没有容器日志可导出。"
+            exit 0
+          fi
           docker compose ps -a
           docker compose logs --tail 300 cloudfile || true
           docker compose exec -T cloudfile \

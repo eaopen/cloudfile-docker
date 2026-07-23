@@ -67,7 +67,7 @@ git merge upstream/master
 - `scripts/scripts_14.0/start.py` — 每次启动时调用 `write_cloudfile_config()`
 - `.gitignore` — 忽略构建产物与部署密钥
 
-其余 CloudFile 代码都在新增文件里（`cloudfile_ext/`、`common/cf-acl.[ch]`、
+其余 CloudFile 代码都在新增文件里（`cloudfile_ext/`、`common/cf-ext.[ch]`、
 `build/cloudfile_14.0/`、`image/cloudfile_14.0/`、`deploy/compose/`），不参与合并冲突。
 
 合并前后都跑一次登记检查，确认清单没有变长：

@@ -80,7 +80,11 @@ jobs:
         working-directory: cloudfile-docker/deploy/compose
         run: |
           cp .env.example .env
-          sed -i "s|^SEAFILE_SERVER_HOSTNAME=.*|SEAFILE_SERVER_HOSTNAME=localhost|" .env
+          # 不能用 localhost：上游 setup-seafile-mysql.py 的
+          # SERVER_IP_OR_DOMAIN_REGEX = ^[^.].+\..+[^.]$ 要求主机名带点，
+          # localhost 会让初始化脚本直接退出 255，而表面症状只是 Caddy 502。
+          # 127.0.0.1 满足它，且不需要改 /etc/hosts。
+          sed -i "s|^SEAFILE_SERVER_HOSTNAME=.*|SEAFILE_SERVER_HOSTNAME=127.0.0.1|" .env
           sed -i "s|^SEAFILE_SERVER_PROTOCOL=.*|SEAFILE_SERVER_PROTOCOL=https|" .env
           sed -i "s|^INIT_SEAFILE_ADMIN_EMAIL=.*|INIT_SEAFILE_ADMIN_EMAIL=$ADMIN_EMAIL|" .env
           sed -i "s|^INIT_SEAFILE_ADMIN_PASSWORD=.*|INIT_SEAFILE_ADMIN_PASSWORD=$ADMIN_PASSWORD|" .env
@@ -96,13 +100,13 @@ jobs:
       - name: 原生 CE 冒烟
         run: |
           python3 cloudfile-docker/tests/e2e/smoke.py \
-            --url https://localhost --insecure \
+            --url https://127.0.0.1 --insecure \
             --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
 
       - name: 扩展点已装好，但没有能力启用
         run: |
           python3 cloudfile-docker/tests/e2e/baseline.py \
-            --url https://localhost --insecure \
+            --url https://127.0.0.1 --insecure \
             --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
 
       - name: 失败时导出日志

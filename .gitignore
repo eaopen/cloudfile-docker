@@ -25,3 +25,6 @@ build/*/seafile-server-*
 # data/ is the live deployment -- neither belongs in the repo.
 deploy/compose/.env
 deploy/compose/data/
+
+# verify-local.sh 的临时 Compose 目录
+.local-verify/

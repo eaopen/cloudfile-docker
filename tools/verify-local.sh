@@ -1,0 +1,162 @@
+#!/bin/bash
+#
+# 在本机跑一遍与 CI 完全相同的基线门禁。
+#
+# 存在的理由很直接：CI 一轮 20 分钟，而前六次失败全是集成边界上的问题——
+# PATH、依赖链、系统库、版本号格式、TLS——没有一个是 `bash -n` 或单元测试能
+# 发现的。一次次"改一行、推一次、等二十分钟"太慢了。这个脚本把同样的步骤
+# 搬到本地，失败在几分钟内就能看见。
+#
+#   ./tools/verify-local.sh              # 全流程
+#   ./tools/verify-local.sh preflight    # 只做静态一致性检查（秒级）
+#   ./tools/verify-local.sh build        # 只构建发行包
+#   ./tools/verify-local.sh e2e          # 假设镜像已在，只跑起栈 + E2E
+#   ./tools/verify-local.sh clean        # 清掉本地栈与数据
+#
+# 与 CI 的差异（有意为之，且只有这些）：
+#   - 构建在 ubuntu 容器里跑（CI 的 runner 本身就是 ubuntu）
+#   - 端口用 8080/8443，避免和本机既有服务打架
+#   - Compose 跑在临时目录里，不碰 deploy/compose/ 下你自己的 .env 和 data/
+#   - 架构跟随本机（Apple Silicon 上是 arm64）。上游 arm 与 x86 的 Dockerfile
+#     逐字节相同，所以这不影响结论；要验 amd64 就设 CF_PLATFORM=linux/amd64。
+
+set -uo pipefail
+
+here=$(cd "$(dirname "$0")" && pwd)
+repo=$(cd "$here/.." && pwd)
+workspace=$(dirname "$repo")
+
+VERSION=${CF_VERSION:-14.0.0-cf.0-local}
+IMAGE=cloudfile/cloudfile:$VERSION
+PROJECT=cloudfile-local
+HTTP_PORT=${CF_LOCAL_HTTP_PORT:-8080}
+HTTPS_PORT=${CF_LOCAL_HTTPS_PORT:-8443}
+ADMIN_EMAIL=admin@cloudfile.test
+ADMIN_PASSWORD=CloudFile-Local-4417
+STAGE_DIR=${CF_LOCAL_STAGE:-$repo/.local-verify}
+
+say()  { printf '\n\033[1m══ %s\033[0m\n' "$*"; }
+fail() { printf '\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
+ok()   { printf '\033[32m✓ %s\033[0m\n' "$*"; }
+
+need_docker() {
+    docker info >/dev/null 2>&1 || fail "Docker 不可用（启动 OrbStack / Docker Desktop / colima）"
+}
+
+# ── preflight：静态一致性检查 ────────────────────────────────────────────
+#
+# 专抓"CI 里才会炸"的那类不一致：workflow 引用了不存在的脚本、E2E 的协议和
+# Compose 的 TLS 设置对不上、开关清单三处不同步。都是秒级检查。
+preflight() {
+    say "preflight：静态一致性"
+    local bad=0
+
+    "$here/run-checks.sh" >/dev/null 2>&1 \
+        && ok "run-checks.sh 全部通过" \
+        || { printf '\033[31m✗ run-checks.sh 失败，单独跑一次看详情\033[0m\n'; bad=1; }
+
+    python3 "$here/preflight-checks.py" "$repo" "$workspace" || bad=1
+
+    [[ $bad -eq 0 ]] || fail "preflight 未通过——先修掉再花二十分钟构建"
+    say "preflight 通过"
+}
+
+# ── 构建发行包 ──────────────────────────────────────────────────────────
+build_dist() {
+    need_docker
+    say "构建发行包 $VERSION（容器内，宿主机不受影响）"
+    "$repo/build/cloudfile_14.0/build-in-docker.sh" "$VERSION" \
+        || fail "发行包构建失败"
+    ok "发行包完成"
+    cat "$repo/build/cloudfile_14.0/seafile-server-$VERSION/cloudfile-build-info.txt" 2>/dev/null || true
+}
+
+build_image() {
+    need_docker
+    say "构建镜像 $IMAGE"
+    "$repo/image/cloudfile_14.0/docker-build.sh" "$VERSION" || fail "镜像构建失败"
+    ok "镜像完成"
+}
+
+# ── 起栈 + E2E ──────────────────────────────────────────────────────────
+stage_compose() {
+    rm -rf "$STAGE_DIR"
+    mkdir -p "$STAGE_DIR"
+    cp "$repo/deploy/compose/docker-compose.yml" "$repo/deploy/compose/Caddyfile" "$STAGE_DIR/"
+    {
+        sed -e "s|^SEAFILE_SERVER_HOSTNAME=.*|SEAFILE_SERVER_HOSTNAME=127.0.0.1|" \
+            -e "s|^SEAFILE_SERVER_PROTOCOL=.*|SEAFILE_SERVER_PROTOCOL=https|" \
+            -e "s|^INIT_SEAFILE_ADMIN_EMAIL=.*|INIT_SEAFILE_ADMIN_EMAIL=$ADMIN_EMAIL|" \
+            -e "s|^INIT_SEAFILE_ADMIN_PASSWORD=.*|INIT_SEAFILE_ADMIN_PASSWORD=$ADMIN_PASSWORD|" \
+            -e "s|^CADDY_TLS=.*|CADDY_TLS=internal|" \
+            -e "s|^HTTP_PORT=.*|HTTP_PORT=$HTTP_PORT|" \
+            -e "s|^HTTPS_PORT=.*|HTTPS_PORT=$HTTPS_PORT|" \
+            "$repo/deploy/compose/.env.example"
+        echo "CLOUDFILE_IMAGE=$IMAGE"
+    } > "$STAGE_DIR/.env"
+}
+
+compose() { docker compose -p "$PROJECT" --project-directory "$STAGE_DIR" "$@"; }
+
+up() {
+    need_docker
+    docker image inspect "$IMAGE" >/dev/null 2>&1 \
+        || fail "本地没有镜像 $IMAGE，先跑 build"
+    say "启动（开关全关）"
+    stage_compose
+    compose up -d || fail "compose 启动失败"
+    compose ps
+}
+
+e2e() {
+    local base="https://127.0.0.1:$HTTPS_PORT"
+    say "原生 CE 冒烟 @ $base"
+    python3 "$repo/tests/e2e/smoke.py" --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
+
+    say "扩展点已装好，但没有能力启用"
+    python3 "$repo/tests/e2e/baseline.py" --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
+}
+
+dump_logs() {
+    say "容器日志（失败诊断）"
+    compose ps -a || true
+    compose logs --tail 200 cloudfile || true
+    compose exec -T cloudfile tail -n 120 /opt/seafile/logs/seahub.log 2>/dev/null || true
+    compose exec -T cloudfile tail -n 120 /opt/seafile/logs/seafile.log 2>/dev/null || true
+}
+
+clean() {
+    say "清理本地栈"
+    [[ -d $STAGE_DIR ]] && compose down -v 2>/dev/null
+    rm -rf "$STAGE_DIR"
+    ok "已清理（镜像保留，删除用 docker rmi $IMAGE）"
+}
+
+case "${1:-all}" in
+    preflight) preflight ;;
+    build)     preflight; build_dist; build_image ;;
+    image)     build_image ;;
+    up)        up ;;
+    e2e)       e2e || { dump_logs; fail "E2E 未通过"; } ;;
+    clean)     clean ;;
+    all)
+        preflight
+        build_dist
+        build_image
+        up
+        if e2e; then
+            say "全部通过——可以推了"
+            clean
+        else
+            dump_logs
+            echo
+            echo "栈仍在运行，方便你继续排查：" >&2
+            echo "  docker compose -p $PROJECT --project-directory $STAGE_DIR logs -f cloudfile" >&2
+            echo "  ./tools/verify-local.sh clean   # 查完清理" >&2
+            exit 1
+        fi
+        ;;
+    *) fail "未知阶段：$1（preflight|build|image|up|e2e|clean|all）" ;;
+esac

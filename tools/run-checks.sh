@@ -110,9 +110,14 @@ run "脚本语法" bash -c "
     set -e
     # -prune 掉 src/ 与构建产物：那里是 clone 下来的上游源码和发行包，不归
     # 我们管，而且上游的 bash-4 语法（&>>）在 macOS 自带的 bash 3.2 上会误报。
+    #
+    # 'seafile-server' 必须单列：clone 出来的工作树就叫这个名字，没有后缀，
+    # 'seafile-server-*' 匹配不到。这个漏洞一直藏着，因为那个目录只在**构建
+    # 跑过之后**才存在——干净的树上检查是绿的，跑过一次构建再跑就红。
     for f in \$(find '$docker_repo/tools' '$docker_repo/build/cloudfile_14.0' \
                      '$docker_repo/image/cloudfile_14.0' \
-                     \\( -name src -o -name 'seafile-server-*' -o -name node_modules \\) -prune \
+                     \\( -name src -o -name seafile-server -o -name 'seafile-server-*' \
+                        -o -name node_modules \\) -prune \
                      -o -name '*.sh' -print); do
         bash -n \"\$f\"
     done

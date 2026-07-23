@@ -96,6 +96,17 @@ build_dist() {
         fi
     done
 
+    # 清掉同版本的上一次产物。
+    #
+    # 打包阶段是把 seafile-server/ 移进 seafile-server-<版本>/，目标已存在时
+    # 直接报 "Destination path ... already exists" 而失败——也就是同一个版本号
+    # **构建不了第二次**。改一行代码重验是最常见的动作，不该要求先想起来跑
+    # distclean。
+    #
+    # 只删这个版本的产物目录，不碰 src/：那是 clone 缓存，重建它才是真正慢的
+    # 部分。换架构或构建被中断后的彻底清理仍然用 distclean。
+    rm -rf "$repo/build/cloudfile_14.0/seafile-server-$VERSION"
+
     "$repo/build/cloudfile_14.0/build-in-docker.sh" "$VERSION" \
         || fail "发行包构建失败"
     ok "发行包完成"

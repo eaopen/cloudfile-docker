@@ -73,6 +73,25 @@ preflight() {
 build_dist() {
     need_docker
     say "构建发行包 $VERSION（容器内，宿主机不受影响）"
+
+    # 默认构建**并排 checkout 的本地仓库**，而不是去 GitHub 拉。
+    #
+    # 本地门禁的意义就在于验证手头这份代码，包括还没 push 的分支；去拉远端
+    # 等于验证了别的东西。设 CF_SERVER_URL/CF_HUB_URL 可以覆盖回远端。
+    #
+    # 只有已提交的内容会进构建（见 build-in-docker.sh），所以跑之前先 commit。
+    for pair in "CF_SERVER_URL:cloudfile-server" "CF_HUB_URL:cloudfile-hub"; do
+        var=${pair%%:*}; dir=${pair#*:}
+        if [[ -z ${!var:-} && -d $workspace/$dir/.git ]]; then
+            export "$var=$workspace/$dir"
+            ref_var=${var%_URL}_REF
+            if [[ -z ${!ref_var:-} ]]; then
+                export "$ref_var=$(git -C "$workspace/$dir" rev-parse --abbrev-ref HEAD)"
+            fi
+            echo "  $dir → ${!ref_var}"
+        fi
+    done
+
     "$repo/build/cloudfile_14.0/build-in-docker.sh" "$VERSION" \
         || fail "发行包构建失败"
     ok "发行包完成"

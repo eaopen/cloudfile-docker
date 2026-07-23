@@ -55,6 +55,32 @@ for v in CF_SERVER_REF CF_HUB_REF CF_SERVER_URL CF_HUB_URL \
     [[ -n ${!v:-} ]] && env_args+=(-e "$v=${!v}")
 done
 
+# 本地源码目录：把它挂进容器，否则容器里只有 cloudfile-docker。
+#
+# 没有这一段的话，**尚未 push 的分支根本无法在本地验证**——构建只会去
+# GitHub 上找那个不存在的分支。而"先在本地跑一遍完整门禁，别拿 CI 当调试器"
+# 正是 verify-local.sh 存在的全部理由，所以这个缺口必须补上。
+#
+#   CF_SERVER_URL=../../cloudfile-server CF_HUB_URL=../../cloudfile-hub \
+#     ./build-in-docker.sh 14.0.0-cf.0-local
+#
+# 用 file:// 而不是裸路径：git clone 对本地路径默认走硬链接，而源目录是只读
+# 挂载，跨挂载边界建硬链接会失败。file:// 强制走正常的对象拷贝。
+#
+# 副作用是**只有已提交的代码会进构建**——工作区里没 commit 的改动不参与。
+# 这是好事：构建结果与某个 commit 一一对应，否则"这个镜像是哪来的"无法回答。
+mount_args=()
+for v in CF_SERVER_URL CF_HUB_URL; do
+    src=${!v:-}
+    [[ -n $src && -d $src ]] || continue
+    abs=$(cd "$src" && pwd)
+    name=$(basename "$abs")
+    mount_args+=(-v "$abs:/src/$name:ro")
+    # 覆盖前面那一轮塞进去的宿主机路径
+    env_args+=(-e "$v=file:///src/$name")
+    echo "本地源码：$v = $abs（容器内 /src/$name，只读）"
+done
+
 echo "在容器内构建 CloudFile ${version}${platform:+ (${platform})}"
 echo "宿主机不会被改动；产物写回 build/cloudfile_14.0/"
 echo
@@ -64,6 +90,7 @@ echo
 docker run --rm -i \
     "${platform_arg[@]}" \
     "${env_args[@]}" \
+    "${mount_args[@]+"${mount_args[@]}"}" \
     -v "$repo_root:/work" \
     -w /work/build/cloudfile_14.0 \
     ubuntu:24.04 \

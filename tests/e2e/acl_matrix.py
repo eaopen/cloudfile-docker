@@ -303,22 +303,41 @@ def check_move(b, repo_id):
     entry = '移动/复制/重命名'
 
     def batch_move(src, dst):
-        # 这个端点收 JSON（paths 是对象数组），表单编码表达不了。
+        """返回 (被拒?, 成功数, 原始 body)。
+
+        **批量端点失败时返回 200**，逐项结果装在 failed / success 数组里——
+        和共享端点一个套路，这一轮已经被它坑了三次。所以这里不看状态码，
+        看条目落在哪个数组、以及 error_msg 是不是权限原因：上游还有一个
+        "目标是源目录或其子目录"的检查，那个也进 failed，若只看"在不在
+        failed"，一个因为路径校验被拒的请求会被读成 ACL 生效。
+        """
         payload = json.dumps({
             'src_repo_id': repo_id, 'dst_repo_id': repo_id,
             'paths': [{'src_path': src, 'dst_path': dst}],
         })
-        return b.api('/api/v2.1/repos/batch-move-item/', method='POST',
-                     data=payload,
-                     headers={'Content-Type': 'application/json'})
+        _, body = b.api('/api/v2.1/repos/batch-move-item/', method='POST',
+                        data=payload,
+                        headers={'Content-Type': 'application/json'})
+        data = json_body(body) or {}
+        failed = data.get('failed') or []
+        denied = any('permission' in (f.get('error_msg') or '').lower()
+                     for f in failed)
+        return denied, len(data.get('success') or []), body
 
-    status, body = batch_move('/public/ok', '/restricted')
-    record(entry, '移动到 /restricted 被拒', status == 403,
-           f'status={status} {body[:160]}')
+    denied, ok_count, body = batch_move('/public/ok', '/restricted')
+    record(entry, '移动到 /restricted 被拒', denied and ok_count == 0,
+           f'denied={denied} success={ok_count} {body[:200]}')
 
-    status, body = batch_move('/restricted/sub', '/public')
-    record(entry, '从 /restricted 移出被拒', status == 403,
-           f'status={status} {body[:160]}')
+    denied, ok_count, body = batch_move('/restricted/sub', '/public')
+    record(entry, '从 /restricted 移出被拒', denied and ok_count == 0,
+           f'denied={denied} success={ok_count} {body[:200]}')
+
+    # 正向对照，缺了它这一组就不成立：一个对什么都说不的端点会让上面两条
+    # 全绿。这一条证明 B 在可写目录里确实搬得动东西，于是上面的拒绝确实
+    # 来自 ACL，而不是端点根本不工作。
+    denied, ok_count, body = batch_move('/public/x.txt', '/public/ok')
+    record(entry, '/public 内移动允许（对照）', ok_count == 1 and not denied,
+           f'denied={denied} success={ok_count} {body[:200]}')
 
 
 def check_invariant(admin, b, repo_id):

@@ -127,6 +127,18 @@ CAPABILITIES=(
 ENABLE_SWITCHES=${ENABLE_SWITCHES:-}
 
 stage_compose() {
+    # 先把还活着的栈拆掉，再动目录。
+    #
+    # 每个服务的数据都是 ./data/... 的 bind mount，就在 STAGE_DIR 里面。直接
+    # rm -rf 会在容器仍持有这些挂载时把宿主目录抽走：db 容器不会被重建，于是
+    # 继续用着旧库，而 seafile-data 已经空了——setup 以为是全新安装，撞上一个
+    # 已经建好 schema 的数据库，退出 1。
+    #
+    # 表面症状只有一个 Caddy 502，和真因隔着十万八千里。第二次跑本地门禁就是
+    # 这么挂的，而第一次跑没事纯粹因为那时没有存量栈。
+    if [[ -d $STAGE_DIR ]]; then
+        compose down -v >/dev/null 2>&1 || true
+    fi
     rm -rf "$STAGE_DIR"
     mkdir -p "$STAGE_DIR"
     cp "$repo/deploy/compose/docker-compose.yml" "$repo/deploy/compose/Caddyfile" "$STAGE_DIR/"

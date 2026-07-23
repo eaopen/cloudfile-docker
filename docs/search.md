@@ -33,7 +33,7 @@ Compose 里**直接引用官方镜像**，不重新打包进 CloudFile 镜像—
 | Notification Server | `seafileltd/notification-server` | 实时通知 | ○ 可选 |
 | Thumbnail Server | `seafileltd/thumbnail-server` | 图片/PDF/视频缩略图 | ○ 可选 |
 | SeaDoc | `seafileltd/sdoc-server` | 在线文档 | ○ 可选 |
-| Seafile AI | `seafileltd/seafile-ai` | AI 扩展 | ○ 可选 |
+| Seafile AI | `seafileltd/seafile-ai` | 自动属性/标签/摘要/OCR/语义（见 [ai.md](ai.md)） | ○ 可选，需自备 LLM |
 | Meilisearch | `getmeili/meilisearch` | **可选替代搜索引擎** | ○ 可选 |
 
 > **SeaSearch 授权**：官方 SeaSearch 三人以下免费。这不影响 CE 扩展版把它作为

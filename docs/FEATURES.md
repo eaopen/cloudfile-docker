@@ -229,6 +229,19 @@ Compose 的 `search` profile 与 `cf-worker` 已就位，实现时不需要再�
 > P2 从"五个特性从零做"确认缩成"一个兼容服务 + 配置 seasearch"。原文这里写着
 > "三个探针各 1～2 天"——探针 1、3 已兑现那句承诺，探针 2（OnlyOffice）属 P3，仍未做。
 
+**AI（自动属性 / 标签 / 摘要）** —— 复用官方 seafile-ai，自动管线依赖簇 D。
+完整方案见 [ai.md](ai.md)。
+
+| # | 特性 | 状态 | 说明 |
+|---|---|---|---|
+| 97 | AI 按需能力（标签/摘要/描述/OCR） | ⬜ | **📦 打包**：`seahub/ai/` 已带且**无 Pro 门控**（`ENABLE_SEAFILE_AI` env），调官方 `seafileltd/seafile-ai`。启用即用，需自备 LLM 后端。自建即绕开 seafile.com 托管 AI 计费 |
+| 98 | AI 自动管线（入库自动生成 + 落元数据） | ⬜ | **🔨 构建**：唯一新代码。CE **没有**自动标签/摘要接线（只有人脸识别是自动的）。cf-worker 消费提交 → 调 seafile-ai → 写元数据。**依赖簇 D**。幂等 + 可控触发。门禁用假 seafile-ai 桩 |
+| 99 | 人脸识别 | ⬜ | **📦 打包**：seafevents 已有自动管线（`ENABLE_FACE_RECOGNITION`） |
+| 100 | 语义检索 | ⬜ | **🔨 构建**：嵌入 → 检索后端，属 [search.md](search.md) P3，与 98 共用 cf-worker |
+
+> AI 不在官方 Pro vs CE 对比表里（是按量计费的独立维度），但**代码在 CE、无 Pro
+> 门控**，可自建。这是"复用官方组件但用自备模型绕开托管计费"的落地。
+
 ---
 
 ## P3 — 协同与项目流程

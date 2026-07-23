@@ -92,6 +92,9 @@ bootstrap 配置 + 一张启用清单**：
 - 2FA：`ENABLE_TWO_FACTOR_AUTH`。
 - Remote wipe：设备管理端点已在，确认前端入口未被藏起即可。
 - WebDAV：已具备。
+- AI 按需能力（标签/摘要/描述/OCR）：`ENABLE_SEAFILE_AI` + 官方 seafile-ai 组件
+  （不在 Pro 对比表里，但代码在 CE、无 Pro 门控；需自备 LLM）。**自动**那一环
+  是构建，见 [ai.md](ai.md)。
 
 > 铁律不变：这些也必须**默认关**，开关全关 = 原生 CE。区别只是它们的开关是
 > **上游自己的 settings**，CloudFile 只负责在 bootstrap 里从 `.env` 写进去，

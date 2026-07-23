@@ -28,6 +28,9 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | 5 | `cloudfile_ext` Django app | ✅ | 通过 `EXTRA_INSTALLED_APPS` 注册，未改 `settings.py` |
 | 6 | 上游注入点最小化 | ✅ | Hub 仅 2 处行为改动 + 1 处数据追加；Server 8 个文件；Docker 3 个文件 |
 | 7 | 前端骨架与入口注册 | 🟡 | 入口映射已验证可加载；**从未真正打包** |
+| 55 | 前端资源构建接入 | 🟡 | **本轮补齐**。`seafile-build.py` 的 Seahub 阶段只复制源码树，`media/assets` 只存在于上游 dist 分支——原先的构建会产出没有 Web 界面的镜像。已在 `cloudfile-build.sh` 中加入 `npm run build` + `make dist`，并在缺失时直接失败 |
+| 56 | CI：快速检查门禁 | 🟡 | 三仓共用 `tools/run-checks.sh`；本地已全绿，**CI 上尚未跑过** |
+| 57 | CI：构建 + E2E 门禁 | 🟡 | `build-and-e2e.yml`：构建镜像 → 开关全关冒烟 → 开 ACL 跑六入口矩阵。**尚未在 CI 上执行过** |
 | 8 | CE 14.0 镜像 | 🟡 | 与 13.0 CE 镜像的 diff 已核对（仅注释与版本 pin）；**从未构建** |
 | 9 | SHA pin 构建脚本 | 🟡 | `bash -n` 与 manifest 读取已验证；**从未执行**（需 Linux） |
 | 10 | Compose 一键部署 | 🟡 | `docker compose config` 与 4 个 profile 已验证；**从未启动** |
@@ -70,6 +73,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | 33 | 目录打包下载 | 🟡 | 经 `is_dir_downloadable`，子树内任一不可读即拒绝 |
 | 34 | 桌面同步客户端 | 🟡 | Go fileserver 在同步前查子树；Hub 的 `is_repo_syncable` 只负责给出友好错误 |
 | 35 | 移动 / 复制 / 重命名 | 🟡 | 已逐个审计：7 个批量端点均同时校验源与目标 |
+| 54 | 目录列举过滤 `invisible` | 🟡 | **本轮补齐**。上游 `list_dir_with_perm` 只按库级判一次权限并盖到每个条目，`invisible` 目录仍会被列出。已在 `rpc-service.c` 的 RPC 出口按路径逐条过滤，覆盖全部调用方 |
 
 ### 其它 P1
 
@@ -136,3 +140,6 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
    不搬运数据，但允许任何登录用户对任意库提交路径更新。属于上游问题，
    不是 CloudFile 引入的回归，需单独评估。
 4. **MySQL DDL 未对真实 MySQL 执行**（第 19 项），仅验证了语句切分与 SQLite 变体。
+5. **两个构建期缺陷已在本轮发现并修复**（第 54、55 项）：目录列举不过滤
+   `invisible`，以及发行包不含前端资源。两者都是静态审查发现的——前者会让
+   ACL 矩阵直接失败，后者会产出一个打得开但没有界面的镜像。

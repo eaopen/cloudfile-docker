@@ -37,15 +37,56 @@ done
 
 status=0
 
-# 列出相对 upstream/master 被修改的上游文件。
+# 解析比较基线，按可靠性排序：
 #
-# 只算 upstream 里已存在的文件：新增文件不参与合并冲突，把它们混进来会让这个
-# 指标失去意义。
+#   1. $CF_UPSTREAM_BASE      —— 显式指定
+#   2. upstream/master        —— 本地开发的常态；用三点 diff，合并基点会随
+#                                sync 自动前移，不需要人工维护
+#   3. release.yaml 里的锚点 SHA —— CI 用。只要 fetch 一个 commit，不必拉整个
+#                                上游历史（seahub 很大）。用两点 diff，因为
+#                                浅克隆下没有合并基点可算
+#
+# 输出 "<baseref> <two|three>"。
+resolve_base() {
+    local repo_dir=$1 repo=$2
+
+    if [[ -n ${CF_UPSTREAM_BASE:-} ]]; then
+        echo "$CF_UPSTREAM_BASE two"; return 0
+    fi
+
+    if git -C "$repo_dir" rev-parse --verify -q upstream/master >/dev/null; then
+        echo "upstream/master three"; return 0
+    fi
+
+    local key
+    case "$repo" in
+        cloudfile-server) key=upstream.seafile_server ;;
+        cloudfile-hub)    key=upstream.seahub ;;
+        cloudfile-docker) key=upstream.seafile_docker ;;
+        *) return 1 ;;
+    esac
+
+    local sha
+    sha=$(python3 "$docker_repo/build/cloudfile_14.0/read-manifest.py" \
+          "$docker_repo/release.yaml" "$key" 2>/dev/null) || return 1
+
+    git -C "$repo_dir" cat-file -e "$sha^{commit}" 2>/dev/null || return 1
+    echo "$sha two"
+}
+
+# 列出相对基线被修改的上游文件。
+#
+# 只算基线里已存在的文件：新增文件不参与合并冲突，把它们混进来会让这个指标
+# 失去意义。
 list_patched() {
-    local repo_dir=$1
-    git -C "$repo_dir" diff --name-only upstream/master...HEAD | while read -r f; do
+    local repo_dir=$1 base=$2 mode=$3
+    local range
+    [[ $mode == three ]] && range="$base...HEAD" || range="$base HEAD"
+
+    # shellcheck disable=SC2086
+    git -C "$repo_dir" diff --name-only $range | while read -r f; do
         [[ -z $f ]] && continue
-        if git -C "$repo_dir" cat-file -e "upstream/master:$f" 2>/dev/null; then
+        if git -C "$repo_dir" cat-file -e "$base:$f" 2>/dev/null; then
             echo "$f"
         fi
     done | sort
@@ -67,14 +108,16 @@ for repo in "${repos[@]}"; do
         status=2
         continue
     fi
-    if ! git -C "$repo_dir" rev-parse --verify -q upstream/master >/dev/null; then
-        echo "  跳过：没有 upstream/master，先执行" >&2
+    if ! read -r base mode < <(resolve_base "$repo_dir" "$repo"); then
+        echo "  跳过：无法确定比较基线。任选其一：" >&2
+        echo "    git -C $repo_dir remote add upstream https://github.com/haiwen/<repo>.git" >&2
         echo "    git -C $repo_dir fetch upstream master" >&2
+        echo "  或 fetch release.yaml 里记录的锚点 SHA，或设置 CF_UPSTREAM_BASE。" >&2
         status=2
         continue
     fi
 
-    actual=$(list_patched "$repo_dir")
+    actual=$(list_patched "$repo_dir" "$base" "$mode")
 
     if [[ $update -eq 1 ]]; then
         # 保留清单开头的注释块，只替换文件列表。

@@ -106,7 +106,11 @@ function install_dependencies() {
         libhiredis-dev \
         google-perftools \
         libgoogle-perftools-dev \
-        libargon2-dev
+        libargon2-dev \
+        gettext \
+        make \
+        nodejs \
+        npm
 }
 
 function install_python_dependencies() {
@@ -214,6 +218,37 @@ function write_build_info() {
     cat "$out"
 }
 
+# 构建 seahub 的前端与静态资源。
+#
+# 这一步不能省：cloudfile-build.py 的 Seahub 阶段 build_commands 是空的，它只
+# 复制源码树。上游之所以看不出问题，是因为官方发行包取自 dist 分支——那里的
+# media/assets 是 CI 预先构建好并提交进去的。我们直接从源码分支构建，所以必须
+# 自己产出这些资源，否则镜像里根本没有 Web 界面。
+#
+# @seafile/* 都是公开 npm 包，不需要 NPM_TOKEN。
+function build_seahub_frontend() {
+    local seahub=${code_path}/seahub
+
+    echo "Building seahub frontend"
+    cd "${seahub}/frontend"
+    npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund
+    CI=false npm run build
+
+    echo "Making seahub dist files"
+    cd "${seahub}"
+    # make dist = compilemessages + compilejsi18n + collectstatic，
+    # 三步都要 django 和 seahub 的依赖在 PYTHONPATH 上。
+    PYTHONPATH="${code_path}/thirdpartdir:${seahub}/thirdpart:${PYTHONPATH:-}" \
+        make dist
+
+    if [[ ! -d ${seahub}/media/assets ]]; then
+        echo "ERROR: media/assets 没有生成，镜像将没有 Web 界面" >&2
+        exit 1
+    fi
+
+    cd "${code_path}"
+}
+
 function build() {
     cd "${current_dir}"
     python3 ./cloudfile-build.py \
@@ -234,6 +269,7 @@ install_dependencies
 clone_code
 fetch
 install_python_dependencies
+build_seahub_frontend
 build
 write_build_info
 

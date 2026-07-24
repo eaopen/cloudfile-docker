@@ -22,7 +22,7 @@ CE 扩展版的规格、规划与决策。每份文档只保留**最终版本**�
 | [audit.md](audit.md) | C 审计 | Audit Log | ✅ API、筛选与管理员页面已验收 |
 | [upstream-reuse.md](upstream-reuse.md) | D 元数据与标签 | Metadata | ✅ 官方 metadata-server 已接入并通过真实 API 验收 |
 | [search.md](search.md) | E 检索 | Full text search | ⬜ 方案已定 |
-| [storage.md](storage.md) | H 存储 | AWS S3 / 多存储 | ⬜ 方案已定 |
+| [storage.md](storage.md) | H 存储 | AWS S3 / 多存储 | ⚠️ Go/Docker 已完成，C 生命周期待补 |
 | [ai.md](ai.md) | AI | 自动属性/标签/摘要（非 Pro 表项） | ⬜ 方案已定 |
 
 > 元数据（簇 D）默认用官方 `seafile-md-server`，规格与探针结论在

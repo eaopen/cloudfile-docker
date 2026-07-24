@@ -69,7 +69,7 @@ grep -rln is_pro_version seahub/adfs_auth/ seahub/oauth/ seahub/role_permissions
 |---|---|---|---|---|
 | Two factor authentication | ✅ `seahub/two_factor/` app 无条件装载，`ENABLE_TWO_FACTOR_AUTH` | 打包层 | **打包** | 📦 待启用 |
 | Remote Wipe | ✅ `seahub/utils/devices.py` `mark_device_to_be_remote_wiped` + 管理端点 | 打包层 | **打包** | 📦 待启用 |
-| Audit Log | post 文件操作钩子已预留，但**无上游触发点**（缺口 1） | 簇 C | **构建**：先补 server 侧 `file_op` 分发点 | 🔨 阻塞在基线缺口 |
+| Audit Log | Server `repo-update` → seafevents `Activity` 已覆盖提交差异 | 簇 C | `CF_ENABLE_AUDIT` API 与系统管理员 UI | ✅ 已验收 |
 | Antivirus Integration | ❌ 镜像已**主动剥离** clamav；扫描在 server/pipeline 侧 | 新增·server 侧 | **构建**：这是"缺失机制"里唯一较重的一项 | 🔨 未开始 |
 
 ### 存储与扩展
@@ -106,7 +106,7 @@ bootstrap 配置 + 一张启用清单**：
 |---|---|---|
 | A 目录 ACL | Fine-grained folder permission | ✅ 已完成 |
 | B 身份·同步半 | Syncing LDAP/AD Users and Groups | ✅ 已完成（待补 LDAP 源） |
-| C 审计 | Audit Log | 🔨 阻塞在 `file_op` 缺口 |
+| C 审计 | Audit Log | ✅ 已完成 |
 | D 元数据 | 属性/标签/多视图 | 🔨 自建存储引擎（探针 1） |
 | E 检索 | Full text search | 🔨 配 seasearch（探针 3） |
 | F 协同 | Office editing + File locking | 🔨 拆 `is_pro` 门控（缺口 5 / 探针 2） |

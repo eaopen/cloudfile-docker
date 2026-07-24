@@ -89,7 +89,7 @@ seasearch、Elasticsearch、企业自有检索服务都可以是同一个 kind �
 | **A** | 目录 ACL | `DIR_ACL` | ● | ● | ● | | | | | ● | ● 规则来源 | ● | ● 全三个 |
 | **B** | SSO 登录 | `SSO` | | | | | | | | | | | |
 | **B** | 组织映射 | `SSO` | ● | ● | | | | | | ● | ● `sso_directory` | ● | |
-| **C** | 操作日志 / 审计 | `AUDIT` | ● | ● | | | | ● | | ○ | ○ 落地目标 | ● | ⚠️ 见缺口 2 |
+| **C** | 操作日志 / 审计 | `AUDIT` | ● | ● | | | | ○ | | ○ | ○ | ○ | Server `repo-update` → `Activity` |
 | **D** | 文件属性 | `METADATA` | ● | ● | | | ● | ● | | ● | | ● | |
 | **D** | 标签 | `TAGS` | ● | ● | | | ● | ● | | | | ● | |
 | **D** | 移动/重命名元数据跟随 | `METADATA` | | | | | ● | ● | | ● | | ● | |
@@ -131,7 +131,7 @@ OAuth2/SAML/CAS/LDAP 且无 Pro 门控，打开它只是往配置块里写标量
 `register_file_op_hook()` 可以注册，但**上游没有任何地方调用 `run_file_op_hooks()`**。
 Hub 改的 5 个上游文件里，没有一个会触发它。
 
-被卡住的特性：审计、文件属性、标签、元数据跟随、OnlyOffice、文件锁、签入签出（8 个）。
+仍受影响的特性：文件属性、标签、元数据跟随、OnlyOffice、文件锁、签入签出。审计改为消费 Server `repo-update` 经 seafevents 生成的 `Activity`，不再依赖这个 Hub 钩子。
 
 seahub 自带的 `seahub/signals.py` 只有 `repo_created`、`upload_file_successful` 等 10 个信号，
 **没有删除、移动、重命名、下载**——恰好是审计最需要的。

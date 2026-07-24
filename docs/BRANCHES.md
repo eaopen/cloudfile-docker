@@ -150,7 +150,7 @@ feature/* = 正在开发的能力。验收通过 → 合回 dev → 删除分支
 |---|---|---|
 | **A 目录权限** | 13–35, 66 | `cf_dir_acl` 表 +`acl-cases.json` 用例集**同时驱动 C 与 Python 两端**，改语义必须同时改两处 |
 | **B 身份与目录同步** | 36, 76–88 | `cf_sso_*` 表 + 组织映射规格。**登录后端是打包不是构建**（见下），真正要构建的是目录/组同步 |
-| **C 操作日志** | 37 | `cf_audit_log` 表。⚠️ 阻塞在 `file_op` 基线缺口上 |
+| **C 操作日志** | 37 | 复用 seafevents `Activity`（seahub-db）；Server `repo-update` 是统一事件源 |
 | **D 元数据** | 38 属性, 39 标签, 42 移动跟随 | **同一张表**。标签是属性的特化；42 是 38/39 的正确性要求，不是独立特性 |
 | **E 检索** | 40 后端 | 自有索引，不碰 `cf_*` |
 | **F 协同** | 43–48 | 同一份**锁语义**：签入签出、超时解锁、OnlyOffice 并发都是"谁正持有这个文件"的不同表述 |
@@ -232,7 +232,7 @@ LDAP 登录、ADFS/SAML、Shibboleth、角色管理、2FA、设备远程擦除�
 
 | 线 | 内部顺序 | 并行安全性 | 上游成本 |
 |---|---|---|---|
-| **1 权限与合规** | A 目录权限 → B SSO → C 操作日志 | 与其余三线无共享 | A: 0 / B: 0 / **C: 需先补基线 `file_op` 分发点** |
+| **1 权限与合规** | A 目录权限 → B SSO → C 操作日志 | 与其余三线无共享 | A: 0 / B: 0 / C: 0（复用 `repo-update` / `Activity`） |
 | **2 信息管理** | D 元数据 ∥ E 检索 → 41 组合检索 | D 与 E 靠过滤契约解耦后**可真并行** | 0（检索扩展点基线已付） |
 | **3 协同** | F: 文件锁 → 签入签出 → OnlyOffice → iTeam | 独占锁语义与 `cf_lock` | ⚠️ **唯一有新增上游补丁的线**（Hub 侧拆 `is_pro_version()` 门控） |
 | **4 存储扩展** | G 外部源 → 扫描 → 虚拟目录　∥　H S3 | G 与 H 技术上无关，可各自推进 | G: 0（但要付"另起入口"的产品代价）/ H: 1 个新增登记项 |
@@ -350,7 +350,7 @@ graph LR
 | SSO 登录 | **0** | ✅ 是 | **上游 CE 已自带**：`seahub/oauth/`（OAuth2/OIDC）、`adfs_auth/`（SAML）、`django_cas_ng/`、LDAP、REMOTE_USER，**一处 Pro 门控都没有**，依赖也在发行包里。打开它只是往配置块写标量。原先记的"`EXTRA_AUTHENTICATION_BACKENDS` + `register_urls()`"其实高估了——**连后端都不用写**。见 [upstream-reuse.md](upstream-reuse.md) 探针 0 |
 | SSO 组织映射 | **0** | ✅ 是 | 上游**没有**通用目录的组织映射（企业微信/钉钉那两个用的 `external_department.outer_id` 是 BIGINT，装不下 OIDC 组 claim 或 LDAP DN）。用现成扩展点：provider + `register_periodic_task` + `register_urls` + 上游自己的 `user_logged_in` 信号 |
 | 文件属性 / 标签 | **0** | ⚠️ 见下 | 纯 `cloudfile_ext` + `cf_*` 表 |
-| **操作日志 / 审计** | **⚠️ 待定** | ✅ 是 | **原先记的 0 不成立**：`file_op` 钩子无任何上游触发点，seahub 的 `signals.py` 也没有删除/移动/重命名/下载信号。建议改到 server 侧 `cf-ext.c`——那是一次基线改动。见 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 缺口 1 |
+| **操作日志 / 审计** | **0** | ✅ 是 | Server 对每次提交发布 `repo-update`，seafevents 已将提交差异持久化为 `Activity`；CloudFile 只增加管理员查询 API/UI，不复制一份不完整的审计表。 |
 | Meilisearch / 组合检索 | **0**（基线已付） | ✅ 是 | 基线已铺好 `register_search_provider()` + 两处上游改动；具体后端是 provider，零改动 |
 | OnlyOffice | **0** | ✅ 是 | **上游 CE 已自带 `seahub/onlyoffice/`**（views/converter/callback 全套），只有锁集成两行是 Pro 门控。规模远小于原估 |
 | SMB/NFS 及其派生 | **0** | ❌ **否** | `register_external_source_provider()` 只能经自有路由暴露。要出现在原生库列表里需改上游列举逻辑。见缺口 3 |
@@ -517,7 +517,7 @@ ln -s ../../../cloudfile-docker/tools/check-upstream-patches.sh .git/hooks/pre-p
 |---|---|---|---|
 | **1** | 1.1 | 重建 `feature/dir-acl` → 六入口矩阵 → 合回 `dev` | **不是"只差验证"**：分支已腐坏，见第九节。含 WebDAV 读侧补丁（发布阻塞项） |
 | | 1.2 | SSO | **本机两阶段门禁已通过** —— 登录复用上游，CloudFile 只做配置与组织映射。规格 [sso-mapping.md](sso-mapping.md)，探针 [upstream-reuse.md](upstream-reuse.md)。满足合回 `dev` 的能力门禁；CI 仍待跑 |
-| | 1.3 | 审计 | ⚠️ **先补基线 `file_op` 分发点**，那是一次基线改动，按基线标准 review |
+| | 1.3 | 审计 | ✅ Server `repo-update` → seafevents `Activity` → CloudFile API/UI 已通过完整镜像验收 |
 | **2** | 2.1a | 元数据（属性 + 标签 + 移动跟随） | **探针 1 已定：CloudFile 自建存储引擎说 metadata-server 协议**（唯一闭源件）+ 复用上游前端/API/投喂管线。分两步：官方 server 先验证，长期权威模型归 CloudFile |
 | | 2.1b | 检索后端（与 2.1a **真并行**） | **探针 3 已定：默认 seasearch（上游已集成，零 CloudFile 代码）**，meilisearch 作可选 provider。扩展点与过滤契约已就位 |
 | | 2.2 | 组合检索 | 需 2.1a + 2.1b 都进了 `dev`，验收属集成门禁 |

@@ -394,6 +394,40 @@ def write_cloudfile_seafile_conf():
         lines.append('%s = %s\n'
                      % (key, 'true' if cf_enabled(name) else 'false'))
 
+    # Keep the S3 configuration in the same restart-safe generated block as
+    # the feature switches.  The server processes need these values in
+    # seafile.conf; leaving them only in compose would make a restart silently
+    # fall back to the local filesystem.
+    if cf_enabled('CF_ENABLE_S3_STORAGE'):
+        storage_type = get_conf('SEAF_SERVER_STORAGE_TYPE', '').lower()
+        if storage_type not in ('s3', 'multiple'):
+            raise Exception('SEAF_SERVER_STORAGE_TYPE must be s3 or multiple when CF_ENABLE_S3_STORAGE=true')
+        values = {
+            'bucket': None,
+            'key_id': get_conf('S3_KEY_ID', ''),
+            'key': get_conf('S3_SECRET_KEY', ''),
+            'host': get_conf('S3_HOST', ''),
+            'use_v4_signature': get_conf('S3_USE_V4_SIGNATURE', 'true'),
+            'aws_region': get_conf('S3_AWS_REGION', 'us-east-1'),
+            'use_https': get_conf('S3_USE_HTTPS', 'true'),
+            'path_style_request': get_conf('S3_PATH_STYLE_REQUEST', 'true'),
+        }
+        for name in ('key_id', 'key', 'host'):
+            if not values[name]:
+                raise Exception('S3_%s is required when CF_ENABLE_S3_STORAGE=true' % name.upper())
+        for section, env_name in (
+                ('commit_object_backend', 'S3_COMMIT_BUCKET'),
+                ('fs_object_backend', 'S3_FS_BUCKET'),
+                ('block_backend', 'S3_BLOCK_BUCKET')):
+            bucket = get_conf(env_name, '')
+            if not bucket:
+                raise Exception('%s is required when CF_ENABLE_S3_STORAGE=true' % env_name)
+            lines.append('\n[%s]\nname = s3\n' % section)
+            lines.append('bucket = %s\n' % bucket)
+            for name, value in values.items():
+                if name != 'bucket':
+                    lines.append('%s = %s\n' % (name, value))
+
     _replace_block(join(topdir, 'conf', 'seafile.conf'),
                    CF_BEGIN, CF_END, ''.join(lines))
 

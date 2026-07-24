@@ -75,16 +75,31 @@ git merge upstream/master
 最后一个是数据追加，冲突时直接保留双方的 key 即可。
 
 **cloudfile-server**
+- `common/obj-{backend,store}.{c,h}`、`common/block-{backend,mgr}.{c,h}`、
+  `common/fs-mgr.{c,h}` — 在 CE 原有构造入口选择 FS、S3 或 multiple，补齐三态存在检查、
+  可报告失败的删除与整库复制接口；Commit/FS 与 Block 使用两套上游接口，不能旁路接入。
+- `configure.ac` — C S3 客户端使用 libcurl 原生 SigV4，最低版本提高到 7.75。
+- `fuse/Makefile.am` — seaf-fuse 与主服务使用同一套 S3/multiple 后端，避免读取路径
+  仍固定到本地 FS。
 - `common/rpc-service.c` — `seafile_check_permission_by_path` 实现 +
   `seafile_cf_find_restricted_path`
 - `include/seafile-rpc.h`、`server/seaf-server.c` — 新 RPC 声明与注册
 - `server/seafile-session.c` — 启动时 `cf_acl_init()`
 - `server/Makefile.am` — 新增源文件
+- `server/gc/{Makefile.am,seafserv-gc.c,seaf-fsck.c,gc-core.c,gc-core.h,fsck.c,repo-mgr.c,repo-mgr.h}`
+  — GC/FSCK 通过统一后端遍历并传播枚举、读取、删除和修复失败；新增离线迁移程序在复制并
+  回读校验三类对象后事务切换 `RepoStorageId`。
 - `fileserver/sync_api.go` — 同步前的子树校验（两处：`checkPermission` 与缓存清理）
 - `python/seaserv/api.py` — `is_repo_syncable` / `is_dir_downloadable`
 - `python/seafile/rpcclient.py` — 新 RPC 客户端声明
 - `python/seaserv/__init__.py` — re-export `REPO_STATUS_*`；seafevents 从包根导入
   这两个既有常量，缺失会让 8889 任务服务在 import 阶段退出，进而阻断元数据初始化
+- `fileserver/objstore/objstore.go` — 在既有构造入口选择 FS、S3 或多存储后端；不能改为
+  新文件，因为三个对象管理器均从这里创建。
+- `fileserver/go.mod`、`fileserver/go.sum` — S3 SDK 的受控模块依赖；Go 的模块校验文件必须
+  与声明一起提交。
+- `fileserver/objstore/objstore_test.go` — 既有对象存储测试扩展为配置和 MinIO 集成覆盖；保留
+  在同一测试包才能验证未导出的后端构造函数。
 
 `cf_*` 建表放在**新文件** `scripts/sql/{mysql,sqlite}/cloudfile.sql`，没有动上游的
 `seafile.sql`，因此这一块永远不会产生合并冲突。建表由容器每次启动时执行

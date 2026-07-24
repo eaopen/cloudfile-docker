@@ -1,159 +1,71 @@
-# 存储后端（簇 H）规格与分阶段方案
+# 存储后端（簇 H）
 
-簇 H 的规格，对应 Pro 的 **AWS S3 / 多存储**。配套：[pro-parity.md](pro-parity.md)、
-[EXTENSION-POINTS.md](EXTENSION-POINTS.md)（缺口 4）、[FEATURES.md](FEATURES.md)、
-[BRANCHES.md](BRANCHES.md)。
+当前只对 **MinIO** 做集成验证。AWS S3、Ceph RGW 及各公有云 OSS 属于后续兼容范围，当前不作可用性承诺。
 
-**关键结论**：S3 **不是**"1 个新增登记项"，而是要在**核心文件服务里补齐存储
-驱动**——核心路径（Go fileserver + C seaf-server/GC/FSCK）目前只有 FS 后端，
-seafobj 的 S3 只在 Python 读侧。见第四节。
+## 当前状态
 
----
+Go fileserver、C `seaf-server` 和 `seaf-fuse` 均支持 Commit、FS、Block 三类对象的本地 FS、单一 MinIO 和按存储类路由；默认不开启时保持 CE 本地 FS 行为。
 
-## 一、原则与范围
+C S3 后端完整实现读取、写入、三态存在检查、大小、分页枚举、删除、复制和整库清理接口；Block 通过临时文件适配 CE 的流式句柄契约。GC、FSCK 和离线跨存储迁移均复用 Commit/FS/Block 的同一路由，后端错误会中止并返回非零。
 
-沿用[首要原则](BRANCHES.md#〇首要原则优先复用官方组件)：存储层**保持 Seafile 原有
-模型与配置兼容，不新增独立存储服务或私有仓库格式**，S3 变量沿用官方，不造 CloudFile
-私有格式。
+## 配置
 
-| 模式 | 首批 | 说明 |
-|---|---|---|
-| 本地文件系统 | ✅ 默认 | 本地盘或容器挂载的 NFS（见第七节的 NFS 辨析） |
-| 单一 S3 | ✅ 首批 | AWS S3、MinIO、Ceph RGW，及兼容 S3 API 的 OSS/COS/Wasabi 等 |
-| 多存储类 | ✅ 首批 | 同一实例组合 FS + S3；原生 Ceph/Swift/Aliyun OSS 后续补 |
-| 库迁移 | ✅ | 在不同存储类间迁移整个资料库 |
-| IAM Role、SSE-C | ⏳ 第二阶段 | 涉及安全与兼容性，单独验证 |
+启用单一 MinIO 后，Docker 在三类后端中生成相同的连接设置，并分别使用三个 bucket：
 
----
-
-## 二、S3 配置：沿用官方变量
-
-```bash
+```dotenv
+CF_ENABLE_S3_STORAGE=true
 SEAF_SERVER_STORAGE_TYPE=s3
 S3_COMMIT_BUCKET=cloudfile-commits
 S3_FS_BUCKET=cloudfile-fs
 S3_BLOCK_BUCKET=cloudfile-blocks
-S3_KEY_ID=...
-S3_SECRET_KEY=...
-S3_HOST=minio.example.com
-S3_AWS_REGION=us-east-1
-S3_USE_HTTPS=true
+S3_KEY_ID=minioadmin
+S3_SECRET_KEY=change-this-minio-password
+S3_HOST=minio:9000
+S3_USE_HTTPS=false
 S3_USE_V4_SIGNATURE=true
-S3_PATH_STYLE_REQUEST=true          # MinIO / Ceph RGW 通常需要
+S3_PATH_STYLE_REQUEST=true
+CF_S3_CONNECTION_TIMEOUT=10
+CF_S3_REQUEST_TIMEOUT=60
+CF_S3_MAX_RETRIES=2
 ```
 
-Seafile 把对象分为 **commit / filesystem / block** 三类，官方建议**分别用三个
-bucket**。这三类正是下面 Go/C 对象层里 `objType` 的取值（`"commit"|"fs"|"block"`）——
-不是 CloudFile 造的概念，是既有模型。
+生产环境应预先创建 bucket；程序不会自动创建。密钥只通过环境变量或生成的权限为 `0600` 的配置文件传递，不应写进日志或版本库。`max_retries` 只重试连接错误、超时、429 和临时 5xx，认证、授权和参数错误不会重试。
 
----
+本地验证可让 `S3_HOST=minio:9000`，并执行 `docker compose --profile s3 up -d`。该 profile 启动 MinIO，并由一次性 `minio-init` 创建三个测试 bucket；默认 profile 不启动 MinIO。数据保存在 `deploy/compose/data/minio`。
 
-## 三、多存储：沿用官方机制
+## 多存储路由
+
+```dotenv
+CF_ENABLE_S3_STORAGE=true
+SEAF_SERVER_STORAGE_TYPE=multiple
+CF_STORAGE_CLASSES_JSON=[{"storage_id":"local","is_default":true,"commits":{"backend":"fs","dir":"/shared/seafile"},"fs":{"backend":"fs","dir":"/shared/seafile"},"blocks":{"backend":"fs","dir":"/shared/seafile"}},{"storage_id":"minio","commits":{"backend":"s3","bucket":"cloudfile-commits","host":"minio:9000","key_id":"minioadmin","key":"change-me","use_https":false,"path_style_request":true,"max_retries":2},"fs":{"backend":"s3","bucket":"cloudfile-fs","host":"minio:9000","key_id":"minioadmin","key":"change-me","use_https":false,"path_style_request":true,"max_retries":2},"blocks":{"backend":"s3","bucket":"cloudfile-blocks","host":"minio:9000","key_id":"minioadmin","key":"change-me","use_https":false,"path_style_request":true,"max_retries":2}}]
+```
+
+`RepoStorageId.storage_id` 命中时使用对应存储类；无记录时才使用 `is_default=true` 的类。虚拟库选择原始库的存储类，但 Commit Key 仍使用虚拟库自身 ID。未知 storage ID、重复类名、没有默认类或缺少对象类型后端都会失败，绝不回退到另一存储读取或写入。
+
+## 对象布局与验证
+
+每个 bucket 内的 Key 为 `<repo-or-storage-id>/<object-id>`；本地 FS 的两级 hash 子目录不用于 S3。Go 后端以流式方式读写，C Block 后端使用本地临时文件保持原接口语义。零字节对象会保留，只有 404 被视为未命中；bucket、认证、网络和服务端错误保持为错误。
 
 ```bash
-SEAF_SERVER_STORAGE_TYPE=multiple
+cd cloudfile-server/fileserver
+go test ./objstore
+
+cd ..
+CF_S3_TEST_ENDPOINT=127.0.0.1:9000 \
+CF_S3_TEST_BUCKET=cf-s3-c-test \
+./tests/cf-s3/run.sh
 ```
-```ini
-[storage]
-enable_storage_classes = true
-storage_classes_file = /shared/conf/seafile_storage_classes.json
+
+设置 `CF_S3_TEST_ENDPOINT` 后会运行 MinIO 集成测试。Go 和 C 测试共同覆盖三类对象的写入、重复写、读取、大小、零字节 Block、缺失对象、资料库隔离；C 测试另覆盖枚举、复制、删除、整库清理和 403 分类。未设置时集成测试跳过。
+设置 `CF_S3_TEST_PAGINATION=1` 可额外写入 1001 个对象，验证 ListObjectsV2 翻页。
+
+GC 支持 `--dry-run`，只有完整遍历成功后才删除对象；枚举、读取或删除失败均返回非零。FSCK 区分对象不存在与 S3 后端故障，检查发现损坏返回非零，`--repair` 只允许在 `seaf-server` 和 fileserver 停止后运行。
+
+跨存储迁移必须停服执行：
+
+```bash
+./seaf-storage-migrate.sh <repo_id> <target_storage_id>
 ```
 
-三种映射策略（官方语义，不改）：
-
-| 策略 | 含义 |
-|---|---|
-| `USER_SELECT` | 建库时用户选择存储类 |
-| `ROLE_BASED` | 按角色限制可选存储类（与打包层的角色管理相衔接） |
-| `REPO_ID_MAPPING` | 按库 ID 分布 |
-
-> **映射单位是"资料库"，不是单个文件。** 库创建后改变策略**不会自动迁移**已有数据——
-> 迁移要显式走库迁移工具（见第四节 GC/迁移）。这条要写进运维文档，否则"改了策略
-> 数据怎么没动"会成为支持工单。
-
----
-
-## 四、代码边界
-
-> **S3 不是"1 个新增登记项"，而是要在核心文件服务里补齐存储驱动。** seafobj
-> （Python 读侧，seahub 缩略图/seafevents 索引读对象）确实已带 S3，但它**不在核心
-> 文件服务的写入/服务路径上**。核心路径是 Go fileserver（14.0 的 HTTP 文件服务）
-> 与 C 的 seaf-server / GC / FSCK——**这两处目前只有 FS 后端**。
-
-实测（cloudfile-server，无 S3 后端存在）：
-
-| 层 | 现状 | 要补什么 |
-|---|---|---|
-| **Go fileserver** | `fileserver/objstore/` **只有 `backend_fs.go`**（113 行）；`New()` 写死 `newFSBackend`；`option.go` 不解析 S3/multiple | `backend_s3.go`（实现 4 方法接口 `read/write/exists/stat` + S3 SDK）+ 配置解析（`SEAF_SERVER_STORAGE_TYPE`、`S3_*`）+ `New()` 后端选择 + 多存储 `storage_id` 路由 |
-| **C seaf-server / GC / FSCK** | `common/obj-store.c` 写死 `obj_backend_fs_new`；只有 `obj-backend-fs.c` + 遗留 `riak`。GC/FSCK（`server/gc/gc-core.c`、`fsck.c`）经同一 `obj_store` | `obj-backend-s3.c` + `obj-store.c` 后端选择 + 多存储路由。**覆盖上传/下载/同步/历史/GC/FSCK/迁移/校验/清理** |
-| **Python 读侧（seafobj）** | ✅ **本地 checkout 已核实**：`seafobj/backends/` 有 `filesystem.py`/`s3.py`/`alioss.py`/`ceph.py`/`swift.py`，`objstore_factory.py` 的 `get_s3_conf_from_env(obj_type)` 按 commit/fs/block 分别读 S3 env、含多存储 JSON。Apache-2.0，构建里已 clone | **无需 fork**——唯一白捡的一层 |
-| **Hub** | 存储类相关入口受 Pro 判断门控 | **精确移除**存储功能上的 Pro 判断（同 search 的做法：只动相关接口，**不动全局 `is_pro_version()`**）+ 存储类选择/管理/状态界面 |
-| **Compose** | 只有 local | `local` / `s3` / `multiple` 三套模板；凭据经环境变量或 Docker secrets |
-
-**接口是干净的 seam，这是好消息**：Go 侧 `storageBackend` 只有四个方法，`backend_fs.go`
-113 行，`backend_s3.go` 照同一接口实现即可；C 侧同理照 `obj-backend-fs.c` 的形状写。
-**但它终究是"实现驱动"，不是"翻个开关"**——量级是**核心文件服务的存储驱动 + 多存储
-路由**，跨 Go/C 两语言、覆盖服务/GC/FSCK/迁移全路径。这是 roadmap 里**最重**的一条
-构建项，不是最轻。排期按此重新计，别按旧文档的"1 个登记项"。
-
-> **SeaSearch、Metadata Server 各自的存储**：用 S3 时它们分别配自己的
-> `S3_SS_BUCKET`、`S3_MD_BUCKET`，与 Seafile 三桶分开。它们是官方镜像，存储配置
-> 各管各的，不共用 Seafile 的 commit/fs/block 桶。
-
----
-
-## 五、镜像与许可边界
-
-关于"以官方 `seafileltd/seafile-mc` 为基础构建"，有一处要澄清：
-
-- `seafile-mc` 是 **CE 13.0** 镜像。**上游没有 CE 14.0 镜像**（[AGENTS.md](../AGENTS.md)
-  的既有前提），所以 CloudFile 的 14.0 镜像**不是**基于任何官方 CE 镜像，而是
-  `FROM ubuntu:24.04` **从源码构建**，套用 14.0 的版本 pin、去掉 Pro 专用部分。
-- 但**意图已经满足**：CloudFile **不依赖 Pro 镜像**。官方 Pro 镜像的许可证限制
-  再分发与衍生修改，所以它**只能作为"用户自行提供有效许可"的可选运行时**，
-  不能作为可自由分发的 CE 默认依赖。这一点现行架构本就如此——从 CE 源码构建，
-  正是为了绕开这个许可边界。
-
-一句话：**"基于 CE、不依赖 Pro 镜像"这条已成立**；只是因为没有 CE 14.0 镜像，
-落地形式是"从 CE 源码构建"而非"FROM seafile-mc"。
-
----
-
-## 六、分阶段
-
-| 阶段 | 内容 | 依赖 |
-|---|---|---|
-| **P0** | 单一 S3：Go `backend_s3.go` + C `obj-backend-s3.c` + 配置解析 + 后端选择；打通上传/下载/同步/历史；`local`/`s3` 两套 Compose 模板 | S3 SDK |
-| **P1** | 多存储：`storage_classes` 解析 + `storage_id` 路由（Go/C 两侧）+ 三种映射策略；`multiple` 模板 | P0 |
-| **P2** | 库迁移：`migrate-repo` + 校验 + 安全清理；GC/FSCK 在 S3 后端下验证 | P1 |
-| **P3** | IAM Role、SSE-C：安全与兼容性单独验证 | P0 |
-
-**P0/P2 的验收面**（存储最怕"写进去读不出/GC 误删"）：上传后立即下载校验一致；
-历史版本可取；**GC 在 S3 后端下不误删活对象**（拿一个刚写入的对象跑一轮 GC 后仍在）；
-FSCK 能在 S3 上跑完。这些进 `storage-e2e.yml` 能力门禁。
-
----
-
-## 七、NFS 辨析：内部存储 ≠ 外部资料源
-
-两件容易混的事，必须分开：
-
-| | 内部 NFS 存储（本簇 H） | 挂载现有 SMB/NFS 资料源（簇 G） |
-|---|---|---|
-| 谁管理对象布局 | **Seafile**（就是 FS 后端跑在 NFS 挂载上） | 外部系统，Seafile 只读映射 |
-| 进 repo/commit/block 模型？ | ✅ 是 | ❌ 否 |
-| 协作/签入签出 | ✅ 正常 | ❌ 降级为只读、无协作、无签入签出 |
-
-**内部 NFS 就是默认的 FS 后端**，不需要任何新代码——把 `seafile-data` 放在 NFS 挂载上
-即可。**外部 SMB/NFS 源是另一回事**，属簇 G，见 [EXTENSION-POINTS.md](EXTENSION-POINTS.md)
-缺口 3（融入原生库列表的产品代价）。别把两者的配置或期望混在一起。
-
----
-
-## 八、产品口径
-
-> CloudFile 存储层保持与 Seafile 原有模型和配置完全兼容，沿用官方 S3 与多存储变量，
-> 不新增独立存储服务或私有格式。首批支持本地 FS、单一 S3、FS+S3 多存储与库迁移；
-> 落地方式是在核心文件服务（Go fileserver 与 C seaf-server/GC/FSCK）里补齐 S3 存储
-> 驱动与多存储路由，Python 读侧复用上游 seafobj。默认镜像基于 CE 源码构建，不依赖
-> 受限的 Pro 镜像。
+工具复制并逐对象回读校验 Commit、FS、Block 和关联虚拟库 Commit，全部成功后才在事务中切换 `RepoStorageId`；源对象保留用于回滚。不能用生命周期规则按年龄删除 Commit、FS 或 Block。

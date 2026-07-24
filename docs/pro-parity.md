@@ -76,7 +76,7 @@ grep -rln is_pro_version seahub/adfs_auth/ seahub/oauth/ seahub/role_permissions
 
 | Pro 特性 | CE 源码有吗 | 归属 | 做法 | 状态 |
 |---|---|---|---|---|
-| AWS S3 / 多存储 | seafobj **读侧**已带 s3/ceph/swift/alioss；但**核心文件服务（Go fileserver + C）只有 FS** | 簇 H | **构建**：Go `backend_s3.go` + C `obj-backend-s3.c` + 多存储路由，覆盖服务/GC/FSCK/迁移。**非"1 登记项"**，见 [storage.md](storage.md) | 🔨 未开始 |
+| AWS S3 / 多存储 | Go fileserver 已有 S3 + `RepoStorageId` 路由，Docker 已生成官方配置，seafobj 读侧已有 S3；**C 主服务、GC、FSCK 仍只有 FS** | 簇 H | 补 C `obj-backend-s3.c`、C 多存储路由、创建映射入口与迁移/GC/FSCK E2E。**非"1 登记项"**，见 [storage.md](storage.md) | ⚠️ 部分完成 |
 | 属性 / 标签 / 多视图（未单列，Pro 的 metadata） | 前端+API+投喂管线全在 CE；官方 metadata-server 提供存储引擎 | 簇 D | **打包**：接官方兼容服务并复用 CE 前端/API | ✅ 属性与标签真实 API 已验收 |
 
 ---

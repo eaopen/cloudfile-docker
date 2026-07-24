@@ -9,11 +9,35 @@
 # 注意：在已列出的文件里增加新的改动块（例如再注册一个 RPC）不需要改这份
 # 清单——成本已经付过了。这也是为什么"再加一个 RPC"远比"再动一个新文件"便宜。
 common/rpc-service.c
+common/block-backend-fs.c
+common/block-backend.h
+common/block-mgr.c
+common/block-mgr.h
+common/fs-mgr.c
+common/fs-mgr.h
+common/obj-backend-fs.c
+common/obj-backend.h
+common/obj-store.c
+common/obj-store.h
+configure.ac
 fileserver/sync_api.go
+fileserver/go.mod
+fileserver/go.sum
+fileserver/objstore/objstore.go
+fileserver/objstore/objstore_test.go
 include/seafile-rpc.h
+fuse/Makefile.am
 python/seafile/rpcclient.py
 python/seaserv/api.py
 python/seaserv/__init__.py
 server/Makefile.am
+server/gc/Makefile.am
+server/gc/fsck.c
+server/gc/gc-core.c
+server/gc/gc-core.h
+server/gc/repo-mgr.c
+server/gc/repo-mgr.h
+server/gc/seaf-fsck.c
+server/gc/seafserv-gc.c
 server/seaf-server.c
 server/seafile-session.c

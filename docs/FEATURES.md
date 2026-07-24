@@ -55,7 +55,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | 3 | 功能开关机制（10 个 `CF_ENABLE_*`） | ✅ | 默认全关；配置块重写幂等性已验证 |
 | 4 | 扩展注册机制 | ✅ | URL / 菜单 / 权限 / 文件操作 / 索引器 / 外部源 / 周期任务；分发与 seal 行为已验证 |
 | 5 | `cloudfile_ext` Django app | ✅ | 通过 `EXTRA_INSTALLED_APPS` 注册，未改 `settings.py` |
-| 6 | 上游注入点最小化 | ✅ | Hub 5 个（2 处权限/路由 + 2 处检索扩展点 + 1 处数据追加）；Server 8 个；Docker 3 个。合计 **16**，清单由 `check-upstream-patches.sh` 卡住 |
+| 6 | 上游注入点最小化 | ✅ | Hub 5 个（2 处权限/路由 + 2 处检索扩展点 + 1 处数据追加）；Server 13 个（其中 S3 增加对象存储构造入口、模块依赖及其测试）；Docker 3 个。合计 **21**，清单由 `check-upstream-patches.sh` 卡住 |
 | 7 | 前端骨架与入口注册 | ✅ | 入口映射已验证可加载；基线页面为能力总览；已随镜像打包 |
 | 55 | 前端资源构建接入 | ✅ | `seafile-build.py` 的 Seahub 阶段只复制源码树，`media/assets` 只存在于上游 dist 分支——原先的构建会产出没有 Web 界面的镜像。已在 `cloudfile-build.sh` 中加入 `npm run build` + `make dist`，并在缺失时直接失败。**Node 版本已固定**：apt 给的是 18.19.1，seahub 前端需要 20+ |
 | 56 | CI：快速检查门禁 | ✅ | 三仓共用 `tools/run-checks.sh`；GitHub Actions `30048595750` 已成功 |
@@ -263,7 +263,7 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
-| 49 | S3 / 多存储 | ⬜ | **完整方案见 [storage.md](storage.md)。** 核心文件服务只有 FS：Go fileserver 仅 `backend_fs.go`、C 侧仅 `obj-backend-fs.c`（GC/FSCK 也经它）。要补 Go `backend_s3.go` + C `obj-backend-s3.c` + 两侧后端选择与多存储 `storage_id` 路由，覆盖上传/下载/同步/历史/GC/FSCK/迁移。seafobj（Python 读侧）已带 S3/OSS/Swift/Ceph，白捡。沿用官方 `SEAF_SERVER_STORAGE_TYPE`/`S3_*` 变量，不造私有格式。**roadmap 最重的构建项之一** |
+| 49 | S3 / 多存储 | ✅ | Go fileserver、C 主服务和 seaf-fuse 支持 Commit/FS/Block 的单 S3 与按 `RepoStorageId` 路由；MinIO 数据面、S3-aware GC/FSCK、故障返回码和离线 FS↔S3 往返迁移均完成整机验证。迁移逐对象回读校验，事务切换路由并保留源对象。详见 [storage.md](storage.md)。 |
 | 96 | 反病毒集成（簇 I） | ⬜ | **Pro 对标补入**（[pro-parity.md](pro-parity.md)）。Pro 的"缺失机制"里唯一没归簇的一项：上传/文件扫描在 server/pipeline 侧，**镜像已主动剥离 clamav**。落地前先做门控盘点（同 OnlyOffice 探针 2 的做法），确认哪些是真依赖、哪些只是商业门控 |
 | 50 | SMB/NFS 外部资料源 | ⬜ | 零上游改动，但**代价是另起一个入口**——不改上游就进不了原生库列表。见 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 缺口 3。这是产品决定，不是技术决定 |
 | 51 | 外部源增量扫描 | ⬜ | 依赖 50 + `cf-worker` |

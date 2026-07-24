@@ -7,8 +7,9 @@ ENV SEAFILE_SERVER=seafile-server SEAFILE_VERSION=$server_version
 # Upstream ships image/seafile_13.0 (CE) and image/pro_seafile_14.0 (Pro) but
 # no CE 14.0 image, because 14.0 CE has not been released -- there are no
 # "-server" tags for it. This file is the 13.0 CE image with 14.0's dependency
-# pins applied, and deliberately without the Pro-only pieces: no clamav, no
-# rados, no boto3/oss2/twilio, and no IS_PRO_VERSION.
+# pins applied, and deliberately without the unrelated Pro-only pieces: no
+# clamav, rados, oss2/twilio, or IS_PRO_VERSION. boto3 is required by the
+# S3-aware seafobj wrapper shared by Seahub, WebDAV and background services.
 
 # https://github.com/phusion/baseimage-docker
 COPY base_scripts /bd_build
@@ -55,6 +56,9 @@ RUN pip3 install --no-cache-dir --timeout=3600 --ignore-installed \
     django==5.2.* cffi==2.0.* future==1.0.* mysqlclient==2.2.* captcha==0.7.* django_simple_captcha==0.6.* \
     pyjwt==2.13.* djangosaml2==1.11.* pysaml2==7.5.* pycryptodome==3.23.* python-ldap==3.4.* \
     pillow==12.2.* pillow-heif==1.2.* cairosvg==2.9.* scikit-learn==1.7.*
+
+# Runtime support for the S3-aware seafobj wrapper.
+RUN pip3 install --no-cache-dir boto3
 
 # Scripts
 COPY scripts_14.0 /scripts

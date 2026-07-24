@@ -10,6 +10,10 @@
 # 清单——成本已经付过了。这也是为什么"再加一个 RPC"远比"再动一个新文件"便宜。
 common/rpc-service.c
 fileserver/sync_api.go
+fileserver/go.mod
+fileserver/go.sum
+fileserver/objstore/objstore.go
+fileserver/objstore/objstore_test.go
 include/seafile-rpc.h
 python/seafile/rpcclient.py
 python/seaserv/api.py

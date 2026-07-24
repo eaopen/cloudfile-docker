@@ -85,6 +85,12 @@ git merge upstream/master
 - `python/seafile/rpcclient.py` — 新 RPC 客户端声明
 - `python/seaserv/__init__.py` — re-export `REPO_STATUS_*`；seafevents 从包根导入
   这两个既有常量，缺失会让 8889 任务服务在 import 阶段退出，进而阻断元数据初始化
+- `fileserver/objstore/objstore.go` — 在既有构造入口选择 FS、S3 或多存储后端；不能改为
+  新文件，因为三个对象管理器均从这里创建。
+- `fileserver/go.mod`、`fileserver/go.sum` — S3 SDK 的受控模块依赖；Go 的模块校验文件必须
+  与声明一起提交。
+- `fileserver/objstore/objstore_test.go` — 既有对象存储测试扩展为配置和 MinIO 集成覆盖；保留
+  在同一测试包才能验证未导出的后端构造函数。
 
 `cf_*` 建表放在**新文件** `scripts/sql/{mysql,sqlite}/cloudfile.sql`，没有动上游的
 `seafile.sql`，因此这一块永远不会产生合并冲突。建表由容器每次启动时执行

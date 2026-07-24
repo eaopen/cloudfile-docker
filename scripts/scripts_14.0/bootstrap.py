@@ -402,6 +402,32 @@ def write_cloudfile_seafile_conf():
         storage_type = get_conf('SEAF_SERVER_STORAGE_TYPE', '').lower()
         if storage_type not in ('s3', 'multiple'):
             raise Exception('SEAF_SERVER_STORAGE_TYPE must be s3 or multiple when CF_ENABLE_S3_STORAGE=true')
+        if storage_type == 'multiple':
+            classes = get_conf('CF_STORAGE_CLASSES_JSON', '')
+            if not classes:
+                raise Exception('CF_STORAGE_CLASSES_JSON is required when SEAF_SERVER_STORAGE_TYPE=multiple')
+            try:
+                classes = json.loads(classes)
+            except ValueError as e:
+                raise Exception('CF_STORAGE_CLASSES_JSON is not valid JSON: %s' % e)
+            if not isinstance(classes, list) or not classes:
+                raise Exception('CF_STORAGE_CLASSES_JSON must be a non-empty JSON array')
+            classes_path = join(topdir, 'conf', 'seafile_storage_classes.json')
+            with open(classes_path, 'w') as fp:
+                json.dump(classes, fp, indent=2, sort_keys=True)
+                fp.write('\n')
+            os.chmod(classes_path, 0o600)
+            lines += [
+                '\n[storage]\n',
+                'enable_storage_classes = true\n',
+                'storage_classes_file = %s\n' % classes_path,
+            ]
+            for section in ('commit_object_backend', 'fs_object_backend', 'block_backend'):
+                lines.append('\n[%s]\nname = multiple\n' % section)
+            _replace_block(join(topdir, 'conf', 'seafile.conf'),
+                           CF_BEGIN, CF_END, ''.join(lines))
+            return
+
         values = {
             'bucket': None,
             'key_id': get_conf('S3_KEY_ID', ''),

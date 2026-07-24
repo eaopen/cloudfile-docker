@@ -93,6 +93,7 @@ services:
       S3_USE_HTTPS: ${S3_USE_HTTPS:-true}
       S3_USE_V4_SIGNATURE: ${S3_USE_V4_SIGNATURE:-true}
       S3_PATH_STYLE_REQUEST: ${S3_PATH_STYLE_REQUEST:-true}
+      CF_STORAGE_CLASSES_JSON: ${CF_STORAGE_CLASSES_JSON:-}
       CF_ENABLE_EXTERNAL_SOURCES: ${CF_ENABLE_EXTERNAL_SOURCES:-false}
       # Upstream reads these at import time. They intentionally mirror the
       # CloudFile switch rather than relying on a local settings assignment.

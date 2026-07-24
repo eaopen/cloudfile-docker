@@ -263,7 +263,7 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
-| 49 | S3 / 多存储 | ⬜ | **完整方案见 [storage.md](storage.md)。** 核心文件服务只有 FS：Go fileserver 仅 `backend_fs.go`、C 侧仅 `obj-backend-fs.c`（GC/FSCK 也经它）。要补 Go `backend_s3.go` + C `obj-backend-s3.c` + 两侧后端选择与多存储 `storage_id` 路由，覆盖上传/下载/同步/历史/GC/FSCK/迁移。seafobj（Python 读侧）已带 S3/OSS/Swift/Ceph，白捡。沿用官方 `SEAF_SERVER_STORAGE_TYPE`/`S3_*` 变量，不造私有格式。**roadmap 最重的构建项之一** |
+| 49 | S3 / 多存储 | ⚠️ | Docker 已生成并校验官方 `S3_*` / `storage_classes` 配置；Go fileserver 已实现 S3 的读写/存在/大小查询，并按 `RepoStorageId` 路由 FS+S3（MinIO 实测通过）。**尚不可作为整机功能发布**：C 主服务、GC、FSCK 仍只支持 FS，Hub 的存储类入口仍受 Pro 门控，迁移未实现。完整缺口与下一步见 [storage.md](storage.md)。 |
 | 96 | 反病毒集成（簇 I） | ⬜ | **Pro 对标补入**（[pro-parity.md](pro-parity.md)）。Pro 的"缺失机制"里唯一没归簇的一项：上传/文件扫描在 server/pipeline 侧，**镜像已主动剥离 clamav**。落地前先做门控盘点（同 OnlyOffice 探针 2 的做法），确认哪些是真依赖、哪些只是商业门控 |
 | 50 | SMB/NFS 外部资料源 | ⬜ | 零上游改动，但**代价是另起一个入口**——不改上游就进不了原生库列表。见 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 缺口 3。这是产品决定，不是技术决定 |
 | 51 | 外部源增量扫描 | ⬜ | 依赖 50 + `cf-worker` |

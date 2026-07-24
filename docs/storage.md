@@ -4,9 +4,9 @@
 [EXTENSION-POINTS.md](EXTENSION-POINTS.md)（缺口 4）、[FEATURES.md](FEATURES.md)、
 [BRANCHES.md](BRANCHES.md)。
 
-**关键结论**：S3 **不是**"1 个新增登记项"，而是要在**核心文件服务里补齐存储
-驱动**——核心路径（Go fileserver + C seaf-server/GC/FSCK）目前只有 FS 后端，
-seafobj 的 S3 只在 Python 读侧。见第四节。
+**当前结论（2026-07-24）**：Docker 配置、Go fileserver 的单一 S3，以及 Go 的
+`RepoStorageId` 多存储路由已经完成；MinIO 已实测对象写入、读取、大小校验。核心路径
+仍未闭环：C seaf-server / GC / FSCK 只有 FS 后端，因此这不是可发布的整机 S3 功能。见第四节。
 
 ---
 
@@ -73,22 +73,22 @@ storage_classes_file = /shared/conf/seafile_storage_classes.json
 
 ---
 
-## 四、代码边界
+## 四、代码边界与完成度
 
 > **S3 不是"1 个新增登记项"，而是要在核心文件服务里补齐存储驱动。** seafobj
 > （Python 读侧，seahub 缩略图/seafevents 索引读对象）确实已带 S3，但它**不在核心
 > 文件服务的写入/服务路径上**。核心路径是 Go fileserver（14.0 的 HTTP 文件服务）
-> 与 C 的 seaf-server / GC / FSCK——**这两处目前只有 FS 后端**。
+> 与 C 的 seaf-server / GC / FSCK——**Go 已有 S3/multiple，C 仍只有 FS 后端**。
 
-实测（cloudfile-server，无 S3 后端存在）：
+实测（cloudfile-server）：
 
 | 层 | 现状 | 要补什么 |
 |---|---|---|
-| **Go fileserver** | `fileserver/objstore/` **只有 `backend_fs.go`**（113 行）；`New()` 写死 `newFSBackend`；`option.go` 不解析 S3/multiple | `backend_s3.go`（实现 4 方法接口 `read/write/exists/stat` + S3 SDK）+ 配置解析（`SEAF_SERVER_STORAGE_TYPE`、`S3_*`）+ `New()` 后端选择 + 多存储 `storage_id` 路由 |
+| **Go fileserver** | ✅ `backend_s3.go` 实现 `read/write/exists/stat`；`newBackend()` 解析三类对象的 S3/multiple 配置；`backend_multi.go` 读取 `RepoStorageId`，无映射时回落默认类。单元测试覆盖 S3 配置、错误配置与按库路由；MinIO 实测读写/大小通过。 | 以真实 MariaDB 的 `RepoStorageId` 运行一次服务级路由 E2E；连接池关闭与指标按需要补充。 |
 | **C seaf-server / GC / FSCK** | `common/obj-store.c` 写死 `obj_backend_fs_new`；只有 `obj-backend-fs.c` + 遗留 `riak`。GC/FSCK（`server/gc/gc-core.c`、`fsck.c`）经同一 `obj_store` | `obj-backend-s3.c` + `obj-store.c` 后端选择 + 多存储路由。**覆盖上传/下载/同步/历史/GC/FSCK/迁移/校验/清理** |
 | **Python 读侧（seafobj）** | ✅ **本地 checkout 已核实**：`seafobj/backends/` 有 `filesystem.py`/`s3.py`/`alioss.py`/`ceph.py`/`swift.py`，`objstore_factory.py` 的 `get_s3_conf_from_env(obj_type)` 按 commit/fs/block 分别读 S3 env、含多存储 JSON。Apache-2.0，构建里已 clone | **无需 fork**——唯一白捡的一层 |
-| **Hub** | 存储类相关入口受 Pro 判断门控 | **精确移除**存储功能上的 Pro 判断（同 search 的做法：只动相关接口，**不动全局 `is_pro_version()`**）+ 存储类选择/管理/状态界面 |
-| **Compose** | 只有 local | `local` / `s3` / `multiple` 三套模板；凭据经环境变量或 Docker secrets |
+| **Hub** | 存储类相关入口受 Pro 判断门控；现有 `storage_id` 参数没有进入 CE RPC。 | C 后端完成后，以最小 RPC 扩展把 `storage_id` 持久化到 `RepoStorageId`，再精确开放 Hub 选择/管理入口。 |
+| **Compose** | ✅ `CF_ENABLE_S3_STORAGE` 校验并写入单一 S3 或 `multiple` 配置，`.env`/Compose 已透传 `S3_*` 与 `CF_STORAGE_CLASSES_JSON`。 | 添加隔离的 MinIO+MariaDB `storage-e2e` profile，凭据支持 Docker secrets。 |
 
 **接口是干净的 seam，这是好消息**：Go 侧 `storageBackend` 只有四个方法，`backend_fs.go`
 113 行，`backend_s3.go` 照同一接口实现即可；C 侧同理照 `obj-backend-fs.c` 的形状写。
@@ -123,9 +123,9 @@ storage_classes_file = /shared/conf/seafile_storage_classes.json
 
 | 阶段 | 内容 | 依赖 |
 |---|---|---|
-| **P0** | 单一 S3：Go `backend_s3.go` + C `obj-backend-s3.c` + 配置解析 + 后端选择；打通上传/下载/同步/历史；`local`/`s3` 两套 Compose 模板 | S3 SDK |
-| **P1** | 多存储：`storage_classes` 解析 + `storage_id` 路由（Go/C 两侧）+ 三种映射策略；`multiple` 模板 | P0 |
-| **P2** | 库迁移：`migrate-repo` + 校验 + 安全清理；GC/FSCK 在 S3 后端下验证 | P1 |
+| **P0（已部分完成）** | Docker 配置、Go S3 后端与 MinIO 对象 E2E | C S3 后端 |
+| **P1** | C/Go 两侧多存储路由；`storage_id` 创建/管理入口 | P0 |
+| **P2** | 库迁移、GC/FSCK 的 S3 验证与安全清理 | P1 |
 | **P3** | IAM Role、SSE-C：安全与兼容性单独验证 | P0 |
 
 **P0/P2 的验收面**（存储最怕"写进去读不出/GC 误删"）：上传后立即下载校验一致；

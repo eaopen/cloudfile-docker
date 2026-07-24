@@ -4,7 +4,8 @@
 #   docker compose --profile search up -d    + Meilisearch
 #   docker compose --profile office up -d    + OnlyOffice
 #   docker compose --profile worker up -d    + background worker
-#   docker compose --profile full up -d      everything
+#   docker compose --profile s3 up -d        + MinIO test backend
+#   docker compose --profile full up -d      all application extensions
 #
 # Copy .env.example to .env first. Every CF_ENABLE_* switch defaults to off,
 # which makes this stack behave exactly like native Seafile CE.
@@ -41,6 +42,43 @@ services:
       timeout: 3s
       retries: 6
     restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: cloudfile-minio
+    profiles: ["s3"]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-this-minio-password}
+    volumes:
+      - ./data/minio:/data
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: cloudfile-minio-init
+    profiles: ["s3"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        until mc alias set local http://minio:9000
+        "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do sleep 1; done;
+        mc mb --ignore-existing
+        "local/$${S3_COMMIT_BUCKET}"
+        "local/$${S3_FS_BUCKET}"
+        "local/$${S3_BLOCK_BUCKET}"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-this-minio-password}
+      S3_COMMIT_BUCKET: ${S3_COMMIT_BUCKET:-cloudfile-commits}
+      S3_FS_BUCKET: ${S3_FS_BUCKET:-cloudfile-fs}
+      S3_BLOCK_BUCKET: ${S3_BLOCK_BUCKET:-cloudfile-blocks}
+    depends_on:
+      - minio
 
   cloudfile:
     image: ${CLOUDFILE_IMAGE:-cloudfile/cloudfile:14.0.0-cf.0}
@@ -93,6 +131,9 @@ services:
       S3_USE_HTTPS: ${S3_USE_HTTPS:-true}
       S3_USE_V4_SIGNATURE: ${S3_USE_V4_SIGNATURE:-true}
       S3_PATH_STYLE_REQUEST: ${S3_PATH_STYLE_REQUEST:-true}
+      CF_S3_CONNECTION_TIMEOUT: ${CF_S3_CONNECTION_TIMEOUT:-10}
+      CF_S3_REQUEST_TIMEOUT: ${CF_S3_REQUEST_TIMEOUT:-60}
+      CF_S3_MAX_RETRIES: ${CF_S3_MAX_RETRIES:-2}
       CF_STORAGE_CLASSES_JSON: ${CF_STORAGE_CLASSES_JSON:-}
       CF_ENABLE_EXTERNAL_SOURCES: ${CF_ENABLE_EXTERNAL_SOURCES:-false}
       # Upstream reads these at import time. They intentionally mirror the

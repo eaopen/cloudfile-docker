@@ -49,7 +49,12 @@ manifest_image=$(python3 "$repo_root/build/cloudfile_14.0/read-manifest.py" \
     "$repo_root/release.yaml" image)
 image="${manifest_image%%:*}:${version}"
 
-docker build --pull \
+pull_args=()
+if [[ ${CF_DOCKER_PULL:-true} == true ]]; then
+    pull_args=(--pull)
+fi
+
+docker build "${pull_args[@]}" \
     --build-arg server_version="${version}" \
     -t "${image}" \
     "$staging"

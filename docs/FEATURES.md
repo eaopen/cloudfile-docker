@@ -263,7 +263,7 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
-| 49 | S3 / 多存储 | ⚠️ | Docker 已生成并校验官方 `S3_*` / `storage_classes` 配置；Go fileserver 已实现 S3 的读写/存在/大小查询，并按 `RepoStorageId` 路由 FS+S3（MinIO 实测通过）。**尚不可作为整机功能发布**：C 主服务、GC、FSCK 仍只支持 FS，Hub 的存储类入口仍受 Pro 门控，迁移未实现。完整缺口与下一步见 [storage.md](storage.md)。 |
+| 49 | S3 / 多存储 | ✅ | Go fileserver、C 主服务和 seaf-fuse 支持 Commit/FS/Block 的单 S3 与按 `RepoStorageId` 路由；MinIO 数据面、S3-aware GC/FSCK、故障返回码和离线 FS↔S3 往返迁移均完成整机验证。迁移逐对象回读校验，事务切换路由并保留源对象。详见 [storage.md](storage.md)。 |
 | 96 | 反病毒集成（簇 I） | ⬜ | **Pro 对标补入**（[pro-parity.md](pro-parity.md)）。Pro 的"缺失机制"里唯一没归簇的一项：上传/文件扫描在 server/pipeline 侧，**镜像已主动剥离 clamav**。落地前先做门控盘点（同 OnlyOffice 探针 2 的做法），确认哪些是真依赖、哪些只是商业门控 |
 | 50 | SMB/NFS 外部资料源 | ⬜ | 零上游改动，但**代价是另起一个入口**——不改上游就进不了原生库列表。见 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 缺口 3。这是产品决定，不是技术决定 |
 | 51 | 外部源增量扫描 | ⬜ | 依赖 50 + `cf-worker` |

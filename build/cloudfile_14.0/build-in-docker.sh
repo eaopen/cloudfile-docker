@@ -96,6 +96,8 @@ docker run --rm -i \
     ubuntu:24.04 \
     bash -c "
         set -e
+        export DEBIAN_FRONTEND=noninteractive
+        export TZ=Etc/UTC
         apt-get update -qq
         apt-get install -y -qq git python3 ca-certificates >/dev/null
         git config --global --add safe.directory '*'

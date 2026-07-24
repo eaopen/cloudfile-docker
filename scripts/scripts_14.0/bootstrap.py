@@ -437,6 +437,9 @@ def write_cloudfile_seafile_conf():
             'aws_region': get_conf('S3_AWS_REGION', 'us-east-1'),
             'use_https': get_conf('S3_USE_HTTPS', 'true'),
             'path_style_request': get_conf('S3_PATH_STYLE_REQUEST', 'true'),
+            'connection_timeout': get_conf('CF_S3_CONNECTION_TIMEOUT', '10'),
+            'request_timeout': get_conf('CF_S3_REQUEST_TIMEOUT', '60'),
+            'max_retries': get_conf('CF_S3_MAX_RETRIES', '2'),
         }
         for name in ('key_id', 'key', 'host'):
             if not values[name]:

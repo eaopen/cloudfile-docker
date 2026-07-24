@@ -128,7 +128,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
 | 36 | SSO 登录与用户/组织映射 | ✅ | 见下方「P1 — SSO 与组织映射」。本机真实栈已通过两阶段矩阵；签名 webhook、周期同步/登录后刷新与真实 MySQL DDL 仍各自保留验证项 |
-| 37 | 操作日志 / 审计 | ⬜ | 占位，`CF_ENABLE_AUDIT`。post 文件操作钩子已预留（吞异常，不影响写入），但 ⚠️ **它没有任何上游触发点**——见待办 3。落地前先定钩子位置 |
+| 37 | 操作日志 / 审计 | 🟡 | `CF_ENABLE_AUDIT` 提供系统管理员 API 与 UI 清单（按库、操作者、操作、对象类型筛选）。事件源不是无生产者的 Hub `file_op` 钩子，而是 Server 对所有提交发布的 `repo-update`；seafevents 对提交树做 diff 后持久化 `Activity`（文件/目录创建、修改、删除、重命名、移动、恢复）。待随完整镜像验证 API 与 UI |
 | 66 | ACL 规则来源可扩展 | 🟡 | `acl/sources.py`：**终判永远读 `cf_dir_acl`**，来源才是 provider。`local-db` 已实现（就是原有行为，现在有了名字）并接上 cf-worker 周期任务；`external-service` **已设计、刻意不注册桩**——桩会让 `cf_dir_acl` 保持空表，而空表看起来是"没配规则"不是"这个来源没实现"。5 项测试 + 2 个变异验证。**周期任务未在容器中跑过** |
 
 ---
@@ -287,10 +287,9 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
    > **一个都没被拦住**——它们证明的是"求解器算得对"，缺陷却在"存进去的东西
    > 根本进不了求解器"。只有把栈起起来、拿另一个用户的 token 去敲每个入口
    > 才会显形。
-2. 🔴 **`file_op` 钩子没有生产者**。`register_file_op_hook()` 注册得了，但上游
-   没有任何地方调用 `run_file_op_hooks()`——注册了一个永不触发的回调。审计、
-   文件属性、标签、元数据跟随、OnlyOffice、文件锁、签入签出，**七个特性依赖它**。
-   见 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 缺口 1。
+2. 🟡 **`file_op` 钩子没有生产者**。`register_file_op_hook()` 注册得了，但上游
+   没有任何地方调用 `run_file_op_hooks()`。操作日志已改为消费 Server 的
+   `repo-update` 提交流，不依赖它；其他需要 HTTP 上下文的能力仍不能把它当作生产链路。
 3. 🟢 **上游 CE 14.0 已带了 P2/P3 的一大半**（`repo_metadata`、`tags`、
    `file_tags`、`repo_tags`、`onlyoffice`、seasearch），且大多**无 Pro 门控**。
    **探针 1、3 已做**（[upstream-reuse.md](upstream-reuse.md)）：属性/标签的

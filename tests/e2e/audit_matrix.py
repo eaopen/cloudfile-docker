@@ -7,7 +7,9 @@ seafevents 将提交差异归一化并持久化为 Activity；本用例从不同
 """
 
 import argparse
+import http.cookiejar
 import json
+import re
 import ssl
 import sys
 import time
@@ -66,6 +68,34 @@ def check(name, passed, detail=''):
     return passed
 
 
+def load_audit_page(base, email, password, context):
+    """Log in through the browser flow and return the rendered audit page."""
+    jar = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(jar),
+        urllib.request.HTTPSHandler(context=context))
+    login_url = base + '/accounts/login/?next=/cloudfile/audit/'
+    try:
+        with opener.open(login_url, timeout=60) as response:
+            login = response.read().decode(errors='replace')
+        token = re.search(r'name="csrfmiddlewaretoken" value="([^"]+)"', login)
+        if not token:
+            return 0, 'login CSRF token missing'
+        form = urllib.parse.urlencode({
+            'csrfmiddlewaretoken': token.group(1), 'login': email,
+            'password': password, 'next': '/cloudfile/audit/',
+        }).encode()
+        req = urllib.request.Request(login_url, data=form, method='POST', headers={
+            'Content-Type': 'application/x-www-form-urlencoded', 'Referer': login_url,
+        })
+        with opener.open(req, timeout=60) as response:
+            return response.status, response.read().decode(errors='replace')
+    except urllib.error.HTTPError as error:
+        return error.code, error.read().decode(errors='replace')
+    except Exception as error:
+        return 0, str(error)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--url', required=True)
@@ -106,15 +136,13 @@ def main():
                                headers={'Content-Type': content_type}, context=context)
     passed &= check('上传文件', status == 200, 'status=%s %s' % (status, body[:200]))
 
-    move_payload = json.dumps({
-        'src_repo_id': repo_id, 'dst_repo_id': repo_id,
-        'paths': [{'src_path': '/audit-dir/audit.txt', 'dst_path': '/audit-dir/audited.txt'}],
-    })
-    status, body = request(base + '/api/v2.1/repos/batch-move-item/', method='POST',
-                           token=token, data=move_payload,
-                           headers={'Content-Type': 'application/json'}, context=context)
-    move_result = json_body(body)
-    passed &= check('重命名文件', status == 200 and len(move_result.get('success') or []) == 1,
+    # 目录重命名走资料库目录端点；batch-move-item 的 dst_path 是目标目录而非
+    # 新名称，传完整路径会得到一条看似正常的 200 failed 响应。
+    status, body = request(base + '/api2/repos/%s/dir/?p=/audit-dir' % repo_id,
+                           method='POST', token=token,
+                           form={'operation': 'rename', 'newname': 'audited-dir'},
+                           context=context)
+    passed &= check('重命名目录', status == 200,
                     'status=%s %s' % (status, body[:300]))
 
     events = []
@@ -125,9 +153,9 @@ def main():
                                token=token, context=context)
         events = json_body(body).get('events') or []
         has_file = any(event.get('object_type') == 'file' and
-                       event.get('path') == '/audit-dir/audited.txt' for event in events)
+                       event.get('path') == '/audit-dir/audit.txt' for event in events)
         has_dir = any(event.get('object_type') == 'dir' and
-                      event.get('path') == '/audit-dir' for event in events)
+                      event.get('path') == '/audited-dir' for event in events)
         if status == 200 and has_file and has_dir:
             break
         time.sleep(3)
@@ -147,10 +175,15 @@ def main():
                            token=token, context=context)
     rename_events = json_body(body).get('events') or []
     passed &= check('按操作筛选且保留旧路径', status == 200 and
-                    any(event.get('old_path') == '/audit-dir/audit.txt' and
-                        event.get('path') == '/audit-dir/audited.txt'
+                    any(event.get('old_path') == '/audit-dir' and
+                        event.get('path') == '/audited-dir'
                         for event in rename_events),
                     'status=%s %s' % (status, body[:500]))
+
+    status, page = load_audit_page(base, args.admin, args.admin_password, context)
+    passed &= check('管理员可打开操作日志清单 UI', status == 200 and
+                    'audit-filters' in page and 'audit-events' in page,
+                    'status=%s %s' % (status, page[:300]))
 
     request(base + '/api2/repos/%s/' % repo_id, method='DELETE', token=token,
             context=context)

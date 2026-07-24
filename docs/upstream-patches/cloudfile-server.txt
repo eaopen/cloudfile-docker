@@ -13,6 +13,7 @@ fileserver/sync_api.go
 include/seafile-rpc.h
 python/seafile/rpcclient.py
 python/seaserv/api.py
+python/seaserv/__init__.py
 server/Makefile.am
 server/seaf-server.c
 server/seafile-session.c

@@ -160,7 +160,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | 78 | 目录源 provider | ✅ | `sso/directory.py`，kind `sso_directory`：`static`（配置即目录，也是门禁用的源）与 `external-service`（两个 GET，走 `external_service.py`）。**12 项测试**。凡是"没读到目录"的路径一律转成 DirectoryError，绝不以空快照的形式往下传 |
 | 79 | 身份解析下沉到基线 | ✅ | `acl/subjects.py` → `cloudfile_ext/identity.py`。Seafile 14 身份≠邮箱是**框架级事实**，不是 ACL 的。留在 `acl/` 会让 SSO 同步在运行时 import ACL 能力——按 [BRANCHES.md](BRANCHES.md) 的耦合判据，那等于把两个毫无关系的簇焊在一起，并让 ACL 的开关决定 SSO 能不能解析用户。ACL 侧留一层薄转发，既有测试逐字未改 |
 | 80 | 配置块生成 | ✅ | `bootstrap.py` 的 `_settings_block_sso()`：把 `.env` 翻译成上游读的 `OAUTH_*` 与 CloudFile 自己的 `CF_SSO_*`。回调地址由部署主机名推导，不让运维手填 |
-| 81 | 配置生成检查 `test-bootstrap-settings.py` | ✅ | **本轮新增的门禁**。preflight 那条是静态的、只认 `FOO['bar'] =` 一种形状；这条把生成函数抠出来实际 `exec()`，覆盖引号、字面量、claim 冲突，以及 LDAP/ADFS/角色/2FA 的结构与必填项。**22 项断言，8 个变异全部被捕获**；其中一个（uid 与 email 取同一 claim）会让 email 悄悄从必需项降级——静态检查完全看不出 |
+| 81 | 配置生成检查 `test-bootstrap-settings.py` | ✅ | **本轮新增的门禁**。preflight 那条是静态的、只认 `FOO['bar'] =` 一种形状；这条把生成函数抠出来实际 `exec()`，覆盖引号、字面量、claim 冲突，以及 LDAP/ADFS/角色/2FA 的结构与必填项。**23 项断言，9 个变异全部被捕获**；其中一个（uid 与 email 取同一 claim）会让 email 悄悄从必需项降级——静态检查完全看不出 |
 | 82 | preflight 检查跟着扩大 | ✅ | `check_seahub_settings_block` 原本只扫主函数，而 body 现在是拼出来的——**一个不再覆盖被监视对象的检查比没有检查更危险，因为它读起来像覆盖**。改为连 `_settings_block_*` 一起扫，并补上单引号（原来只认双引号）。破坏新助手确认会红 |
 | 83 | `cf_sso_group_map` / `cf_sso_sync_state` | ✅ | MariaDB 真实栈中 worker 会写入并由管理接口读取状态，证明 DDL 已实际执行 |
 | 84 | 管理接口与 webhook | ✅ | 两阶段矩阵覆盖同步/干跑/映射列表/解除映射；签名 webhook 覆盖未签名拒绝、过期签名拒绝、有效 HS256 签名触发同步 |
@@ -212,9 +212,9 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
-| 38 | 文件属性扩展 | ⬜ | **默认直接用官方 `seafileltd/seafile-md-server` 镜像**（现行原则：优先复用官方组件）。前端（352 文件）、Hub API（3745 行）、投喂管线（seafevents）全部开源、可白拿；唯一闭源的存储引擎经 `METADATA_SERVER_URL` 挂载。自建协议兼容后端是**后备**——官方不满足需求时才做，seam 已留好。见 [upstream-reuse.md](upstream-reuse.md) 探针 1 |
-| 39 | 标签 | ⬜ | 与 38 同表同分支，同样白拿上游前端（`seahub/tags/`、`file_tags/`、`repo_tags/` + 88 个标签前端文件）。标签的递归 `sub_links` 在 Hub 侧就展开成 `IN (...)`，服务端不必特殊处理 |
-| 42 | 移动重命名时元数据关联更新 | ⬜ | 与 38 同分支。投喂走 seafevents 的提交遍历，很可能**不依赖 `file_op` 钩子**——移动/重命名本就在提交流里。落地前验证 |
+| 38 | 文件属性扩展 | 🟡 | `metadata` profile、上游开关和官方 metadata-server 已接；真实门禁暴露 `seafevents` 包导出阻塞，已在 Server 修复后待重建验收。官方尚无稳定 14.x 镜像，当前只用 `14.0.3-testing` 验证兼容性 |
+| 39 | 标签 | 🟡 | 与 38 同表同分支；已接 `CF_ENABLE_TAGS` 依赖校验、标签读写门禁和官方存储服务，待重建后实测 |
+| 42 | 移动重命名时元数据关联更新 | ⬜ | 依赖 38/39 验收；投喂走 seafevents 的提交遍历，很可能**不依赖 `file_op` 钩子**——移动/重命名本就在提交流里 |
 
 **簇 E（`feature/search`）** —— 与簇 D **可真并行**，靠第 67 项的过滤契约解耦。
 

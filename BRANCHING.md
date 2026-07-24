@@ -83,6 +83,8 @@ git merge upstream/master
 - `fileserver/sync_api.go` — 同步前的子树校验（两处：`checkPermission` 与缓存清理）
 - `python/seaserv/api.py` — `is_repo_syncable` / `is_dir_downloadable`
 - `python/seafile/rpcclient.py` — 新 RPC 客户端声明
+- `python/seaserv/__init__.py` — re-export `REPO_STATUS_*`；seafevents 从包根导入
+  这两个既有常量，缺失会让 8889 任务服务在 import 阶段退出，进而阻断元数据初始化
 
 `cf_*` 建表放在**新文件** `scripts/sql/{mysql,sqlite}/cloudfile.sql`，没有动上游的
 `seafile.sql`，因此这一块永远不会产生合并冲突。建表由容器每次启动时执行

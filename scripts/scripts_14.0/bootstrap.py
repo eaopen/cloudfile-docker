@@ -156,6 +156,7 @@ def write_cloudfile_settings():
     )
 
     body += _settings_block_sso()
+    body += _settings_block_upstream()
 
     _replace_block(join(topdir, 'conf', 'seahub_settings.py'),
                    CF_BEGIN, CF_END, body)
@@ -264,6 +265,110 @@ def _settings_block_sso():
                 'CF_SSO_DIRECTORY_STATIC is not valid JSON: %s' % e)
 
     return '\n'.join(lines) + '\n'
+
+
+def _settings_block_upstream():
+    """Translate the packaged CE-only enterprise settings from ``.env``.
+
+    These settings belong to Seahub, not cloudfile_ext.  Keeping their
+    translation here gives operators a declarative compose contract while
+    preserving a native CE installation when every package switch is off.
+    Values that have a structured upstream shape are JSON in ``.env`` and are
+    parsed here, so an invalid policy fails at boot rather than disappearing in
+    Seahub's local-settings error handling.
+    """
+    def json_object(name, default=''):
+        raw = get_conf(name, default)
+        if not raw:
+            return {}
+        try:
+            value = json.loads(raw)
+        except ValueError as e:
+            raise Exception('%s is not valid JSON: %s' % (name, e))
+        if not isinstance(value, dict):
+            raise Exception('%s must be a JSON object' % name)
+        return value
+
+    def required(name):
+        value = get_conf(name, '')
+        if not value:
+            raise Exception('%s is required when its package is enabled' % name)
+        return value
+
+    lines = []
+
+    if cf_enabled('CF_LDAP_ENABLED'):
+        lines += [
+            'ENABLE_LDAP = True',
+            'LDAP_SERVER_URL = %r' % required('CF_LDAP_SERVER_URL'),
+            'LDAP_BASE_DN = %r' % required('CF_LDAP_BASE_DN'),
+            'LDAP_ADMIN_DN = %r' % required('CF_LDAP_ADMIN_DN'),
+            'LDAP_ADMIN_PASSWORD = %r' % required('CF_LDAP_ADMIN_PASSWORD'),
+            'LDAP_LOGIN_ATTR = %r' % required('CF_LDAP_LOGIN_ATTR'),
+            'LDAP_PROVIDER = %r' % get_conf('CF_LDAP_PROVIDER', 'ldap'),
+            'LDAP_FILTER = %r' % get_conf('CF_LDAP_FILTER', ''),
+            'LDAP_CONTACT_EMAIL_ATTR = %r'
+            % get_conf('CF_LDAP_CONTACT_EMAIL_ATTR', ''),
+        ]
+
+    if cf_enabled('CF_ADFS_ENABLED'):
+        attribute_mapping = json_object('CF_ADFS_ATTRIBUTE_MAPPING_JSON')
+        if not attribute_mapping:
+            raise Exception('CF_ADFS_ATTRIBUTE_MAPPING_JSON is required when its package is enabled')
+        lines += [
+            'ENABLE_ADFS_LOGIN = True',
+            'SAML_REMOTE_METADATA_URL = %r'
+            % required('CF_ADFS_REMOTE_METADATA_URL'),
+            'SAML_ATTRIBUTE_MAPPING = %r' % (attribute_mapping,),
+            'SAML_PROVIDER_IDENTIFIER = %r'
+            % get_conf('CF_ADFS_PROVIDER_IDENTIFIER', 'saml'),
+            'SAML_XMLSEC_BINARY_PATH = %r'
+            % get_conf('CF_ADFS_XMLSEC_BINARY_PATH', '/usr/bin/xmlsec1'),
+            'SAML_CERTS_DIR = %r'
+            % get_conf('CF_ADFS_CERTS_DIR', '/opt/seafile/seahub-data/certs'),
+        ]
+
+    if cf_enabled('CF_SHIBBOLETH_ENABLED'):
+        lines += [
+            # Shibboleth is an authenticated reverse-proxy integration.  The
+            # proxy must strip client supplied headers and set this one only
+            # after the Shibboleth SP validated the request.
+            'ENABLE_SHIB_LOGIN = True',
+            'ENABLE_REMOTE_USER_AUTHENTICATION = True',
+            'REMOTE_USER_HEADER = %r'
+            % get_conf('CF_SHIBBOLETH_REMOTE_USER_HEADER', 'HTTP_REMOTE_USER'),
+            'REMOTE_USER_ATTRIBUTE_MAP = %r'
+            % (json_object('CF_SHIBBOLETH_ATTRIBUTE_MAP_JSON'),),
+            'SHIBBOLETH_AFFILIATION_ROLE_MAP = %r'
+            % (json_object('CF_SHIBBOLETH_AFFILIATION_ROLE_MAP_JSON'),),
+            'SHIBBOLETH_LOGOUT_URL = %r'
+            % get_conf('CF_SHIBBOLETH_LOGOUT_URL', ''),
+            'SHIBBOLETH_LOGOUT_RETURN = %r'
+            % get_conf('CF_SHIBBOLETH_LOGOUT_RETURN', ''),
+        ]
+
+    role_permissions = json_object('CF_ROLE_PERMISSIONS_JSON')
+    if role_permissions:
+        lines.append('ENABLED_ROLE_PERMISSIONS = %r' % (role_permissions,))
+    admin_role_permissions = json_object('CF_ADMIN_ROLE_PERMISSIONS_JSON')
+    if admin_role_permissions:
+        lines.append('ENABLED_ADMIN_ROLE_PERMISSIONS = %r'
+                     % (admin_role_permissions,))
+
+    if cf_enabled('CF_TWO_FACTOR_ENABLED'):
+        days = get_conf('CF_TWO_FACTOR_DEVICE_REMEMBER_DAYS', '90')
+        try:
+            days = int(days)
+        except ValueError:
+            raise Exception('CF_TWO_FACTOR_DEVICE_REMEMBER_DAYS must be an integer')
+        if days < 0:
+            raise Exception('CF_TWO_FACTOR_DEVICE_REMEMBER_DAYS must not be negative')
+        lines += [
+            'ENABLE_TWO_FACTOR_AUTH = True',
+            'TWO_FACTOR_DEVICE_REMEMBER_DAYS = %r' % days,
+        ]
+
+    return '\n'.join(lines) + ('\n' if lines else '')
 
 
 def write_cloudfile_seafile_conf():

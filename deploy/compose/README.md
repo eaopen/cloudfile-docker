@@ -83,6 +83,20 @@ curl -H "Authorization: Token $TOKEN" \
   "https://cloudfile.example.com/api/v2.1/cloudfile/repos/$REPO_ID/dir-acl/effective/?path=/受限&user=b@example.com"
 ```
 
+### 已打包的 CE 企业设置
+
+LDAP/AD、ADFS/SAML、Shibboleth、角色权限和 2FA 都是 Seafile CE 已有能力；CloudFile
+只把它们变成可重建的 `.env` 配置。变量说明和安全前提在
+[.env.example](.env.example)，每次启动都会重新写入上游的 `seahub_settings.py`。
+
+- LDAP/AD：设 `CF_LDAP_ENABLED=true`，并填写五个 LDAP 连接参数；缺一项即失败，避免服务
+  在看似正常时悄悄跳过 LDAP。
+- ADFS/SAML：设 `CF_ADFS_ENABLED=true`，填写元数据 URL 和 JSON 属性映射；把 `sp.key`、`sp.crt`
+  放在 `data/seafile/seahub-data/certs/`。镜像已包含 `xmlsec1`。
+- Shibboleth：默认 Caddy 不提供 Shibboleth SP，不能直接打开。必须换成/扩展为可信认证代理，先剥离
+  客户端伪造的身份头，再向 CloudFile 写入 `CF_SHIBBOLETH_REMOTE_USER_HEADER` 指定的头。
+- 角色/2FA：角色 JSON 是对 CE 默认策略的增量覆盖；`CF_TWO_FACTOR_ENABLED=true` 开启用户自助 2FA。
+
 ## TLS
 
 `CADDY_TLS=internal` 签发自签证书，适合内网和试用。填邮箱地址则申请 Let's Encrypt

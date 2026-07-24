@@ -160,7 +160,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | 78 | 目录源 provider | ✅ | `sso/directory.py`，kind `sso_directory`：`static`（配置即目录，也是门禁用的源）与 `external-service`（两个 GET，走 `external_service.py`）。**12 项测试**。凡是"没读到目录"的路径一律转成 DirectoryError，绝不以空快照的形式往下传 |
 | 79 | 身份解析下沉到基线 | ✅ | `acl/subjects.py` → `cloudfile_ext/identity.py`。Seafile 14 身份≠邮箱是**框架级事实**，不是 ACL 的。留在 `acl/` 会让 SSO 同步在运行时 import ACL 能力——按 [BRANCHES.md](BRANCHES.md) 的耦合判据，那等于把两个毫无关系的簇焊在一起，并让 ACL 的开关决定 SSO 能不能解析用户。ACL 侧留一层薄转发，既有测试逐字未改 |
 | 80 | 配置块生成 | ✅ | `bootstrap.py` 的 `_settings_block_sso()`：把 `.env` 翻译成上游读的 `OAUTH_*` 与 CloudFile 自己的 `CF_SSO_*`。回调地址由部署主机名推导，不让运维手填 |
-| 81 | 配置生成检查 `test-bootstrap-settings.py` | ✅ | **本轮新增的门禁**。preflight 那条是静态的、只认 `FOO['bar'] =` 一种形状；这条把生成函数抠出来实际 `exec()`，覆盖引号、字面量、claim 冲突。**12 项断言，5 个变异全部被捕获**，其中一个（uid 与 email 取同一 claim）会让 email 悄悄从必需项降级——静态检查完全看不出 |
+| 81 | 配置生成检查 `test-bootstrap-settings.py` | ✅ | **本轮新增的门禁**。preflight 那条是静态的、只认 `FOO['bar'] =` 一种形状；这条把生成函数抠出来实际 `exec()`，覆盖引号、字面量、claim 冲突，以及 LDAP/ADFS/角色/2FA 的结构与必填项。**22 项断言，8 个变异全部被捕获**；其中一个（uid 与 email 取同一 claim）会让 email 悄悄从必需项降级——静态检查完全看不出 |
 | 82 | preflight 检查跟着扩大 | ✅ | `check_seahub_settings_block` 原本只扫主函数，而 body 现在是拼出来的——**一个不再覆盖被监视对象的检查比没有检查更危险，因为它读起来像覆盖**。改为连 `_settings_block_*` 一起扫，并补上单引号（原来只认双引号）。破坏新助手确认会红 |
 | 83 | `cf_sso_group_map` / `cf_sso_sync_state` | ✅ | MariaDB 真实栈中 worker 会写入并由管理接口读取状态，证明 DDL 已实际执行 |
 | 84 | 管理接口与 webhook | ✅ | 两阶段矩阵覆盖同步/干跑/映射列表/解除映射；签名 webhook 覆盖未签名拒绝、过期签名拒绝、有效 HS256 签名触发同步 |
@@ -190,12 +190,12 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 
 | # | Pro 特性 | 启用方式 | 状态 |
 |---|---|---|---|
-| 89 | LDAP/AD 登录 | `ENABLE_LDAP` + `CustomLDAPBackend`（CE 已带） | ⬜ 待接 bootstrap |
-| 90 | ADFS（SAML）SSO | `ENABLE_ADFS_LOGIN`（`seahub/adfs_auth/`，无 `is_pro`） | ⬜ 待接 bootstrap |
-| 91 | Shibboleth SSO | `adfs_auth` 的 Shibboleth 路径 | ⬜ 待接 bootstrap |
-| 92 | 角色账号管理 | `ENABLED_ROLE_PERMISSIONS`（`seahub/role_permissions/`，无 `is_pro`） | ⬜ 待接 bootstrap |
-| 93 | 双因素认证 2FA | `ENABLE_TWO_FACTOR_AUTH`（`seahub/two_factor/` 无条件装载） | ⬜ 待接 bootstrap |
-| 94 | 远程擦除 | 设备管理端点已在（`utils/devices.py`），确认前端入口未被藏 | ⬜ 待核 |
+| 89 | LDAP/AD 登录 | `CF_LDAP_*` → `ENABLE_LDAP` + `CustomLDAPBackend`（CE 已带） | 🟡 已接 bootstrap；配置片段及必填项门禁已测，待接真实目录验收 |
+| 90 | ADFS（SAML）SSO | `CF_ADFS_*` → `ENABLE_ADFS_LOGIN`（`seahub/adfs_auth/`，无 `is_pro`） | 🟡 已接 bootstrap，镜像已含 `xmlsec1`；待 IdP、SP 证书实测 |
+| 91 | Shibboleth SSO | `CF_SHIBBOLETH_*` → 远程用户认证路径 | 🟡 已接 bootstrap；默认 Caddy 不是 Shibboleth SP，需可信认证代理后验收 |
+| 92 | 角色账号管理 | `CF_*ROLE_PERMISSIONS_JSON` → `seahub/role_permissions/` | ✅ 已接 bootstrap；JSON 增量策略生成并加载已测 |
+| 93 | 双因素认证 2FA | `CF_TWO_FACTOR_*` → `ENABLE_TWO_FACTOR_AUTH`（`seahub/two_factor/` 无条件装载） | ✅ 已接 bootstrap；开关与设备记住期限生成并加载已测 |
+| 94 | 远程擦除 | 用户、组织管理员、系统管理员前端均传 `wipe_device=true` 到 CE 设备 API | ✅ 已具备；已核对前端入口与后端 `mark_device_to_be_remote_wiped` 调用链 |
 | 95 | WebDAV | `seafdav`，已在 CloudFile 构建里 | ✅ 已具备（ACL 读写补丁已测） |
 
 > 这一层应**最先清**：企业准入门槛（LDAP/角色/2FA）几乎零成本就能对齐 Pro，

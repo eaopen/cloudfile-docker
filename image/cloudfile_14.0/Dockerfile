@@ -37,7 +37,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && apt-get install -y tzdata \
     libmysqlclient-dev \
     libmemcached11 libmemcached-dev \
     fuse poppler-utils \
-    ldap-utils libldap2-dev ca-certificates dnsutils pkg-config \
+    ldap-utils libldap2-dev libxmlsec1 xmlsec1 ca-certificates dnsutils pkg-config \
     exiftool
 
 # Python3

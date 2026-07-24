@@ -145,10 +145,101 @@ def test_sso():
         check('static 目录的 JSON 写错时启动失败', True)
 
 
+def test_upstream_packages():
+    print('── _settings_block_upstream')
+    packaged = load('_settings_block_upstream', {})
+    check('所有打包层开关关闭时不写任何内容', packaged() == '', repr(packaged()))
+
+    env = {
+        'CF_LDAP_ENABLED': 'true',
+        'CF_LDAP_SERVER_URL': 'ldaps://directory.example.com:636',
+        'CF_LDAP_BASE_DN': 'ou=people,dc=example,dc=com',
+        'CF_LDAP_ADMIN_DN': 'cn=reader,dc=example,dc=com',
+        'CF_LDAP_ADMIN_PASSWORD': "it's a secret",
+        'CF_LDAP_LOGIN_ATTR': 'uid',
+        'CF_LDAP_CONTACT_EMAIL_ATTR': 'mail',
+        'CF_ADFS_ENABLED': 'true',
+        'CF_ADFS_REMOTE_METADATA_URL': 'https://idp.example.com/metadata',
+        'CF_ADFS_ATTRIBUTE_MAPPING_JSON':
+            '{"uid":["uid"],"email":["mail"]}',
+        'CF_SHIBBOLETH_ENABLED': 'true',
+        'CF_SHIBBOLETH_REMOTE_USER_HEADER': 'HTTP_X_AUTH_REQUEST_EMAIL',
+        'CF_SHIBBOLETH_ATTRIBUTE_MAP_JSON':
+            '{"HTTP_DISPLAYNAME":"name"}',
+        'CF_SHIBBOLETH_AFFILIATION_ROLE_MAP_JSON':
+            '{"staff@example.com":"staff"}',
+        'CF_SHIBBOLETH_LOGOUT_URL': 'https://idp.example.com/logout?return=',
+        'CF_SHIBBOLETH_LOGOUT_RETURN': 'https://cloudfile.example.com/',
+        'CF_ROLE_PERMISSIONS_JSON':
+            '{"default":{"can_add_repo":false}}',
+        'CF_ADMIN_ROLE_PERMISSIONS_JSON':
+            '{"daily_admin":{"can_manage_group":false}}',
+        'CF_TWO_FACTOR_ENABLED': 'true',
+        'CF_TWO_FACTOR_DEVICE_REMEMBER_DAYS': '0',
+    }
+    try:
+        values = evaluate(load('_settings_block_upstream', env)())
+    except Exception as e:
+        check('完整打包配置可以被加载', False,
+              '%s: %s' % (type(e).__name__, e))
+        return
+
+    check('完整打包配置可以被加载', True)
+    check('LDAP 及带引号的绑定密码被完整写入',
+          values.get('ENABLE_LDAP') is True
+          and values.get('LDAP_ADMIN_PASSWORD') == "it's a secret",
+          repr(values.get('LDAP_ADMIN_PASSWORD')))
+    check('ADFS 写入元数据、属性映射和 xmlsec 默认值',
+          values.get('ENABLE_ADFS_LOGIN') is True
+          and values.get('SAML_ATTRIBUTE_MAPPING', {}).get('email') == ['mail']
+          and values.get('SAML_XMLSEC_BINARY_PATH') == '/usr/bin/xmlsec1',
+          repr(values.get('SAML_ATTRIBUTE_MAPPING')))
+    check('Shibboleth 同时启用可信反向代理认证',
+          values.get('ENABLE_SHIB_LOGIN') is True
+          and values.get('ENABLE_REMOTE_USER_AUTHENTICATION') is True
+          and values.get('REMOTE_USER_HEADER') == 'HTTP_X_AUTH_REQUEST_EMAIL',
+          repr(values.get('REMOTE_USER_HEADER')))
+    check('用户和管理员角色策略保持对象结构',
+          values.get('ENABLED_ROLE_PERMISSIONS', {}).get('default', {}).get('can_add_repo') is False
+          and values.get('ENABLED_ADMIN_ROLE_PERMISSIONS', {}).get('daily_admin', {}).get('can_manage_group') is False,
+          repr(values.get('ENABLED_ROLE_PERMISSIONS')))
+    check('2FA 允许零天记住设备',
+          values.get('ENABLE_TWO_FACTOR_AUTH') is True
+          and values.get('TWO_FACTOR_DEVICE_REMEMBER_DAYS') == 0,
+          repr(values.get('TWO_FACTOR_DEVICE_REMEMBER_DAYS')))
+
+    env = {'CF_LDAP_ENABLED': 'true'}
+    try:
+        load('_settings_block_upstream', env)()
+        check('LDAP 缺少连接参数时启动失败', False, '被接受了')
+    except Exception:
+        check('LDAP 缺少连接参数时启动失败', True)
+
+    env = {
+        'CF_ADFS_ENABLED': 'true',
+        'CF_ADFS_REMOTE_METADATA_URL': 'https://idp.example.com/metadata',
+        'CF_ADFS_ATTRIBUTE_MAPPING_JSON': '[]',
+    }
+    try:
+        load('_settings_block_upstream', env)()
+        check('ADFS 属性映射不是对象时启动失败', False, '被接受了')
+    except Exception:
+        check('ADFS 属性映射不是对象时启动失败', True)
+
+    env = {'CF_TWO_FACTOR_ENABLED': 'true',
+           'CF_TWO_FACTOR_DEVICE_REMEMBER_DAYS': '-1'}
+    try:
+        load('_settings_block_upstream', env)()
+        check('2FA 负的记住天数时启动失败', False, '被接受了')
+    except Exception:
+        check('2FA 负的记住天数时启动失败', True)
+
+
 def main():
     print(__doc__.splitlines()[0])
     print()
     test_sso()
+    test_upstream_packages()
     print()
     if failures:
         print('\033[31m%d 项失败\033[0m' % len(failures))

@@ -136,6 +136,7 @@ CAPABILITIES=(
     "acl|CF_ENABLE_DIR_ACL|tests/e2e/acl_matrix.py"
     "sso|CF_ENABLE_SSO|tests/e2e/sso_matrix.py"
     "metadata|CF_ENABLE_METADATA CF_ENABLE_TAGS|tests/e2e/metadata_matrix.py"
+    "audit|CF_ENABLE_AUDIT|tests/e2e/audit_matrix.py"
 )
 
 # 由 capability 阶段设置：要在 .env 里打开的开关。

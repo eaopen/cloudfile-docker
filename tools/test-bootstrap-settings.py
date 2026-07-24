@@ -234,6 +234,13 @@ def test_upstream_packages():
     except Exception:
         check('2FA 负的记住天数时启动失败', True)
 
+    env = {'CF_ENABLE_TAGS': 'true'}
+    try:
+        load('_settings_block_upstream', env)()
+        check('标签未启用元数据时启动失败', False, '被接受了')
+    except Exception:
+        check('标签未启用元数据时启动失败', True)
+
 
 def main():
     print(__doc__.splitlines()[0])

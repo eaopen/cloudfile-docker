@@ -135,6 +135,7 @@ build_image() {
 CAPABILITIES=(
     "acl|CF_ENABLE_DIR_ACL|tests/e2e/acl_matrix.py"
     "sso|CF_ENABLE_SSO|tests/e2e/sso_matrix.py"
+    "metadata|CF_ENABLE_METADATA CF_ENABLE_TAGS|tests/e2e/metadata_matrix.py"
 )
 
 # 由 capability 阶段设置：要在 .env 里打开的开关。
@@ -185,6 +186,17 @@ cap_sso_run() {
 
     say "阶段 2 —— 删除方向与「解除映射不等于删除」"
     python3 "$repo/tests/e2e/sso_matrix.py" --phase 2 --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
+}
+
+cap_metadata_run() {
+    local base=$1
+
+    say "启动官方 metadata-server"
+    compose --profile metadata up -d --wait --wait-timeout 150 cloudfile-metadata || return 1
+
+    say "属性/标签验收矩阵"
+    python3 "$repo/tests/e2e/metadata_matrix.py" --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
 }
 

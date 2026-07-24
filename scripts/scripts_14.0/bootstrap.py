@@ -297,6 +297,13 @@ def _settings_block_upstream():
 
     lines = []
 
+    # Tags are a specialized metadata column in the upstream schema.  Starting
+    # with only the tag switch creates a UI promise with no metadata backend to
+    # serve it, so reject that split configuration before Seahub starts.
+    if (cf_enabled('CF_ENABLE_TAGS')
+            and not cf_enabled('CF_ENABLE_METADATA')):
+        raise Exception('CF_ENABLE_TAGS requires CF_ENABLE_METADATA')
+
     if cf_enabled('CF_LDAP_ENABLED'):
         lines += [
             'ENABLE_LDAP = True',

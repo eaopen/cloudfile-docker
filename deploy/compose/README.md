@@ -36,6 +36,7 @@ docker compose --profile full up -d
 | `search` | `meilisearch` | 全文与属性检索 |
 | `office` | `onlyoffice` | Word/Excel/PPT 协同编辑 |
 | `worker` | `cf-worker` | 后台任务 |
+| `metadata` | `cloudfile-metadata` | 文件属性、标签与多视图的上游元数据服务 |
 | `full` | 全部 | |
 
 `cf-worker` 不在默认集合里。启用 SSO 后，它会按 `CF_SSO_SYNC_INTERVAL`
@@ -96,6 +97,21 @@ LDAP/AD、ADFS/SAML、Shibboleth、角色权限和 2FA 都是 Seafile CE 已有�
 - Shibboleth：默认 Caddy 不提供 Shibboleth SP，不能直接打开。必须换成/扩展为可信认证代理，先剥离
   客户端伪造的身份头，再向 CloudFile 写入 `CF_SHIBBOLETH_REMOTE_USER_HEADER` 指定的头。
 - 角色/2FA：角色 JSON 是对 CE 默认策略的增量覆盖；`CF_TWO_FACTOR_ENABLED=true` 开启用户自助 2FA。
+
+### 文件属性与标签
+
+启用属性和标签需要官方元数据组件，它保存/查询元数据；Hub 前端、REST API 与 `seafevents`
+增量投喂仍使用 CE 自带代码。
+
+```bash
+CF_ENABLE_METADATA=true CF_ENABLE_TAGS=true docker compose --profile metadata up -d
+```
+
+`cloudfile-metadata` 会在主服务健康后从共享的 `conf/.env` 读取同一把
+`JWT_PRIVATE_KEY`，而不是把密钥复制到 Compose `.env`。目前上游 Docker Hub 尚未发布稳定
+14.x metadata-server tag，示例默认仅用于兼容验证的官方 `14.0.3-testing`；生产启用前必须
+在 `CF_METADATA_IMAGE` 固定经过验收的官方镜像。关闭 `CF_ENABLE_METADATA` 时服务不在默认
+profile，CE 行为不变。
 
 ## TLS
 

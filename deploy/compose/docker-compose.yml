@@ -83,6 +83,11 @@ services:
       CF_ENABLE_CHECKOUT: ${CF_ENABLE_CHECKOUT:-false}
       CF_ENABLE_S3_STORAGE: ${CF_ENABLE_S3_STORAGE:-false}
       CF_ENABLE_EXTERNAL_SOURCES: ${CF_ENABLE_EXTERNAL_SOURCES:-false}
+      # Upstream reads these at import time. They intentionally mirror the
+      # CloudFile switch rather than relying on a local settings assignment.
+      ENABLE_METADATA_MANAGEMENT: ${CF_ENABLE_METADATA:-false}
+      INNER_METADATA_SERVER_URL: ${CF_METADATA_SERVER_URL:-http://cloudfile-metadata:8084}
+      MD_FILE_COUNT_LIMIT: ${CF_METADATA_FILE_COUNT_LIMIT:-100000}
       # -- SSO (inert unless CF_ENABLE_SSO is true) --
       # No `:?` on any of these: compose interpolates the whole file whatever
       # profile is active, so a required marker here would break a plain
@@ -242,6 +247,56 @@ services:
       MEILI_ENV: production
     volumes:
       - ./data/meilisearch:/meili_data
+    restart: unless-stopped
+
+  # The only non-CE part of extended properties/tags.  The upstream Hub UI,
+  # APIs and seafevents ingestion pipeline already ship in CE; this official
+  # component is their metadata storage/query implementation.
+  cloudfile-metadata:
+    image: ${CF_METADATA_IMAGE:-seafileltd/seafile-md-server:14.0.3-testing}
+    container_name: cloudfile-metadata
+    profiles: ["metadata", "full"]
+    command:
+      - /bin/bash
+      - -lc
+      - >
+        set -a && . /shared/seafile/conf/.env && set +a &&
+        exec /opt/scripts/entrypoint.sh
+    volumes:
+      - ./data/seafile:/shared
+    environment:
+      SEAFILE_MYSQL_DB_HOST: db
+      SEAFILE_MYSQL_DB_PORT: "3306"
+      SEAFILE_MYSQL_DB_USER: ${SEAFILE_MYSQL_DB_USER:-seafile}
+      SEAFILE_MYSQL_DB_PASSWORD: ${SEAFILE_MYSQL_DB_PASSWORD:?set SEAFILE_MYSQL_DB_PASSWORD in .env}
+      SEAFILE_MYSQL_DB_SEAFILE_DB_NAME: ${SEAFILE_MYSQL_DB_SEAFILE_DB_NAME:-seafile_db}
+      CACHE_PROVIDER: redis
+      REDIS_HOST: cache
+      REDIS_PORT: "6379"
+      TIME_ZONE: ${TIME_ZONE:-Etc/UTC}
+      MD_PORT: "8084"
+      MD_LOG_LEVEL: ${CF_METADATA_LOG_LEVEL:-info}
+      MD_MAX_CACHE_SIZE: ${CF_METADATA_MAX_CACHE_SIZE:-1GB}
+      MD_CHECK_UPDATE_INTERVAL: ${CF_METADATA_CHECK_UPDATE_INTERVAL:-30m}
+      MD_FILE_COUNT_LIMIT: ${CF_METADATA_FILE_COUNT_LIMIT:-100000}
+      SEAF_SERVER_STORAGE_TYPE: ${SEAF_SERVER_STORAGE_TYPE:-}
+      MD_STORAGE_TYPE: ${MD_STORAGE_TYPE:-disk}
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+      cloudfile:
+        condition: service_healthy
+    healthcheck:
+      # The Hub returns a misleading 500 when it races this port during the
+      # metadata-server's MySQL initialization.  Wait for the actual listener,
+      # not merely for the container process to exist.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8084'"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 5s
     restart: unless-stopped
 
   onlyoffice:

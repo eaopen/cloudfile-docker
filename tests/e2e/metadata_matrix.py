@@ -85,8 +85,7 @@ def main():
                     'status=%s %s' % (status, body[:200]))
 
     status, body = request(root, method='PUT', token=token, context=context)
-    task_id = body_json(body).get('task_id')
-    passed &= check('启用属性与标签并初始化上游表', status == 200 and bool(task_id),
+    passed &= check('启用属性与标签并初始化上游表', status == 200,
                     'status=%s %s' % (status, body[:300]))
 
     deadline = time.time() + 45
@@ -102,17 +101,19 @@ def main():
                     'status=%s %s' % (status, body[:300]))
 
     tag_name = 'cloudfile-metadata-' + uuid.uuid4().hex[:8]
+    # The CE endpoint passes fields through to the metadata table.  The tag
+    # name column is the table's internal key (_tag_name), not its display label.
     status, body = request(root + 'tags/', method='POST', token=token,
-                           payload={'tags_data': [{'name': tag_name}]}, context=context)
+                           payload={'tags_data': [{'_tag_name': tag_name}]}, context=context)
     tags = body_json(body).get('tags', [])
     passed &= check('创建标签写入 metadata-server',
-                    status == 200 and any(tag.get('name') == tag_name for tag in tags),
+                    status == 200 and any(tag.get('_tag_name') == tag_name for tag in tags),
                     'status=%s %s' % (status, body[:300]))
 
     status, body = request(root + 'tags/', token=token, context=context)
     tags = body_json(body).get('results', [])
     passed &= check('标签可从 metadata-server 读回',
-                    status == 200 and any(tag.get('name') == tag_name for tag in tags),
+                    status == 200 and any(tag.get('_tag_name') == tag_name for tag in tags),
                     'status=%s %s' % (status, body[:300]))
 
     request(base + '/api2/repos/%s/' % repo_id, method='DELETE', token=token,

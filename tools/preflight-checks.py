@@ -140,6 +140,23 @@ def check_node_pin(repo, workspace):
         ok(f'Node 固定为 {major}.x')
 
 
+def check_branch_ref_is_remote(repo):
+    """增量构建不能静默复用旧的本地同名分支。"""
+    build = read(os.path.join(repo, 'build', 'cloudfile_14.0',
+                              'cloudfile-build.sh'))
+    if not build:
+        print('  ⊘ 读不到 cloudfile-build.sh，跳过分支检出校验')
+        return
+
+    required = ('refs/remotes/origin/${ref}', 'target="origin/${ref}"',
+                'rm -rf "${current_dir}/seafile-server-${version}"')
+    if all(fragment in build for fragment in required):
+        ok('构建分支与发行目录均不会复用旧产物')
+    else:
+        bad('构建分支或发行目录可能复用旧产物',
+            '已存在源码目录时，必须检出 origin/<branch> 并清理旧发行目录；否则本地验证的镜像可能不是当前 dev。')
+
+
 def check_seahub_settings_block(repo):
     """写进 seahub_settings.py 的内容只能是自包含的赋值。
 
@@ -375,6 +392,7 @@ def main():
         check_hostname(wf, workspace)
 
     check_node_pin(repo, workspace)
+    check_branch_ref_is_remote(repo)
     check_seahub_settings_block(repo)
     check_switch_lists(repo, workspace)
     check_extension_points_documented(repo, workspace)

@@ -207,12 +207,20 @@ function clone_or_update() {
 # components by SHA and the forks by branch.
 function checkout_ref() {
     local dir=$1 ref=$2
+    local target=$ref
     echo "Checking out ${dir} at ${ref}"
     cd "${code_path}/${dir}"
     git reset --hard
     git clean -xfd
     git fetch --tags origin
-    if ! git checkout --detach "$ref" 2>/dev/null; then
+    # A previously cloned directory has a local branch named "dev".  Checking
+    # out that name after fetch would silently reuse its old tip instead of the
+    # manifest's current remote branch.  Prefer origin/<branch>; tags and raw
+    # SHAs deliberately keep their original spelling.
+    if git show-ref --verify --quiet "refs/remotes/origin/${ref}"; then
+        target="origin/${ref}"
+    fi
+    if ! git checkout --detach "$target" 2>/dev/null; then
         # A SHA that predates the shallow fetch, or a branch not yet local.
         git fetch origin "$ref"
         git checkout --detach FETCH_HEAD
@@ -379,6 +387,12 @@ CONF
 
 function build() {
     cd "${current_dir}"
+    # cloudfile-build.py uses shutil.move("seafile-server", versioned_dir).
+    # If the versioned directory from a prior build still exists, shutil moves
+    # the fresh result *inside* it; Docker then copies the stale outer tree.
+    # This directory is exclusively generated build output, so remove it
+    # before every build to keep the image and recorded commit in sync.
+    rm -rf "${current_dir}/seafile-server-${version}"
     python3 ./cloudfile-build.py \
         --version="${version}" \
         --builddir="${current_dir}" \

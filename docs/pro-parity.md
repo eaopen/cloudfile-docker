@@ -50,12 +50,12 @@ grep -rln is_pro_version seahub/adfs_auth/ seahub/oauth/ seahub/role_permissions
 
 | Pro 特性 | CE 源码有吗 | 归属 | 做法 | 状态 |
 |---|---|---|---|---|
-| Authenticate against LDAP/AD | ✅ `CustomLDAPBackend`（`ENABLE_LDAP`） | 簇 B·登录半 | **打包** | 📦 待启用 |
-| SSO with ADFS（SAML） | ✅ `seahub/adfs_auth/`，无 `is_pro` | 簇 B·登录半 | **打包** | 📦 待启用 |
-| SSO with Shibboleth | ✅ `adfs_auth` 的 Shibboleth 路径 | 簇 B·登录半 | **打包** | 📦 待启用 |
+| Authenticate against LDAP/AD | ✅ `CustomLDAPBackend`（`ENABLE_LDAP`） | 簇 B·登录半 | **打包** | 🟡 bootstrap 已接；待真实目录验收 |
+| SSO with ADFS（SAML） | ✅ `seahub/adfs_auth/`，无 `is_pro` | 簇 B·登录半 | **打包** | 🟡 bootstrap 与 `xmlsec1` 已接；待 IdP/SP 证书验收 |
+| SSO with Shibboleth | ✅ `adfs_auth` 的 Shibboleth 路径 | 簇 B·登录半 | **打包** | 🟡 bootstrap 已接；待可信 SP 代理验收 |
 | （OAuth2/OIDC，未单列但同类） | ✅ `seahub/oauth/` | 簇 B·登录半 | **打包** | ✅ 已接（bootstrap `_settings_block_sso`） |
 | **Syncing LDAP/AD Users and Groups** | ❌ CE 无后台同步（Pro 的 `ldap_sync` 在闭源 seafevents） | 簇 B·**同步半** | **构建**：这是登录之外真正缺的机制 | ✅ 通用组织映射已完成；**待补一个 LDAP 目录源** |
-| Role based Account Management | ✅ `seahub/role_permissions/`，无 `is_pro` | 打包层 | **打包**：`ENABLED_ROLE_PERMISSIONS` 配置 | 📦 待启用 |
+| Role based Account Management | ✅ `seahub/role_permissions/`，无 `is_pro` | 打包层 | **打包**：`ENABLED_ROLE_PERMISSIONS` 配置 | ✅ bootstrap 配置生成已验 |
 
 > **簇 B 的正确切法**：登录后端（LDAP/ADFS/Shibboleth/OAuth）全是**打包**；
 > 真正要**构建**的只有**目录/组同步**——而对比页恰好把
@@ -67,8 +67,8 @@ grep -rln is_pro_version seahub/adfs_auth/ seahub/oauth/ seahub/role_permissions
 
 | Pro 特性 | CE 源码有吗 | 归属 | 做法 | 状态 |
 |---|---|---|---|---|
-| Two factor authentication | ✅ `seahub/two_factor/` app 无条件装载，`ENABLE_TWO_FACTOR_AUTH` | 打包层 | **打包** | 📦 待启用 |
-| Remote Wipe | ✅ `seahub/utils/devices.py` `mark_device_to_be_remote_wiped` + 管理端点 | 打包层 | **打包** | 📦 待启用 |
+| Two factor authentication | ✅ `seahub/two_factor/` app 无条件装载，`ENABLE_TWO_FACTOR_AUTH` | 打包层 | **打包** | ✅ bootstrap 配置生成已验 |
+| Remote Wipe | ✅ `seahub/utils/devices.py` `mark_device_to_be_remote_wiped` + 管理端点 | 打包层 | **打包** | ✅ 已具备 |
 | Audit Log | Server `repo-update` → seafevents `Activity` 已覆盖提交差异 | 簇 C | `CF_ENABLE_AUDIT` API 与系统管理员 UI | ✅ 已验收 |
 | Antivirus Integration | ❌ 镜像已**主动剥离** clamav；扫描在 server/pipeline 侧 | 新增·server 侧 | **构建**：这是"缺失机制"里唯一较重的一项 | 🔨 未开始 |
 
@@ -77,7 +77,7 @@ grep -rln is_pro_version seahub/adfs_auth/ seahub/oauth/ seahub/role_permissions
 | Pro 特性 | CE 源码有吗 | 归属 | 做法 | 状态 |
 |---|---|---|---|---|
 | AWS S3 / 多存储 | seafobj **读侧**已带 s3/ceph/swift/alioss；但**核心文件服务（Go fileserver + C）只有 FS** | 簇 H | **构建**：Go `backend_s3.go` + C `obj-backend-s3.c` + 多存储路由，覆盖服务/GC/FSCK/迁移。**非"1 登记项"**，见 [storage.md](storage.md) | 🔨 未开始 |
-| 属性 / 标签 / 多视图（未单列，Pro 的 metadata） | 前端+API+投喂管线全在 CE；**唯一闭源是存储引擎** | 簇 D | **构建**：自建存储引擎说同一套协议 | 🔨 探针 1 已定向 |
+| 属性 / 标签 / 多视图（未单列，Pro 的 metadata） | 前端+API+投喂管线全在 CE；官方 metadata-server 提供存储引擎 | 簇 D | **打包**：接官方兼容服务并复用 CE 前端/API | ✅ 属性与标签真实 API 已验收 |
 
 ---
 
@@ -107,7 +107,7 @@ bootstrap 配置 + 一张启用清单**：
 | A 目录 ACL | Fine-grained folder permission | ✅ 已完成 |
 | B 身份·同步半 | Syncing LDAP/AD Users and Groups | ✅ 已完成（待补 LDAP 源） |
 | C 审计 | Audit Log | ✅ 已完成 |
-| D 元数据 | 属性/标签/多视图 | 🔨 自建存储引擎（探针 1） |
+| D 元数据 | 属性/标签/多视图 | ✅ 官方 metadata-server 已接入；移动/重命名关联待做 |
 | E 检索 | Full text search | 🔨 配 seasearch（探针 3） |
 | F 协同 | Office editing + File locking | 🔨 拆 `is_pro` 门控（缺口 5 / 探针 2） |
 | H 存储 | AWS S3 | 🔨 1 登记项 |

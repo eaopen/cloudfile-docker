@@ -18,13 +18,16 @@ CE 扩展版的规格、规划与决策。每份文档只保留**最终版本**�
 | 文档 | 簇 | 对应 Pro 特性 | 状态 |
 |---|---|---|---|
 | [acl-semantics.md](acl-semantics.md) + [acl-cases.json](acl-cases.json) | A 目录 ACL | Fine-grained folder permission | ✅ 已落地 |
-| [sso-mapping.md](sso-mapping.md) | B 身份与目录同步 | Syncing LDAP/AD Users & Groups | ✅ 本机两阶段门禁通过；CI 待跑 |
+| [sso-mapping.md](sso-mapping.md) | B 身份与目录同步 | Syncing LDAP/AD Users & Groups | ✅ 本机两阶段门禁与 CI 均通过；LDAP 目录源待补 |
+| [audit.md](audit.md) | C 审计 | Audit Log | ✅ API、筛选与管理员页面已验收 |
+| [upstream-reuse.md](upstream-reuse.md) | D 元数据与标签 | Metadata | ✅ 官方 metadata-server 已接入并通过真实 API 验收 |
 | [search.md](search.md) | E 检索 | Full text search | ⬜ 方案已定 |
 | [storage.md](storage.md) | H 存储 | AWS S3 / 多存储 | ⬜ 方案已定 |
 | [ai.md](ai.md) | AI | 自动属性/标签/摘要（非 Pro 表项） | ⬜ 方案已定 |
 
-> 元数据（簇 D）默认用官方 `seafile-md-server`，规格随探针在 [upstream-reuse.md](upstream-reuse.md)；
-> 其余未开工的簇（C 审计、F 协同、G 外部源）状态见 [FEATURES.md](FEATURES.md)。
+> 元数据（簇 D）默认用官方 `seafile-md-server`，规格与探针结论在
+> [upstream-reuse.md](upstream-reuse.md)；未开工的簇（E 检索、F 协同、G 外部源、H 存储）
+> 状态见 [FEATURES.md](FEATURES.md)。
 
 ## 决策记录
 

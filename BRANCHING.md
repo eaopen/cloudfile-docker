@@ -64,6 +64,9 @@ git merge upstream/master
 - `seahub/utils/__init__.py` — `HAS_FILE_SEARCH` 或上"provider 是否已配置"
 - `frontend/config/webpack.entry.js` — 注册 CloudFile 前端入口（纯数据追加，
   往 `entryFiles` 字典里加一个 key，不含逻辑）
+- `scripts/seaf-fsck.sh` — 修复模式前置校验 seaf-server/fileserver 已停止，
+  并把 `run_seaf_fsck` 的退出码传播到脚本自身
+- `scripts/seaf-gc.sh` — 把 `run_seaf_gc` 的退出码传播到脚本自身
 
 前两个是行为改动，需要逐行 review。
 
@@ -72,7 +75,17 @@ git merge upstream/master
 不被调用。两处都是加法（或上 / 未选中则回落原生路径），取舍见
 [docs/EXTENSION-POINTS.md](docs/EXTENSION-POINTS.md) 第六节。
 
-最后一个是数据追加，冲突时直接保留双方的 key 即可。
+`frontend/config/webpack.entry.js` 是数据追加，冲突时直接保留双方的 key 即可。
+
+`scripts/seaf-fsck.sh`、`scripts/seaf-gc.sh` 属于离线 S3 维护 wrapper
+（见 `feat(storage): add offline S3 maintenance wrappers`）。两个上游脚本原本
+不管 `run_seaf_fsck`/`run_seaf_gc` 是否成功，末尾都固定 `echo "Done."` 后以 0
+退出，调用方（迁移编排脚本）拿不到失败信号；`seaf-fsck.sh` 还需要在 `-r`/
+`--repair` 前确认 `seaf-server`/`fileserver` 均已停止，避免修复期间仍有写入。
+这两点都发生在脚本唯一的调用入口上，无法旁路成新文件：整份复制这两个脚本
+自己维护，会失去 `check-upstream-patches.sh` 对分叉的检测；保留原脚本可直接
+调用，则新加的离线校验形同虚设。跟随上游时这两个文件的冲突面很小（末尾几行
+的收尾逻辑），按上面的意图重新应用改动即可。
 
 **cloudfile-server**
 - `common/obj-{backend,store}.{c,h}`、`common/block-{backend,mgr}.{c,h}`、

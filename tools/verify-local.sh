@@ -137,6 +137,7 @@ CAPABILITIES=(
     "sso|CF_ENABLE_SSO|tests/e2e/sso_matrix.py"
     "metadata|CF_ENABLE_METADATA CF_ENABLE_TAGS|tests/e2e/metadata_matrix.py"
     "audit|CF_ENABLE_AUDIT|tests/e2e/audit_matrix.py"
+    "storage|CF_ENABLE_S3_STORAGE|tests/e2e/storage_matrix.py"
 )
 
 # 由 capability 阶段设置：要在 .env 里打开的开关。
@@ -199,6 +200,86 @@ cap_metadata_run() {
     say "属性/标签验收矩阵"
     python3 "$repo/tests/e2e/metadata_matrix.py" --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
+}
+
+cap_storage_env() {
+    cat <<EOF
+SEAF_SERVER_STORAGE_TYPE=multiple
+S3_COMMIT_BUCKET=cloudfile-commits
+S3_FS_BUCKET=cloudfile-fs
+S3_BLOCK_BUCKET=cloudfile-blocks
+MINIO_API_PORT=19000
+MINIO_CONSOLE_PORT=19001
+CF_STORAGE_CLASSES_JSON=[{"storage_id":"local","is_default":true,"commits":{"backend":"fs","dir":"/shared/seafile"},"fs":{"backend":"fs","dir":"/shared/seafile"},"blocks":{"backend":"fs","dir":"/shared/seafile"}},{"storage_id":"minio","commits":{"backend":"s3","bucket":"cloudfile-commits","host":"minio:9000","key_id":"minioadmin","key":"change-this-minio-password","use_https":false,"path_style_request":true,"max_retries":2},"fs":{"backend":"s3","bucket":"cloudfile-fs","host":"minio:9000","key_id":"minioadmin","key":"change-this-minio-password","use_https":false,"path_style_request":true,"max_retries":2},"blocks":{"backend":"s3","bucket":"cloudfile-blocks","host":"minio:9000","key_id":"minioadmin","key":"change-this-minio-password","use_https":false,"path_style_request":true,"max_retries":2}}]
+EOF
+}
+
+# 存储门禁独有的两点，其它能力都不需要：
+#
+#   1. GC/FSCK/迁移是宿主机侧 CLI 行为，不经过 HTTP，storage_matrix.py 覆盖不到，
+#      只能用 `compose exec`/`compose run` 直接驱动。
+#   2. 迁移必须停服。不能只杀容器内的 seaf-server/fileserver 进程——
+#      start.py 的 watch_controller 每 5 秒检查一次控制器，连续 4 次
+#      (20 秒) 找不到就会杀掉整个容器，迁移一慢就会跟这个内部看门狗撞车。
+#      改成停整个 cloudfile 容器、用同一份 /shared 卷跑一次性容器做迁移，
+#      再重启——不给看门狗任何观察窗口。
+cap_storage_run() {
+    local base=$1 repo_id
+
+    say "启动 MinIO"
+    compose --profile s3 up -d --wait --wait-timeout 90 minio-init || return 1
+
+    say "阶段 1 —— 上传并校验跨多个 block 的文件"
+    python3 "$repo/tests/e2e/storage_matrix.py" --phase 1 --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
+        --state-file "$STAGE_DIR/storage-matrix-state.json" || return 1
+
+    say "GC 与 FSCK 完整遍历 S3 后端"
+    compose exec -T cloudfile bash -c \
+        '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seaf-gc.sh --dry-run' || return 1
+    compose exec -T cloudfile bash -c \
+        '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seaf-fsck.sh' || return 1
+
+    say "修复模式必须先停服——服务仍在运行时应被拒绝"
+    local repair_output repair_status
+    repair_output=$(compose exec -T cloudfile bash -c \
+        '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seaf-fsck.sh --repair' 2>&1)
+    repair_status=$?
+    if [[ $repair_status -eq 0 ]]; then
+        echo "✗ seaf-fsck.sh --repair 应在服务运行时被拒绝，却返回了 0" >&2
+        return 1
+    fi
+    if [[ $repair_output != *'stop seaf-server and fileserver'* ]]; then
+        echo "✗ seaf-fsck.sh --repair 被拒绝，但错误信息不是预期的那条：$repair_output" >&2
+        return 1
+    fi
+    ok "seaf-fsck.sh --repair 在服务运行时被正确拒绝"
+
+    repo_id=$(python3 -c \
+        "import json;print(json.load(open('$STAGE_DIR/storage-matrix-state.json'))['repo_id'])") \
+        || { echo "✗ 读不到 phase 1 写入的 repo_id" >&2; return 1; }
+
+    say "离线迁移：停止整个 cloudfile 容器"
+    compose stop cloudfile || return 1
+
+    say "以一次性容器执行 seaf-storage-migrate.sh（共享同一份 /shared 卷）"
+    compose run --rm --no-deps --entrypoint bash cloudfile -c \
+        "/etc/my_init.d/01_create_data_links.sh && /opt/seafile/\$SEAFILE_SERVER-\$SEAFILE_VERSION/seaf-storage-migrate.sh $repo_id minio" \
+        || return 1
+
+    say "重启并等待就绪"
+    compose up -d --wait --wait-timeout 120 cloudfile || return 1
+
+    say "阶段 2 —— 迁移后读写仍然正确"
+    python3 "$repo/tests/e2e/storage_matrix.py" --phase 2 --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
+        --state-file "$STAGE_DIR/storage-matrix-state.json" || return 1
+
+    say "迁移后 GC 与 FSCK 仍然通过"
+    compose exec -T cloudfile bash -c \
+        '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seaf-gc.sh --dry-run' || return 1
+    compose exec -T cloudfile bash -c \
+        '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seaf-fsck.sh' || return 1
 }
 
 stage_compose() {

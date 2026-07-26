@@ -263,7 +263,7 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
-| 49 | S3 / 多存储 | ✅ | Go fileserver、C 主服务和 seaf-fuse 支持 Commit/FS/Block 的单 S3 与按 `RepoStorageId` 路由；MinIO 数据面、S3-aware GC/FSCK、故障返回码和离线 FS↔S3 往返迁移均完成整机验证。迁移逐对象回读校验，事务切换路由并保留源对象。详见 [storage.md](storage.md)。 |
+| 49 | S3 / 多存储 | ✅ | Go fileserver、C 主服务和 seaf-fuse 支持 Commit/FS/Block 的单 S3 与按 `RepoStorageId` 路由；MinIO 数据面、S3-aware GC/FSCK、故障返回码和离线 FS↔S3 往返迁移均完成整机验证。迁移逐对象回读校验，事务切换路由并保留源对象。详见 [storage.md](storage.md)。**能力门禁 `storage-e2e.yml` + `verify-local.sh cap storage`（本轮补齐）**：此前只有 `go test ./objstore`/`cf-s3/run.sh` 这类默认跳过的单元/集成测试，没有任何编排把 GC/FSCK/迁移串成一次可复现的整机验证——跟 ACL 当年"有测试文件不等于有门禁"是同一类缺口。新增 `tests/e2e/storage_matrix.py` 两阶段矩阵，本机真实栈（local+MinIO 多存储类）已跑通：原生冒烟 12/12（S3 配置开着也不影响默认 local 类）、phase 1 上传/下载跨多 block 文件字节一致、GC dry-run 与 FSCK 完整遍历 S3 对象均返回 0、`--repair` 在服务运行时被正确拒绝、离线迁移（停整个容器 -> 一次性容器跑 `seaf-storage-migrate.sh` -> 重启）报告 2 commits/2 fs objects/2 blocks 复制并校验，phase 2 确认迁移后读回内容与迁移前逐字节一致且库仍可继续写入，迁移后 GC/FSCK 再次通过。CI 尚未跑过这条新 workflow。 |
 | 96 | 反病毒集成（簇 I） | ⬜ | **Pro 对标补入**（[pro-parity.md](pro-parity.md)）。Pro 的"缺失机制"里唯一没归簇的一项：上传/文件扫描在 server/pipeline 侧，**镜像已主动剥离 clamav**。落地前先做门控盘点（同 OnlyOffice 探针 2 的做法），确认哪些是真依赖、哪些只是商业门控 |
 | 50 | SMB/NFS 外部资料源 | ⬜ | 零上游改动，但**代价是另起一个入口**——不改上游就进不了原生库列表。见 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 缺口 3。这是产品决定，不是技术决定 |
 | 51 | 外部源增量扫描 | ⬜ | 依赖 50 + `cf-worker` |
@@ -278,9 +278,15 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
 
 按阻塞程度排。
 
-1. 🟠 **在 CI 上跑一次三条门禁**（checks / build-and-e2e / acl-e2e）。本机
-   全绿，但 CI 与本机在架构、磁盘配额、PATH 上都有已知差异，而十二次构建失败
-   里有六次正是栽在这类边界。**这是目前唯一的未验证面。**
+1. 🟠 **在 CI 上跑一次全部门禁**（checks / build-and-e2e / acl-e2e / sso-e2e /
+   metadata-e2e / audit-e2e，以及本轮新增、CI 还没跑过的 storage-e2e）。
+   MinIO S3 维护 wrapper 合并（`dd74536`）那次 CI 实际跑红过：`CloudFile
+   checks` 里 `上游改动登记`（cloudfile-hub 的 `scripts/seaf-fsck.sh`/
+   `seaf-gc.sh` 未登记）与 `构建脚本副本偏离`（`cloudfile-build.py` 的
+   must_copy 新增一行，预期偏离从 1 处变 2 处却没更新检查）两项都失败，其余
+   五个能力矩阵 job 全绿——本次已定位并修复两处，但还没有一次全绿的 CI 跑次
+   验证过修复本身。CI 与本机在架构、磁盘配额、PATH 上还有已知差异，十二次
+   构建失败里有六次正是栽在这类边界，**这仍是目前唯一系统性的未验证面。**
 
    > **矩阵这一关已经过了（23/23）**，而它的价值在第一次运行就兑现：单元测试
    > （C 62 / Python 87）全绿、静态检查全绿、基线门禁全绿，而第 71 项那个缺陷

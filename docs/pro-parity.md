@@ -41,7 +41,7 @@ grep -rln is_pro_version seahub/adfs_auth/ seahub/oauth/ seahub/role_permissions
 | Pro 特性 | CE 源码有吗 | 归属 | 做法 | 状态 |
 |---|---|---|---|---|
 | Fine-grained folder permission | ❌ CE 只有库级共享 | 簇 A | **构建**：两端强制的目录 ACL | ✅ 已完成（`feature/dir-acl`） |
-| Full text search | 检索路径在 CE；**seasearch 已在 CE** | 簇 E | **配置** seasearch + **精确解除搜索接口的 Pro 门**（`Search`+`public_repos_search` 两个接口，URL 影子，零上游改动，不动全局 `is_pro_version()`）；可选 meilisearch provider。完整方案 [search.md](search.md) | 🔨 P0 待做 |
+| Full text search | 检索路径在 CE；**seasearch 已在 CE** | 簇 E | **配置** seasearch + **精确解除搜索接口的 Pro 门**（`Search`+`public_repos_search` 两个接口，URL 影子，零上游改动，不动全局 `is_pro_version()`）；可选 meilisearch provider。完整方案 [search.md](search.md) | 🟡 P0/P1/P2 已实现，未随镜像验证 |
 | Office file editing（OnlyOffice/Collabora） | ✅ `seahub/onlyoffice/` 全套 | 簇 F | **构建**：锁集成两行受 `is_pro_version` 门控，需拆 | 🔨 待探针 2 |
 | File locking | ✅ RPC + `FileLocks` 表在 CE；**Hub 侧受 `is_pro_version` 门控** | 簇 F | **构建**：server 白捡，Hub 拆门控（缺口 5） | 🔨 |
 | WebDAV | ✅ `seafdav`，已在 CloudFile 构建里 | — | **打包**：已具备，ACL 读写补丁已测 | ✅ 已具备 |
@@ -108,7 +108,7 @@ bootstrap 配置 + 一张启用清单**：
 | B 身份·同步半 | Syncing LDAP/AD Users and Groups | ✅ 已完成（待补 LDAP 源） |
 | C 审计 | Audit Log | ✅ 已完成 |
 | D 元数据 | 属性/标签/多视图 | ✅ 官方 metadata-server 已接入；移动/重命名关联待做 |
-| E 检索 | Full text search | 🔨 配 seasearch（探针 3） |
+| E 检索 | Full text search | 🟡 已实现（配 seasearch 默认 + meilisearch 可切换），未随镜像验证 |
 | F 协同 | Office editing + File locking | 🔨 拆 `is_pro` 门控（缺口 5 / 探针 2） |
 | H 存储 | AWS S3 | 🔨 1 登记项 |
 | **新** | **Antivirus** | 🔨 **唯一"缺失机制"里没归簇的**——server 侧扫描管线，镜像已剥离 clamav |

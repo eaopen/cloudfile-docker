@@ -219,16 +219,58 @@ index_metadata = true
 
 ## 七、分阶段
 
-| 阶段 | 内容 | 上游成本 | 依赖 |
-|---|---|---|---|
-| **P0** | CE 启用官方 SeaSearch：打通 seafevents 索引；**精确解除那两个接口的 Pro 门**（URL 影子）；支持文件名/正文/类型/时间/大小筛选；验证个人库、共享库、群组库、子目录权限、隐藏目录 | **0**（影子路由是新增文件） | 官方 SeaSearch 镜像 |
-| **P1** | 抽出 `SearchBackend`，把现有 SeaSearch 包装为默认后端；对外 API 与前端不变 | 0 | P0 |
-| **P2** | Meilisearch：批量写/删/重建/查询；配 filterable/sortable/searchable；中文分词验证；后端切换与重建命令。**索引侧走 cf-worker，不 fork seafevents** | 0 | P1 |
-| **P3** | 元数据与智能检索：把 Metadata Server 的标签/属性写入索引（组合检索，特性 41）；按项目/状态/专业/密级组合筛选；再接 AI 摘要/自动标签/语义检索 | 0 | 簇 D + P2 |
+| 阶段 | 内容 | 上游成本 | 依赖 | 状态 |
+|---|---|---|---|---|
+| **P0** | CE 启用官方 SeaSearch：打通 seafevents 索引；**精确解除那两个接口的 Pro 门**（URL 影子）；支持文件名/正文/类型/时间/大小筛选；验证个人库、共享库、群组库、子目录权限、隐藏目录 | **0**（影子路由是新增文件） | 官方 SeaSearch 镜像 | 🟡 已实现，未随镜像验证 |
+| **P1** | 抽出 `SearchBackend`，把现有 SeaSearch 包装为默认后端；对外 API 与前端不变 | 0 | P0 | ✅ **未新增包装类**——见下"实现偏离" |
+| **P2** | Meilisearch：批量写/删/重建/查询；配 filterable/sortable/searchable；中文分词验证；后端切换与重建命令。**索引侧走 cf-worker，不 fork seafevents** | 0 | P1 | 🟡 已实现，未随镜像验证 |
+| **P3** | 元数据与智能检索：把 Metadata Server 的标签/属性写入索引（组合检索，特性 41）；按项目/状态/专业/密级组合筛选；再接 AI 摘要/自动标签/语义检索 | 0 | 簇 D + P2 | ⬜ 未开始 |
 
 **P0 的验收面**（与 ACL 矩阵同思路——不是"能搜到"，而是"权限边界在搜索里也成立"）：
-个人库/共享库/群组库各能搜到自己该看的；**ACL 隐藏目录/受限目录不出现在结果里**；
-子目录权限被尊重。这几项必须进 `search-e2e.yml` 能力门禁。
+个人库/共享库/群组库各能搜到自己该看的；子目录权限被尊重。这几项已进
+`search-e2e.yml`/`tests/e2e/search_matrix.py`（三阶段，见下）。**ACL 隐藏目录/
+受限目录不出现在结果里**这一项**未覆盖**——见下"已知边界"。
+
+### 实现偏离（与本节原方案的差异，均为读代码后确认的简化，不是遗漏）
+
+- **P1 没有 `SeaSearchBackend` 包装类。** 读 `seahub/api2/views.py` 发现
+  `Search.get()`/`PublishedRepoSearchView.get()` 的形状是
+  `if HAS_FILE_SEARCH: ... elif HAS_FILE_SEASEARCH: ai_search_files(...)`——
+  SeaSearch 走的是**第二个分支**，upstream 自己的代码，完全不经过
+  `search_files()`/`cloudfile_ext.hooks`，也就不经过 `CF_PROVIDER_SEARCH` 这个
+  provider 机制。所以"默认用 SeaSearch"不需要注册任何 provider：
+  `CF_PROVIDER_SEARCH` 留空就是默认，包一层只是重复调用
+  `pro/python/seafevents/seasearch/utils/seasearch_api.py`（服务端已有的客户端），
+  且这层重复代码只在 Hub 侧可达，没有意义。详见 `cloudfile_ext/search/__init__.py`
+  的模块文档字符串。
+- **主开关是 `CF_ENABLE_SEARCH`，不是本文档早前设想的"零配置直接可用"。**
+  实测发现 `bootstrap.py` 原先无条件把 `[SEASEARCH] enabled` 写成 `true`——
+  在 Pro 门解除之前无害，解除之后就会让没开开关的部署也把 `HAS_FILE_SEASEARCH`
+  置真，指向一个根本没起的 `seasearch` 容器，报 500 而不是"功能未启用"的 404。
+  已改为 `write_seafevents_search_config()`，跟 `write_cloudfile_settings()`
+  一样每次启动重写，由 `CF_ENABLE_SEARCH` 门控；此前占位的
+  `CF_ENABLE_MEILISEARCH` 开关（从未真正接线）随之退役。
+- **Meilisearch 索引范围是元数据 + 纯文本正文，不是完整正文抽取。** 文本文件
+  （`SEARCH_FILEEXT[TEXT]` 那组后缀）在 `CF_SEARCH_INDEX_TEXT_MAX_BYTES`
+  （默认 1MB）以内索引正文；docx/pdf/xlsx 等二进制格式只索引文件名/路径/类型/
+  大小/时间。完整正文抽取是 SeaSearch 通过 seafevents 已经做好的事，
+  Meilisearch 路径存在的意义是"不想起 SeaSearch 时仍有可用的检索"，不是重做
+  一遍正文管线——这条边界故意写在这里，不是代码里的隐藏行为。
+
+### 已知边界（写在这里，不藏在代码注释里）
+
+- **原生 SeaSearch 分支不过滤 ACL 隐藏目录。** `elif HAS_FILE_SEASEARCH` 分支
+  没有 `Search.get()` 的 ES 分支那段 `is_invisible_path` 过滤循环——这是上游
+  代码的既有行为，不是本次改动引入的。`CF_ENABLE_DIR_ACL` 标记为 `invisible`
+  的子目录，其中的文件仍可能出现在原生 SeaSearch 的搜索结果里。
+  `CF_PROVIDER_SEARCH=meilisearch` 路径**不受影响**：它走的是
+  `if HAS_FILE_SEARCH:` 分支（`_cf_has_search_provider()` 把标志"或"成真），
+  与 ES 共用同一段过滤后处理。**同时使用 `CF_ENABLE_DIR_ACL` 与检索的部署，
+  在这一点修复之前应优先选 `CF_PROVIDER_SEARCH=meilisearch`。**
+- **`search-e2e.yml` 尚未在真实容器栈上跑过**（本机与 CI 都还没有一次成功的
+  跑次）。已验证的是：Hub 侧单测（`cloudfile_ext/search/tests/`）、配置生成的
+  静态检查与执行测试（`preflight-checks.py`、`test-bootstrap-settings.py`）、
+  compose 配置校验（`docker compose config`、各 profile 的服务清单）。
 
 ---
 

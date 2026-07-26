@@ -71,7 +71,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | 59 | 扩展点装配验收 | ✅ | `tests/e2e/baseline.py`，**9/9 通过**（含新增的 provider 与检索三项）。这条门禁的价值当场兑现了：`bootstrap` 写进 `seahub_settings.py` 的 `DATABASES['cloudfile']` 触发 `NameError`，被 seahub 吞掉后**丢弃了该文件全部 CloudFile 配置**——服务照常启动、冒烟全绿，而扩展框架根本没加载。只跑 smoke 发现不了 |
 | 60 | 基线与能力分层 | ✅ | ACL 整体剥离到 `feature/dir-acl`；剥离前后三仓上游改动清单**逐字节不变**，证明能力可独立演进而不增加 fork 成本 |
 | 63 | 扩展点形状：链 与 provider | ✅ | `providers.py`：同一件事的可互换实现，由 `CF_PROVIDER_<KIND>` 选中，未选中回落原生、选了不存在的名字则显式失败。**8 项单元测试，且经变异测试确认会失败** |
-| 64 | 检索查询侧扩展点 | 🟡 | `register_search_provider()` + `seahub/search/utils.py`、`seahub/utils/__init__.py` 两处上游改动。meilisearch 由此成为**一种** provider 而非唯一方案。**未随镜像验证** |
+| 64 | 检索查询侧扩展点 | 🟡 | `register_search_provider()` + `seahub/search/utils.py`、`seahub/utils/__init__.py` 两处上游改动。meilisearch 由此成为**一种** provider 而非唯一方案，且第 40 项已有真实消费者（`MeilisearchProvider`）。**未随镜像验证**——`search-e2e.yml` 是这条扩展点第一次有端到端门禁，尚未在真实容器栈上跑过 |
 | 65 | 外部服务回调机制 | 🟡 | `external_service.py`：超时 / JWT 签名 / 重试 / fail-closed。**刻意不放在同步权限判定路径上**，理由见 EXTENSION-POINTS.md 第五节。**尚无调用方** |
 | 67 | 检索结构化过滤契约 | ✅ | `search_query.py`：属性/标签谓词词汇表 + provider 能力声明。**存在的理由是分支切分**——没有它，组合检索会把元数据和检索焊成一条大分支。硬性规定：provider 收到未声明支持的算子必须拒绝，**不允许静默忽略**（被丢掉的谓词返回比请求更大的结果集，而调用方看不出差别）。**15 项单元测试，3 个变异全部被捕获** |
 
@@ -220,8 +220,8 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
-| 40 | 索引与检索 | ⬜ | **完整方案见 [search.md](search.md)。** 默认官方 seasearch（索引/查询后端零新增代码）；P0 精确解除全局搜索接口的 Pro 门（`Search` + `public_repos_search` 两个接口，经 URL 影子子类覆盖 `permission_classes`，**零上游改动**，**不动全局 `is_pro_version()`**）；P1 抽 `SearchBackend`；P2 meilisearch（索引侧走 cf-worker，不 fork seafevents）；P3 元数据组合检索。⚠️ provider 与 seasearch 同配时 `HAS_FILE_SEARCH` 分支优先——见 search.md |
-| 41 | 属性 / 标签 / 内容组合检索 | ⬜ | **跨簇（D × E）**。经第 67 项的契约解耦：D 喂字段、E 翻译过滤，各自独立验收；端到端验收属 `dev` 上的集成门禁，不归任一分支 |
+| 40 | 索引与检索 | 🟡 | **完整方案见 [search.md](search.md)，P0/P1/P2 均已实现。** P0：新增 `cloudfile_ext/search/`，`Search`/`PublishedRepoSearchView` 经 URL 影子子类覆盖 `permission_classes`（`IsProVersion` → `IsSearchAvailable`），**零上游改动**，**不动全局 `is_pro_version()`**；新增开关 `CF_ENABLE_SEARCH`（替代此前形同虚设、从未真正接线的 `CF_ENABLE_MEILISEARCH`）。**顺带修了一个铁律违规**：`bootstrap.py` 原先无条件把 `[SEASEARCH] enabled` 写死为 `true`，且只在 `init_seafile_server()`（仅首次安装）执行；已改为 `write_seafevents_search_config()`，跟 `write_cloudfile_settings()` 一样在每次启动时重写，并由 `CF_ENABLE_SEARCH` 门控。P1：未新增 `SeaSearchBackend` 包装类——`CF_PROVIDER_SEARCH` 留空即走上游自己的 `elif HAS_FILE_SEASEARCH`（`ai_search_files`）分支，**完全不经过** `search_files()`/`cloudfile_ext.hooks`，包一层没有必要。P2：`CF_PROVIDER_SEARCH=meilisearch` 注册 `MeilisearchProvider`（统一索引、`repo_id` 过滤、`supported_filter_ops={EQ,NE,IN,EXISTS}`）与 cf-worker 索引周期任务（消费 `Activity` 提交流，新增 `cf_search_index_state` 水位线表；纯文本文件 ≤1MB 带正文，其余仅元数据——二进制正文抽取留给 SeaSearch）。**已验证**：Hub 单测 15 项（`search/tests/test_meilisearch_backend.py`）随整套 131 项全绿；`preflight-checks.py`/`test-bootstrap-settings.py` 新增覆盖（含一个被测试当场抓到的真实 bug：数值配置项原先被写成字符串，`indexer.py` 拿它跟 `int` 比较会在运行时 `TypeError`）；compose 配置 `docker compose config`/各 profile 均验证通过。**尚未验证**：`tests/e2e/search_matrix.py` + `search-e2e.yml`（三阶段：留空 provider 走 SeaSearch → 切 meilisearch 验证回填 → 关闭开关验证恢复原生 403）已写好但未在真实容器栈上跑过，需要 Linux 构建环境。⚠️ **已知边界，上游的，非本次引入**：`elif HAS_FILE_SEASEARCH` 分支没有 `Search.get()` 那样的 `is_invisible_path` 过滤，`CF_ENABLE_DIR_ACL` 的 `invisible` 目录在原生 SeaSearch 结果里可能不被排除（meilisearch 路径复用 `HAS_FILE_SEARCH` 分支，不受影响）；同时配置 provider 与 seasearch 时 `HAS_FILE_SEARCH` 分支优先——见 search.md |
+| 41 | 属性 / 标签 / 内容组合检索 | ⬜ | **跨簇（D × E）**。经第 67 项的契约解耦：D 喂字段、E 翻译过滤，各自独立验收；端到端验收属 `dev` 上的集成门禁，不归任一分支。`MeilisearchProvider` 已声明 `supported_filter_ops`，但簇 D 尚未喂字段，端到端仍未打通 |
 
 Compose 的 `search` profile 与 `cf-worker` 已就位，实现时不需要再动部署。
 
@@ -279,7 +279,8 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
 按阻塞程度排。
 
 1. 🟠 **在 CI 上跑一次全部门禁**（checks / build-and-e2e / acl-e2e / sso-e2e /
-   metadata-e2e / audit-e2e，以及本轮新增、CI 还没跑过的 storage-e2e）。
+   metadata-e2e / audit-e2e / storage-e2e，以及本轮新增、CI 还没跑过的
+   search-e2e）。
    MinIO S3 维护 wrapper 合并（`dd74536`）那次 CI 实际跑红过：`CloudFile
    checks` 里 `上游改动登记`（cloudfile-hub 的 `scripts/seaf-fsck.sh`/
    `seaf-gc.sh` 未登记）与 `构建脚本副本偏离`（`cloudfile-build.py` 的

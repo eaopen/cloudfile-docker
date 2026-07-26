@@ -93,8 +93,8 @@ seasearch、Elasticsearch、企业自有检索服务都可以是同一个 kind �
 | **D** | 文件属性 | `METADATA` | ● | ● | | | ● | ● | | ● | | ● | |
 | **D** | 标签 | `TAGS` | ● | ● | | | ● | ● | | | | ● | |
 | **D** | 移动/重命名元数据跟随 | `METADATA` | | | | | ● | ● | | ● | | ● | |
-| **E** | 检索后端 | `MEILISEARCH` | ● | | | ● | ● | | | ● | ● `search` | ○ | |
-| **D×E** | 组合检索 | `MEILISEARCH` | ● | ● | ○ | ● | | | | | | | |
+| **E** | 检索后端 | `SEARCH` | ● | | | ● | ● | | | ● | ● `search` | ● | |
+| **D×E** | 组合检索 | `SEARCH` | ● | ● | ○ | ● | | | | | | | |
 | **F** | OnlyOffice | `ONLYOFFICE` | ● | | | | | ● | | | ○ | ● | |
 | **F** | 文件锁 | `CHECKOUT` 前置 | ● | ● | ● | | | ● | | ● | | ○ CE 已有 `FileLocks` | ● |
 | **F** | 签入签出 | `CHECKOUT` | ● | ● | ● | | | ● | | ● | | ● | ● |
@@ -335,9 +335,9 @@ class MeilisearchProvider:
 
 | name | 归属 | 说明 |
 |---|---|---|
-| `meilisearch` | `feature/meilisearch` | roadmap 原定方案 |
-| `seasearch` | 待评估 | **上游 CE 14.0 已自带 seasearch 集成**，跟随上游比自选方案长期成本更低 |
-| 企业自有检索 | 客户对接 | 经 `external_service.py` 调用，契约同上 |
+| `meilisearch` | 簇 E，✅ 已实现 | `cloudfile_ext/search/backends/meilisearch.py`，`CF_PROVIDER_SEARCH=meilisearch` 选中 |
+| （无 `seasearch` provider） | — | **确认不需要注册**：上游 CE 14.0 的 SeaSearch 走 `seahub/api2/views.py` 里独立的 `elif HAS_FILE_SEASEARCH` 分支（`ai_search_files`），完全不经过这个 provider 机制——`CF_PROVIDER_SEARCH` 留空就是默认，见 [search.md](search.md) |
+| 企业自有检索 | 客户对接，⬜ 未实现 | 经 `external_service.py` 调用，契约同上 |
 
 > **两个上游改动的取舍**：`search/utils.py`（查询分发）与 `utils/__init__.py`
 > （`HAS_FILE_SEARCH` 或上）。后者不接的话，CE 部署里六个入口根本不会走到搜索，

@@ -528,7 +528,7 @@ ln -s ../../../cloudfile-docker/tools/check-upstream-patches.sh .git/hooks/pre-p
 | | 1.2 | SSO | **本机两阶段门禁已通过** —— 登录复用上游，CloudFile 只做配置与组织映射。规格 [sso-mapping.md](sso-mapping.md)，探针 [upstream-reuse.md](upstream-reuse.md)。满足合回 `dev` 的能力门禁；CI 仍待跑 |
 | | 1.3 | 审计 | ✅ Server `repo-update` → seafevents `Activity` → CloudFile API/UI 已通过完整镜像验收 |
 | **2** | 2.1a | 元数据（属性 + 标签 + 移动跟随） | **探针 1 已定：CloudFile 自建存储引擎说 metadata-server 协议**（唯一闭源件）+ 复用上游前端/API/投喂管线。分两步：官方 server 先验证，长期权威模型归 CloudFile |
-| | 2.1b | 检索后端（与 2.1a **真并行**） | **探针 3 已定：默认 seasearch（上游已集成，零 CloudFile 代码）**，meilisearch 作可选 provider。扩展点与过滤契约已就位 |
+| | 2.1b | 检索后端（与 2.1a **真并行**） | **已实现**（P0/P1/P2，[search.md](search.md)）：默认 seasearch（走上游 `elif HAS_FILE_SEASEARCH` 分支，零 CloudFile 代码），`CF_ENABLE_SEARCH` 解除两个接口的 Pro 门；meilisearch 作可切换 provider，cf-worker 索引器消费 `Activity` 提交流。单测/配置生成测试已通过，`search-e2e.yml` 待随镜像跑一次 |
 | | 2.2 | 组合检索 | 需 2.1a + 2.1b 都进了 `dev`，验收属集成门禁 |
 | **3** | 3.1 | 文件锁（含 Hub 侧 Pro 门控拆解） | 唯一有新增上游补丁的线，先过 review |
 | | 3.2 | 签入签出 → OnlyOffice → iTeam | **OnlyOffice 规模待探针 2 定**：上游 CE 已带 `seahub/onlyoffice/` |

@@ -85,6 +85,11 @@ elif ! command -v go >/dev/null; then
 else
     run "Go fileserver" bash -c \
         "cd '$server/fileserver' && go build ./... && go vet ./..."
+
+    # 只跑 CloudFile 自己的测试，不跑 `go test ./...`：上游的 repomgr 测试要连
+    # MySQL，在这条秒级门禁里必然失败，而一个总是红的检查等于没有检查。
+    run "Go fileserver 契约测试" bash -c \
+        "cd '$server/fileserver' && go test -count=1 -run 'Cf[A-Z]' ."
 fi
 
 # 5. Compose 配置与 profile

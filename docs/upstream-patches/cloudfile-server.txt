@@ -20,6 +20,7 @@ common/obj-backend.h
 common/obj-store.c
 common/obj-store.h
 configure.ac
+fileserver/fileop.go
 fileserver/sync_api.go
 fileserver/go.mod
 fileserver/go.sum
@@ -39,5 +40,6 @@ server/gc/repo-mgr.c
 server/gc/repo-mgr.h
 server/gc/seaf-fsck.c
 server/gc/seafserv-gc.c
+server/repo-op.c
 server/seaf-server.c
 server/seafile-session.c

@@ -11,7 +11,8 @@ OnlyOffice、浏览器扩展和绿色本地 Agent，并定义它们共同依赖�
 - [audit.md](audit.md)：操作审计数据来源
 - [acl-semantics.md](acl-semantics.md)：目录权限终判
 
-> 状态：方案评审稿，尚未实现。
+> 状态：方案评审稿。**P0.5（统一写入生命周期扩展点）已实现**，见下方第十三节
+> 与 [fileop-lifecycle.md](fileop-lifecycle.md)；P1 及之后尚未开工。
 >
 > 结论：把能力定义为统一的“文件动作平台”，而不是把
 > `etech-seafile` 的浏览器插件和 Go Bridge 原样搬进 CloudFile。
@@ -1102,20 +1103,35 @@ CF_LOCAL_APP_OFFLINE_CACHE=false
 - 锁状态机、错误码和恢复策略冻结。
 - Pro 与 CloudFile 的同一黑盒套件差异为零，或每个有意增强都有独立开关和迁移说明。
 
-### P0.5：统一写入生命周期扩展点
+### P0.5：统一写入生命周期扩展点 🟡 已实现，待整机验收
 
-内容：
+规格独立成篇：[fileop-lifecycle.md](fileop-lifecycle.md)，用例集
+[fileop-cases.json](fileop-cases.json)。
 
-- 冻结 `PREPARE / COMMITTED / ABORTED` 契约、错误码和路径规范化规则。
-- 建立覆盖 create/update/delete/rename/move/revert/block upload/父目录操作的共享用例集。
-- 在 C、Go fileserver 和 seafdav 全入口接入；提交事件同时喂给后续 `file_op` 消费者。
-- 开关全关、无 provider 注册时必须是零额外查询的透传路径。
+已完成：
 
-退出条件：
+- `PREPARE / COMMITTED / ABORTED` 契约、13 个 operation 的词汇表、错误码
+  （`CF_ERR_FILE_LOCKED` 600 / `CF_ERR_VERSION_MISMATCH` 601）与路径规范化规则冻结。
+- 共享用例集：路径规范化 19 条、词汇表 18 条、分发 8 条、事实唯一性 6 条。
+- C：`server/repo-op.c` 全部 19 个写入口。Go：`fileserver/cf_fileop.go` 经 RPC
+  问 C，接进上传、更新、分块提交、裸块、建目录、同步分支更新。
+- **WebDAV 不需要补丁**——写路径全部经 `seafile_api.*` → RPC → `repo-op.c`。
+  原计划里的"seafdav 全入口接入"因此作废：那会造出第二个真值。
+- 无 provider 注册时是一次全局布尔读取后返回，不构造上下文、不查数据库。
 
-- 锁 provider 尚未实现时，假 provider 已能在所有写入口统一 veto。
-- 同一成功操作只产生一个 COMMITTED 事实，失败操作不会产生成功事件。
-- C/Go/WebDAV 对同一共享用例给出一致结论。
+原计划里"提交事件同时喂给后续 `file_op` 消费者"这句话需要更正：Hub 的
+`register_file_op_hook` **没有**被接成生产者，它继续只补 HTTP 上下文。需要文件
+事实的能力消费 server 侧的 `COMMITTED`。理由见 fileop-lifecycle.md 第五节。
+
+退出条件（**第一条尚未满足**）：
+
+- ⬜ 锁 provider 尚未实现时，假 provider 已能在所有写入口统一 veto。
+  需要 Linux 整机（`fileop-e2e.yml`）。目前只有单元级证据：C 144 项、
+  Go 6 项、50 个调用点类型检查、9 个变异全部被捕获。
+  **这些都不能证明运行时真的在每个入口被调用到**——ACL 第 71 项的缺陷
+  单测一个都没拦住，只有把栈起起来才现形。
+- ✅ 同一成功操作只产生一个 COMMITTED 事实（含并发重试循环），失败操作不产生。
+- ✅ C 与 Go 对同一共享用例给出一致结论；WebDAV 继承 C 的结论。
 
 ### P1：统一锁基础
 

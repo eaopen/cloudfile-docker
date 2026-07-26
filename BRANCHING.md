@@ -95,14 +95,25 @@ git merge upstream/master
 - `fuse/Makefile.am` — seaf-fuse 与主服务使用同一套 S3/multiple 后端，避免读取路径
   仍固定到本地 FS。
 - `common/rpc-service.c` — `seafile_check_permission_by_path` 实现 +
-  `seafile_cf_find_restricted_path`
+  `seafile_cf_find_restricted_path` + 写入生命周期的 `cf_fileop_*`
 - `include/seafile-rpc.h`、`server/seaf-server.c` — 新 RPC 声明与注册
 - `server/seafile-session.c` — 启动时 `cf_acl_init()`
 - `server/Makefile.am` — 新增源文件
+- `server/repo-op.c` — **写入生命周期扩展点的唯一权威产生点**：19 个写入口各
+  发一次 PREPARE / COMMITTED / ABORTED。放这里而不是已经登记过的
+  `rpc-service.c`，是因为后者只覆盖经 RPC 进来的调用——`upload-file.c`、
+  虚拟库合并和 `copy-mgr` 都直接调 `seaf_repo_manager_*`，从旁边绕过去，
+  而终判点不能有绕行路。改动都是围绕 `gen_new_commit()` 的小块，冲突面有限。
+  见 [docs/fileop-lifecycle.md](docs/fileop-lifecycle.md) 第五节。
 - `server/gc/{Makefile.am,seafserv-gc.c,seaf-fsck.c,gc-core.c,gc-core.h,fsck.c,repo-mgr.c,repo-mgr.h}`
   — GC/FSCK 通过统一后端遍历并传播枚举、读取、删除和修复失败；新增离线迁移程序在复制并
   回读校验三类对象后事务切换 `RepoStorageId`。
-- `fileserver/sync_api.go` — 同步前的子树校验（两处：`checkPermission` 与缓存清理）
+- `fileserver/sync_api.go` — 同步前的子树校验（两处：`checkPermission` 与缓存清理），
+  以及 `putUpdateBranchCB` 的 `sync-update` 写入生命周期
+- `fileserver/fileop.go` — Go 侧的写入生命周期接入（上传、更新、分块提交、
+  裸块上传、逐级建目录）。Go fileserver 自己分块、写对象、生成提交、更新分支，
+  整条路不经过 C，所以它是 C seam 唯一看不见的写路径；它不重新实现判断，
+  而是经 RPC 问 seaf-server
 - `python/seaserv/api.py` — `is_repo_syncable` / `is_dir_downloadable`
 - `python/seafile/rpcclient.py` — 新 RPC 客户端声明
 - `python/seaserv/__init__.py` — re-export `REPO_STATUS_*`；seafevents 从包根导入

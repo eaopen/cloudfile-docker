@@ -74,6 +74,8 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | 63 | 扩展点形状：链 与 provider | ✅ | `providers.py`：同一件事的可互换实现，由 `CF_PROVIDER_<KIND>` 选中，未选中回落原生、选了不存在的名字则显式失败。**8 项单元测试，且经变异测试确认会失败** |
 | 64 | 检索查询侧扩展点 | 🟡 | `register_search_provider()` + `seahub/search/utils.py`、`seahub/utils/__init__.py` 两处上游改动。meilisearch 由此成为**一种** provider 而非唯一方案，且第 40 项已有真实消费者（`MeilisearchProvider`）。**未随镜像验证**——`search-e2e.yml` 是这条扩展点第一次有端到端门禁，尚未在真实容器栈上跑过 |
 | 65 | 外部服务回调机制 | 🟡 | `external_service.py`：超时 / JWT 签名 / 重试 / fail-closed。**刻意不放在同步权限判定路径上**，理由见 EXTENSION-POINTS.md 第五节。**尚无调用方** |
+| 101 | 统一写入生命周期扩展点（P0.5） | 🟡 | **本轮新增，属基线**。`common/cf-fileop.{c,h}` 提供 `PREPARE`（一票否决）/ `COMMITTED`（成功一次的不可变事实）/ `ABORTED`（尽力而为）三相，规格 [fileop-lifecycle.md](fileop-lifecycle.md)、用例集 [fileop-cases.json](fileop-cases.json)。它是缺口 1 的补法，也是 #43–#48（OnlyOffice、文件锁、签入签出）与 #42（元数据跟随）共同的前置。**覆盖**：C `server/repo-op.c` 全部 19 个写入口（含批量删除、跨库复制/移动的异步分支、并发重试循环）；Go `fileserver/cf_fileop.go` 经 RPC 问 C，接进上传/更新/分块提交/裸块/建目录/同步分支更新；**WebDAV 不需要补丁**——seafdav 的写全部经 `seafile_api.*` → RPC → `repo-op.c`，写第二份 Python 校验只会得到第二个真值。**证据**：C 144 项用例 + Go 6 项跨语言契约测试 + `repo-op.c` 50 个调用点的类型检查，**9 个变异全部被捕获**（拒绝后不停、路径折叠大小写、词汇表改错、字段名拼错、operation 不存在、基线不再惰性、Go 常量漂移、JSON 键漂移、错误码漂移）。上游改动 33 → 35（`server/repo-op.c`、`fileserver/fileop.go`），理由是终判点不能有绕行路：`upload-file.c`、虚拟库合并、`copy-mgr` 都绕过 `rpc-service.c` 直接调 `seaf_repo_manager_*`。**尚未验证**：整机的假 provider 逐入口 veto 矩阵（`fileop-e2e.yml`）——需要 Linux 构建环境。ACL 第 71 项的教训在这里同样适用：单测全绿不等于运行时真的被调用到 |
+| 102 | 路径规范化下沉到基线 | ✅ | `cf_acl_normalize_path` → `common/cf-path.c`，ACL 侧留薄转发，既有用例逐字未改。与第 79 项（身份解析下沉）同一条判据：ACL 按路径存规则、锁按路径存租约，两者必须逐字节一致，否则 `/a/b` 的规则和 `/a/b/` 的锁说的是两个对象。留在能力里还会让基线 seam 在运行时 import 能力，并让 ACL 的开关决定路径能不能被规范化 |
 | 67 | 检索结构化过滤契约 | ✅ | `search_query.py`：属性/标签谓词词汇表 + provider 能力声明。**存在的理由是分支切分**——没有它，组合检索会把元数据和检索焊成一条大分支。硬性规定：provider 收到未声明支持的算子必须拒绝，**不允许静默忽略**（被丢掉的谓词返回比请求更大的结果集，而调用方看不出差别）。**15 项单元测试，3 个变异全部被捕获** |
 
 ---
@@ -250,7 +252,7 @@ Compose 的 `search` profile 与 `cf-worker` 已就位，实现时不需要再�
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
 | 43 | OnlyOffice 编辑与回调 | ⬜ | 上游 CE 已带 `seahub/onlyoffice/`（views / converter / callback / models），查看链可直接复用；生产级编辑依赖 #44 的统一锁基础、callback 幂等和写回终判，不能按“解除两行 Pro 门控”估价。待探针 2 |
-| 44 | 文件锁定强制校验 | ⬜ | 🔴 **已重新定价为从零实现。** CE 只有 `seafile-rpc.h` 声明和 MySQL `FileLocks` DDL，没有 lock manager、RPC 实现/注册、Python 绑定、Go fileserver 或写路径校验；`check_file_lock()` 明确恒返回 0。新增 `CF_ENABLE_FILE_LOCK`，以自有 `cf_lock_lease` + UUID generation 为真值，覆盖 C/Go/WebDAV 全写路径；`FileLocks.id` 不作 fencing。对外保持 Pro 的四态检查、12 小时默认期限、冻结/refresh、虚拟库、父目录、locked-files/revision/通知语义；内部 `LockBackend` 单选并使用 `cf_lock_*` 避免与 Pro 冲突。官方桌面客户端以 `is_pro` 门控锁，需 `file-lock-v1` capability 补丁，禁止把 CE 全局伪装为 Pro。先完成统一写入生命周期扩展点，详见 [file-preview-and-edit.md](file-preview-and-edit.md) P0.5/P1 与 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 缺口 1/5 |
+| 44 | 文件锁定强制校验 | ⬜ | **前置已就位**：第 101 项的写入生命周期扩展点已实现，锁 provider 现在有地方注册、有地方终判，不必再自己去改 19 个写入口。🔴 **本体仍是从零实现。** CE 只有 `seafile-rpc.h` 声明和 MySQL `FileLocks` DDL，没有 lock manager、RPC 实现/注册、Python 绑定、Go fileserver 或写路径校验；`check_file_lock()` 明确恒返回 0。新增 `CF_ENABLE_FILE_LOCK`，以自有 `cf_lock_lease` + UUID generation 为真值，覆盖 C/Go/WebDAV 全写路径；`FileLocks.id` 不作 fencing。对外保持 Pro 的四态检查、12 小时默认期限、冻结/refresh、虚拟库、父目录、locked-files/revision/通知语义；内部 `LockBackend` 单选并使用 `cf_lock_*` 避免与 Pro 冲突。官方桌面客户端以 `is_pro` 门控锁，需 `file-lock-v1` capability 补丁，禁止把 CE 全局伪装为 Pro。统一写入生命周期扩展点已完成（第 101 项），详见 [fileop-lifecycle.md](fileop-lifecycle.md)、[file-preview-and-edit.md](file-preview-and-edit.md) P0.5/P1 与 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 缺口 1/5 |
 | 45 | 签入签出流程 | ⬜ | 依赖 44 |
 | 46 | iTeam 流程接口 | ⬜ | 依赖 45 |
 | 47 | 编辑超时与异常解锁 | ⬜ | 依赖 44 |
@@ -288,6 +290,13 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
 
 按阻塞程度排。
 
+0. 🔴 **写入生命周期扩展点缺整机验收**（第 101 项）。需要一个只会说"不"的假
+   provider，逐入口确认拒绝确实发生、且没有产生提交：Seahub REST、WebDAV、
+   Go 上传、Go 分块提交、桌面同步、目录替换。还要确认成功一次只产生一个
+   COMMITTED、失败零个。这要 Linux 构建环境，本机做不到。
+   **在它跑通之前，不要把第 101 项当成已验证的前置去动 #44**——ACL 第 71 项
+   那个缺陷单测一个都没拦住，只有把栈起起来才现形。
+
 1. 🟠 **在 CI 上跑一次全部门禁**（checks / build-and-e2e / acl-e2e / sso-e2e /
    metadata-e2e / audit-e2e / storage-e2e，以及本轮新增、CI 还没跑过的
    search-e2e）。
@@ -304,9 +313,11 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
    > **一个都没被拦住**——它们证明的是"求解器算得对"，缺陷却在"存进去的东西
    > 根本进不了求解器"。只有把栈起起来、拿另一个用户的 token 去敲每个入口
    > 才会显形。
-2. 🟡 **`file_op` 钩子没有生产者**。`register_file_op_hook()` 注册得了，但上游
-   没有任何地方调用 `run_file_op_hooks()`。操作日志已改为消费 Server 的
-   `repo-update` 提交流，不依赖它；其他需要 HTTP 上下文的能力仍不能把它当作生产链路。
+2. 🟡 **Hub 的 `file_op` 钩子仍然没有生产者**，但事实源已经有了。第 101 项在
+   server 侧建了写入生命周期扩展点，需要"谁把哪个文件怎么了"的能力应当消费那里的
+   `COMMITTED`。Hub 的 `register_file_op_hook()` 保持只补 IP / User-Agent /
+   session 这类 HTTP 上下文，仍然没有上游触发点，也仍然不是文件事实的主路径。
+   操作日志消费 Server 的 `repo-update` 提交流，两者都不依赖它。
 3. 🟢 **上游 CE 14.0 已带了 P2/P3 的一大半**（`repo_metadata`、`tags`、
    `file_tags`、`repo_tags`、`onlyoffice`、seasearch），且大多**无 Pro 门控**。
    **探针 1、3 已做**（[upstream-reuse.md](upstream-reuse.md)）：属性/标签的

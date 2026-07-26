@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "comment": "Executable form of docs/fileop-lifecycle.md. Loaded by the C suite (tests/cf-fileop) and the Go suite (fileserver/cf_fileop_test.go); both MUST agree on every case. Keep this file free of anything that needs a database or a running server -- it exists so the vocabulary and the path rules can be checked without one.",
+
+  "normalize": {
+    "comment": "dir + name -> normalized object path. Rule 5 of the spec is load-bearing: no Unicode normalization, no case folding. A name of null means `dir` is itself the object (mkdir, revert-dir, update-dir).",
+    "cases": [
+      { "name": "plain join",                 "dir": "/a",        "entry": "b.txt",  "expect": "/a/b.txt" },
+      { "name": "root parent",                "dir": "/",         "entry": "b.txt",  "expect": "/b.txt" },
+      { "name": "empty dir is root",          "dir": "",          "entry": "b.txt",  "expect": "/b.txt" },
+      { "name": "null dir is root",           "dir": null,        "entry": "b.txt",  "expect": "/b.txt" },
+      { "name": "missing leading slash",      "dir": "a/b",       "entry": "c.txt",  "expect": "/a/b/c.txt" },
+      { "name": "trailing slash dropped",     "dir": "/a/b/",     "entry": "c.txt",  "expect": "/a/b/c.txt" },
+      { "name": "doubled separators folded",  "dir": "//a//b",    "entry": "c.txt",  "expect": "/a/b/c.txt" },
+      { "name": "many separators folded",     "dir": "/a////b",   "entry": "c.txt",  "expect": "/a/b/c.txt" },
+      { "name": "dir itself is the object",   "dir": "/a/b",      "entry": null,     "expect": "/a/b" },
+      { "name": "root itself is the object",  "dir": "/",         "entry": null,     "expect": "/" },
+      { "name": "empty is root object",       "dir": "",          "entry": null,     "expect": "/" },
+      { "name": "root stays single slash",    "dir": "///",       "entry": null,     "expect": "/" },
+      { "name": "entry carrying a subpath",   "dir": "/a",        "entry": "b/c.txt","expect": "/a/b/c.txt" },
+      { "name": "entry with leading slash",   "dir": "/a",        "entry": "/b.txt", "expect": "/a/b.txt" },
+      { "name": "spaces are significant",     "dir": "/a b",      "entry": "c d.txt","expect": "/a b/c d.txt" },
+      { "name": "dot is a normal name",       "dir": "/a",        "entry": ".hidden","expect": "/a/.hidden" },
+      { "name": "no case folding",            "dir": "/A",        "entry": "B.TXT",  "expect": "/A/B.TXT" },
+      { "name": "no unicode normalization",   "dir": "/é",   "entry": "x",      "expect": "/é/x" },
+      { "name": "decomposed stays decomposed","dir": "/é",  "entry": "x",      "expect": "/é/x" }
+    ]
+  },
+
+  "operations": {
+    "comment": "The stable vocabulary. `source` marks the ops that carry src_repo_id/src_path. `pathless` marks the ops with no object path at all -- a lock provider MUST ignore those (see spec section 3). `subject_is_root` marks the ops whose object is the whole library.",
+    "cases": [
+      { "op": "create-file",   "valid": true,  "source": false, "pathless": false, "subject_is_root": false },
+      { "op": "update-file",   "valid": true,  "source": false, "pathless": false, "subject_is_root": false },
+      { "op": "delete",        "valid": true,  "source": false, "pathless": false, "subject_is_root": false },
+      { "op": "mkdir",         "valid": true,  "source": false, "pathless": false, "subject_is_root": false },
+      { "op": "rename",        "valid": true,  "source": true,  "pathless": false, "subject_is_root": false },
+      { "op": "move",          "valid": true,  "source": true,  "pathless": false, "subject_is_root": false },
+      { "op": "copy",          "valid": true,  "source": true,  "pathless": false, "subject_is_root": false },
+      { "op": "revert-file",   "valid": true,  "source": false, "pathless": false, "subject_is_root": false },
+      { "op": "revert-dir",    "valid": true,  "source": false, "pathless": false, "subject_is_root": false },
+      { "op": "revert-repo",   "valid": true,  "source": false, "pathless": false, "subject_is_root": true  },
+      { "op": "update-dir",    "valid": true,  "source": false, "pathless": false, "subject_is_root": false },
+      { "op": "upload-blocks", "valid": true,  "source": false, "pathless": true,  "subject_is_root": false },
+      { "op": "sync-update",   "valid": true,  "source": false, "pathless": false, "subject_is_root": true  },
+
+      { "op": "",              "valid": false, "source": false, "pathless": false, "subject_is_root": false },
+      { "op": "Create-File",   "valid": false, "source": false, "pathless": false, "subject_is_root": false },
+      { "op": "create_file",   "valid": false, "source": false, "pathless": false, "subject_is_root": false },
+      { "op": "write",         "valid": false, "source": false, "pathless": false, "subject_is_root": false },
+      { "op": "put-file",      "valid": false, "source": false, "pathless": false, "subject_is_root": false }
+    ]
+  },
+
+  "dispatch": {
+    "comment": "PREPARE runs providers in registration order and stops at the first refusal. `verdicts` is what each registered provider returns; `expect_allowed` is the outcome and `expect_ran` is how many providers actually ran -- a provider that runs after a refusal is a bug, because the whole point of stopping is that a refused write must not have side effects.",
+    "cases": [
+      { "name": "no providers allows",        "verdicts": [],                      "expect_allowed": true,  "expect_ran": 0 },
+      { "name": "single allow",               "verdicts": ["allow"],               "expect_allowed": true,  "expect_ran": 1 },
+      { "name": "single refuse",              "verdicts": ["refuse"],              "expect_allowed": false, "expect_ran": 1 },
+      { "name": "all allow",                  "verdicts": ["allow", "allow"],      "expect_allowed": true,  "expect_ran": 2 },
+      { "name": "first refuses, second skipped", "verdicts": ["refuse", "allow"],  "expect_allowed": false, "expect_ran": 1 },
+      { "name": "second refuses",             "verdicts": ["allow", "refuse"],     "expect_allowed": false, "expect_ran": 2 },
+      { "name": "refusal stops the rest",     "verdicts": ["allow", "refuse", "allow"], "expect_allowed": false, "expect_ran": 2 },
+      { "name": "provider without a prepare hook is skipped", "verdicts": ["none", "refuse"], "expect_allowed": false, "expect_ran": 1 }
+    ]
+  },
+
+  "facts": {
+    "comment": "Exactly-once accounting, from spec section 8.2. `prepare` is whether PREPARE was reached and allowed; `commit_attempts` counts how many times the underlying commit was attempted (>1 models the concurrent-upload retry loop); `succeeded` is the operation outcome. This encodes the rule that a retry loop must not multiply the fact.",
+    "cases": [
+      { "name": "simple success",           "prepare": "allow",  "commit_attempts": 1, "succeeded": true,  "expect_committed": 1, "expect_aborted": 0 },
+      { "name": "retry then success",       "prepare": "allow",  "commit_attempts": 3, "succeeded": true,  "expect_committed": 1, "expect_aborted": 0 },
+      { "name": "commit fails",             "prepare": "allow",  "commit_attempts": 1, "succeeded": false, "expect_committed": 0, "expect_aborted": 1 },
+      { "name": "retries then fails",       "prepare": "allow",  "commit_attempts": 3, "succeeded": false, "expect_committed": 0, "expect_aborted": 1 },
+      { "name": "refused before any write", "prepare": "refuse", "commit_attempts": 0, "succeeded": false, "expect_committed": 0, "expect_aborted": 0 },
+      { "name": "no provider, nothing emitted", "prepare": "inactive", "commit_attempts": 1, "succeeded": true, "expect_committed": 0, "expect_aborted": 0 }
+    ]
+  }
+}

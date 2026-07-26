@@ -72,8 +72,20 @@ seasearch、Elasticsearch、企业自有检索服务都可以是同一个 kind �
 | `CfPermFunc` | `rpc-service.c` 的 `check_permission_by_path` | 透传原生权限 |
 | `CfDirentFilterFunc` | `rpc-service.c` 的目录列举 RPC 出口 | 不过滤 |
 | `CfRestrictedFunc` | `cf_find_restricted_path` RPC → 同步 / 打包下载 | 返回 NULL（子树全可达） |
+| `CfFileOpPrepareFunc` | `repo-op.c` 全部 19 个写入口；Go 写入口经 `cf_fileop_prepare` RPC | 放行 |
+| `CfFileOpCommittedFunc` | 同上，提交成功后 | 不发事件 |
+| `CfFileOpAbortedFunc` | 同上，PREPARE 通过但操作失败后 | 不发事件 |
+
+上面三个是**读侧**，下面三个是**写侧**（`common/cf-fileop.{c,h}`，规格见
+[fileop-lifecycle.md](fileop-lifecycle.md)）。两组的形状不同：读侧的
+`CfPermFunc` 是**串联**（每个 provider 拿到上一个的结果继续收紧），写侧的
+`CfFileOpPrepareFunc` 是**一票否决**（第一个拒绝就终止，后面的不再执行）。
+差别是有意的——权限是一个可以逐步收紧的值，而"这次写入能不能发生"是个布尔，
+让第二个 provider 观察一次不会发生的写入只会制造副作用。
 
 **规则：扩展只能收紧，不能放宽。** 两端各自穷举整个权限格验证过。
+写侧对应的规则是**只能拒绝，不能改写**：provider 拿到的上下文是只读的，
+否则 provider 的注册顺序就会决定结果，而那个顺序不是任何人设计过的。
 
 ---
 
@@ -117,8 +129,10 @@ OAuth2/SAML/CAS/LDAP 且无 Pro 门控，打开它只是往配置块里写标量
 `provider(认证后端)`，而那个扩展点根本不需要存在。
 
 **读法**：`periodic` 列被 9 个特性依赖——`cf-worker` 是仅次于 `permission_check`
-的第二关键投资。`file_op` 列被 8 个特性依赖，而它目前**没有任何触发点**，
-这是当前最大的扩展点缺口。
+的第二关键投资。`file_op` 列被 8 个特性依赖，这是第二关键的扩展点；它现在有
+生产者了（server 侧的写入生命周期，见缺口 1），但矩阵里这一列指的仍是 **Hub**
+的 `register_file_op_hook`，那个钩子依旧只补 HTTP 上下文、没有上游触发点。
+需要文件事实的特性应当消费 server 侧的 `COMMITTED`。
 
 ---
 
@@ -126,33 +140,38 @@ OAuth2/SAML/CAS/LDAP 且无 Pro 门控，打开它只是往配置块里写标量
 
 按影响范围排。每一条都写明"谁被卡住"和"补法"。
 
-### 缺口 1：缺统一写入生命周期生产者与 veto 点 🔴
+### 缺口 1：缺统一写入生命周期生产者与 veto 点 🟡 **已实现，待整机验收**
 
-`register_file_op_hook()` 可以注册，但**上游没有任何地方调用 `run_file_op_hooks()`**。
-Hub 改的 5 个上游文件里，没有一个会触发它。
+> **原文（已作废）**：「`register_file_op_hook()` 可以注册，但上游没有任何地方
+> 调用 `run_file_op_hooks()`。Hub 改的 5 个上游文件里，没有一个会触发它。」
 
-仍受影响的特性：文件属性、标签、元数据跟随、OnlyOffice、文件锁、签入签出。审计改为消费 Server `repo-update` 经 seafevents 生成的 `Activity`，不再依赖这个 Hub 钩子。
+Server 侧已按 P0.5 补上 `common/cf-fileop.{c,h}`：`PREPARE`（一票否决）、
+`COMMITTED`（成功一次的不可变事实）、`ABORTED`（尽力而为）。规格
+[fileop-lifecycle.md](fileop-lifecycle.md)，共享用例集
+[fileop-cases.json](fileop-cases.json)。
 
-seahub 自带的 `seahub/signals.py` 只有 `repo_created`、`upload_file_successful` 等 10 个信号，
-**没有删除、移动、重命名、下载**——恰好是审计最需要的。
+覆盖面：
 
-**补法（P0.5）**：在 server 侧定义一份写入生命周期契约，同时解决锁 veto 和
-`file_op` 生产者，不能先后造两遍：
+- **C**：`server/repo-op.c` 的 19 个写入口，含批量删除、跨库复制/移动的异步
+  分支、以及 `SEAF_ERR_CONCURRENT_UPLOAD` 重试循环（重试不会让事实翻倍）。
+- **Go**：`fileserver/cf_fileop.go` 经 RPC 问 C，接进上传、更新、分块提交、
+  裸块上传、逐级建目录和同步分支更新。**不做第二份判断。**
+- **WebDAV**：**不需要补丁**——seafdav 的写全部走 `seafile_api.*` → RPC →
+  `repo-op.c`，C 的 seam 天然覆盖它。再写一份 Python 校验只会得到第二个真值。
+- **Hub**：`register_file_op_hook` 保持原状，只补 HTTP 上下文，不作事实主路径。
 
-- `PREPARE`：在提交前携带 operation、repo、规范化源/目标路径、actor、session 和
-  expected version；provider 可 fail-closed 拒绝，文件锁在这里终判。
-- `COMMITTED`：只在成功提交后携带 commit/file id 发出不可变事实，喂
-  `file_op` 消费者，不能再改变提交结果。
-- `ABORTED`：失败后的资源回收和观测，不产生成功文件事件。
-- C server、Go fileserver 和 seafdav 按同一共享用例接入 create/update/delete/
-  rename/move/revert/block upload 等入口；无 provider 时快速透传、零数据库查询。
+代价：上游改动 33 → 35（`server/repo-op.c`、`fileserver/fileop.go`）。
+为什么不放在已经登记过的 `rpc-service.c`——见 fileop-lifecycle.md 第五节。
 
-现有 `CfRestrictedFunc` 已验证路径规范化、子树包含语义和 dispatcher 形状，可复用这些
-实现与用例，不能直接把“锁冲突”注册成 ACL restricted 结果：该 RPC 还服务同步和打包
-下载，直接混用会把只读访问误判为不可达。Hub 侧 `file_op` 只保留 IP、User-Agent、
-session 等 HTTP 上下文，不作为文件事实主路径。
+**还没做的**：整机的假 provider 逐入口 veto 矩阵（`fileop-e2e.yml` 与
+`verify-local.sh cap fileop`）。目前的证据是 144 项 C 用例、6 项 Go 契约测试、
+50 个调用点的类型检查，以及 9 个变异全部被捕获；这些**都不能证明**运行时真的
+在每个入口被调用到——ACL 的第 71 项缺陷正是"单测全绿、矩阵一跑就现形"。
+所以这条缺口标 🟡 而不是 ✅。
 
-这是一次**基线改动**，要按基线标准 review。
+现有 `CfRestrictedFunc` 的路径规范化与子树包含语义已被复用（下沉为
+`common/cf-path.c`，ACL 侧留薄转发）。**没有**把锁冲突注册成 ACL restricted
+结果：那个 RPC 还服务同步和打包下载，混用会把只读访问误判为不可达。
 
 ### 缺口 2：审计的 HTTP 上下文 🟡
 

@@ -234,10 +234,10 @@ Compose 的 `search` profile 与 `cf-worker` 已就位，实现时不需要再�
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
-| 97 | AI 按需能力（标签/摘要/描述/OCR） | ⬜ | **📦 打包**：`seahub/ai/` 已带且**无 Pro 门控**（`ENABLE_SEAFILE_AI` env），调官方 `seafileltd/seafile-ai`。启用即用，需自备 LLM 后端。自建即绕开 seafile.com 托管 AI 计费 |
-| 98 | AI 自动管线（入库自动生成 + 落元数据） | ⬜ | **🔨 构建**：唯一新代码。CE **没有**自动标签/摘要接线（只有人脸识别是自动的）。cf-worker 消费提交 → 调 seafile-ai → 写元数据。**依赖簇 D**。幂等 + 可控触发。门禁用假 seafile-ai 桩 |
-| 99 | 人脸识别 | ⬜ | **📦 打包**：seafevents 已有自动管线（`ENABLE_FACE_RECOGNITION`） |
-| 100 | 语义检索 | ⬜ | **🔨 构建**：嵌入 → 检索后端，属 [search.md](search.md) P3，与 98 共用 cf-worker |
+| 97 | AI 按需能力（标签/摘要/描述/OCR） | 🟡 | **📦 打包，已接线**：`ENABLE_SEAFILE_AI`/`SEAFILE_AI_SERVER_URL`/`SEAFILE_AI_SECRET_KEY`/`ENABLE_FACE_RECOGNITION` 由 `seahub/settings.py` 直接从进程环境读取（不经 `seahub_settings.py`），已在 `docker-compose.yml` 的 `cloudfile` 服务里接好，`CF_AI_*` 走 `.env`。新增 `seafile-ai` compose 服务（`ai`/`full` profile）——**结构未随镜像验证**：比照 `cloudfile-metadata` 搭的骨架，没有该镜像的 entrypoint 可核对实际环境变量契约，需要专门的能力门禁（同 seasearch 当初的处理方式）。**明确决定按用户指示暂不做** 98/100（自动管线、语义检索）：默认用官方按需能力，不满足需求再扩展 |
+| 98 | AI 自动管线（入库自动生成 + 落元数据） | ⬜ | **🔨 构建，明确暂缓**：唯一新代码。CE **没有**自动标签/摘要接线（只有人脸识别是自动的）。cf-worker 消费提交 → 调 seafile-ai → 写元数据。**依赖簇 D**。幂等 + 可控触发。门禁用假 seafile-ai 桩。**用户已明确暂不建这层**，优先用 97 项的官方按需能力，等它不满足需求再考虑 |
+| 99 | 人脸识别 | 🟡 | **📦 打包，已接线**：`CF_AI_FACE_RECOGNITION_ENABLED` → `ENABLE_FACE_RECOGNITION`；上游要求同时 `ENABLE_METADATA_MANAGEMENT` 为真（三个开关相与），`.env.example` 已注明。同 97 项，未随镜像验证 |
+| 100 | 语义检索 | ⬜ | **🔨 构建，明确暂缓**：嵌入 → 检索后端，属 [search.md](search.md) P3，与 98 共用 cf-worker |
 
 > AI 不在官方 Pro vs CE 对比表里（是按量计费的独立维度），但**代码在 CE、无 Pro
 > 门控**，可自建。这是"复用官方组件但用自备模型绕开托管计费"的落地。

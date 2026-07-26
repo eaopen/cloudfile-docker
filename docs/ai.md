@@ -102,12 +102,35 @@ worker 完全一致——**同一条提交事件流的又一个消费者**：
 
 ## 五、分阶段
 
-| 阶段 | 内容 | 归类 | 依赖 |
-|---|---|---|---|
-| **P0** | 启用官方 seafile-ai + 按需能力（生成标签/摘要/描述/OCR）；配 LLM 后端 | 📦 打包 | seafile-ai 镜像 + LLM |
-| **P1** | 自动管线：cf-worker 消费提交 → 生成标签/摘要 → 写元数据；幂等 + 可控触发 | 🔨 构建 | **簇 D** + P0 |
-| **P2** | 人脸识别自动管线（`ENABLE_FACE_RECOGNITION`，seafevents 已有） | 📦 打包 | seafile-ai + P0 |
-| **P3** | 语义检索：嵌入 → 检索后端 | 🔨 构建 | 簇 E + P0（见 search.md P3） |
+> **产品决定（已落地）**：优先默认官方 seafile-ai 的按需能力，P1/P3 这两个
+> "构建"层暂不做——先用 P0/P2 的打包层覆盖需求，不满足时再扩展。这不是排期
+> 推迟，是明确的范围收敛：本能力当前只做 📦 打包，不做 🔨 构建。
+
+| 阶段 | 内容 | 归类 | 依赖 | 状态 |
+|---|---|---|---|---|
+| **P0** | 启用官方 seafile-ai + 按需能力（生成标签/摘要/描述/OCR）；配 LLM 后端 | 📦 打包 | seafile-ai 镜像 + LLM | 🟡 已接线（`.env` → `docker-compose.yml`），未随镜像验证 |
+| **P1** | 自动管线：cf-worker 消费提交 → 生成标签/摘要 → 写元数据；幂等 + 可控触发 | 🔨 构建 | **簇 D** + P0 | ⬜ **明确暂缓**，见上 |
+| **P2** | 人脸识别自动管线（`ENABLE_FACE_RECOGNITION`，seafevents 已有） | 📦 打包 | seafile-ai + P0 | 🟡 已接线，未随镜像验证 |
+| **P3** | 语义检索：嵌入 → 检索后端 | 🔨 构建 | 簇 E + P0（见 search.md P3） | ⬜ **明确暂缓**，见上 |
+
+### P0/P2 实现说明
+
+`ENABLE_SEAFILE_AI`、`SEAFILE_AI_SERVER_URL`、`SEAFILE_AI_SECRET_KEY`、
+`ENABLE_FACE_RECOGNITION` 这四个都由 `seahub/settings.py` **直接从进程环境读取**
+（`os.environ.get(...)`），不是 `seahub_settings.py` 里的赋值——不同于 LDAP/ADFS/
+2FA，这里连 `bootstrap.py` 的 `_settings_block_*` 都不需要写，`docker-compose.yml`
+的 `cloudfile` 服务直接把 `CF_AI_*` 映射过去就是完整实现。
+
+新增的 `seafile-ai` compose 服务（`ai`/`full` profile）是**未随镜像验证的骨架**：
+比照本仓库唯一另一个官方 Seafile Ltd 官方组件 `cloudfile-metadata`的部署方式搭的，
+没有 `seafileltd/seafile-ai` 镜像的 entrypoint 可核对它实际要读哪些环境变量、
+是否需要挂载卷——这与 `seasearch` 服务当初上线时的处境相同，需要一条能力门禁
+（`ai-e2e.yml` 或至少手动跑一次 `--profile ai up`）才能把 🟡 转成 ✅。
+
+`seafile_ai_config.yaml`（驱动 Seahub 里 `LLM_MODELS` 下拉框的可选文件）**没有
+接线**：它要靠 `SEAFILE_CENTRAL_CONF_DIR` 定位，而这个部署目前完全没设置这个
+环境变量，猜一个挂载路径的风险大于不挂——且标签/摘要/描述/OCR 这些核心能力
+根本不需要它，只有模型选择下拉框需要。等真的需要多模型可选时再补。
 
 **P1 的验收面**：新文件入库后，元数据里出现 AI 标签/摘要；同一版本不重复生成
 （幂等）；关闭 `ENABLE_SEAFILE_AI` 时管线不触发、行为回落原生 CE；触发范围限制生效。

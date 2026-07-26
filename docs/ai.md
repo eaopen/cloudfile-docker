@@ -138,6 +138,13 @@ MySQL；挂载 `./data/seafile:/shared`（`SEAFILE_VOLUME=/shared`）以读取
 "整体照抄 metadata 模板"的宽泛存疑要窄得多。需要一条能力门禁（`ai-e2e.yml` 或
 至少手动跑一次 `--profile ai up`）才能把 🟡 转成 ✅。
 
+> **产品决定**：这一点不确定不阻塞交付——信任官方手册对 CE 自带 AI 扩展的
+> 说明是准确的，按文档接线即可提交，不必先补一条能力门禁才算数。这与
+> LDAP/ADFS/Shibboleth（89–91 项）一直以来的处理方式一致：打包层默认信任
+> 上游文档，🟡 记录的是"还没有本仓库自己的验证证据"，不是"怀疑接线是错的"。
+> 门禁仍然值得后补——真跑一次镜像的价值见 [FEATURES.md](FEATURES.md) 开头
+> 那句"刻意区分'写完'和'验证过'"——但不是这次改动要不要提交的前提。
+
 `SEAFILE_CENTRAL_CONF_DIR` 已在 `cloudfile` 服务里设成 `/opt/seafile/conf`，
 让 Seahub 自己的 `LLM_MODELS` 下拉框能找到同一份 `seafile_ai_config.yaml`
 （两边都落在 `data/seafile/seafile/conf/` 这同一个宿主机目录下）；没有这个文件

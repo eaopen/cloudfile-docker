@@ -121,16 +121,28 @@ worker 完全一致——**同一条提交事件流的又一个消费者**：
 2FA，这里连 `bootstrap.py` 的 `_settings_block_*` 都不需要写，`docker-compose.yml`
 的 `cloudfile` 服务直接把 `CF_AI_*` 映射过去就是完整实现。
 
-新增的 `seafile-ai` compose 服务（`ai`/`full` profile）是**未随镜像验证的骨架**：
-比照本仓库唯一另一个官方 Seafile Ltd 官方组件 `cloudfile-metadata`的部署方式搭的，
-没有 `seafileltd/seafile-ai` 镜像的 entrypoint 可核对它实际要读哪些环境变量、
-是否需要挂载卷——这与 `seasearch` 服务当初上线时的处境相同，需要一条能力门禁
-（`ai-e2e.yml` 或至少手动跑一次 `--profile ai up`）才能把 🟡 转成 ✅。
+新增的 `seafile-ai` compose 服务（`ai`/`full` profile）按
+[官方手册](https://manual.seafile.com/14.0/extension/seafile-ai/) 搭建：镜像
+`seafileltd/seafile-ai:14.0-latest`，端口 8888，依赖 metadata server（手册原文
+"prerequisite"，已在 `.env.example` 注明需要 `CF_ENABLE_METADATA=true`）、Redis、
+MySQL；挂载 `./data/seafile:/shared`（`SEAFILE_VOLUME=/shared`）以读取
+`$SEAFILE_VOLUME/seafile/conf/` 下的 `seafile_ai_config.yaml`（LLM 配置）与
+`seahub_settings.py`（计费/聊天开关），并借此拿到 `write_seafile_env()` 生成、
+写在同一目录 `.env` 里的 `JWT_PRIVATE_KEY`（手册标注"与 Seafile server 共享"）。
+`INNER_SEAHUB_SERVICE_URL` 指向 Caddy 背后的内部地址 `http://cloudfile:80`（同
+`Caddyfile` 里 `reverse_proxy cloudfile:80` 那一行）。
 
-`seafile_ai_config.yaml`（驱动 Seahub 里 `LLM_MODELS` 下拉框的可选文件）**没有
-接线**：它要靠 `SEAFILE_CENTRAL_CONF_DIR` 定位，而这个部署目前完全没设置这个
-环境变量，猜一个挂载路径的风险大于不挂——且标签/摘要/描述/OCR 这些核心能力
-根本不需要它，只有模型选择下拉框需要。等真的需要多模型可选时再补。
+**仍未完全验证**：本机没有该镜像可拉取运行，无法确认它是否真的会自己去
+`$SEAFILE_VOLUME/seafile/conf/.env` 里读 `JWT_PRIVATE_KEY`（手册没写这一步的
+具体机制），还是需要显式传一个环境变量——这是当前唯一残留的不确定点，比此前
+"整体照抄 metadata 模板"的宽泛存疑要窄得多。需要一条能力门禁（`ai-e2e.yml` 或
+至少手动跑一次 `--profile ai up`）才能把 🟡 转成 ✅。
+
+`SEAFILE_CENTRAL_CONF_DIR` 已在 `cloudfile` 服务里设成 `/opt/seafile/conf`，
+让 Seahub 自己的 `LLM_MODELS` 下拉框能找到同一份 `seafile_ai_config.yaml`
+（两边都落在 `data/seafile/seafile/conf/` 这同一个宿主机目录下）；没有这个文件
+时 `seahub/config_parser.py` 只记一行警告、返回空配置，不会导致启动失败，所以
+这个环境变量默认设置是安全的。文件内容本身仍是运维任务，不由 bootstrap 生成。
 
 **P1 的验收面**：新文件入库后，元数据里出现 AI 标签/摘要；同一版本不重复生成
 （幂等）；关闭 `ENABLE_SEAFILE_AI` 时管线不触发、行为回落原生 CE；触发范围限制生效。

@@ -242,10 +242,69 @@ def test_upstream_packages():
         check('标签未启用元数据时启动失败', True)
 
 
+def test_search():
+    print('── _settings_block_search')
+    search = load('_settings_block_search', {})
+
+    # 铁律：开关关掉 = 原生 CE。一个字节都不该写——CF_PROVIDER_SEARCH 留空
+    # 时的默认行为（走 SeaSearch）也不该被写死成某个值。
+    check('开关关闭时不写任何内容', search() == '', repr(search()))
+
+    env = {'CF_ENABLE_SEARCH': 'true'}
+    try:
+        values = evaluate(load('_settings_block_search', env)())
+    except Exception as e:
+        check('开关打开、留空 provider 时可以被加载', False,
+              '%s: %s' % (type(e).__name__, e))
+        return
+
+    check('开关打开、留空 provider 时可以被加载', True)
+    check('CF_PROVIDER_SEARCH 默认留空（SeaSearch/原生路径）',
+          values.get('CF_PROVIDER_SEARCH') == '',
+          repr(values.get('CF_PROVIDER_SEARCH')))
+    check('Meilisearch 连接信息即使未选用也写了默认值',
+          values.get('CF_MEILISEARCH_URL') == 'http://meilisearch:7700',
+          repr(values.get('CF_MEILISEARCH_URL')))
+    check('索引正文体积上限是整数而不是字符串',
+          values.get('CF_SEARCH_INDEX_TEXT_MAX_BYTES') == 1048576,
+          repr(values.get('CF_SEARCH_INDEX_TEXT_MAX_BYTES')))
+
+    env = {
+        'CF_ENABLE_SEARCH': 'true',
+        'CF_PROVIDER_SEARCH': 'meilisearch',
+        'CF_MEILISEARCH_URL': 'http://meilisearch.internal:7700',
+        # 带引号的 key 是真实存在的一类值,和 SSO 的 client secret 同一个理由。
+        'CF_MEILISEARCH_API_KEY': "it's a secret",
+        'CF_SEARCH_INDEX_INTERVAL': '30',
+    }
+    values = evaluate(load('_settings_block_search', env)())
+    check('选中 meilisearch 时逐项写入',
+          values.get('CF_PROVIDER_SEARCH') == 'meilisearch'
+          and values.get('CF_MEILISEARCH_URL') == 'http://meilisearch.internal:7700'
+          and values.get('CF_MEILISEARCH_API_KEY') == "it's a secret"
+          and values.get('CF_SEARCH_INDEX_INTERVAL') == 30,
+          repr(values))
+
+    env = {'CF_ENABLE_SEARCH': 'true', 'CF_SEARCH_INDEX_INTERVAL': 'soon'}
+    try:
+        load('_settings_block_search', env)()
+        check('索引间隔不是数字时启动失败', False, '被接受了')
+    except Exception:
+        check('索引间隔不是数字时启动失败', True)
+
+    env = {'CF_ENABLE_SEARCH': 'true', 'CF_SEARCH_INDEX_TEXT_MAX_BYTES': '0'}
+    try:
+        load('_settings_block_search', env)()
+        check('正文体积上限为 0 时启动失败', False, '被接受了')
+    except Exception:
+        check('正文体积上限为 0 时启动失败', True)
+
+
 def main():
     print(__doc__.splitlines()[0])
     print()
     test_sso()
+    test_search()
     test_upstream_packages()
     print()
     if failures:

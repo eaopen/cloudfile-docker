@@ -138,6 +138,7 @@ CAPABILITIES=(
     "metadata|CF_ENABLE_METADATA CF_ENABLE_TAGS|tests/e2e/metadata_matrix.py"
     "audit|CF_ENABLE_AUDIT|tests/e2e/audit_matrix.py"
     "storage|CF_ENABLE_S3_STORAGE|tests/e2e/storage_matrix.py"
+    "search|CF_ENABLE_SEARCH|tests/e2e/search_matrix.py"
 )
 
 # 由 capability 阶段设置：要在 .env 里打开的开关。
@@ -280,6 +281,55 @@ cap_storage_run() {
         '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seaf-gc.sh --dry-run' || return 1
     compose exec -T cloudfile bash -c \
         '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seaf-fsck.sh' || return 1
+}
+
+cap_search_env() {
+    cat <<EOF
+CF_SEASEARCH_TOKEN=CloudFile-Local-Search-4417
+CF_SEASEARCH_INTERVAL=10s
+MEILI_MASTER_KEY=CloudFile-Local-Search-4417
+CF_MEILISEARCH_API_KEY=CloudFile-Local-Search-4417
+CF_SEARCH_INDEX_INTERVAL=15
+EOF
+}
+
+# 三阶段对应三次配置变更；search_matrix.py 本身只发 HTTP 请求，不碰 .env 或
+# 容器——配置切换与重启统一在这里做，与 sso 的目录变小+重启是同一个理由：
+# 把"改配置会不会真的生效"和"规则算得对不对"分开验证。
+cap_search_run() {
+    local base=$1
+
+    say "启动 SeaSearch 与 Meilisearch（缩短 SeaSearch 索引间隔到 10s）"
+    compose --profile search up -d --wait --wait-timeout 90 seasearch meilisearch || return 1
+
+    say "阶段 1 —— 默认路径：CF_PROVIDER_SEARCH 留空，走 SeaSearch"
+    python3 "$repo/tests/e2e/search_matrix.py" --phase 1 --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
+        --state-file "$STAGE_DIR/search-matrix-state.json" || return 1
+
+    say "切到 CF_PROVIDER_SEARCH=meilisearch 并重启"
+    echo 'CF_PROVIDER_SEARCH=meilisearch' >> "$STAGE_DIR/.env"
+    compose up -d --wait --wait-timeout 120 cloudfile || return 1
+
+    say "手动跑一轮索引器（不等定时，回填切换前已存在的提交）"
+    compose exec -T cloudfile bash -c \
+        '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seahub.sh python-env python3 /opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seahub/manage.py cf_worker --once' \
+        || return 1
+
+    say "阶段 2 —— Meilisearch 路径，验证回填"
+    python3 "$repo/tests/e2e/search_matrix.py" --phase 2 --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
+        --state-file "$STAGE_DIR/search-matrix-state.json" || return 1
+
+    say "关闭 CF_ENABLE_SEARCH 并重启，确认恢复原生行为"
+    sed -i.bak "s|^CF_ENABLE_SEARCH=.*|CF_ENABLE_SEARCH=false|" "$STAGE_DIR/.env" \
+        && rm -f "$STAGE_DIR/.env.bak"
+    compose up -d --wait --wait-timeout 120 cloudfile || return 1
+
+    say "阶段 3 —— 关闭后恢复原生 403"
+    python3 "$repo/tests/e2e/search_matrix.py" --phase 3 --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
+        --state-file "$STAGE_DIR/search-matrix-state.json" || return 1
 }
 
 stage_compose() {

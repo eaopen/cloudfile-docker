@@ -1123,13 +1123,14 @@ CF_LOCAL_APP_OFFLINE_CACHE=false
 `register_file_op_hook` **没有**被接成生产者，它继续只补 HTTP 上下文。需要文件
 事实的能力消费 server 侧的 `COMMITTED`。理由见 fileop-lifecycle.md 第五节。
 
-退出条件（**第一条尚未满足**）：
+退出条件：
 
-- ⬜ 锁 provider 尚未实现时，假 provider 已能在所有写入口统一 veto。
-  需要 Linux 整机（`fileop-e2e.yml`）。目前只有单元级证据：C 144 项、
-  Go 6 项、50 个调用点类型检查、9 个变异全部被捕获。
-  **这些都不能证明运行时真的在每个入口被调用到**——ACL 第 71 项的缺陷
-  单测一个都没拦住，只有把栈起起来才现形。
+- 🟠 锁 provider 尚未实现时，假 provider 已能在所有写入口统一 veto。
+  **门禁与假 provider 都已就位**（`fileop-e2e.yml`、`verify-local.sh cap fileop`、
+  两阶段 `tests/e2e/fileop_matrix.py`、`common/cf-fileop-test.c`），
+  **但还没在 Linux 上跑过一次**。单元级证据是 C 159 项、Go 6 项、
+  50 个调用点类型检查、11 个变异全部被捕获——**都不能证明运行时真的在每个入口
+  被调用到**，而门禁写好了也不等于门禁跑过了。
 - ✅ 同一成功操作只产生一个 COMMITTED 事实（含并发重试循环），失败操作不产生。
 - ✅ C 与 Go 对同一共享用例给出一致结论；WebDAV 继承 C 的结论。
 

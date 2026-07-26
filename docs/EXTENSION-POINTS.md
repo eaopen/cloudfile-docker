@@ -163,11 +163,14 @@ Server 侧已按 P0.5 补上 `common/cf-fileop.{c,h}`：`PREPARE`（一票否决
 代价：上游改动 33 → 35（`server/repo-op.c`、`fileserver/fileop.go`）。
 为什么不放在已经登记过的 `rpc-service.c`——见 fileop-lifecycle.md 第五节。
 
-**还没做的**：整机的假 provider 逐入口 veto 矩阵（`fileop-e2e.yml` 与
-`verify-local.sh cap fileop`）。目前的证据是 144 项 C 用例、6 项 Go 契约测试、
-50 个调用点的类型检查，以及 9 个变异全部被捕获；这些**都不能证明**运行时真的
-在每个入口被调用到——ACL 的第 71 项缺陷正是"单测全绿、矩阵一跑就现形"。
-所以这条缺口标 🟡 而不是 ✅。
+**整机门禁已补齐但还没跑过**：`fileop-e2e.yml`、`verify-local.sh cap fileop`、
+两阶段矩阵 `tests/e2e/fileop_matrix.py`，以及它们要的假 provider
+`common/cf-fileop-test.c`（默认关闭，刻意不进 `CF_ENABLE_*` 清单）。
+单元级证据是 159 项 C 用例、6 项 Go 契约测试、50 个调用点的类型检查、
+11 个变异全部被捕获；这些**都不能证明**运行时真的在每个入口被调用到。
+所以这条缺口标 🟡 而不是 ✅——**门禁写好了不等于门禁跑过了**，而这正是 ACL
+那轮的形状：`acl_matrix.py` 存在很久却没有任何东西调用它，第一次真跑起来就
+抓到了第 71 项那个发布过两次的缺陷。
 
 现有 `CfRestrictedFunc` 的路径规范化与子树包含语义已被复用（下沉为
 `common/cf-path.c`，ACL 侧留薄转发）。**没有**把锁冲突注册成 ACL restricted

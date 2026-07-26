@@ -38,6 +38,14 @@ def check(name, condition, detail=''):
         failures.append(name)
 
 
+def _module_constant(tree, name):
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == name for t in node.targets):
+            return ast.literal_eval(node.value)
+    raise SystemExit('bootstrap.py 里找不到常量 %s' % name)
+
+
 def load(func_name, env):
     """把 bootstrap 里的一个函数按当前 .env 取出来执行。"""
     with open(BOOTSTRAP, encoding='utf-8') as fp:
@@ -54,6 +62,10 @@ def load(func_name, env):
         'get_conf': lambda key, default='': env.get(key, default),
         'cf_enabled': lambda key: env.get(key, 'false').lower() == 'true',
         'get_proto': lambda: env.get('SEAFILE_SERVER_PROTOCOL', 'https'),
+        # Read out of bootstrap.py rather than restated here: a restated switch
+        # list is a fixture that can drift, and drifting fixtures are exactly
+        # what this file exists to catch.
+        'CF_FEATURE_SWITCHES': _module_constant(tree, 'CF_FEATURE_SWITCHES'),
     }
     exec(compile(ast.Module(body=[node], type_ignores=[]), BOOTSTRAP, 'exec'), ns)
     return ns[func_name]
@@ -343,6 +355,75 @@ def test_external_sources():
             check(name, True)
 
 
+def test_fileop_seafile_conf():
+    """seafile.conf 的 [cloudfile] 段 —— C 侧读的那份。
+
+    这一段和 seahub_settings.py 那些不同：它不是 Python，所以 exec 不了，
+    只能按行断言。但价值一样——写入生命周期的测试 provider 能拒绝写入，
+    "以为关着其实开着"和"以为开着其实关着"都得是能被检查出来的。
+    """
+    print('── _seafile_conf_cloudfile_lines')
+    build = load('_seafile_conf_cloudfile_lines', {})
+
+    def lines(env):
+        return ''.join(load('_seafile_conf_cloudfile_lines', env)())
+
+    base = lines({})
+    check('默认十个开关全为 false',
+          base.count(' = false\n') == 11,   # 10 个能力 + 测试 provider
+          repr(base))
+    check('测试 provider 默认关闭',
+          'fileop_test_provider_enabled = false' in base, repr(base))
+    check('关闭时不写标记与 journal',
+          'fileop_test_refuse_token' not in base
+          and 'fileop_test_journal' not in base, repr(base))
+
+    on = lines({'CF_FILEOP_TEST_PROVIDER': 'true'})
+    check('打开后写入三项',
+          'fileop_test_provider_enabled = true' in on
+          and 'fileop_test_refuse_token = cf-refuse' in on
+          and 'fileop_test_journal = /shared/cf-fileop-journal.log' in on,
+          repr(on))
+
+    # 观察模式：标记显式留空。这不是"没配"而是"配成不拒绝"，回落到默认值会让
+    # 门禁的阶段 1 在建夹具时就被拒——而那恰好是被测操作之一。
+    observe = lines({'CF_FILEOP_TEST_PROVIDER': 'true',
+                     'CF_FILEOP_TEST_REFUSE_TOKEN': ''})
+    check('标记显式留空时不回落到默认值',
+          'fileop_test_refuse_token = \n' in observe, repr(observe))
+
+    custom = lines({'CF_FILEOP_TEST_PROVIDER': 'true',
+                    'CF_FILEOP_TEST_REFUSE_TOKEN': 'blocked',
+                    'CF_FILEOP_TEST_JOURNAL': '/shared/j.log'})
+    check('标记与 journal 可覆盖',
+          'fileop_test_refuse_token = blocked' in custom
+          and 'fileop_test_journal = /shared/j.log' in custom, repr(custom))
+
+    # provider 按路径组件比较，给它一个路径而不是组件是配置错误，不是拒绝规则。
+    try:
+        lines({'CF_FILEOP_TEST_PROVIDER': 'true',
+               'CF_FILEOP_TEST_REFUSE_TOKEN': 'a/b'})
+        check('标记里带 / 时启动失败', False, '没有抛异常')
+    except Exception:
+        check('标记里带 / 时启动失败', True)
+
+    try:
+        lines({'CF_FILEOP_TEST_PROVIDER': 'true',
+               'CF_FILEOP_TEST_JOURNAL': 'relative.log'})
+        check('journal 是相对路径时启动失败', False, '没有抛异常')
+    except Exception:
+        check('journal 是相对路径时启动失败', True)
+
+    # 能力开关和它互不干扰：一个是产品能力，一个是门禁仪器。
+    both = lines({'CF_ENABLE_DIR_ACL': 'true',
+                  'CF_FILEOP_TEST_PROVIDER': 'true'})
+    check('能力开关与测试 provider 各自独立',
+          'dir_acl_enabled = true' in both
+          and 'fileop_test_provider_enabled = true' in both, repr(both))
+
+    del build
+
+
 def main():
     print(__doc__.splitlines()[0])
     print()
@@ -350,6 +431,7 @@ def main():
     test_search()
     test_external_sources()
     test_upstream_packages()
+    test_fileop_seafile_conf()
     print()
     if failures:
         print('\033[31m%d 项失败\033[0m' % len(failures))

@@ -452,6 +452,52 @@ def _settings_block_upstream():
     return '\n'.join(lines) + ('\n' if lines else '')
 
 
+def _seafile_conf_cloudfile_lines():
+    """The [cloudfile] section of seafile.conf, as a list of lines.
+
+    Pure: environment in, strings out, no file I/O. Same shape and the same
+    reason as the _settings_block_* helpers -- tools/test-bootstrap-settings.py
+    can execute this exact source against a synthetic .env, so the generated
+    values are asserted rather than assumed. A hand-written fixture proves
+    nothing; that is how DATABASES['cloudfile'] got shipped.
+    """
+    lines = ['[cloudfile]\n']
+    for name in CF_FEATURE_SWITCHES:
+        key = name[len('CF_ENABLE_'):].lower() + '_enabled'
+        lines.append('%s = %s\n'
+                     % (key, 'true' if cf_enabled(name) else 'false'))
+
+    # The write lifecycle test provider. Deliberately NOT a CF_ENABLE_* switch:
+    # those are product capabilities an operator may reasonably turn on, and
+    # this is an instrument for the fileop gate that must never be on in
+    # production. Keeping it out of that tuple also keeps it out of the admin
+    # page and the features API, both of which enumerate CF_FEATURE_SWITCHES.
+    #
+    # See cloudfile-server/common/cf-fileop-test.h for why it is gated at
+    # runtime rather than compiled out.
+    if get_conf('CF_FILEOP_TEST_PROVIDER', 'false').lower() == 'true':
+        token = get_conf('CF_FILEOP_TEST_REFUSE_TOKEN', 'cf-refuse')
+        # An empty token is meaningful, not missing: phase 1 of the gate runs
+        # in observe mode, where the provider journals but refuses nothing.
+        # So this must not fall back to the default when explicitly blank.
+        if '/' in token:
+            raise Exception('CF_FILEOP_TEST_REFUSE_TOKEN is a single path '
+                            'component, not a path')
+        journal = get_conf('CF_FILEOP_TEST_JOURNAL',
+                           '/shared/cf-fileop-journal.log')
+        if journal and not journal.startswith('/'):
+            raise Exception('CF_FILEOP_TEST_JOURNAL must be an absolute path')
+        lines += [
+            'fileop_test_provider_enabled = true\n',
+            'fileop_test_refuse_token = %s\n' % token,
+            'fileop_test_journal = %s\n' % journal,
+        ]
+    else:
+        lines.append('fileop_test_provider_enabled = false\n')
+
+    return lines
+
+
 def write_cloudfile_seafile_conf():
     """Mirror the capability switches into seafile.conf for seaf-server.
 
@@ -462,11 +508,7 @@ def write_cloudfile_seafile_conf():
     The key name is derived mechanically -- CF_ENABLE_DIR_ACL becomes
     dir_acl_enabled -- so a new capability needs no change here.
     """
-    lines = ['[cloudfile]\n']
-    for name in CF_FEATURE_SWITCHES:
-        key = name[len('CF_ENABLE_'):].lower() + '_enabled'
-        lines.append('%s = %s\n'
-                     % (key, 'true' if cf_enabled(name) else 'false'))
+    lines = _seafile_conf_cloudfile_lines()
 
     # Keep the S3 configuration in the same restart-safe generated block as
     # the feature switches.  The server processes need these values in

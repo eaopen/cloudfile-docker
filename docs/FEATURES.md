@@ -74,7 +74,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | 63 | 扩展点形状：链 与 provider | ✅ | `providers.py`：同一件事的可互换实现，由 `CF_PROVIDER_<KIND>` 选中，未选中回落原生、选了不存在的名字则显式失败。**8 项单元测试，且经变异测试确认会失败** |
 | 64 | 检索查询侧扩展点 | 🟡 | `register_search_provider()` + `seahub/search/utils.py`、`seahub/utils/__init__.py` 两处上游改动。meilisearch 由此成为**一种** provider 而非唯一方案，且第 40 项已有真实消费者（`MeilisearchProvider`）。**未随镜像验证**——`search-e2e.yml` 是这条扩展点第一次有端到端门禁，尚未在真实容器栈上跑过 |
 | 65 | 外部服务回调机制 | 🟡 | `external_service.py`：超时 / JWT 签名 / 重试 / fail-closed。**刻意不放在同步权限判定路径上**，理由见 EXTENSION-POINTS.md 第五节。**尚无调用方** |
-| 101 | 统一写入生命周期扩展点（P0.5） | 🟡 | **本轮新增，属基线**。`common/cf-fileop.{c,h}` 提供 `PREPARE`（一票否决）/ `COMMITTED`（成功一次的不可变事实）/ `ABORTED`（尽力而为）三相，规格 [fileop-lifecycle.md](fileop-lifecycle.md)、用例集 [fileop-cases.json](fileop-cases.json)。它是缺口 1 的补法，也是 #43–#48（OnlyOffice、文件锁、签入签出）与 #42（元数据跟随）共同的前置。**覆盖**：C `server/repo-op.c` 全部 19 个写入口（含批量删除、跨库复制/移动的异步分支、并发重试循环）；Go `fileserver/cf_fileop.go` 经 RPC 问 C，接进上传/更新/分块提交/裸块/建目录/同步分支更新；**WebDAV 不需要补丁**——seafdav 的写全部经 `seafile_api.*` → RPC → `repo-op.c`，写第二份 Python 校验只会得到第二个真值。**证据**：C 144 项用例 + Go 6 项跨语言契约测试 + `repo-op.c` 50 个调用点的类型检查，**9 个变异全部被捕获**（拒绝后不停、路径折叠大小写、词汇表改错、字段名拼错、operation 不存在、基线不再惰性、Go 常量漂移、JSON 键漂移、错误码漂移）。上游改动 33 → 35（`server/repo-op.c`、`fileserver/fileop.go`），理由是终判点不能有绕行路：`upload-file.c`、虚拟库合并、`copy-mgr` 都绕过 `rpc-service.c` 直接调 `seaf_repo_manager_*`。**尚未验证**：整机的假 provider 逐入口 veto 矩阵（`fileop-e2e.yml`）——需要 Linux 构建环境。ACL 第 71 项的教训在这里同样适用：单测全绿不等于运行时真的被调用到 |
+| 101 | 统一写入生命周期扩展点（P0.5） | 🟡 | **本轮新增，属基线**。`common/cf-fileop.{c,h}` 提供 `PREPARE`（一票否决）/ `COMMITTED`（成功一次的不可变事实）/ `ABORTED`（尽力而为）三相，规格 [fileop-lifecycle.md](fileop-lifecycle.md)、用例集 [fileop-cases.json](fileop-cases.json)。它是缺口 1 的补法，也是 #43–#48（OnlyOffice、文件锁、签入签出）与 #42（元数据跟随）共同的前置。**覆盖**：C `server/repo-op.c` 全部 19 个写入口（含批量删除、跨库复制/移动的异步分支、并发重试循环）；Go `fileserver/cf_fileop.go` 经 RPC 问 C，接进上传/更新/分块提交/裸块/建目录/同步分支更新；**WebDAV 不需要补丁**——seafdav 的写全部经 `seafile_api.*` → RPC → `repo-op.c`，写第二份 Python 校验只会得到第二个真值。**单元级证据**：C 159 项用例 + Go 6 项跨语言契约测试 + `repo-op.c` 50 个调用点的类型检查，**11 个变异全部被捕获**（拒绝后不停、路径折叠大小写、组件匹配退化成子串、空标记匹配一切、词汇表改错、字段名拼错、operation 不存在、COMMITTED 少 commit_id、基线不再惰性、Go 常量漂移、JSON 键漂移）。**整机门禁已补齐**：`fileop-e2e.yml` + `verify-local.sh cap fileop` + `tests/e2e/fileop_matrix.py` 两阶段矩阵，靠 `common/cf-fileop-test.c` 这个假 provider （默认关闭，不在 `CF_ENABLE_*` 清单里）逐入口验证拒绝、零事实和反向对照，并断言关掉 provider 后跑冒烟 journal 一行不长。上游改动 33 → 35（`server/repo-op.c`、`fileserver/fileop.go`），理由是终判点不能有绕行路：`upload-file.c`、虚拟库合并、`copy-mgr` 都绕过 `rpc-service.c` 直接调 `seaf_repo_manager_*`。**尚未验证**：这条 workflow 还没在 CI 上跑过一次，需要 Linux 构建环境。ACL 第 71 项的教训在这里同样适用：门禁写好了不等于门禁跑过了 |
 | 102 | 路径规范化下沉到基线 | ✅ | `cf_acl_normalize_path` → `common/cf-path.c`，ACL 侧留薄转发，既有用例逐字未改。与第 79 项（身份解析下沉）同一条判据：ACL 按路径存规则、锁按路径存租约，两者必须逐字节一致，否则 `/a/b` 的规则和 `/a/b/` 的锁说的是两个对象。留在能力里还会让基线 seam 在运行时 import 能力，并让 ACL 的开关决定路径能不能被规范化 |
 | 67 | 检索结构化过滤契约 | ✅ | `search_query.py`：属性/标签谓词词汇表 + provider 能力声明。**存在的理由是分支切分**——没有它，组合检索会把元数据和检索焊成一条大分支。硬性规定：provider 收到未声明支持的算子必须拒绝，**不允许静默忽略**（被丢掉的谓词返回比请求更大的结果集，而调用方看不出差别）。**15 项单元测试，3 个变异全部被捕获** |
 
@@ -290,12 +290,13 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
 
 按阻塞程度排。
 
-0. 🔴 **写入生命周期扩展点缺整机验收**（第 101 项）。需要一个只会说"不"的假
-   provider，逐入口确认拒绝确实发生、且没有产生提交：Seahub REST、WebDAV、
-   Go 上传、Go 分块提交、桌面同步、目录替换。还要确认成功一次只产生一个
-   COMMITTED、失败零个。这要 Linux 构建环境，本机做不到。
-   **在它跑通之前，不要把第 101 项当成已验证的前置去动 #44**——ACL 第 71 项
-   那个缺陷单测一个都没拦住，只有把栈起起来才现形。
+0. 🟠 **写入生命周期的整机门禁已写好，但一次都没跑过**（第 101 项）。
+   `fileop-e2e.yml` / `verify-local.sh cap fileop` / `tests/e2e/fileop_matrix.py`
+   两阶段矩阵齐了，假 provider（`common/cf-fileop-test.c`）也齐了，但它要
+   Linux 构建环境，本机跑不了。
+   **在它绿一次之前，不要把第 101 项当成已验证的前置去动 #44。** 门禁写好了
+   不等于门禁跑过了——这恰好是 ACL 那轮的形状：`acl_matrix.py` 存在了很久却
+   没有任何东西调用它，而它第一次真跑起来就抓到了第 71 项那个发布过两次的缺陷。
 
 1. 🟠 **在 CI 上跑一次全部门禁**（checks / build-and-e2e / acl-e2e / sso-e2e /
    metadata-e2e / audit-e2e / storage-e2e，以及本轮新增、CI 还没跑过的

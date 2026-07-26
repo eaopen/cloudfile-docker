@@ -116,6 +116,11 @@ services:
       CF_ENABLE_SSO: ${CF_ENABLE_SSO:-false}
       CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-false}
       CF_ENABLE_AUDIT: ${CF_ENABLE_AUDIT:-false}
+      # Write lifecycle gate instrument. Not a capability -- see
+      # cloudfile-server/common/cf-fileop-test.h.
+      CF_FILEOP_TEST_PROVIDER: ${CF_FILEOP_TEST_PROVIDER:-false}
+      CF_FILEOP_TEST_REFUSE_TOKEN: ${CF_FILEOP_TEST_REFUSE_TOKEN:-cf-refuse}
+      CF_FILEOP_TEST_JOURNAL: ${CF_FILEOP_TEST_JOURNAL:-/shared/cf-fileop-journal.log}
       CF_ENABLE_METADATA: ${CF_ENABLE_METADATA:-false}
       CF_ENABLE_TAGS: ${CF_ENABLE_TAGS:-false}
       CF_ENABLE_SEARCH: ${CF_ENABLE_SEARCH:-false}
@@ -285,6 +290,11 @@ services:
       CF_ENABLE_SSO: ${CF_ENABLE_SSO:-false}
       CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-false}
       CF_ENABLE_AUDIT: ${CF_ENABLE_AUDIT:-false}
+      # Write lifecycle gate instrument. Not a capability -- see
+      # cloudfile-server/common/cf-fileop-test.h.
+      CF_FILEOP_TEST_PROVIDER: ${CF_FILEOP_TEST_PROVIDER:-false}
+      CF_FILEOP_TEST_REFUSE_TOKEN: ${CF_FILEOP_TEST_REFUSE_TOKEN:-cf-refuse}
+      CF_FILEOP_TEST_JOURNAL: ${CF_FILEOP_TEST_JOURNAL:-/shared/cf-fileop-journal.log}
       CF_ENABLE_METADATA: ${CF_ENABLE_METADATA:-false}
       CF_ENABLE_TAGS: ${CF_ENABLE_TAGS:-false}
       CF_ENABLE_SEARCH: ${CF_ENABLE_SEARCH:-false}

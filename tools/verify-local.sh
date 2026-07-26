@@ -139,6 +139,9 @@ CAPABILITIES=(
     "audit|CF_ENABLE_AUDIT|tests/e2e/audit_matrix.py"
     "storage|CF_ENABLE_S3_STORAGE|tests/e2e/storage_matrix.py"
     "search|CF_ENABLE_SEARCH|tests/e2e/search_matrix.py"
+    # fileop 是基线扩展点，不是能力，所以它的"开关"不是 CF_ENABLE_*——那份清单
+    # 里的每一项都是运维可以合理打开的产品能力，而这个只是门禁用的仪器。
+    "fileop|CF_FILEOP_TEST_PROVIDER|tests/e2e/fileop_matrix.py"
 )
 
 # 由 capability 阶段设置：要在 .env 里打开的开关。
@@ -281,6 +284,40 @@ cap_storage_run() {
         '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seaf-gc.sh --dry-run' || return 1
     compose exec -T cloudfile bash -c \
         '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seaf-fsck.sh' || return 1
+}
+
+# 阶段 1 要先把标记留空（全部放行）才能建出夹具；阶段 2 再把标记打开。
+# 与 sso 的"目录变小 + 重启"、search 的"切 provider + 重启"是同一个形状：
+# 配置切换与重启在这里做，矩阵自己只发 HTTP 请求。
+cap_fileop_env() {
+    cat <<EOF
+CF_FILEOP_TEST_REFUSE_TOKEN=
+CF_FILEOP_TEST_JOURNAL=/shared/cf-fileop-journal.log
+EOF
+}
+
+cap_fileop_run() {
+    local base=$1
+    # 容器里的 /shared 就是宿主机的 data/seafile。
+    local journal="$STAGE_DIR/data/seafile/cf-fileop-journal.log"
+
+    say "阶段 1 —— 观察模式：每个写入口都产生事实，成功一次只产生一个"
+    python3 "$repo/tests/e2e/fileop_matrix.py" --phase 1 --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
+        --journal "$journal" \
+        --state-file "$STAGE_DIR/fileop-matrix-state.json" || return 1
+
+    # 拒绝方向只有把标记打开才能测到，而夹具必须在打开之前建好——拒绝一开，
+    # 建标记路径本身就会被拒，那恰好是被测操作之一。
+    say "打开拒绝标记并重启（cf-refuse）"
+    echo 'CF_FILEOP_TEST_REFUSE_TOKEN=cf-refuse' >> "$STAGE_DIR/.env"
+    compose up -d || return 1
+
+    say "阶段 2 —— 逐入口拒绝、零事实，外加反向对照"
+    python3 "$repo/tests/e2e/fileop_matrix.py" --phase 2 --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
+        --journal "$journal" \
+        --state-file "$STAGE_DIR/fileop-matrix-state.json" || return 1
 }
 
 cap_search_env() {

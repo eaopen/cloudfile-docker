@@ -62,7 +62,7 @@ CF_FEATURE_SWITCHES = (
     'CF_ENABLE_AUDIT',
     'CF_ENABLE_METADATA',
     'CF_ENABLE_TAGS',
-    'CF_ENABLE_MEILISEARCH',
+    'CF_ENABLE_SEARCH',
     'CF_ENABLE_ONLYOFFICE',
     'CF_ENABLE_CHECKOUT',
     'CF_ENABLE_S3_STORAGE',
@@ -156,6 +156,7 @@ def write_cloudfile_settings():
     )
 
     body += _settings_block_sso()
+    body += _settings_block_search()
     body += _settings_block_upstream()
 
     _replace_block(join(topdir, 'conf', 'seahub_settings.py'),
@@ -264,6 +265,42 @@ def _settings_block_sso():
             raise Exception(
                 'CF_SSO_DIRECTORY_STATIC is not valid JSON: %s' % e)
 
+    return '\n'.join(lines) + '\n'
+
+
+def _settings_block_search():
+    """Which search backend answers a query, or nothing when CF_ENABLE_SEARCH
+    is off.
+
+    Whether SeaSearch itself is configured is written separately, into
+    seafevents.conf -- see the `[SEASEARCH]` block below, which this switch
+    also gates. This block only ever writes CF_PROVIDER_SEARCH (empty, the
+    default, meaning SeaSearch/native) and the Meilisearch settings that
+    matter when an operator sets it to 'meilisearch'. See docs/search.md.
+    """
+    if not cf_enabled('CF_ENABLE_SEARCH'):
+        return ''
+
+    def positive_int(name, default):
+        raw = get_conf(name, str(default))
+        try:
+            value = int(raw)
+        except ValueError:
+            raise Exception('%s must be an integer' % name)
+        if value <= 0:
+            raise Exception('%s must be positive' % name)
+        return value
+
+    lines = [
+        'CF_PROVIDER_SEARCH = %r' % get_conf('CF_PROVIDER_SEARCH', ''),
+        'CF_MEILISEARCH_URL = %r'
+        % get_conf('CF_MEILISEARCH_URL', 'http://meilisearch:7700'),
+        'CF_MEILISEARCH_API_KEY = %r' % get_conf('CF_MEILISEARCH_API_KEY', ''),
+        'CF_SEARCH_INDEX_INTERVAL = %r'
+        % positive_int('CF_SEARCH_INDEX_INTERVAL', 60),
+        'CF_SEARCH_INDEX_TEXT_MAX_BYTES = %r'
+        % positive_int('CF_SEARCH_INDEX_TEXT_MAX_BYTES', 1024 * 1024),
+    ]
     return '\n'.join(lines) + '\n'
 
 
@@ -565,12 +602,88 @@ def apply_cloudfile_schema():
         conn.close()
 
 
+def _set_ini_value(lines, start, end, key, value):
+    """Set `key = value` within lines[start:end], appending if absent.
+
+    Returns the (possibly shifted) end index of the section, since appending
+    grows the list.
+    """
+    for i in range(start, end):
+        if lines[i].split('=', 1)[0].strip() == key:
+            lines[i] = '%s = %s\n' % (key, value)
+            return end
+    lines.insert(end, '%s = %s\n' % (key, value))
+    return end + 1
+
+
+def write_seafevents_search_config():
+    """Point seafevents at SeaSearch, gated on CF_ENABLE_SEARCH.
+
+    Written on every start (called from write_cloudfile_config()), unlike the
+    old code this replaces, which lived in init_seafile_server() and only ever
+    ran once, at first install. init_seafile_server() returns early once
+    seafile-data exists, so anything written only there can never react to a
+    switch an operator flips afterwards -- silently: seafevents would carry on
+    reading whatever [SEASEARCH] section fresh-install wrote forever. That is
+    the same trap write_cloudfile_settings() exists to avoid; see this file's
+    module docstring / AGENTS.md's "配置在每次启动时重写" note.
+
+    CF_ENABLE_SEARCH off (the default) writes `enabled = false`, so a
+    deployment that has not opted in behaves like native CE -- the section can
+    exist in seafevents.conf either way, only its `enabled` value governs
+    HAS_FILE_SEASEARCH (seahub/utils/__init__.py's check_seasearch_enabled()).
+    See docs/search.md.
+    """
+    path = join(topdir, 'conf', 'seafevents.conf')
+    if not exists(path):
+        return
+
+    with open(path, 'r') as fp:
+        fp_lines = fp.readlines()
+
+    values = {
+        'enabled': 'true' if cf_enabled('CF_ENABLE_SEARCH') else 'false',
+        'seasearch_url': 'http://seasearch:4080',
+        'seasearch_token': get_conf('CF_SEASEARCH_TOKEN', ''),
+        # Upstream's own default. Overridable because it directly bounds how
+        # long an e2e/capability test has to wait for SeaSearch to pick up a
+        # newly written file -- 10 minutes is a fine default for a real
+        # deployment and unusable for a CI job.
+        'interval': get_conf('CF_SEASEARCH_INTERVAL', '10m'),
+    }
+
+    if '[SEASEARCH]\n' not in fp_lines:
+        fp_lines += [
+            '\n[SEASEARCH]\n',
+            'enabled = %s\n' % values['enabled'],
+            'seasearch_url = %s\n' % values['seasearch_url'],
+            'seasearch_token = %s\n' % values['seasearch_token'],
+            'interval = %s\n' % values['interval'],
+            '\n',
+            '# if you would like to enable full-text indexing (i.e., search for document content), also set the option below to true (support from 13.0 Pro)\n',
+            'index_office_pdf = true\n',
+        ]
+    else:
+        section_index = fp_lines.index('[SEASEARCH]\n') + 1
+        end = len(fp_lines)
+        for i in range(section_index, len(fp_lines)):
+            if fp_lines[i].startswith('['):
+                end = i
+                break
+        for key in ('enabled', 'seasearch_url', 'seasearch_token', 'interval'):
+            end = _set_ini_value(fp_lines, section_index, end, key, values[key])
+
+    with open(path, 'w') as fp:
+        fp.writelines(fp_lines)
+
+
 def write_cloudfile_config():
     """Apply CloudFile configuration. Safe to call on every start."""
     loginfo('Applying CloudFile configuration')
     write_seafile_env()
     write_cloudfile_settings()
     write_cloudfile_seafile_conf()
+    write_seafevents_search_config()
     apply_cloudfile_schema()
 
 
@@ -620,7 +733,12 @@ def init_seafile_server():
             fp.write(f'\nAVATAR_FILE_STORAGE = \'seahub.base.database_storage.DatabaseStorage\'')
             fp.write('\n')
 
-    # Keep Elasticsearch available as a fallback, but use SeaSearch by default.
+    # Point [INDEX FILES] at the cluster's Elasticsearch and leave it disabled
+    # by default -- native upstream behaviour. CloudFile's own SeaSearch
+    # section is written separately by write_seafevents_search_config(), which
+    # (unlike this fresh-install-only block) runs on every start so that
+    # CF_ENABLE_SEARCH takes effect on a switch flip, not only at first
+    # install -- see that function's docstring.
     if os.path.exists(join(topdir, 'conf', 'seafevents.conf')):
         with open(join(topdir, 'conf', 'seafevents.conf'), 'r') as fp:
             fp_lines = fp.readlines()
@@ -651,18 +769,6 @@ def init_seafile_server():
                         break
                 if not enabled_found:
                     fp_lines.insert(section_index + len(insert_lines), 'enabled = false\n')
-
-            if '[SEASEARCH]\n' not in fp_lines:
-                fp_lines.extend([
-                    '\n[SEASEARCH]\n',
-                    'enabled = true\n',
-                    'seasearch_url = http://seasearch:4080\n',
-                    'seasearch_token = <your auth token>\n',
-                    'interval = 10m\n',
-                    '\n',
-                    '# if you would like to enable full-text indexing (i.e., search for document content), also set the option below to true (support from 13.0 Pro)\n',
-                    'index_office_pdf = true\n'
-                ])
 
         with open(join(topdir, 'conf', 'seafevents.conf'), 'w') as fp:
             fp.writelines(fp_lines)

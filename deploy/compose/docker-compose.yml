@@ -1,7 +1,7 @@
 # CloudFile deployment.
 #
 #   docker compose up -d                     core stack
-#   docker compose --profile search up -d    + Meilisearch
+#   docker compose --profile search up -d    + SeaSearch, Meilisearch
 #   docker compose --profile office up -d    + OnlyOffice
 #   docker compose --profile worker up -d    + background worker
 #   docker compose --profile s3 up -d        + MinIO test backend
@@ -116,7 +116,13 @@ services:
       CF_ENABLE_AUDIT: ${CF_ENABLE_AUDIT:-false}
       CF_ENABLE_METADATA: ${CF_ENABLE_METADATA:-false}
       CF_ENABLE_TAGS: ${CF_ENABLE_TAGS:-false}
-      CF_ENABLE_MEILISEARCH: ${CF_ENABLE_MEILISEARCH:-false}
+      CF_ENABLE_SEARCH: ${CF_ENABLE_SEARCH:-false}
+      CF_PROVIDER_SEARCH: ${CF_PROVIDER_SEARCH:-}
+      CF_SEASEARCH_TOKEN: ${CF_SEASEARCH_TOKEN:-}
+      CF_MEILISEARCH_URL: ${CF_MEILISEARCH_URL:-http://meilisearch:7700}
+      CF_MEILISEARCH_API_KEY: ${MEILI_MASTER_KEY:-}
+      CF_SEARCH_INDEX_INTERVAL: ${CF_SEARCH_INDEX_INTERVAL:-60}
+      CF_SEARCH_INDEX_TEXT_MAX_BYTES: ${CF_SEARCH_INDEX_TEXT_MAX_BYTES:-1048576}
       CF_ENABLE_ONLYOFFICE: ${CF_ENABLE_ONLYOFFICE:-false}
       CF_ENABLE_CHECKOUT: ${CF_ENABLE_CHECKOUT:-false}
       CF_ENABLE_S3_STORAGE: ${CF_ENABLE_S3_STORAGE:-false}
@@ -259,7 +265,13 @@ services:
       CF_ENABLE_AUDIT: ${CF_ENABLE_AUDIT:-false}
       CF_ENABLE_METADATA: ${CF_ENABLE_METADATA:-false}
       CF_ENABLE_TAGS: ${CF_ENABLE_TAGS:-false}
-      CF_ENABLE_MEILISEARCH: ${CF_ENABLE_MEILISEARCH:-false}
+      CF_ENABLE_SEARCH: ${CF_ENABLE_SEARCH:-false}
+      CF_PROVIDER_SEARCH: ${CF_PROVIDER_SEARCH:-}
+      CF_SEASEARCH_TOKEN: ${CF_SEASEARCH_TOKEN:-}
+      CF_MEILISEARCH_URL: ${CF_MEILISEARCH_URL:-http://meilisearch:7700}
+      CF_MEILISEARCH_API_KEY: ${MEILI_MASTER_KEY:-}
+      CF_SEARCH_INDEX_INTERVAL: ${CF_SEARCH_INDEX_INTERVAL:-60}
+      CF_SEARCH_INDEX_TEXT_MAX_BYTES: ${CF_SEARCH_INDEX_TEXT_MAX_BYTES:-1048576}
       CF_ENABLE_ONLYOFFICE: ${CF_ENABLE_ONLYOFFICE:-false}
       CF_ENABLE_CHECKOUT: ${CF_ENABLE_CHECKOUT:-false}
       CF_ENABLE_S3_STORAGE: ${CF_ENABLE_S3_STORAGE:-false}
@@ -285,6 +297,34 @@ services:
     depends_on:
       cloudfile:
         condition: service_healthy
+    restart: unless-stopped
+
+  # Default full-text backend (docs/search.md): upstream CE 14.0 already
+  # integrates SeaSearch end to end (indexing and querying both happen inside
+  # seafevents, driven by the [SEASEARCH] block cloudfile-docker's bootstrap
+  # writes from CF_ENABLE_SEARCH/CF_SEASEARCH_TOKEN) -- CloudFile's only job
+  # is unlocking the Pro-gated search API (cloudfile_ext.search). Under the
+  # `search`/`full` profile alongside meilisearch, not the default profile:
+  # CF_ENABLE_SEARCH stays off by default (native CE), and this container
+  # should not run unless an operator has opted into the search capability.
+  seasearch:
+    image: seafileltd/seasearch:latest
+    container_name: cloudfile-seasearch
+    profiles: ["search", "full"]
+    environment:
+      # Must match CF_SEASEARCH_TOKEN, which bootstrap writes into
+      # seafevents.conf's seasearch_token so the Hub-side seafevents client
+      # authenticates with the same value. No `:?` here even though this is
+      # required to actually search -- see the note above docker-compose.yml's
+      # `:?` rule (compose interpolates this file regardless of which profile
+      # is active, so a required marker on a profile-only variable breaks a
+      # plain `docker compose up`). TOKEN is this image's documented variable
+      # name as of the version pinned above; search-e2e.yml is what actually
+      # proves the two agree, since a wrong name here would fail silently
+      # (seafevents would just get 401s on every query).
+      TOKEN: ${CF_SEASEARCH_TOKEN:-}
+    volumes:
+      - ./data/seasearch:/opt/seasearch/data
     restart: unless-stopped
 
   meilisearch:

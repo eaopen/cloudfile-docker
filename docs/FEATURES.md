@@ -15,6 +15,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | 🟡 | 已实现，但**尚未端到端验证**（多数是因为需要 Linux 构建或运行中的部署） |
 | ⚠️ | 已知缺口，已在文档中声明 |
 | ⬜ | 未开始，仅有占位与注册点 |
+| ❌ | **已明确放弃**——不是排期推迟，是产品决定不做。区别于 ⬜：⬜ 还在待办里，❌ 不在 |
 
 **交付分成两层**，各有各的门禁，互不阻塞：
 
@@ -264,13 +265,22 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
 | 49 | S3 / 多存储 | ✅ | Go fileserver、C 主服务和 seaf-fuse 支持 Commit/FS/Block 的单 S3 与按 `RepoStorageId` 路由；MinIO 数据面、S3-aware GC/FSCK、故障返回码和离线 FS↔S3 往返迁移均完成整机验证。迁移逐对象回读校验，事务切换路由并保留源对象。详见 [storage.md](storage.md)。**能力门禁 `storage-e2e.yml` + `verify-local.sh cap storage`（本轮补齐）**：此前只有 `go test ./objstore`/`cf-s3/run.sh` 这类默认跳过的单元/集成测试，没有任何编排把 GC/FSCK/迁移串成一次可复现的整机验证——跟 ACL 当年"有测试文件不等于有门禁"是同一类缺口。新增 `tests/e2e/storage_matrix.py` 两阶段矩阵，本机真实栈（local+MinIO 多存储类）已跑通：原生冒烟 12/12（S3 配置开着也不影响默认 local 类）、phase 1 上传/下载跨多 block 文件字节一致、GC dry-run 与 FSCK 完整遍历 S3 对象均返回 0、`--repair` 在服务运行时被正确拒绝、离线迁移（停整个容器 -> 一次性容器跑 `seaf-storage-migrate.sh` -> 重启）报告 2 commits/2 fs objects/2 blocks 复制并校验，phase 2 确认迁移后读回内容与迁移前逐字节一致且库仍可继续写入，迁移后 GC/FSCK 再次通过。CI 尚未跑过这条新 workflow。 |
-| 96 | 反病毒集成（簇 I） | ⬜ | **Pro 对标补入**（[pro-parity.md](pro-parity.md)）。Pro 的"缺失机制"里唯一没归簇的一项：上传/文件扫描在 server/pipeline 侧，**镜像已主动剥离 clamav**。落地前先做门控盘点（同 OnlyOffice 探针 2 的做法），确认哪些是真依赖、哪些只是商业门控 |
-| 50 | SMB/NFS 外部资料源 | ⬜ | 零上游改动，但**代价是另起一个入口**——不改上游就进不了原生库列表。见 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 缺口 3。这是产品决定，不是技术决定 |
-| 51 | 外部源增量扫描 | ⬜ | 依赖 50 + `cf-worker` |
-| 52 | 虚拟目录挂载 | ⬜ | 依赖 50；融入原生 UI 的问题同 50 |
+| 96 | 反病毒集成（簇 I） | ❌ | **已明确放弃，非待办**。Pro 的"缺失机制"里唯一没归簇的一项：上传/文件扫描在 server/pipeline 侧，**镜像已主动剥离 clamav**，且该剥离保持不变——不做门控盘点、不单列分支、不并入任何 server 侧管线线。此前"落地前先做门控盘点"那句已作废，见 [pro-parity.md](pro-parity.md) |
+| 50 | SMB/NFS 外部资料源 | 🟡 | **完整方案见 [external-sources.md](external-sources.md)。阶段 1（与呈现无关的核心）已实现**：`cf_external_source` / `cf_external_source_grant` / `cf_external_scan_state` 三张表（MySQL + SQLite，SQLite DDL 已实际执行并验证幂等）、provider 契约（按类型 keyed）、`local-path` provider、路径包含校验、授权判定、读 API（列源 / 列目录 / 取文件与下载）、`CF_EXTERNAL_SOURCES_ROOTS` 的 bootstrap 生成。**64 项单测全绿，14 个变异全部被捕获**；bootstrap 配置生成 8 项断言 + 5 个变异全部被捕获。**尚未验证**：未在真实容器栈上跑过（无 UI、无能力门禁，见 52） |
+| 51 | 外部源增量扫描 | ⬜ | 依赖 50 + `cf-worker`。`cf_external_scan_state` 水位线表已随 50 建好（schema 每次启动执行，晚一个版本加表会导致只有重启过的部署才有它） |
+| 52 | 虚拟目录挂载 | ⬜ | 依赖 50。**缺口 3 已重新定价**：融入原生库列表不需要改上游，用 `rooturl.py` 的 URL 影子机制（第 40 项已验证）影子约 8 个只读端点即可，清单见 [external-sources.md](external-sources.md) 第六节。阶段 2（自有入口前端）与阶段 3（影子层）都消费阶段 1 的同一套核心 |
 | 53 | Overlay 标签与属性 | ⬜ | 依赖 50 + 38 |
 
-外部源首版只读，不进入 Seafile 的 repo/commit/block 模型。
+**外部源永远不进入 Seafile 的 repo/commit/block 模型**——这是定义，不是首版限制。
+推论：桌面同步、WebDAV、目录打包下载、历史版本/回收站、文件锁与加密库对外部源
+**结构上不可用**，因为它们全部以 commit/fs/block 表达。可用的是浏览、单文件下载、
+预览、检索。原先「首版只读」那句话容易被读成「以后会有」，已在
+[external-sources.md](external-sources.md) 第二节逐项写明。
+
+> **数据面才是硬边界，不是库列表。** 原生下载走
+> `seafile_api.get_fileserver_access_token(repo_id, obj_id, 'download', user)`，
+> 而外部源文件没有 `obj_id`——这条链从第一个参数就断了，所以文件内容由 Hub 自己
+> 吐出。早期文档把「融不进库列表」当成唯一障碍，漏掉了这一层。
 
 ---
 

@@ -157,6 +157,7 @@ def write_cloudfile_settings():
 
     body += _settings_block_sso()
     body += _settings_block_search()
+    body += _settings_block_external_sources()
     body += _settings_block_upstream()
 
     _replace_block(join(topdir, 'conf', 'seahub_settings.py'),
@@ -302,6 +303,42 @@ def _settings_block_search():
         % positive_int('CF_SEARCH_INDEX_TEXT_MAX_BYTES', 1024 * 1024),
     ]
     return '\n'.join(lines) + '\n'
+
+
+def _settings_block_external_sources():
+    """Where an external source's root may live, or nothing when the switch is off.
+
+    Only one setting, and it is the capability's security boundary: an external
+    source is an SMB/NFS share the operator mounted on the host and bind-mounted
+    into the container, so this list separates "a share ops chose to expose"
+    from "any path in the container".
+
+    An empty value is refused rather than passed through. Empty would reach
+    cloudfile_ext as "no prefixes configured", and the one reading that must
+    never be possible is the inverted one -- an admin API that can register / as
+    an external source. Failing here means a bad .env stops the deployment while
+    somebody is looking at it, instead of at the first request.
+
+    See docs/external-sources.md section three.
+    """
+    if not cf_enabled('CF_ENABLE_EXTERNAL_SOURCES'):
+        return ''
+
+    raw = get_conf('CF_EXTERNAL_SOURCES_ROOTS', '/shared/external')
+    roots = [part.strip() for part in raw.split(':') if part.strip()]
+    if not roots:
+        raise Exception('CF_EXTERNAL_SOURCES_ROOTS must list at least one '
+                        'absolute path')
+    for root in roots:
+        if not root.startswith('/'):
+            raise Exception('CF_EXTERNAL_SOURCES_ROOTS entries must be '
+                            'absolute paths, got %r' % root)
+        if root == '/':
+            raise Exception('CF_EXTERNAL_SOURCES_ROOTS must not contain "/"; '
+                            'point it at a directory holding nothing but '
+                            'mounts')
+
+    return 'CF_EXTERNAL_SOURCES_ROOTS = %r\n' % (roots,)
 
 
 def _settings_block_upstream():

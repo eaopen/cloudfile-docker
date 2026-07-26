@@ -300,11 +300,55 @@ def test_search():
         check('正文体积上限为 0 时启动失败', True)
 
 
+def test_external_sources():
+    print('── _settings_block_external_sources')
+    block = load('_settings_block_external_sources', {})
+
+    check('开关关闭时不写任何内容', block() == '', repr(block()))
+
+    env = {'CF_ENABLE_EXTERNAL_SOURCES': 'true'}
+    try:
+        values = evaluate(load('_settings_block_external_sources', env)())
+    except Exception as e:
+        check('开关打开时可以被加载', False, '%s: %s' % (type(e).__name__, e))
+        return
+
+    check('开关打开时可以被加载', True)
+    # 这一项是这个能力的安全边界：默认必须是"只有那一个前缀"，不是"随便哪里"。
+    check('默认根前缀是列表且只含 /shared/external',
+          values.get('CF_EXTERNAL_SOURCES_ROOTS') == ['/shared/external'],
+          repr(values.get('CF_EXTERNAL_SOURCES_ROOTS')))
+
+    env = {'CF_ENABLE_EXTERNAL_SOURCES': 'true',
+           'CF_EXTERNAL_SOURCES_ROOTS': '/mnt/nas:/shared/external'}
+    values = evaluate(load('_settings_block_external_sources', env)())
+    check('冒号分隔的多个前缀逐项写入',
+          values.get('CF_EXTERNAL_SOURCES_ROOTS') == ['/mnt/nas',
+                                                      '/shared/external'],
+          repr(values.get('CF_EXTERNAL_SOURCES_ROOTS')))
+
+    # 下面三项都是"配置错了必须起不来"，而不是"回落到某个默认值"。
+    # 空值回落成默认是最坏的一种：运维以为自己限制了范围，实际没有；
+    # 而 '/' 通过则等于管理接口可以把整个容器文件系统登记成外部源。
+    for name, raw in [('留空时启动失败', ''),
+                      ('只有分隔符时启动失败', ':::'),
+                      ('包含 / 时启动失败', '/shared/external:/'),
+                      ('相对路径时启动失败', 'shared/external')]:
+        env = {'CF_ENABLE_EXTERNAL_SOURCES': 'true',
+               'CF_EXTERNAL_SOURCES_ROOTS': raw}
+        try:
+            load('_settings_block_external_sources', env)()
+            check(name, False, '%r 被接受了' % raw)
+        except Exception:
+            check(name, True)
+
+
 def main():
     print(__doc__.splitlines()[0])
     print()
     test_sso()
     test_search()
+    test_external_sources()
     test_upstream_packages()
     print()
     if failures:

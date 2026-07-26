@@ -1,0 +1,241 @@
+# 外部资料源与虚拟目录挂载
+
+簇 G（`CF_ENABLE_EXTERNAL_SOURCES`）的语义规格。对应
+[FEATURES.md](FEATURES.md) 第 50–53 项。
+
+> **需求**：企业已有的 SMB/NFS 文件服务器（NAS、部门共享盘）要能在 CloudFile
+> 里被浏览、预览、检索，**而不把几十 TB 数据复制进 Seafile 的对象库**。
+
+---
+
+## 一、这份规格最重要的一句话
+
+**外部源永远不进入 Seafile 的 repo / commit / block 模型。**
+
+它不是"首版限制"，是这个特性的定义。所有取舍都是这一句的推论，包括下面那张
+不可用清单——那些能力不是"以后会有"，而是**结构上不可能有**，除非改成
+[第八节](#八被否决的方案)的方案 C。
+
+---
+
+## 二、结构上不可用的能力（必须写进客户对接文档）
+
+| 能力 | 为什么不可能 |
+|---|---|
+| **桌面同步客户端** | 同步协议交换的是 commit / fs object / block。外部源三样都没有 |
+| **WebDAV** | `seafdav` 经 `seafile_api` 按 repo_id 取 dirent 与 block |
+| **目录打包下载** | Go fileserver 的 `downloadZipFile` 按 obj_id 组包 |
+| **历史版本 / 回收站 / 快照** | 由 commit 链提供，外部源没有提交 |
+| **文件锁 / 签入签出 / 协同编辑** | 簇 F 的锁语义挂在 repo 上 |
+| **加密库** | 加密发生在 block 层 |
+| **配额统计** | 按库计算，外部源不占 Seafile 存储 |
+
+可用的是：**浏览、下载单文件、预览、检索（经索引）、属性/标签 overlay**。
+
+### 数据面为什么是硬边界
+
+原生下载走 `seahub/api2/endpoints/file.py`：
+
+```python
+token = seafile_api.get_fileserver_access_token(repo_id, obj_id, 'download', user)
+url = gen_file_get_url(token, filename)      # → Go fileserver
+```
+
+`obj_id` 是**内容寻址的 fs 对象 ID**。外部源文件没有 obj_id，也没有 block——
+这条链子从第一个参数就断了。所以**即使库列表问题解决了，文件内容仍必须由 Hub
+自己吐出**（`FileContentView`，见第六节）。
+
+这一条在早期文档里被漏掉了：当时把「融不进原生库列表」当成唯一障碍，而库列表
+只是控制面，数据面才是真正拦住一切的地方。
+
+---
+
+## 三、挂载模型：`local-path` 唯一 source_type
+
+**决定：容器不自己挂载 SMB/NFS。运维在宿主机挂载，bind mount 进容器。**
+
+```
+NAS ──SMB/NFS──> 宿主机 /mnt/nas/finance ──bind──> 容器 /shared/external/finance
+                                                            ↑
+                                          cf_external_source.root_path
+```
+
+理由：容器内 `mount -t cifs|nfs` 需要 `CAP_SYS_ADMIN` 或 privileged，与现有
+compose 部署模型冲突；而一旦挂好，SMB 和 NFS 在容器里**都只是一个目录**——
+一个 provider 同时覆盖两种协议，没有第二份代码，也没有新依赖。
+
+代价，明确写出来：**挂载的生命周期归运维，不能在 Web 上加一个新的远端。**
+管理员在 Web 上做的是「把已经挂进来的路径登记为一个外部源」，不是「连接一台
+NAS」。要支持后者，见第七节的 `smb` provider。
+
+### 安全不变量：根目录白名单
+
+`root_path` 必须落在 `CF_EXTERNAL_SOURCES_ROOTS`（默认 `['/shared/external']`）
+之下。**默认值本身就是安全的**——不需要运维正确配置什么才安全，否则一个空配置
+就意味着管理接口可以把 `/etc` 登记成外部源。
+
+三条检查，全部在**写入前**（登记时）和**每次访问时**各做一遍：
+
+1. `realpath(root_path)` 必须仍在白名单前缀之下（挡住用符号链接做的根逃逸）
+2. 请求路径归一化后 `realpath(root_path + path)` 必须仍在 `realpath(root_path)`
+   之下（挡住 `../` 与指向外部的符号链接）
+3. 路径段不允许为空、`.`、`..`，不允许含 `\0`
+
+**为什么访问时要再查一遍**：登记时目录是干净的，之后 NAS 上任何人都能在共享里
+放一个指向 `/etc` 的符号链接。只在登记时检查等于把安全性托付给远端文件服务器
+上的所有写用户。
+
+---
+
+## 四、权限模型
+
+外部源有自己的授权表，**不复用库级共享**——外部源不是库，没有 owner，也不该出
+现在「共享给我的」里。
+
+```
+cf_external_source_grant: (source_id, subject_type, subject) → permission
+                           subject_type ∈ {user, group}
+                           permission   ∈ {r}          ← 首版只读，只有一个取值
+```
+
+判定顺序，**fail closed**：
+
+```
+1. CF_ENABLE_EXTERNAL_SOURCES 关 ────────────────> 拒绝（能力未启用）
+2. 源不存在 / enabled = 0 ──────────────────────> 拒绝
+3. 管理员（is_staff）─────────────────────────────> 'r'
+4. 有 user 授权 ─────────────────────────────────> 'r'
+5. 有 group 授权且用户在该组 ──────────────────────> 'r'
+6. 其它 ────────────────────────────────────────> 拒绝
+```
+
+`permission` 列现在只有一个合法值。它存在是因为**首版只读是产品决定，不是数据
+模型的性质**——留一列比以后加一列迁移便宜，而"只有一个取值"由校验层保证，不靠
+注释。
+
+### 与目录 ACL（簇 A）的组合
+
+每个外部源在登记时分到一个**合成 repo_id**（UUID4，存 `cf_external_source.
+repo_id`）。它不对应任何真实库，作用有两个：
+
+1. `cf_dir_acl` 按 `repo_id CHAR(36)` 索引，所以**开着 `CF_ENABLE_DIR_ACL` 时，
+   目录 ACL 规则可以直接下发到外部源的子目录上**，一行新代码都不用写。
+2. 第六节的影子层（阶段 3）需要一个 repo_id 才能伪装成库。
+
+判定出 `'r'` 之后，再把它过一遍已注册的权限链：
+
+```python
+perm = hooks.check_permission(user, source.repo_id, path, 'r')   # 只能收紧
+```
+
+**刻意不走 `seahub.views.check_folder_permission`**：那个函数先问
+`seafile_api.check_permission_by_path`，而合成 repo_id 在 seafile-db 里不存在，
+原生权限返回 None，「只能收紧」于是把结果钉死在拒绝上。正确的做法是自己算出
+native 权限（上面那六步），再交给权限链收紧——这正是 `hooks.check_permission`
+的契约，而 `check_folder_permission` 只是它的一个调用方。
+
+---
+
+## 五、provider 契约
+
+`registry.register_external_source_provider(source_type, provider)`——**按类型
+keyed**，不是链、也不是 `provider(kind)`：一个部署里 `local-path` 和（将来的）
+`smb` 会同时存在，各自服务各自的源，不存在"选中哪一个"。
+
+```python
+class Source:
+    def list_dir(self, root_path, rel_path)  -> [Entry]
+    def stat(self, root_path, rel_path)      -> Entry | None
+    def open_file(self, root_path, rel_path) -> 可迭代的二进制块（上下文管理器）
+
+Entry = {'name', 'is_dir', 'size', 'mtime'}
+```
+
+三条硬性规定：
+
+- **provider 不做授权判定。** 它只知道「这个路径下有什么」。授权在 service 层，
+  与「后端是本地目录还是 SMB」无关。理由同检索 provider：让后端只负责匹配文档，
+  不负责决定能看见哪些库——写错就是越权。
+- **provider 必须自己做路径包含校验**（第三节那三条）。不能指望调用方传进来的
+  已经是安全路径：`open_file` 会被下载端点直接调用。
+- **读不到就抛 `SourceError`，不返回空。** 一个空目录和一个连不上的 NAS 长得
+  一模一样，而只有一种是事实。同 `sso/directory.py` 的 `DirectoryError`。
+
+---
+
+## 六、呈现方式：分两阶段，核心与呈现无关
+
+**已决定：先自有入口，再叠影子层。** 阶段 1 的核心（表、provider、路径安全、
+授权、读 API）与呈现方式**完全无关**，两种呈现共用同一套核心，所以这个产品决定
+可以推迟且零返工。
+
+### 缺口 3 已被重新定价
+
+`EXTENSION-POINTS.md` 缺口 3 原文写着「要出现在原生库列表里**需改上游列举
+逻辑**」。**这条已经过时**，写在 search 能力之前。
+
+`seahub/utils/rooturl.py` 把 `cloudfile_ext.urls` **前置**到 Seahub 自己的
+patterns 之前，注释原文：「CloudFile patterns come first so an extension can
+shadow a native endpoint when it has to」。第 40 项已经用它覆盖了两个 Pro 门控
+端点（`cloudfile_ext/search/views.py`），**零上游改动**。
+
+所以真实取舍不是「两套界面 vs 改上游」，而是「两套界面 vs **影子约 8 个只读
+端点**」。
+
+### 阶段 3 要影子的端点（预先记账，本轮不实现）
+
+打开一个库时前端实际会打的调用（`frontend/src/pages/lib-content-view/`）：
+
+| 端点 | 影子后要做什么 |
+|---|---|
+| `GET /api/v2.1/repos/` | 追加外部源伪库（`repo_type` 标记为外部源） |
+| `GET /api/v2.1/repos/<id>/` | 伪库的 repo info |
+| `GET /api/v2.1/repos/<id>/dir/` | 转发给 provider 的 `list_dir` |
+| `GET /api/v2.1/repos/<id>/file/detail/` | 转发给 `stat` |
+| `GET /api/v2.1/repos/<id>/file/?op=download` | **返回 CloudFile 自己的下载 URL**，不是 fileserver 的 |
+| `GET /api/v2.1/repos/<id>/custom-share-permissions/` | 空列表（伪库没有自定义权限） |
+| `GET /api/v2.1/repos/<id>/file-tags/`、`repo-tags/` | 空列表，直到第 53 项 overlay 落地 |
+| `GET /api/v2.1/repos/<id>/dir/detail/` | 目录大小/数量，或明确返回未知 |
+
+**已知风险**：没被影子到的端点拿到合成 repo_id 会 404/500。合成 repo_id 用
+UUID4 而非可识别的前缀，是刻意的——伪库必须能通过前端所有 `[-0-9a-f]{36}` 的
+路由校验，否则前端连页面都进不去。代价是排查时得靠 `cf_external_source` 反查。
+阶段 3 的验收方式是**逐端点点一遍浏览器**，不是只跑 API 矩阵。
+
+---
+
+## 七、未实现但已设计的部分
+
+| 项 | 状态 | 说明 |
+|---|---|---|
+| `smb` provider（`smbprotocol`） | ⬜ 已设计未实现 | 用户态 SMB2/3，可在 Web 上直接配 UNC 与凭据，不需要宿主机挂载。**卡在凭据落库**：明文存 `cf_external_source` 不可接受，而 CloudFile 目前没有密钥管理层。落地前先定这个 |
+| `nfs` provider | ❌ 不做 | 没有可靠的纯 Python NFS 客户端；宿主机挂载 + `local-path` 已经覆盖 |
+| 增量扫描（第 51 项） | ⬜ | `cf-worker` 周期任务 + `cf_external_scan_state` 水位线，喂 `register_search_indexer` 链。大 NAS 上必须是有界增量遍历，不是每轮全扫 |
+| Overlay 属性/标签（第 53 项） | ⬜ | 跨簇 G×D，等簇 D 落地后定归属 |
+
+---
+
+## 八、被否决的方案
+
+| 方案 | 为什么否决 |
+|---|---|
+| **C 扫描后导入为真实 Seafile 库** | 同步/WebDAV/历史全部原生可用、零影子代码——但数据要存两份。几十 TB NAS 的场景直接不成立，而那正是提这个需求的场景。**若客户实际数据量小且要求全功能，这才是对的方案**，所以留在这里而不是删掉 |
+| **在 Go fileserver 加外部源后端** | 让同步和打包下载也能用。但要在 Go 侧重新实现一遍授权判定，而那是 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 第五节反复警告的漂移来源；且同步协议要求内容可寻址、可增量 diff，外部源给不了 |
+| **容器内 `mount -t cifs`** | 需要 privileged 容器 |
+| **每次判权限回调客户的权限系统** | 同 EXTENSION-POINTS.md 第五节：外部服务绝不放在同步权限判定路径上 |
+
+---
+
+## 九、为什么没有共享用例集
+
+簇 A 有 `acl-cases.json`，因为**同一套语义在 C 和 Python 各实现了一遍**，用例集
+存在的理由是防两端漂移。
+
+外部源**只有 Hub 一处实现**（这正是第二节那张不可用清单的另一面）。给一个单实现
+的语义配一份跨层用例集，只会得到一份需要跟着代码改、却什么也没多验证的
+JSON——按 [BRANCHES.md](BRANCHES.md) 第一之二节的判据，这里不共享任何东西。
+
+所以本簇的正确验证形状是：路径安全与授权判定的**单元测试 + 变异验证**，加上
+阶段 2/3 的能力门禁（`external-sources-e2e.yml` + `verify-local.sh cap
+external-sources`，两边必须成对，由 `preflight-checks.py` 的
+`check_capability_gates` 卡住）。

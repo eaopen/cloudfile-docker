@@ -49,7 +49,7 @@ seasearch、Elasticsearch、企业自有检索服务都可以是同一个 kind �
 | `register_search_provider` | **provider** | `seahub/search/utils.py` 的 `search_files` + `seahub/utils/__init__.py` 的 `HAS_FILE_SEARCH` | 未选中 → Elasticsearch 原生路径 |
 | `register_search_indexer` | 链 | ⚠️ **无上游调用点**，靠 `register_periodic_task` 自驱动 | 无索引器 |
 | `register_file_op_hook` | 链 | ⚠️ **无上游调用点**，见下方缺口 | 钩子永不触发 |
-| `register_external_source_provider` | 按类型 keyed | ⚠️ **无上游调用点**，只能经自有路由暴露 | 无外部源 |
+| `register_external_source_provider` | 按类型 keyed | 无上游调用点（**刻意**）：经自有路由暴露，阶段 3 再影子原生端点，见缺口 3 | 无外部源 |
 | `register_periodic_task` | 链 | `cf_worker` 管理命令（自有进程） | 无任务，故 `worker` profile 非默认启用 |
 | `register_provider(kind, …)` | provider | 由声明该 kind 的一方分发 | 未选中 → 原生行为 |
 
@@ -149,13 +149,36 @@ seahub 自带的 `seahub/signals.py` 只有 `repo_created`、`upload_file_succes
 需要决定：是接受审计记录缺少这些字段，还是在 Hub 侧补一个轻量的请求上下文透传。
 **建议第一版接受缺失**，等有明确合规要求再补。
 
-### 缺口 3：外部源与虚拟目录融不进原生库列表 🟡
+### 缺口 3：外部源与虚拟目录融不进原生库列表 ✅ **已重新定价，不再是缺口**
 
-`register_external_source_provider` 注册的源只能经 `register_urls` 暴露在自有页面里。
-要让它出现在**原生文件浏览器**的库列表中，需要改上游的库列举逻辑。
+> **原文（已作废）**：「要让它出现在原生文件浏览器的库列表中，**需要改上游的库
+> 列举逻辑**。代价为 0 是因为另起了一个入口。」
+>
+> 这条写在 search 能力之前，**结论是错的**。
 
-**这就是"零上游成本"的真实前提**：代价为 0 是因为另起了一个入口，用户会看到两套
-文件浏览界面。要不要付这个成本，是产品决定，不是技术决定——写进 roadmap，别藏在一个 `0` 后面。
+`seahub/utils/rooturl.py` 把 `cloudfile_ext.urls` **前置**到 Seahub 自己的
+patterns 之前，注释原文是「CloudFile patterns come first so an extension can
+shadow a native endpoint when it has to」。第 40 项已经用这个机制覆盖了两个 Pro
+门控端点（`cloudfile_ext/search/views.py` 的影子子类），**零上游改动**。
+
+所以真实取舍不是「两套界面 vs 改上游」，而是「两套界面 vs **影子约 8 个只读
+端点**」——端点清单见 [external-sources.md](external-sources.md) 第六节。
+
+**但真正的硬边界不是库列表，是数据面**，而它原先根本没被计价：
+
+```python
+# seahub/api2/endpoints/file.py
+token = seafile_api.get_fileserver_access_token(repo_id, obj_id, 'download', user)
+```
+
+`obj_id` 是内容寻址的 fs 对象 ID。外部源文件**没有 obj_id、没有 block**，这条链
+从第一个参数就断了。所以文件内容必须由 Hub 自己吐出（已实现：
+`cloudfile_ext/external_sources/apis.py`），而**桌面同步、WebDAV、目录打包下载
+对外部源永久不可用**——它们全部以 commit/fs/block 表达。这不是"首版限制"。
+
+**已决定**：先自有入口，再叠影子层。阶段 1 的核心（表、provider 契约、路径包含、
+授权、读 API）与呈现方式无关，两种呈现共用同一套核心，所以这个产品决定推迟的
+成本是零。
 
 ### 缺口 4：C 核心生命周期仍只有 FS 后端 🔴
 

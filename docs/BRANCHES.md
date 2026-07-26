@@ -201,11 +201,13 @@ LDAP 登录、ADFS/SAML、Shibboleth、角色管理、2FA、设备远程擦除�
    目录/组同步。对比页把 "Authenticate against LDAP/AD" 与 "Syncing LDAP/AD
    Users and Groups" 分成两行，正好印证——前者打包，后者才是 CloudFile 的组织
    映射（特性 76–88）已经做的事。补一个 `ldap` 目录源即与 Pro 对齐。
-3. **Antivirus 立为簇 I**：它是"缺失机制"里唯一还没归簇、且较重的一项
-   （server 侧扫描、镜像已剥离 clamav）。落地前先做一次门控盘点。
+3. **Antivirus（原拟簇 I）已明确放弃**：曾是"缺失机制"里唯一还没归簇的一项
+   （server 侧扫描、镜像已剥离 clamav），但已决定不做——不立分支、不做门控
+   盘点，剥离保持不变。见 [pro-parity.md](pro-parity.md)。
 
 **净效果**：Pro 对比表约一半特性 CloudFile **已有源码、只差启用**（打包层，
-应最先清，拿下企业准入）；要真写的机制集中在既有耦合簇里，外加 Antivirus。
+应最先清，拿下企业准入）；要真写的机制集中在既有耦合簇里。Antivirus 已放弃，
+不占任何开发线。
 
 ### 两个跨簇依赖，靠契约解开
 
@@ -362,7 +364,7 @@ graph LR
 | **操作日志 / 审计** | **0** | ✅ 是 | Server 对每次提交发布 `repo-update`，seafevents 已将提交差异持久化为 `Activity`；CloudFile 只增加管理员查询 API/UI，不复制一份不完整的审计表。 |
 | Meilisearch / 组合检索 | **0**（基线已付） | ✅ 是 | 基线已铺好 `register_search_provider()` + 两处上游改动；具体后端是 provider，零改动 |
 | OnlyOffice | **0** | ✅ 是 | **上游 CE 已自带 `seahub/onlyoffice/`**（views/converter/callback 全套），只有锁集成两行是 Pro 门控。规模远小于原估 |
-| SMB/NFS 及其派生 | **0** | ❌ **否** | `register_external_source_provider()` 只能经自有路由暴露。要出现在原生库列表里需改上游列举逻辑。见缺口 3 |
+| SMB/NFS 及其派生 | **0** | ⚠️ **可以，但要影子约 8 个端点** | **原先记的「需改上游列举逻辑」是错的**，写在 search 之前：`rooturl.py` 把 CloudFile 路由前置，可以影子任意原生端点（第 40 项已验证，零上游改动）。所以代价是影子约 8 个只读端点，不是改上游。**但库列表不是真正的边界**——原生下载要 `obj_id`，外部源没有，所以文件内容必须由 Hub 自己吐出，且同步/WebDAV/打包下载**结构上不可用**。见 [external-sources.md](external-sources.md) |
 | **文件锁** | **0（server 侧）+ ⚠️（Hub 侧）** | ✅ 是 | server 侧确实免费：`seafile_mark_file_locked` RPC 与 `FileLocks` 表上游都已存在。但 Hub 侧锁语义被 `is_pro_version()` 门控，散在 `views/file.py`、`onlyoffice/views.py`、`seadoc/apis.py`、`exdraw/apis.py`，**均未登记**。见缺口 5 |
 | **S3 / 多存储** | **核心文件服务缺 S3 驱动**（Go + C 两侧） | — | 见 [storage.md](storage.md)。Go fileserver 只有 `backend_fs.go`、C 侧只有 `obj-backend-fs.c`，都缺 S3；GC/FSCK 也经 C 的 `obj_store`。seafobj 有 S3 但只是 Python 读侧，不在服务路径上。要补 Go `backend_s3.go` + C `obj-backend-s3.c` + 两侧后端选择与多存储路由 |
 

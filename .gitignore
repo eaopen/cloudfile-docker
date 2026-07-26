@@ -26,5 +26,10 @@ build/*/seafile-server-*
 deploy/compose/.env
 deploy/compose/data/
 
+# Local verification overrides contain test credentials and machine-local volumes.
+# Keep versioned examples (such as .env.example) explicit and unaffected.
+deploy/compose/.env.verify
+deploy/compose/.*.verify.yml
+
 # verify-local.sh 的临时 Compose 目录
 .local-verify/

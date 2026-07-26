@@ -70,7 +70,7 @@ grep -rln is_pro_version seahub/adfs_auth/ seahub/oauth/ seahub/role_permissions
 | Two factor authentication | ✅ `seahub/two_factor/` app 无条件装载，`ENABLE_TWO_FACTOR_AUTH` | 打包层 | **打包** | ✅ bootstrap 配置生成已验 |
 | Remote Wipe | ✅ `seahub/utils/devices.py` `mark_device_to_be_remote_wiped` + 管理端点 | 打包层 | **打包** | ✅ 已具备 |
 | Audit Log | Server `repo-update` → seafevents `Activity` 已覆盖提交差异 | 簇 C | `CF_ENABLE_AUDIT` API 与系统管理员 UI | ✅ 已验收 |
-| Antivirus Integration | ❌ 镜像已**主动剥离** clamav；扫描在 server/pipeline 侧 | 新增·server 侧 | **构建**：这是"缺失机制"里唯一较重的一项 | 🔨 未开始 |
+| Antivirus Integration | ❌ 镜像已**主动剥离** clamav；扫描在 server/pipeline 侧 | 新增·server 侧 | **已明确放弃，不做**：剥离保持不变，不立分支、不做门控盘点 | ❌ 已放弃 |
 
 ### 存储与扩展
 
@@ -111,7 +111,7 @@ bootstrap 配置 + 一张启用清单**：
 | E 检索 | Full text search | 🟡 已实现（配 seasearch 默认 + meilisearch 可切换），未随镜像验证 |
 | F 协同 | Office editing + File locking | 🔨 拆 `is_pro` 门控（缺口 5 / 探针 2） |
 | H 存储 | AWS S3 | 🔨 1 登记项 |
-| **新** | **Antivirus** | 🔨 **唯一"缺失机制"里没归簇的**——server 侧扫描管线，镜像已剥离 clamav |
+| **新** | **Antivirus** | ❌ **已明确放弃**——唯一"缺失机制"里没归簇的一项；镜像继续剥离 clamav，不做 |
 
 **对特性分支的三条具体优化**：
 
@@ -120,10 +120,9 @@ bootstrap 配置 + 一张启用清单**：
    分支排期，是给上游开关又套一层壳。
 2. **簇 B 更名为"身份与目录同步"**，明确"登录=打包、同步=构建"。已落地的组织
    映射就是同步半；补一个 `ldap` 目录源就与 Pro 的 LDAP/AD 同步对齐。
-3. **Antivirus 是"缺失机制"里唯一还没归属的一项**，且是其中较重的（server 侧、
-   镜像已剥离 clamav）。要么单列一簇，要么并入 H 之外的一条"server 侧管线"线。
-   落地前先做一次门控盘点（同 OnlyOffice 探针 2 的做法）。
+3. **Antivirus 明确放弃，不再是待办**。它曾是"缺失机制"里唯一没归属的一项，
+   但已决定不做：镜像继续主动剥离 clamav，不单列分支，不做门控盘点。
 
 **一句话**：Pro 对比表里约一半的特性，CloudFile **已经有了源码，只差启用**；
-真正要写的机制集中在已有的耦合簇里，外加一个 Antivirus。先清打包层拿下企业
-准入，再按四条开发线推进构建层。
+真正要写的机制集中在已有的耦合簇里。Antivirus 已明确放弃，不占开发线。先清
+打包层拿下企业准入，再按四条开发线推进构建层。

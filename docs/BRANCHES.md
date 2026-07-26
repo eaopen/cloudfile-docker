@@ -31,25 +31,34 @@ thumbnail、sdoc、seafile-ai……），不重新打包进 CloudFile 镜像—�
 CloudFile 是长期跟随上游的 fork，**唯一持续产生成本的东西是"修改了多少上游文件"**。
 新增文件永远不会和上游冲突；改一个上游文件，则每次同步都要再付一次。
 
-当前实测（`dev`，即扩展基线）：
+当前实测（`dev`，即扩展基线，2026-07-26 复核，与 `check-upstream-patches.sh` 一致）：
 
 | 仓库 | 修改上游文件 | 新增文件 |
 |---|---|---|
-| cloudfile-server | 8 | 6 |
-| cloudfile-hub | 5 | 29 |
-| cloudfile-docker | 3 | 28 |
-| **合计** | **16** | **63** |
+| cloudfile-server | 33 | 26 |
+| cloudfile-hub | 7 | 61 |
+| cloudfile-docker | 3 | 52 |
+| **合计** | **43** | **139** |
 
-新增文件的维护成本接近于零，全部成本集中在那 16 个。
+新增文件的维护成本接近于零，全部成本集中在那 43 个。
 
 **把目录 ACL 整个剥到 `feature/dir-acl` 之后，这些数字一个都没变**——
 变的只有新增文件数。这正是扩展点设计到位的证据：能力来去不影响 fork 成本。
 
-> 从 14 涨到 16 的那两个是检索扩展点（`seahub/search/utils.py` 与
+> 早期是 14 涨到 16，那两个是检索扩展点（`seahub/search/utils.py` 与
 > `seahub/utils/__init__.py`）。它们是**基线投资**，不是某个能力的成本：
 > 铺好之后 meilisearch、seasearch、企业自有检索都是零上游改动的 provider。
 > 这正是本文档第一节那条规则的用法——与其让每个检索方案各改一次上游，
 > 不如基线改一次。详见 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 第六节。
+>
+> 后续从 16 涨到 43 主要是 **S3/多存储**（server 8→33）：对象、块、FS 三类
+> 存储在 CE 原有构造入口上分流到 FS/S3/multiple，GC、FSCK、离线迁移与配套
+> 测试都要接进同一入口，见 [storage.md](storage.md)。hub 的 +2 是离线 S3
+> 维护 wrapper 让 `seaf-fsck.sh`/`seaf-gc.sh` 能拿到真实退出码并在修复前
+> 校验服务已停止，见 [../BRANCHING.md](../BRANCHING.md) 与
+> [upstream-patches/cloudfile-hub.txt](upstream-patches/cloudfile-hub.txt)。
+> 每一项都已在对应仓库的 `docs/upstream-patches/*.txt` 里登记，
+> `check-upstream-patches.sh` 全部通过。
 
 分支因此分两类：
 

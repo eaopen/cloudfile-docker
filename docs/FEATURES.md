@@ -55,7 +55,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | 3 | 功能开关机制（10 个 `CF_ENABLE_*`） | ✅ | 默认全关；配置块重写幂等性已验证 |
 | 4 | 扩展注册机制 | ✅ | URL / 菜单 / 权限 / 文件操作 / 索引器 / 外部源 / 周期任务；分发与 seal 行为已验证 |
 | 5 | `cloudfile_ext` Django app | ✅ | 通过 `EXTRA_INSTALLED_APPS` 注册，未改 `settings.py` |
-| 6 | 上游注入点最小化 | ✅ | Hub 5 个（2 处权限/路由 + 2 处检索扩展点 + 1 处数据追加）；Server 13 个（其中 S3 增加对象存储构造入口、模块依赖及其测试）；Docker 3 个。合计 **21**，清单由 `check-upstream-patches.sh` 卡住 |
+| 6 | 上游注入点最小化 | ✅ | Hub 7 个（2 处权限/路由 + 2 处检索扩展点 + 1 处数据追加 + 2 处离线 S3 维护 wrapper）；Server 33 个（对象/块/FS 三类存储后端构造入口、GC/FSCK、离线迁移、模块依赖及其测试）；Docker 3 个。合计 **43**，清单由 `check-upstream-patches.sh` 卡住 |
 | 7 | 前端骨架与入口注册 | ✅ | 入口映射已验证可加载；基线页面为能力总览；已随镜像打包 |
 | 55 | 前端资源构建接入 | ✅ | `seafile-build.py` 的 Seahub 阶段只复制源码树，`media/assets` 只存在于上游 dist 分支——原先的构建会产出没有 Web 界面的镜像。已在 `cloudfile-build.sh` 中加入 `npm run build` + `make dist`，并在缺失时直接失败。**Node 版本已固定**：apt 给的是 18.19.1，seahub 前端需要 20+ |
 | 56 | CI：快速检查门禁 | ✅ | 三仓共用 `tools/run-checks.sh`；GitHub Actions `30048595750` 已成功 |

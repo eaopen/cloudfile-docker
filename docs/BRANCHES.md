@@ -245,14 +245,15 @@ LDAP 登录、ADFS/SAML、Shibboleth、角色管理、2FA、设备远程擦除�
 |---|---|---|---|
 | **1 权限与合规** | A 目录权限 → B SSO → C 操作日志 | 与其余三线无共享 | A: 0 / B: 0 / C: 0（复用 `repo-update` / `Activity`） |
 | **2 信息管理** | D 元数据 ∥ E 检索 → 41 组合检索 | D 与 E 靠过滤契约解耦后**可真并行** | 0（检索扩展点基线已付） |
-| **3 协同** | F: 文件锁 → 签入签出 → OnlyOffice → iTeam | 独占锁语义与 `cf_lock` | ⚠️ **唯一有新增上游补丁的线**（Hub 侧拆 `is_pro_version()` 门控） |
+| **3 协同** | F: 写入生命周期基线 → 文件锁 →（签入签出 ∥ OnlyOffice）→ iTeam | 锁基础共享；查看/预览可与锁并行 | 🔴 C/Go/WebDAV 全写路径和 Hub/RPC 均有基线工作，不是只拆 Pro 门控 |
 | **4 存储扩展** | G 外部源 → 扫描 → 虚拟目录　∥　H S3 | G 与 H 技术上无关，可各自推进 | G: 0（但要付"另起入口"的产品代价）/ H: 1 个新增登记项 |
 
 同一时刻活着的 `feature/*` 分支：**每条线一条，最多四条。**
 
-线内串行是因为真有依赖（锁 → 签入签出 → iTeam），不是因为人手。四条线之间
-不共享表、规格或上游补丁，所以可以真并行——**唯一要协调的是线 3 的上游补丁
-review，它会让 Hub 的登记清单变长。**
+线内串行是因为真有依赖（写入生命周期 → 锁 → 签入签出 → iTeam），不是因为人手。
+OnlyOffice **编辑**依赖锁，查看与 kkFileView 预览不依赖锁，可单独并行。四条线之间
+不共享表、规格或上游补丁，所以可以真并行——**唯一要协调的是线 3 跨 C、Go、
+WebDAV 和 Hub 的基线 review。**
 
 ---
 
@@ -363,9 +364,9 @@ graph LR
 | 文件属性 / 标签 | **0** | ⚠️ 见下 | 纯 `cloudfile_ext` + `cf_*` 表 |
 | **操作日志 / 审计** | **0** | ✅ 是 | Server 对每次提交发布 `repo-update`，seafevents 已将提交差异持久化为 `Activity`；CloudFile 只增加管理员查询 API/UI，不复制一份不完整的审计表。 |
 | Meilisearch / 组合检索 | **0**（基线已付） | ✅ 是 | 基线已铺好 `register_search_provider()` + 两处上游改动；具体后端是 provider，零改动 |
-| OnlyOffice | **0** | ✅ 是 | **上游 CE 已自带 `seahub/onlyoffice/`**（views/converter/callback 全套），只有锁集成两行是 Pro 门控。规模远小于原估 |
+| OnlyOffice | 查看 **0**；编辑依赖锁基础 | ✅ 是 | **上游 CE 已自带 `seahub/onlyoffice/`**（views/converter/callback 全套）；查看可直接复用。编辑不能简单解除两行 Pro 门控，否则会调用 CE 中不存在的锁 API；必须接统一锁和写回终判 |
 | SMB/NFS 及其派生 | **0** | ⚠️ **可以，但要影子约 8 个端点** | **原先记的「需改上游列举逻辑」是错的**，写在 search 之前：`rooturl.py` 把 CloudFile 路由前置，可以影子任意原生端点（第 40 项已验证，零上游改动）。所以代价是影子约 8 个只读端点，不是改上游。**但库列表不是真正的边界**——原生下载要 `obj_id`，外部源没有，所以文件内容必须由 Hub 自己吐出，且同步/WebDAV/打包下载**结构上不可用**。见 [external-sources.md](external-sources.md) |
-| **文件锁** | **0（server 侧）+ ⚠️（Hub 侧）** | ✅ 是 | server 侧确实免费：`seafile_mark_file_locked` RPC 与 `FileLocks` 表上游都已存在。但 Hub 侧锁语义被 `is_pro_version()` 门控，散在 `views/file.py`、`onlyoffice/views.py`、`seadoc/apis.py`、`exdraw/apis.py`，**均未登记**。见缺口 5 |
+| **文件锁** | **从零实现，跨 C/Go/WebDAV/Hub/客户端协议** | ✅ 是 | CE 只有头文件声明和 MySQL `FileLocks` DDL；无 lock manager、RPC 实现/注册、Python 绑定和写路径校验。先补统一写入生命周期，再以自有 `cf_lock_lease` + UUID generation 终判；另需对齐 Pro 的 locked-files/revision/通知/虚拟库/父目录语义，并以 capability 替代客户端 `is_pro` 门控。见 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 缺口 1/5 |
 | **S3 / 多存储** | **核心文件服务缺 S3 驱动**（Go + C 两侧） | — | 见 [storage.md](storage.md)。Go fileserver 只有 `backend_fs.go`、C 侧只有 `obj-backend-fs.c`，都缺 S3；GC/FSCK 也经 C 的 `obj_store`。seafobj 有 S3 但只是 Python 读侧，不在服务路径上。要补 Go `backend_s3.go` + C `obj-backend-s3.c` + 两侧后端选择与多存储路由 |
 
 ### 五个反直觉结论
@@ -385,8 +386,9 @@ graph LR
 2. **审计比预想贵。** 它是唯一一个原先记 0、实测**根本没有触发点**的特性。
    钩子注册得了，但没有任何上游代码会调用它——注册了一个永不触发的回调。
 
-3. **文件锁只有一半便宜。** server 侧确实是白捡的，Hub 侧要拆 Pro 门控。
-   排期时按"半个基线改动"算，不要按 0 算。
+3. **文件锁不是接线。** 头文件声明和一张无人读写的表不构成基础设施；CE 锁需从零
+   覆盖 C lock manager、RPC/绑定、Go fileserver、WebDAV 和全部写入口。排期前先交付
+   一份可同时喂锁 veto 与 `file_op` 事件的写入生命周期基线。
 
 4. **上游 CE 14.0 已经带了 P2/P3 的一大半。** `seahub/repo_metadata/`（完整
    API + 前端，无 Pro 门控，只缺闭源的 metadata-server）、`seahub/tags/`、
@@ -406,7 +408,7 @@ feature/sso              ← 簇 B（CF_ENABLE_SSO）
 feature/audit            ← 簇 C（CF_ENABLE_AUDIT）
 feature/metadata         ← 簇 D（CF_ENABLE_METADATA + CF_ENABLE_TAGS，两个开关一条分支）
 feature/search           ← 簇 E（CF_PROVIDER_SEARCH 的一个实现）
-feature/collab           ← 簇 F（CF_ENABLE_CHECKOUT + CF_ENABLE_ONLYOFFICE）
+feature/collab           ← 簇 F（CF_ENABLE_FILE_LOCK + CF_ENABLE_CHECKOUT + CF_ENABLE_ONLYOFFICE）
 feature/external-sources ← 簇 G（CF_ENABLE_EXTERNAL_SOURCES）
 feature/s3               ← 簇 H（CF_ENABLE_S3_STORAGE）
 fix/<简述>
@@ -532,8 +534,9 @@ ln -s ../../../cloudfile-docker/tools/check-upstream-patches.sh .git/hooks/pre-p
 | **2** | 2.1a | 元数据（属性 + 标签 + 移动跟随） | **探针 1 已定：CloudFile 自建存储引擎说 metadata-server 协议**（唯一闭源件）+ 复用上游前端/API/投喂管线。分两步：官方 server 先验证，长期权威模型归 CloudFile |
 | | 2.1b | 检索后端（与 2.1a **真并行**） | **已实现**（P0/P1/P2，[search.md](search.md)）：默认 seasearch（走上游 `elif HAS_FILE_SEASEARCH` 分支，零 CloudFile 代码），`CF_ENABLE_SEARCH` 解除两个接口的 Pro 门；meilisearch 作可切换 provider，cf-worker 索引器消费 `Activity` 提交流。单测/配置生成测试已通过，`search-e2e.yml` 待随镜像跑一次 |
 | | 2.2 | 组合检索 | 需 2.1a + 2.1b 都进了 `dev`，验收属集成门禁 |
-| **3** | 3.1 | 文件锁（含 Hub 侧 Pro 门控拆解） | 唯一有新增上游补丁的线，先过 review |
-| | 3.2 | 签入签出 → OnlyOffice → iTeam | **OnlyOffice 规模待探针 2 定**：上游 CE 已带 `seahub/onlyoffice/` |
+| **3** | 3.0 | 统一写入生命周期扩展点（P0.5） | PREPARE veto + COMMITTED/ABORTED 事件；共享用例覆盖 C/Go/WebDAV，先作为基线 review |
+| | 3.1 | 从零实现文件锁基础 | `CF_ENABLE_FILE_LOCK`、自有 lease/generation、RPC/绑定、全写路径终判和管理强制解锁 |
+| | 3.2 | 签入签出 ∥ OnlyOffice → iTeam | 两者都依赖 3.1，但互不依赖；OnlyOffice 查看可更早复用上游，编辑规模待探针 2 定 |
 | **4** | 4.1a | 外部源 → 扫描 → 虚拟目录 | **先决定要不要付"另起入口"的产品代价**（缺口 3） |
 | | 4.1b | S3 / 多存储（与 4.1a 无关，可各自推进） | **最重的构建项之一**：核心文件服务缺 S3 驱动，要在 Go + C 两侧补。规格 [storage.md](storage.md) |
 | | 4.2 | Overlay 属性 | 跨线依赖线 2，**等 D 落地后再定归属**，不阻塞 4.1a |

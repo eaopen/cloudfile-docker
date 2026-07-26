@@ -249,8 +249,8 @@ Compose 的 `search` profile 与 `cf-worker` 已就位，实现时不需要再�
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
-| 43 | OnlyOffice 编辑与回调 | ⬜ | ⚠️ **上游 CE 已带 `seahub/onlyoffice/`**（views / converter / callback / models 全套），只有锁集成两行是 Pro 门控。规模远小于原估——待探针 2 |
-| 44 | 文件锁定强制校验 | ⬜ | server 侧免费（`seafile_mark_file_locked` RPC 与 `FileLocks` 表上游都已有）；**Hub 侧被 `is_pro_version()` 门控**，散在四个未登记的上游文件里。见 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 缺口 5 |
+| 43 | OnlyOffice 编辑与回调 | ⬜ | 上游 CE 已带 `seahub/onlyoffice/`（views / converter / callback / models），查看链可直接复用；生产级编辑依赖 #44 的统一锁基础、callback 幂等和写回终判，不能按“解除两行 Pro 门控”估价。待探针 2 |
+| 44 | 文件锁定强制校验 | ⬜ | 🔴 **已重新定价为从零实现。** CE 只有 `seafile-rpc.h` 声明和 MySQL `FileLocks` DDL，没有 lock manager、RPC 实现/注册、Python 绑定、Go fileserver 或写路径校验；`check_file_lock()` 明确恒返回 0。新增 `CF_ENABLE_FILE_LOCK`，以自有 `cf_lock_lease` + UUID generation 为真值，覆盖 C/Go/WebDAV 全写路径；`FileLocks.id` 不作 fencing。对外保持 Pro 的四态检查、12 小时默认期限、冻结/refresh、虚拟库、父目录、locked-files/revision/通知语义；内部 `LockBackend` 单选并使用 `cf_lock_*` 避免与 Pro 冲突。官方桌面客户端以 `is_pro` 门控锁，需 `file-lock-v1` capability 补丁，禁止把 CE 全局伪装为 Pro。先完成统一写入生命周期扩展点，详见 [file-preview-and-edit.md](file-preview-and-edit.md) P0.5/P1 与 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 缺口 1/5 |
 | 45 | 签入签出流程 | ⬜ | 依赖 44 |
 | 46 | iTeam 流程接口 | ⬜ | 依赖 45 |
 | 47 | 编辑超时与异常解锁 | ⬜ | 依赖 44 |
@@ -324,7 +324,13 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
    "all authenticated user can perform this action"）。它只更新路径记录、
    不搬运数据，但允许任何登录用户对任意库提交路径更新。属于上游问题，
    不是 CloudFile 引入的回归，需单独评估。
-6. 🟡 **上游 `Seafile CI` 在 fork 上永远失败**：`ci/run.py` 写死
+6. 🔴 **上游 CE 锁接口可由普通 rw 用户触发 500**：`seahub/api2/views.py:3373`
+   的 `FileView.put()` 对 `operation=lock` 没有 `is_pro_version()` 门控。
+   CE 的 `check_file_lock()` 恒返回 false，随后调用不存在的
+   `seafile_api.lock_file()`，抛出 `AttributeError`；代码只捕获 `SearpcError`，
+   因而返回 500。它是独立上游问题，应先加 CE 能力门禁/稳定错误，再实施 #44，
+   不能把这个修复误计为锁子系统已经接通。
+7. 🟡 **上游 `Seafile CI` 在 fork 上永远失败**：`ci/run.py` 写死
    `join(TOPDIR, 'seafile-server')`，而仓库名是 `cloudfile-server`。与我们的代码
    无关。已改为从自己的 workflow 里把仓库 checkout 成那个目录名来获得 C 编译覆盖。
    **待办：在 GitHub 的 Actions 页面把 `Seafile CI` 这个 workflow 停用**

@@ -95,8 +95,8 @@ seasearch、Elasticsearch、企业自有检索服务都可以是同一个 kind �
 | **D** | 移动/重命名元数据跟随 | `METADATA` | | | | | ● | ● | | ● | | ● | |
 | **E** | 检索后端 | `SEARCH` | ● | | | ● | ● | | | ● | ● `search` | ● | |
 | **D×E** | 组合检索 | `SEARCH` | ● | ● | ○ | ● | | | | | | | |
-| **F** | OnlyOffice | `ONLYOFFICE` | ● | | | | | ● | | | ○ | ● | |
-| **F** | 文件锁 | `CHECKOUT` 前置 | ● | ● | ● | | | ● | | ● | | ○ CE 已有 `FileLocks` | ● |
+| **F** | OnlyOffice | `ONLYOFFICE`；编辑依赖 `FILE_LOCK` | ● | | | | | ● | | | ○ | ● | ○ 编辑写回 |
+| **F** | 文件锁基础 | `FILE_LOCK`（规划新增） | ● | ● | ● | | | ● | | ● | | ● 自有锁真值 | ● C/Go/WebDAV 终判 |
 | **F** | 签入签出 | `CHECKOUT` | ● | ● | ● | | | ● | | ● | | ● | ● |
 | **F** | iTeam 流程接口 | `CHECKOUT` | ● | | | | | | | ● | ○ | ● | |
 | **G** | SMB/NFS 外部源 | `EXTERNAL_SOURCES` | ● | ● | ● | ○ | ○ | | ● | ● | ● 源类型 | ● | |
@@ -126,7 +126,7 @@ OAuth2/SAML/CAS/LDAP 且无 Pro 门控，打开它只是往配置块里写标量
 
 按影响范围排。每一条都写明"谁被卡住"和"补法"。
 
-### 缺口 1：`file_op` 钩子没有生产者 🔴
+### 缺口 1：缺统一写入生命周期生产者与 veto 点 🔴
 
 `register_file_op_hook()` 可以注册，但**上游没有任何地方调用 `run_file_op_hooks()`**。
 Hub 改的 5 个上游文件里，没有一个会触发它。
@@ -136,10 +136,21 @@ Hub 改的 5 个上游文件里，没有一个会触发它。
 seahub 自带的 `seahub/signals.py` 只有 `repo_created`、`upload_file_successful` 等 10 个信号，
 **没有删除、移动、重命名、下载**——恰好是审计最需要的。
 
-**补法（建议）**：把文件操作钩子做在 **server 侧 `cf-ext.c`**，而不是 Hub。理由与 ACL
-完全一致——所有写入（Web / REST / WebDAV / 同步客户端）在 server 层汇聚，在 Hub 层
-则分散在几十个 endpoint 里。Hub 侧的 `file_op` 钩子保留给需要 HTTP 上下文的场景
-（IP、User-Agent、session），但它不该是审计的主路径。
+**补法（P0.5）**：在 server 侧定义一份写入生命周期契约，同时解决锁 veto 和
+`file_op` 生产者，不能先后造两遍：
+
+- `PREPARE`：在提交前携带 operation、repo、规范化源/目标路径、actor、session 和
+  expected version；provider 可 fail-closed 拒绝，文件锁在这里终判。
+- `COMMITTED`：只在成功提交后携带 commit/file id 发出不可变事实，喂
+  `file_op` 消费者，不能再改变提交结果。
+- `ABORTED`：失败后的资源回收和观测，不产生成功文件事件。
+- C server、Go fileserver 和 seafdav 按同一共享用例接入 create/update/delete/
+  rename/move/revert/block upload 等入口；无 provider 时快速透传、零数据库查询。
+
+现有 `CfRestrictedFunc` 已验证路径规范化、子树包含语义和 dispatcher 形状，可复用这些
+实现与用例，不能直接把“锁冲突”注册成 ACL restricted 结果：该 RPC 还服务同步和打包
+下载，直接混用会把只读访问误判为不可达。Hub 侧 `file_op` 只保留 IP、User-Agent、
+session 等 HTTP 上下文，不作为文件事实主路径。
 
 这是一次**基线改动**，要按基线标准 review。
 
@@ -198,14 +209,47 @@ token = seafile_api.get_fileserver_access_token(repo_id, obj_id, 'download', use
 接口本身干净（Go 四方法、C 照 fs 后端形状），但这是**实现驱动**，不是登记一行——
 是 roadmap 里最重的构建项之一。
 
-### 缺口 5：文件锁的 Hub 侧被 `is_pro_version()` 门控 🟡
+### 缺口 5：CE 文件锁是空壳，需从零实现 🔴
 
-server 侧是干净的：`seafile_mark_file_locked` / `mark_file_unlocked` RPC 已在
-`include/seafile-rpc.h`，`FileLocks` 表已在上游 `seafile.sql`。
+源码复核结果：
 
-但 Hub 侧的锁语义被 `is_pro_version()` 挡住，散落在 `views/file.py`、
-`onlyoffice/views.py`、`seadoc/apis.py`、`exdraw/apis.py`。这些**都不在登记清单里**，
-所以 BRANCHES.md 说文件锁"0 新增登记项"只对了一半。落地前需要重新核算。
+- `include/seafile-rpc.h` 只有 `seafile_mark_file_locked` /
+  `seafile_mark_file_unlocked` 声明；`common/rpc-service.c` 没有实现，
+  `server/seaf-server.c` 和 `lib/rpc_table.py` 没有注册。
+- `python/seaserv/api.py` 的 `check_file_lock()` 注释明确写着 CE 不支持锁并恒返回 0；
+  `lock_file`、`unlock_file`、`get_lock_info` 不存在。
+- Go fileserver 没有锁逻辑，`lib/dirent.vala` 的 `is_locked` 也没有 C 侧生产者。
+- MySQL/MariaDB 虽有 `FileLocks` DDL，但没有代码读写，不能把“有表”当成锁基础设施。
+
+因此 #44 不是解除 Hub 的 Pro 门控，而是新增 C lock manager、RPC 实现/注册和
+Vala/searpc/Python 绑定，再经缺口 1 覆盖 C、Go、WebDAV 的每条写路径。权威数据必须是
+CloudFile 自有 `cf_lock_lease(repo_id, normalized_path, generation, lease_until, …)`；
+generation 每次获取都生成独立 UUID。`FileLocks.id` 不作 fencing：项目固定的
+MariaDB 11.4 已持久化 InnoDB 自增计数器，普通重启复用的反馈不适用于本部署；但兼容
+迁移目标表的主键仍不是安全协议，不能让 fencing 依赖其备份恢复、重建/重置和迁移行为。
+
+桌面客户端探针已经证明它不读服务端 `FileLocks`，而是消费 locked-files HTTP、
+lock/unlock HTTP、通知并维护本地 `filelocks.db`。因此 CE 运行期不双写 `FileLocks`；
+该表只作 CE→Pro 停写迁移目标。租约终判只读 `cf_lock_lease.lease_until`，轮询 revision
+来自自有 `cf_lock_repo_revision`。OnlyOffice 依赖 `CF_ENABLE_FILE_LOCK` 基础设施，
+不依赖 `CF_ENABLE_CHECKOUT` 产品流程。
+
+**Pro 冲突隔离**：内部 RPC 必须命名为 `cf_lock_*`，Hub 经 `LockBackend` adapter
+选择 CE 或 Pro，不能猴子补丁 `seafile_api.lock_file`，也不能同时注册两套 backend。
+公开 REST/fileserver 协议保持 Pro 兼容，但数据表和内部符号隔离。进程检测到
+`CF_LOCK_BACKEND` 与版本不匹配、重复 RPC 或双 provider 时必须启动失败。
+
+开源桌面客户端还揭示了一个部署陷阱：它只在 server property `is_pro=true` 时轮询
+`/repo/locked-files`、自动锁 Office 文件和处理 `file-lock-changed` 通知。CE 不能为此
+全局伪装 Pro，否则会连带启用目录权限等其他 Pro 假设；应新增 `file-lock-v1`
+capability 并发布 CloudFile 客户端补丁。未修改客户端只能得到服务端写入保护，不能承诺
+锁图标或本地只读状态。
+
+行为基线必须对齐 Pro：默认锁期限 12 小时，保留 `expire=0/正数/负数冻结`、特殊 owner
+`OnlineOffice`、四态 `check_file_lock`、虚拟库映射、目录锁字段、每库 revision 和通知。
+父目录同库移动/重命名默认允许并原子迁移后代锁，父目录删除允许并撤销后代锁；原方案
+默认 `strict` 与官方 Pro 语义冲突，已改为显式增强选项。完整矩阵见
+[file-preview-and-edit.md](file-preview-and-edit.md) §4.9/§14.2。
 
 ---
 

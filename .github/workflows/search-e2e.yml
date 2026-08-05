@@ -95,7 +95,9 @@ jobs:
           sed -i "s|^CF_ENABLE_SEARCH=.*|CF_ENABLE_SEARCH=true|" .env
           {
             echo "CLOUDFILE_IMAGE=cloudfile/cloudfile:$CF_VERSION"
-            echo "CF_SEASEARCH_TOKEN=CloudFile-CI-Search-4417"
+            echo "INIT_SS_ADMIN_USER=cf-search-admin"
+            echo "INIT_SS_ADMIN_PASSWORD=CloudFile-CI-Search-4417"
+            echo "CF_SEASEARCH_TOKEN=Y2Ytc2VhcmNoLWFkbWluOkNsb3VkRmlsZS1DSS1TZWFyY2gtNDQxNw=="
             echo "CF_SEASEARCH_INTERVAL=10s"
             echo "MEILI_MASTER_KEY=CloudFile-CI-Search-4417"
             echo "CF_MEILISEARCH_API_KEY=CloudFile-CI-Search-4417"

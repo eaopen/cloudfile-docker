@@ -322,7 +322,9 @@ cap_fileop_run() {
 
 cap_search_env() {
     cat <<EOF
-CF_SEASEARCH_TOKEN=CloudFile-Local-Search-4417
+INIT_SS_ADMIN_USER=cf-search-admin
+INIT_SS_ADMIN_PASSWORD=CloudFile-Local-Search-4417
+CF_SEASEARCH_TOKEN=Y2Ytc2VhcmNoLWFkbWluOkNsb3VkRmlsZS1Mb2NhbC1TZWFyY2gtNDQxNw==
 CF_SEASEARCH_INTERVAL=10s
 MEILI_MASTER_KEY=CloudFile-Local-Search-4417
 CF_MEILISEARCH_API_KEY=CloudFile-Local-Search-4417

@@ -348,21 +348,22 @@ services:
   # CF_ENABLE_SEARCH stays off by default (native CE), and this container
   # should not run unless an operator has opted into the search capability.
   seasearch:
-    image: seafileltd/seasearch:latest
+    # Follow Seafile's published SeaSearch compose contract.  `latest` is a
+    # moving target, so use the compatible 1.0 line unless an operator opts
+    # into another tested image explicitly.
+    image: ${CF_SEASEARCH_IMAGE:-seafileltd/seasearch:1.0-latest}
     container_name: cloudfile-seasearch
     profiles: ["search", "full"]
     environment:
-      # Must match CF_SEASEARCH_TOKEN, which bootstrap writes into
-      # seafevents.conf's seasearch_token so the Hub-side seafevents client
-      # authenticates with the same value. No `:?` here even though this is
-      # required to actually search -- see the note above docker-compose.yml's
-      # `:?` rule (compose interpolates this file regardless of which profile
-      # is active, so a required marker on a profile-only variable breaks a
-      # plain `docker compose up`). TOKEN is this image's documented variable
-      # name as of the version pinned above; search-e2e.yml is what actually
-      # proves the two agree, since a wrong name here would fail silently
-      # (seafevents would just get 401s on every query).
-      TOKEN: ${CF_SEASEARCH_TOKEN:-}
+      # SeaSearch creates this account on its first start.  CF_SEASEARCH_TOKEN
+      # must be the base64 value of "user:password" and is written into
+      # seafevents.conf by the CloudFile bootstrap.
+      SS_FIRST_ADMIN_USER: ${INIT_SS_ADMIN_USER:-}
+      SS_FIRST_ADMIN_PASSWORD: ${INIT_SS_ADMIN_PASSWORD:-}
+      SS_MAX_OBJ_CACHE_SIZE: ${SS_MAX_OBJ_CACHE_SIZE:-10GB}
+      SS_STORAGE_TYPE: ${SS_STORAGE_TYPE:-disk}
+      SS_LOG_DIR: /opt/seasearch/data/log
+      SS_LOG_LEVEL: ${SS_LOG_LEVEL:-info}
     volumes:
       - ./data/seasearch:/opt/seasearch/data
     restart: unless-stopped

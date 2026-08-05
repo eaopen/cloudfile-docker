@@ -115,12 +115,12 @@ jobs:
         run: |
           docker compose exec -T cloudfile \
             grep -n 'fileop_test_provider_enabled = true' \
-            "/opt/seafile/seafile-server-$CF_VERSION/conf/seafile.conf"
+            /shared/seafile/conf/seafile.conf
           # 注册时那句警告是唯一能证明 cf_ext_init 真的走到这里的证据。
           # 配置写对了但代码没注册，是完全静默的失败。
           docker compose exec -T cloudfile \
             grep -c 'fileop TEST provider is enabled' \
-            /opt/seafile/logs/seafile.log
+            /shared/seafile/logs/seafile.log
 
       - name: 原生功能未被破坏（provider 只观察，不该改变任何行为）
         run: |
@@ -144,7 +144,7 @@ jobs:
           # 每次启动重写配置这条本身也在被测。
           docker compose exec -T cloudfile \
             grep -n 'fileop_test_refuse_token = cf-refuse' \
-            "/opt/seafile/seafile-server-$CF_VERSION/conf/seafile.conf"
+            /shared/seafile/conf/seafile.conf
           docker compose ps
 
       - name: 阶段 2 —— 逐入口拒绝、零事实，外加反向对照
@@ -162,7 +162,7 @@ jobs:
           docker compose up -d --wait --wait-timeout 120 cloudfile
           docker compose exec -T cloudfile \
             grep -n 'fileop_test_provider_enabled = false' \
-            "/opt/seafile/seafile-server-$CF_VERSION/conf/seafile.conf"
+            /shared/seafile/conf/seafile.conf
 
       - name: 阶段 3 —— 关闭后原生冒烟不变，且不再产生任何事实
         run: |
@@ -189,12 +189,12 @@ jobs:
           docker compose ps -a
           docker compose logs --tail 300 cloudfile || true
           docker compose exec -T cloudfile \
-            tail -n 200 /opt/seafile/logs/seafile.log || true
+            tail -n 200 /shared/seafile/logs/seafile.log || true
           docker compose exec -T cloudfile \
-            tail -n 200 /opt/seafile/logs/seahub.log || true
+            tail -n 200 /shared/seafile/logs/seahub.log || true
           docker compose exec -T cloudfile \
             grep -n -A20 'CloudFile (generated' \
-            "/opt/seafile/seafile-server-$CF_VERSION/conf/seafile.conf" || true
+            /shared/seafile/conf/seafile.conf || true
           echo "── journal（最后 200 行）──"
           tail -n 200 data/seafile/cf-fileop-journal.log || true
 

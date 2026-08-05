@@ -46,7 +46,10 @@ import uuid
 REPO_PREFIX = 'search-matrix-'
 #: SeaSearch 的索引间隔由编排层设成短值（CF_SEASEARCH_INTERVAL），但仍是异步
 #: 的；Meilisearch 那一侧编排层显式跑过 cf_worker --once，同步完成，不需要轮询。
-POLL_SECONDS = 45
+# SeaSearch's updater runs asynchronously.  In a cold CI image its first scan
+# can take longer than one interval, so leave enough time for the service to
+# discover both freshly-created commits before treating it as a failure.
+POLL_SECONDS = 120
 
 
 def request(url, method='GET', token=None, form=None, data=None, headers=None,

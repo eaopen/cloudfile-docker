@@ -369,8 +369,11 @@ def test_fileop_seafile_conf():
         return ''.join(load('_seafile_conf_cloudfile_lines', env)())
 
     base = lines({})
-    check('默认十个开关全为 false',
-          base.count(' = false\n') == 11,   # 10 个能力 + 测试 provider
+    check('默认能力开关与测试 provider 全为 false',
+          base.count(' = false\n')
+          == len(build.__globals__['CF_FEATURE_SWITCHES']) + 1,
+          # Capabilities are read from bootstrap.py, never duplicated here.
+          # The one additional line is the non-product fileop test provider.
           repr(base))
     check('测试 provider 默认关闭',
           'fileop_test_provider_enabled = false' in base, repr(base))
@@ -420,6 +423,17 @@ def test_fileop_seafile_conf():
     check('能力开关与测试 provider 各自独立',
           'dir_acl_enabled = true' in both
           and 'fileop_test_provider_enabled = true' in both, repr(both))
+
+    lock = lines({'CF_ENABLE_FILE_LOCK': 'true'})
+    check('文件锁启用时固定选择 CE 锁后端',
+          'file_lock_enabled = true' in lock
+          and 'lock_backend = cloudfile' in lock, repr(lock))
+
+    try:
+        lines({'CF_ENABLE_FILE_LOCK': 'true', 'CF_LOCK_BACKEND': 'pro'})
+        check('CE 镜像拒绝 Pro 锁后端', False, '没有抛异常')
+    except Exception:
+        check('CE 镜像拒绝 Pro 锁后端', True)
 
     del build
 

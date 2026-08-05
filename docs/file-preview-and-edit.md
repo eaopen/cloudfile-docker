@@ -1,7 +1,9 @@
 # 文件预览、在线协作与本地专业编辑
 
 CloudFile（Seafile CE 企业扩展版）的文件交互规格。本文覆盖原生预览、kkFileView、
-OnlyOffice、浏览器扩展和绿色本地 Agent，并定义它们共同依赖的锁、会话、权限与审计语义。
+浏览器和本地专业软件，并定义 CloudFile 自身依赖的锁、会话、权限与审计语义。
+OnlyOffice 是 Seafile CE 原生扩展：沿用 Seafile 的配置、回调和验收链路，不再作为
+CloudFile 的代理、锁或独立验收对象。
 
 配套文档：
 
@@ -11,8 +13,9 @@ OnlyOffice、浏览器扩展和绿色本地 Agent，并定义它们共同依赖�
 - [audit.md](audit.md)：操作审计数据来源
 - [acl-semantics.md](acl-semantics.md)：目录权限终判
 
-> 状态：方案评审稿。**P0.5（统一写入生命周期扩展点）已实现**，见下方第十三节
-> 与 [fileop-lifecycle.md](fileop-lifecycle.md)；P1 及之后尚未开工。
+> 状态：实施中。**P0.5（统一写入生命周期扩展点）已实现**；P1 已有
+> `cf_lock_lease`、C RPC、写入终判和手工/第三方 checkout 的最小闭环，但会话
+> fencing、强制解锁和客户端协议仍未完成；OnlyOffice 受控启动不属于 CloudFile 范围。
 >
 > 结论：把能力定义为统一的“文件动作平台”，而不是把
 > `etech-seafile` 的浏览器插件和 Go Bridge 原样搬进 CloudFile。
@@ -26,13 +29,13 @@ OnlyOffice、浏览器扩展和绿色本地 Agent，并定义它们共同依赖�
 ### 1.1 保留的决策
 
 1. **预览与编辑严格分离。** 预览永不获取写锁；本地查看即使产生本地修改也不上传。
-2. **OnlyOffice 与本地专业编辑分工。** OnlyOffice 负责 Office 在线协作，
-   本地 Agent 负责 CAD、设计文件和专业软件。
-3. **浏览器扩展只做终端桥接。** 它不判断权限、不抓 Cookie、不持有 Seafile Token，
+2. **本地专业编辑统一交付。** 浏览器下载 `cloudfile-local/v1` 会话文件；绿色版和
+   已安装版 CloudFile Local 使用同一文件关联，再调用 CAD、设计等专业软件。
+3. **浏览器不桥接 localhost。** 它不判断权限、不抓 Cookie、不持有 Seafile Token，
    也不向页面注入业务规则。
 4. **绿色 Agent 不要求 Seafile Client。** 它只处理一次编辑会话，不维护整库同步状态。
-5. **所有写入入口共享锁终判。** Web、REST、WebDAV、同步客户端、OnlyOffice 和
-   本地 Agent 不能各自实现一套锁。
+5. **CloudFile 写入入口共享锁终判。** Web、REST、WebDAV、同步客户端和本地 Agent
+   不能各自实现一套锁。
 
 ### 1.2 修订的决策
 
@@ -42,7 +45,7 @@ OnlyOffice、浏览器扩展和绿色本地 Agent，并定义它们共同依赖�
 | 有锁即可安全提交 | 锁 + 源版本比较 + fencing generation | 锁被强制释放后，旧 Agent 仍可能重新联网写回 |
 | 直接复用 `FileLocks.id` 做 fencing | `cf_lock_lease` 自己持有锁真值和 UUID generation；`FileLocks` 仅作 CE→Pro 停机迁移目标 | CE 没有锁实现；客户端走 HTTP/通知而非读服务端表，运行期双写只会制造双真值 |
 | 本地 Agent 保存 API Token | 一次性启动票据换单文件能力 | 长期 Token 泄露后的影响范围过大 |
-| 页面直接访问 localhost HTTP | 浏览器 Native Messaging | 避免开放 CORS、端口冲突、任意网页调用本地服务 |
+| 页面直接访问 localhost HTTP | 下载短时本地会话文件 | 避免开放 CORS、端口冲突、任意网页调用本地服务 |
 | 浏览器插件扫描 DOM 插按钮 | 前端文件动作注册中心 | DOM 结构随上游变化，无法成为长期扩展点 |
 | kkFileView 直接拿下载链接 | Hub 内容网关 + 内部服务凭据 | 防止链接泄露、SSRF 和越权复用 |
 | 所有 CAD 依赖都自动递归发现 | 可插拔 Workspace Resolver | CAD/PDM 依赖不是靠扩展名或目录递归就能可靠推断 |
@@ -58,7 +61,7 @@ OnlyOffice、浏览器扩展和绿色本地 Agent，并定义它们共同依赖�
 3. 锁不能放宽 ACL 或库级权限；权限被收回后，持锁者也不能提交。
 4. 没有有效锁、会话、generation 和源版本中的任意一个，编辑提交都不能成功。
 5. 服务端返回的是 `tool_id` 和能力，不是可执行文件路径或任意命令行。
-6. 浏览器、kkFileView、OnlyOffice 和本地 Agent 都不接触用户密码。
+6. 浏览器、kkFileView 和本地 Agent 都不接触用户密码。
 7. 预览和编辑票据都是短期、单对象、单用途的，不能互相升级。
 8. 强制解锁后，旧会话只能恢复或另存为冲突副本，不能覆盖当前文件。
 9. CloudFile 锁后端与原生 Pro 锁后端互斥启用，任何进程不得同时注册两个锁真值。
@@ -77,9 +80,7 @@ OnlyOffice、浏览器扩展和绿色本地 Agent，并定义它们共同依赖�
 |---|---|---:|---:|---|
 | Seafile 原生预览 | `native-preview` | 否 | 否 | PDF、图片、文本、音视频、Markdown |
 | kkFileView 预览 | `kk-preview` | 否 | 否 | Office、CAD、3D、压缩包、长尾格式 |
-| OnlyOffice 查看 | `onlyoffice-view` | 否 | 否 | Office |
 | 本地软件查看 | `local-view` | 否 | 否 | CAD、设计文件、专业格式 |
-| OnlyOffice 编辑 | `onlyoffice-edit` | 服务会话锁 | 是 | DOCX、XLSX、PPTX |
 | 本地软件编辑 | `local-edit` | 排他锁 | 是 | DWG、PRT、ASM 等 |
 | 手工签出 | `checkout` | 排他锁 | 是 | 长时间独占工作 |
 
@@ -94,8 +95,8 @@ OnlyOffice、浏览器扩展和绿色本地 Agent，并定义它们共同依赖�
 - 文件扩展名、MIME、大小、加密库状态
 - 当前锁及其持有人
 - 功能开关与 provider 路由
-- OnlyOffice / kkFileView 服务健康
-- 本地 Agent 是否在线及其工具清单
+- kkFileView 服务健康
+- 本地 Agent 的会话协议与本机工具清单
 - 管理员对库、目录、文件类型和密级的策略
 
 前端不得自行维护“哪些扩展名能编辑”的第二份清单。建议提供：
@@ -111,7 +112,7 @@ GET /api/v2.1/cloudfile/file-actions/?repo_id=<id>&path=<path>
 
 - 外部源不进入 repo/commit/block 模型，`local-edit`、`checkout` 和文件锁结构上不可用；
   `file-actions` 返回稳定原因 `external_source_not_writable`，不能只隐藏按钮。
-- 加密库首版只保留上游已经支持的原生动作。kkFileView、OnlyOffice、本地查看和本地编辑
+- 加密库首版只保留上游已经支持的原生动作。kkFileView、本地查看和本地编辑
   默认返回 `encrypted_repo_unsupported`；只有后续证明端到端明文不落盘、票据和密钥边界
   均安全后，才按 provider 单独开放。
 
@@ -121,10 +122,9 @@ GET /api/v2.1/cloudfile/file-actions/?repo_id=<id>&path=<path>
 
 1. 原生预览能完整支持的格式，优先原生。
 2. 原生不支持或管理员明确指定的格式，使用 kkFileView。
-3. Office 在线编辑优先 OnlyOffice。
-4. CAD、设计文件和专业软件格式优先本地 Agent。
-5. 同一文件可以有多个“打开方式”，但默认动作只能有一个。
-6. provider 不健康时只降级到管理员允许的只读动作，不静默切换编辑器。
+3. CAD、设计文件和专业软件格式优先本地 Agent。
+4. 同一文件可以有多个“打开方式”，但默认动作只能有一个。
+5. provider 不健康时只降级到管理员允许的只读动作，不静默切换编辑器。
 
 ---
 
@@ -137,10 +137,7 @@ flowchart LR
     LOCK --> SERVER["seaf-server / fileserver<br/>写入终判"]
     HUB --> NATIVE["Seafile 原生预览"]
     HUB --> KK["kkFileView"]
-    HUB --> OO["OnlyOffice"]
-    UI --> EXT["浏览器扩展"]
-    EXT --> NM["Native Messaging"]
-    NM --> AGENT["绿色本地 Agent"]
+    UI --> AGENT["CloudFile Local<br/>绿色版 / 已安装版"]
     AGENT --> SDK["受限 Seafile SDK Adapter"]
     SDK --> HUB
     AGENT --> TOOL["本地查看器 / CAD / 专业软件"]
@@ -1011,7 +1008,6 @@ Agent、扩展与工具包各自版本化和签名。CloudFile release manifest 
 
 ```text
 CF_ENABLE_FILE_LOCK=false
-CF_ENABLE_ONLYOFFICE=false
 CF_ENABLE_CHECKOUT=false
 CF_ENABLE_KKFILEVIEW=false
 CF_ENABLE_LOCAL_APP=false
@@ -1021,15 +1017,13 @@ CF_ENABLE_LOCAL_APP=false
 
 ```text
 CF_ENABLE_CHECKOUT=true      -> CF_ENABLE_FILE_LOCK=true
-OnlyOffice 查看              -> 不依赖文件锁
-OnlyOffice 编辑              -> CF_ENABLE_ONLYOFFICE=true + CF_ENABLE_FILE_LOCK=true
 本地软件查看                 -> CF_ENABLE_LOCAL_APP=true，不依赖文件锁
 本地软件编辑                 -> CF_ENABLE_LOCAL_APP=true + CF_ENABLE_FILE_LOCK=true
 ```
 
-`CF_ENABLE_ONLYOFFICE` 和 `CF_ENABLE_CHECKOUT` 已在现有 10 项白名单中。真正新增的是
-`CF_ENABLE_FILE_LOCK`、`CF_ENABLE_KKFILEVIEW`、`CF_ENABLE_LOCAL_APP` 三项；它们都是
-基线改动，必须同步更新 `cloudfile_ext/features.py`、`settings_defaults.py`、
+`CF_ENABLE_CHECKOUT` 已在现有白名单中。OnlyOffice 由 Seafile 原生配置决定，不使用
+CloudFile 开关。`CF_ENABLE_FILE_LOCK`、`CF_ENABLE_KKFILEVIEW`、`CF_ENABLE_LOCAL_APP`
+是基线改动，必须同步更新 `cloudfile_ext/features.py`、`settings_defaults.py`、
 compose/.env、bootstrap、preflight 和配置生成测试。未知名称会抛 `UnknownFeature`，
 不能只加环境变量。
 

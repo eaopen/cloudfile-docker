@@ -63,8 +63,11 @@ CF_FEATURE_SWITCHES = (
     'CF_ENABLE_METADATA',
     'CF_ENABLE_TAGS',
     'CF_ENABLE_SEARCH',
+    'CF_ENABLE_FILE_PREVIEW',
     'CF_ENABLE_ONLYOFFICE',
+    'CF_ENABLE_FILE_LOCK',
     'CF_ENABLE_CHECKOUT',
+    'CF_ENABLE_LOCAL_APP',
     'CF_ENABLE_S3_STORAGE',
     'CF_ENABLE_EXTERNAL_SOURCES',
 )
@@ -466,6 +469,12 @@ def _seafile_conf_cloudfile_lines():
         key = name[len('CF_ENABLE_'):].lower() + '_enabled'
         lines.append('%s = %s\n'
                      % (key, 'true' if cf_enabled(name) else 'false'))
+
+    if cf_enabled('CF_ENABLE_FILE_LOCK'):
+        backend = get_conf('CF_LOCK_BACKEND', 'cloudfile').lower()
+        if backend != 'cloudfile':
+            raise Exception('CF_LOCK_BACKEND must be cloudfile in the CE image')
+        lines.append('lock_backend = cloudfile\n')
 
     # The write lifecycle test provider. Deliberately NOT a CF_ENABLE_* switch:
     # those are product capabilities an operator may reasonably turn on, and

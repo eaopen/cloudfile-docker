@@ -251,12 +251,12 @@ Compose 的 `search` profile 与 `cf-worker` 已就位，实现时不需要再�
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
-| 43 | OnlyOffice 编辑与回调 | ⬜ | 上游 CE 已带 `seahub/onlyoffice/`（views / converter / callback / models），查看链可直接复用；生产级编辑依赖 #44 的统一锁基础、callback 幂等和写回终判，不能按“解除两行 Pro 门控”估价。待探针 2 |
-| 44 | 文件锁定强制校验 | ⬜ | **前置已就位**：第 101 项的写入生命周期扩展点已实现，锁 provider 现在有地方注册、有地方终判，不必再自己去改 19 个写入口。🔴 **本体仍是从零实现。** CE 只有 `seafile-rpc.h` 声明和 MySQL `FileLocks` DDL，没有 lock manager、RPC 实现/注册、Python 绑定、Go fileserver 或写路径校验；`check_file_lock()` 明确恒返回 0。新增 `CF_ENABLE_FILE_LOCK`，以自有 `cf_lock_lease` + UUID generation 为真值，覆盖 C/Go/WebDAV 全写路径；`FileLocks.id` 不作 fencing。对外保持 Pro 的四态检查、12 小时默认期限、冻结/refresh、虚拟库、父目录、locked-files/revision/通知语义；内部 `LockBackend` 单选并使用 `cf_lock_*` 避免与 Pro 冲突。官方桌面客户端以 `is_pro` 门控锁，需 `file-lock-v1` capability 补丁，禁止把 CE 全局伪装为 Pro。统一写入生命周期扩展点已完成（第 101 项），详见 [fileop-lifecycle.md](fileop-lifecycle.md)、[file-preview-and-edit.md](file-preview-and-edit.md) P0.5/P1 与 [EXTENSION-POINTS.md](EXTENSION-POINTS.md) 缺口 1/5 |
-| 45 | 签入签出流程 | ⬜ | 依赖 44 |
+| 43 | OnlyOffice 编辑与回调 | 🟡 | 文件动作页经 C 锁 RPC 创建或加入唯一 `onlyoffice` 租约，再打开上游 CE renderer；callback 影子层执行 JWT 校验、成功回调幂等和最终关闭解锁。生产级协作仍缺少 session/generation 写回 token 与容器级矩阵，不能按“解除两行 Pro 门控”估价。 |
+| 44 | 文件锁定强制校验 | 🟡 | `CF_ENABLE_FILE_LOCK` 打开时，`cf_lock_lease` 成为唯一租约真值，C 侧经写入生命周期在 C、Go fileserver 与 WebDAV 的共享终判点拒绝其他持有人；`cf_lock_*` RPC/Python 绑定供 Hub 调用，`FileLocks` 不在运行期双写。每次获取生成独立 UUID generation，并维护每库 revision。**未完成的兼容面**：session/generation 写回 token、refresh/force-release、虚拟库映射、父目录迁移、桌面 locked-files/通知与 Linux 整机矩阵；在这些完成前不能宣称 Pro 协议兼容。 |
+| 45 | 签入签出流程 | 🟡 | 手工与第三方程序共用 `POST /api/v2.1/cloudfile/repos/<id>/checkout/`，以 `DELETE` + generation 释放；它只在 C provider 实际加载时创建 12 小时租约，冲突返回 423。`local-edit` 返回单文件下载/提交票据，提交端重新比较 lease generation 与源 file ID；Native Messaging 可执行 Agent、心跳与强制解锁仍未交付。 |
 | 46 | iTeam 流程接口 | ⬜ | 依赖 45 |
 | 47 | 编辑超时与异常解锁 | ⬜ | 依赖 44 |
-| 48 | OnlyOffice 回调幂等 | ⬜ | 依赖 43 |
+| 48 | OnlyOffice 回调幂等 | 🟡 | CloudFile callback 影子层按 `document_key + status + source version` 缓存已成功的保存回调；等待 #43 的受控编辑会话接入后做容器级验证。 |
 
 Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储文件。
 

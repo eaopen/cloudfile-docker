@@ -58,6 +58,9 @@ git merge upstream/master
 每次同步前先确认这份清单没有变长：
 
 **cloudfile-hub**
+- `.gitignore` — 忽略本地 CodeGraph 索引，避免分析缓存进入提交。
+- `seahub/api2/endpoints/admin/__pycache__/users.cpython-38.pyc.275104027952` — 删除误入上游的
+  Python 编译缓存；对应规则已由 `.gitignore` 覆盖，后续不应重新生成或跟随。
 - `seahub/utils/rooturl.py` — 追加 CloudFile 路由
 - `seahub/views/__init__.py` — `check_folder_permission` 委派
 - `seahub/search/utils.py` — `search_files` 委派给已选中的检索 provider
@@ -88,6 +91,7 @@ git merge upstream/master
 的收尾逻辑），按上面的意图重新应用改动即可。
 
 **cloudfile-server**
+- `.gitignore` — 忽略本地 CodeGraph 索引，避免分析缓存进入提交。
 - `common/obj-{backend,store}.{c,h}`、`common/block-{backend,mgr}.{c,h}`、
   `common/fs-mgr.{c,h}` — 在 CE 原有构造入口选择 FS、S3 或 multiple，补齐三态存在检查、
   可报告失败的删除与整库复制接口；Commit/FS 与 Block 使用两套上游接口，不能旁路接入。

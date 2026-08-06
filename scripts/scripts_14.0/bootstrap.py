@@ -66,6 +66,8 @@ CF_FEATURE_SWITCHES = (
     'CF_ENABLE_FILE_PREVIEW',
     'CF_ENABLE_ONLYOFFICE',
     'CF_ENABLE_FILE_LOCK',
+    'CF_ENABLE_WATCH',
+    'CF_ENABLE_CONVERT_EXPORT',
     'CF_ENABLE_CHECKOUT',
     'CF_ENABLE_LOCAL_APP',
     'CF_ENABLE_S3_STORAGE',
@@ -381,6 +383,11 @@ def _settings_block_upstream():
             and not cf_enabled('CF_ENABLE_METADATA')):
         raise Exception('CF_ENABLE_TAGS requires CF_ENABLE_METADATA')
 
+    if (cf_enabled('CF_ENABLE_CONVERT_EXPORT')
+            and not get_conf('JWT_PRIVATE_KEY', '')):
+        raise Exception(
+            'JWT_PRIVATE_KEY is required when CF_ENABLE_CONVERT_EXPORT=true')
+
     if cf_enabled('CF_LDAP_ENABLED'):
         lines += [
             'ENABLE_LDAP = True',
@@ -614,7 +621,11 @@ def write_seafile_env():
                     key, _, value = line.partition('=')
                     existing[key.strip()] = value.strip()
 
-    jwt_key = existing.get('JWT_PRIVATE_KEY') or secrets.token_hex(32)
+    configured_jwt_key = get_conf('JWT_PRIVATE_KEY', '')
+    if (existing.get('JWT_PRIVATE_KEY') and configured_jwt_key
+            and existing['JWT_PRIVATE_KEY'] != configured_jwt_key):
+        raise Exception('JWT_PRIVATE_KEY does not match the persisted Seafile key')
+    jwt_key = existing.get('JWT_PRIVATE_KEY') or configured_jwt_key or secrets.token_hex(32)
 
     values = [
         ('JWT_PRIVATE_KEY', jwt_key),

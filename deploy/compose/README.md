@@ -27,6 +27,9 @@ docker compose --profile search up -d
 docker compose --profile office up -d
 ```
 ```bash
+docker compose --profile convert up -d
+```
+```bash
 docker compose --profile full up -d
 ```
 
@@ -35,6 +38,7 @@ docker compose --profile full up -d
 | （默认） | `cloudfile`、`db`、`cache`、`proxy` | 核心栈 |
 | `search` | `meilisearch` | 全文与属性检索 |
 | `office` | `onlyoffice` | Word/Excel/PPT 协同编辑 |
+| `convert` | `seadoc` | 文件转换与导出 |
 | `worker` | `cf-worker` | 后台任务 |
 | `metadata` | `cloudfile-metadata` | 文件属性、标签与多视图的上游元数据服务 |
 | `full` | 全部 | |
@@ -112,6 +116,27 @@ CF_ENABLE_METADATA=true CF_ENABLE_TAGS=true docker compose --profile metadata up
 14.x metadata-server tag，示例默认仅用于兼容验证的官方 `14.0.3-testing`；生产启用前必须
 在 `CF_METADATA_IMAGE` 固定经过验收的官方镜像。关闭 `CF_ENABLE_METADATA` 时服务不在默认
 profile，CE 行为不变。
+
+### 文件锁、关注与转换导出
+
+原生菜单分别由独立开关控制，关闭时仍走 CE 默认行为：
+
+```bash
+CF_ENABLE_FILE_LOCK=true CF_ENABLE_WATCH=true docker compose up -d
+```
+
+文件锁写入 `cf_lock_lease`，同步、WebDAV 和 HTTP 写路径使用同一终判点；关注复用
+Seahub 的 `UserMonitoredRepos` 和文件更新邮件任务，邮件投递仍要求站点已配置 SMTP。
+
+转换/导出使用官方 SeaDoc 2.0 服务。先在 `.env` 固定一次 `JWT_PRIVATE_KEY`
+（`openssl rand -hex 32`），再启动对应 profile：
+
+```bash
+CF_ENABLE_CONVERT_EXPORT=true docker compose --profile convert up -d
+```
+
+启动时会拒绝空 JWT 或与既有 Seafile 持久化密钥不一致的配置，避免 SeaDoc 看似启动、
+实际无法读取文件。
 
 ## TLS
 

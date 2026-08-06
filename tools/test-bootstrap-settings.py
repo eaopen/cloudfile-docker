@@ -253,6 +253,20 @@ def test_upstream_packages():
     except Exception:
         check('标签未启用元数据时启动失败', True)
 
+    env = {'CF_ENABLE_CONVERT_EXPORT': 'true'}
+    try:
+        load('_settings_block_upstream', env)()
+        check('转换导出未配置 JWT 密钥时启动失败', False, '被接受了')
+    except Exception:
+        check('转换导出未配置 JWT 密钥时启动失败', True)
+
+    env['JWT_PRIVATE_KEY'] = 'stable-test-key'
+    try:
+        load('_settings_block_upstream', env)()
+        check('转换导出配置 JWT 密钥后可以启动', True)
+    except Exception as e:
+        check('转换导出配置 JWT 密钥后可以启动', False, str(e))
+
 
 def test_search():
     print('── _settings_block_search')

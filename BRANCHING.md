@@ -71,6 +71,12 @@ git merge upstream/master
   并把 `run_seaf_fsck` 的退出码传播到脚本自身
 - `scripts/seaf-gc.sh` — 把 `run_seaf_gc` 的退出码传播到脚本自身
 
+原生文件列表/详情交互还有 19 个兼容补丁，完整路径以
+`docs/upstream-patches/cloudfile-hub.txt` 为准：文件夹权限入口、历史版本行操作、
+标签刷新、文件锁、关注按钮均在上游 React 组件或页面上下文中没有可注册的扩展点。
+这些补丁必须保持 `CF_ENABLE_*` 关闭时回落原生行为；同步上游时按“历史、标签、
+锁、关注、ACL”五组分别复核，不能把商业版的全局 `isPro` 判断直接放宽。
+
 前两个是行为改动，需要逐行 review。
 
 中间两个是检索扩展点，**必须成对存在**：只改 `search/utils.py` 的话，CE 部署上

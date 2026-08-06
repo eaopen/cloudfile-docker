@@ -84,7 +84,13 @@ list_patched() {
     [[ $mode == three ]] && range="$base...HEAD" || range="$base HEAD"
 
     # shellcheck disable=SC2086
-    git -C "$repo_dir" diff --name-only $range | while read -r f; do
+    {
+        git -C "$repo_dir" diff --name-only $range
+        # Include unstaged/staged work so the gate catches a new upstream
+        # patch before it is committed, when the manifest can still be fixed
+        # in the same change.
+        git -C "$repo_dir" diff --name-only HEAD
+    } | sort -u | while read -r f; do
         [[ -z $f ]] && continue
         if git -C "$repo_dir" cat-file -e "$base:$f" 2>/dev/null; then
             echo "$f"

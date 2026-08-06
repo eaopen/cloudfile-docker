@@ -24,9 +24,30 @@
 		max_size 0
 	}
 
-	reverse_proxy cloudfile:80 {
-		header_up X-Forwarded-Proto {scheme}
-		header_up X-Forwarded-For {remote_host}
-		header_up Host {host}
+	@seadoc_path {
+		path /sdoc-server/*
+		expression `"{$CF_ENABLE_CONVERT_EXPORT}" == "true"`
+	}
+
+	@seadoc_socket {
+		path /socket.io/*
+		expression `"{$CF_ENABLE_CONVERT_EXPORT}" == "true"`
+	}
+
+	handle @seadoc_path {
+		uri strip_prefix /sdoc-server
+		reverse_proxy seadoc:80
+	}
+
+	handle @seadoc_socket {
+		reverse_proxy seadoc:80
+	}
+
+	handle {
+		reverse_proxy cloudfile:80 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-For {remote_host}
+			header_up Host {host}
+		}
 	}
 }

@@ -31,9 +31,9 @@ forks:
 
 # Not forked - pinned to the upstream commits the fork baseline was cut from.
 upstream:
-  seafile_server: 7a02072e2ff8b5dfd274ff738b477affb9fcbe70
-  seahub: e796c3eeaf728dd27bc5de2d0c7cc789c6155438
-  seafile_docker: 9a0fa2015174b8ffca797e63db342f34b2a6fa05
+  seafile_server: 0e83ffdd16ce85e35d435d3b8f899a82b6b780d0
+  seahub: da3334e1d17caddf16120c60442307eb5d3946da
+  seafile_docker: 9a925bcc19eba95582d90ec8dd21030e0b4717e6
   seafobj: 794428d5f455338f2f2f472c1f0ee2eebf623103
   seafdav: 1ce0b05ea7d04495a1ca9121fc58c30d63b71e36
   seafevents: d07b9e885de866454b5c42bed5834ca82959f303

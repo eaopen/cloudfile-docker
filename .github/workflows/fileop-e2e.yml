@@ -107,7 +107,9 @@ jobs:
           # 开关确实开着、标记确实为空，别在红了之后才发现。
           grep '^CF_FILEOP_TEST_PROVIDER=true$' .env
           grep '^CF_FILEOP_TEST_REFUSE_TOKEN=$' .env
-          docker compose up -d
+          # 下一步会直接读取 bootstrap 生成的 seafile.conf，不能只等容器进程
+          # 启动；要等 CloudFile 的健康检查通过，避免初始化尚未落盘的竞态。
+          docker compose up -d --wait --wait-timeout 120
           docker compose ps
 
       - name: provider 确实注册了（配置写进 seafile.conf 且日志有警告）

@@ -8,6 +8,7 @@
 #
 #   ./tools/check-upstream-patches.sh              # 检查全部三个仓库
 #   ./tools/check-upstream-patches.sh cloudfile-hub
+#   ./tools/check-upstream-patches.sh --worktree   # 额外检查未提交修改
 #   ./tools/check-upstream-patches.sh --update     # 把当前状态写回清单
 #
 # 需要三个仓库并排 checkout，且各自配好 upstream remote：
@@ -25,10 +26,12 @@ lists=$docker_repo/docs/upstream-patches
 ALL_REPOS=(cloudfile-server cloudfile-hub cloudfile-docker)
 
 update=0
+include_worktree=0
 repos=()
 for arg in "$@"; do
     case "$arg" in
         --update) update=1 ;;
+        --worktree) include_worktree=1 ;;
         -*) echo "unknown option: $arg" >&2; exit 2 ;;
         *)  repos+=("$arg") ;;
     esac
@@ -86,10 +89,11 @@ list_patched() {
     # shellcheck disable=SC2086
     {
         git -C "$repo_dir" diff --name-only $range
-        # Include unstaged/staged work so the gate catches a new upstream
-        # patch before it is committed, when the manifest can still be fixed
-        # in the same change.
-        git -C "$repo_dir" diff --name-only HEAD
+        # CI 只约束已提交差异，避免前置构建生成的 tracked 文件造成误报。
+        # 本地提交前需要检查 staged/unstaged 修改时显式传 --worktree。
+        if [[ $include_worktree -eq 1 ]]; then
+            git -C "$repo_dir" diff --name-only HEAD
+        fi
     } | sort -u | while read -r f; do
         [[ -z $f ]] && continue
         if git -C "$repo_dir" cat-file -e "$base:$f" 2>/dev/null; then

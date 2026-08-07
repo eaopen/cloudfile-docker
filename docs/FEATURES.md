@@ -215,8 +215,8 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `dev`（2026-08-0
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
-| 38 | 文件属性扩展 | ✅ | `metadata` profile、上游开关和官方 metadata-server 已接；真实 API 已验收仓库初始化与属性/标签状态。`seafevents` 任务端点已随 Server 修复正常启动。官方尚无稳定 14.x 镜像，当前仅以 `14.0.3-testing` 验证兼容性 |
-| 39 | 标签 | ✅ | 与 38 同表同分支；`CF_ENABLE_TAGS` 依赖校验、标签读写门禁和官方存储服务已通过真实 API 验收（创建与读回） |
+| 38 | 文件属性扩展 | 🟡 | `metadata` profile、上游开关和官方 metadata-server 已接；`seafevents` 任务端点已随 Server 修复正常启动。**当前本地整机验证失败**：`seafile-md-server:14.0.3-testing` 初始化的 `repo_metadata` 表缺少当前 Hub 查询所需的 `summary_enabled` 列，属性 API 返回 500；需将 metadata-server 镜像/schema 升级或补齐兼容迁移后重验。 |
+| 39 | 标签 | 🟡 | 与 38 同表同分支；`CF_ENABLE_TAGS` 依赖校验和配置生成通过，但受同一 `repo_metadata.summary_enabled` schema 不兼容影响，标签读写 API 当前返回 500；待 #38 的镜像/schema 修复后一起验收。 |
 | 42 | 移动重命名时元数据关联更新 | ⬜ | 依赖 38/39 验收；投喂走 seafevents 的提交遍历，很可能**不依赖 `file_op` 钩子**——移动/重命名本就在提交流里 |
 
 **簇 E（`feature/search`）** —— 与簇 D **可真并行**，靠第 67 项的过滤契约解耦。

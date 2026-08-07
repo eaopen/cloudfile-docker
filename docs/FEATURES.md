@@ -1,6 +1,6 @@
 # CloudFile 特性清单与完成情况
 
-Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的实际状态。
+Seafile CE 企业扩展版的全部规划特性，以及截至 `dev`（2026-08-07）的实际状态。
 
 > **按 Pro 对标读这份清单**：哪些是"要构建的机制"、哪些只是"要启用的配置"，
 > 见 [pro-parity.md](pro-parity.md)——它把官方 Pro vs CE 对比逐项映射到这里。
@@ -24,7 +24,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | **扩展基线** | `dev` | 扩展点、构建、部署、发布机制 | 构建镜像 + 原生 CE 冒烟 + 扩展点验收（开关全关） |
 | **能力** | 开发中在 `feature/<簇>`，**验收后合回 `dev`** | 具体能力，默认关闭 | 各自的用例集，开着自己那个开关跑 |
 
-> **开关粒度 ≠ 分支粒度。** 十个 `CF_ENABLE_*` 对应**八个耦合簇**——例如属性与
+> **开关粒度 ≠ 分支粒度。** 十五个 `CF_ENABLE_*` 对应**八个耦合簇**——例如属性与
 > 标签是两个开关、一条分支，因为它们共享同一张表。簇的划分依据（共享表 /
 > 共享规格 / 共享上游补丁 / 运行时互调）见 [BRANCHES.md](BRANCHES.md) 第一之二节。
 
@@ -53,7 +53,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 |---|---|---|---|
 | 1 | 三仓 fork 与分支模型 | ✅ | `dev` 为主干，`upstream/master` remote-tracking ref 作纯净副本，见 [BRANCHING.md](../BRANCHING.md) |
 | 2 | 统一版本号与发布清单 | ✅ | [release.yaml](../release.yaml)，各组件按 commit SHA 锁定 |
-| 3 | 功能开关机制（10 个 `CF_ENABLE_*`） | ✅ | 默认全关；配置块重写幂等性已验证 |
+| 3 | 功能开关机制（15 个 `CF_ENABLE_*`） | ✅ | 默认全关；配置块重写幂等性已验证。8 月 7 日新增关注与转换/导出开关，基线门禁会断言完整清单且全部关闭 |
 | 4 | 扩展注册机制 | ✅ | URL / 菜单 / 权限 / 文件操作 / 索引器 / 外部源 / 周期任务；分发与 seal 行为已验证 |
 | 5 | `cloudfile_ext` Django app | ✅ | 通过 `EXTRA_INSTALLED_APPS` 注册，未改 `settings.py` |
 | 6 | 上游注入点最小化 | ✅ | Hub 7 个（2 处权限/路由 + 2 处检索扩展点 + 1 处数据追加 + 2 处离线 S3 维护 wrapper）；Server 33 个（对象/块/FS 三类存储后端构造入口、GC/FSCK、离线迁移、模块依赖及其测试）；Docker 3 个。合计 **43**，清单由 `check-upstream-patches.sh` 卡住 |
@@ -74,7 +74,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | 63 | 扩展点形状：链 与 provider | ✅ | `providers.py`：同一件事的可互换实现，由 `CF_PROVIDER_<KIND>` 选中，未选中回落原生、选了不存在的名字则显式失败。**8 项单元测试，且经变异测试确认会失败** |
 | 64 | 检索查询侧扩展点 | 🟡 | `register_search_provider()` + `seahub/search/utils.py`、`seahub/utils/__init__.py` 两处上游改动。meilisearch 由此成为**一种** provider 而非唯一方案，且第 40 项已有真实消费者（`MeilisearchProvider`）。**未随镜像验证**——`search-e2e.yml` 是这条扩展点第一次有端到端门禁，尚未在真实容器栈上跑过 |
 | 65 | 外部服务回调机制 | 🟡 | `external_service.py`：超时 / JWT 签名 / 重试 / fail-closed。**刻意不放在同步权限判定路径上**，理由见 EXTENSION-POINTS.md 第五节。**尚无调用方** |
-| 101 | 统一写入生命周期扩展点（P0.5） | 🟡 | **本轮新增，属基线**。`common/cf-fileop.{c,h}` 提供 `PREPARE`（一票否决）/ `COMMITTED`（成功一次的不可变事实）/ `ABORTED`（尽力而为）三相，规格 [fileop-lifecycle.md](fileop-lifecycle.md)、用例集 [fileop-cases.json](fileop-cases.json)。它是缺口 1 的补法，也是 #43–#48（OnlyOffice、文件锁、签入签出）与 #42（元数据跟随）共同的前置。**覆盖**：C `server/repo-op.c` 全部 19 个写入口（含批量删除、跨库复制/移动的异步分支、并发重试循环）；Go `fileserver/cf_fileop.go` 经 RPC 问 C，接进上传/更新/分块提交/裸块/建目录/同步分支更新；**WebDAV 不需要补丁**——seafdav 的写全部经 `seafile_api.*` → RPC → `repo-op.c`，写第二份 Python 校验只会得到第二个真值。**单元级证据**：C 159 项用例 + Go 6 项跨语言契约测试 + `repo-op.c` 50 个调用点的类型检查，**11 个变异全部被捕获**（拒绝后不停、路径折叠大小写、组件匹配退化成子串、空标记匹配一切、词汇表改错、字段名拼错、operation 不存在、COMMITTED 少 commit_id、基线不再惰性、Go 常量漂移、JSON 键漂移）。**整机门禁已补齐**：`fileop-e2e.yml` + `verify-local.sh cap fileop` + `tests/e2e/fileop_matrix.py` 两阶段矩阵，靠 `common/cf-fileop-test.c` 这个假 provider （默认关闭，不在 `CF_ENABLE_*` 清单里）逐入口验证拒绝、零事实和反向对照，并断言关掉 provider 后跑冒烟 journal 一行不长。上游改动 33 → 35（`server/repo-op.c`、`fileserver/fileop.go`），理由是终判点不能有绕行路：`upload-file.c`、虚拟库合并、`copy-mgr` 都绕过 `rpc-service.c` 直接调 `seaf_repo_manager_*`。**尚未验证**：这条 workflow 还没在 CI 上跑过一次，需要 Linux 构建环境。ACL 第 71 项的教训在这里同样适用：门禁写好了不等于门禁跑过了 |
+| 101 | 统一写入生命周期扩展点（P0.5） | 🟡 | **本轮新增，属基线**。`common/cf-fileop.{c,h}` 提供 `PREPARE`（一票否决）/ `COMMITTED`（成功一次的不可变事实）/ `ABORTED`（尽力而为）三相，规格 [fileop-lifecycle.md](fileop-lifecycle.md)、用例集 [fileop-cases.json](fileop-cases.json)。它是缺口 1 的补法，也是 #43–#48（OnlyOffice、文件锁、签入签出）与 #42（元数据跟随）共同的前置。**覆盖**：C `server/repo-op.c` 全部 19 个写入口（含批量删除、跨库复制/移动的异步分支、并发重试循环）；Go `fileserver/cf_fileop.go` 经 RPC 问 C，接进上传/更新/分块提交/裸块/建目录/同步分支更新；**WebDAV 不需要补丁**——seafdav 的写全部经 `seafile_api.*` → RPC → `repo-op.c`，写第二份 Python 校验只会得到第二个真值。**单元级证据**：C 159 项用例 + Go 6 项跨语言契约测试 + `repo-op.c` 50 个调用点的类型检查，**11 个变异全部被捕获**（拒绝后不停、路径折叠大小写、组件匹配退化成子串、空标记匹配一切、词汇表改错、字段名拼错、operation 不存在、COMMITTED 少 commit_id、基线不再惰性、Go 常量漂移、JSON 键漂移）。**整机门禁已补齐**：`fileop-e2e.yml` + `verify-local.sh cap fileop` + `tests/e2e/fileop_matrix.py` 两阶段矩阵，靠 `common/cf-fileop-test.c` 这个假 provider （默认关闭，不在 `CF_ENABLE_*` 清单里）逐入口验证拒绝、零事实和反向对照，并断言关掉 provider 后跑冒烟 journal 一行不长。8 月 7 日修正了门禁的启动竞态与运行期配置/日志路径；**尚未验证**：这条 workflow 还没在 CI 或当前 `dev` 镜像上跑过一次，需要 Linux 构建环境。ACL 第 71 项的教训在这里同样适用：门禁写好了不等于门禁跑过了 |
 | 102 | 路径规范化下沉到基线 | ✅ | `cf_acl_normalize_path` → `common/cf-path.c`，ACL 侧留薄转发，既有用例逐字未改。与第 79 项（身份解析下沉）同一条判据：ACL 按路径存规则、锁按路径存租约，两者必须逐字节一致，否则 `/a/b` 的规则和 `/a/b/` 的锁说的是两个对象。留在能力里还会让基线 seam 在运行时 import 能力，并让 ACL 的开关决定路径能不能被规范化 |
 | 67 | 检索结构化过滤契约 | ✅ | `search_query.py`：属性/标签谓词词汇表 + provider 能力声明。**存在的理由是分支切分**——没有它，组合检索会把元数据和检索焊成一条大分支。硬性规定：provider 收到未声明支持的算子必须拒绝，**不允许静默忽略**（被丢掉的谓词返回比请求更大的结果集，而调用方看不出差别）。**15 项单元测试，3 个变异全部被捕获** |
 

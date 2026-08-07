@@ -701,6 +701,61 @@ def apply_cloudfile_schema():
         conn.close()
 
 
+def apply_metadata_schema_compatibility():
+    """Repair the upstream 14.0 metadata schema when the capability is on.
+
+    Seahub 14.0's ``RepoMetadata`` model unconditionally reads
+    ``summary_enabled``, but its fresh-install SQL and 14.0 upgrade SQL both
+    omit that column.  This makes even the status endpoint return 500 on a
+    new installation before an operator has enabled any AI feature.
+
+    Keep the narrowly scoped compatibility migration here rather than editing
+    the upstream SQL files: it must also cover an existing CE deployment that
+    adopts CloudFile without running Seafile's versioned upgrade scripts.  It
+    is gated by the metadata capability, checks the actual schema first, and
+    is safe on every restart.
+    """
+    if not (cf_enabled('CF_ENABLE_METADATA') or cf_enabled('CF_ENABLE_TAGS')):
+        return
+
+    import pymysql
+
+    conn = pymysql.connect(
+        host=get_conf('SEAFILE_MYSQL_DB_HOST', 'db'),
+        port=int(get_conf('SEAFILE_MYSQL_DB_PORT', '3306')),
+        user=get_conf('SEAFILE_MYSQL_DB_USER', 'seafile'),
+        password=get_conf('SEAFILE_MYSQL_DB_PASSWORD', ''),
+        database=get_conf('SEAFILE_MYSQL_DB_SEAHUB_DB_NAME', 'seahub_db'),
+        charset='utf8mb4',
+    )
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                'SELECT 1 FROM information_schema.TABLES '
+                'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+                ('repo_metadata',))
+            if not cursor.fetchone():
+                logwarning('repo_metadata is missing; cannot apply metadata schema compatibility')
+                return
+
+            cursor.execute(
+                'SELECT 1 FROM information_schema.COLUMNS '
+                'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s '
+                'AND COLUMN_NAME = %s',
+                ('repo_metadata', 'summary_enabled'))
+            if not cursor.fetchone():
+                cursor.execute(
+                    'ALTER TABLE `repo_metadata` '
+                    'ADD COLUMN `summary_enabled` TINYINT(1) NOT NULL DEFAULT 0')
+                cursor.execute(
+                    'ALTER TABLE `repo_metadata` '
+                    'ADD KEY `key_repo_metadata_summary_enabled` (`summary_enabled`)')
+                loginfo('Added missing repo_metadata.summary_enabled compatibility column')
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _set_ini_value(lines, start, end, key, value):
     """Set `key = value` within lines[start:end], appending if absent.
 
@@ -784,6 +839,7 @@ def write_cloudfile_config():
     write_cloudfile_seafile_conf()
     write_seafevents_search_config()
     apply_cloudfile_schema()
+    apply_metadata_schema_compatibility()
 
 
 def init_seafile_server():

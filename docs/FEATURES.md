@@ -215,8 +215,8 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `dev`（2026-08-0
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
-| 38 | 文件属性扩展 | 🟡 | `metadata` profile、上游开关和官方 metadata-server 已接；`seafevents` 任务端点已随 Server 修复正常启动。**当前本地整机验证失败**：`seafile-md-server:14.0.3-testing` 初始化的 `repo_metadata` 表缺少当前 Hub 查询所需的 `summary_enabled` 列，属性 API 返回 500；需将 metadata-server 镜像/schema 升级或补齐兼容迁移后重验。 |
-| 39 | 标签 | 🟡 | 与 38 同表同分支；`CF_ENABLE_TAGS` 依赖校验和配置生成通过，但受同一 `repo_metadata.summary_enabled` schema 不兼容影响，标签读写 API 当前返回 500；待 #38 的镜像/schema 修复后一起验收。 |
+| 38 | 文件属性扩展 | ✅ | `metadata` profile、上游开关和官方 metadata-server 已接；`seafevents` 任务端点已随 Server 修复正常启动。修复上游 14.0 的新装/升级 DDL 漏洞：Hub 模型会读取 `repo_metadata.summary_enabled`，但两份上游 SQL 都没建该列，导致属性状态 API 500；CloudFile 在元数据或标签开关开启时对 Hub DB 执行一次幂等兼容迁移（补列及索引），覆盖新装、升级和既有 CE 接入三条路径。**本机真实栈已验收**：开关开启后的原生冒烟 12/12，管理员建库、读取初始状态、启用元数据、状态回读均通过。 |
+| 39 | 标签 | ✅ | 与 38 同表同分支、共用兼容迁移。`CF_ENABLE_TAGS` 依赖校验和配置生成通过；本机真实 metadata-server 已验标签创建写入与读回，开关开启后的原生冒烟 12/12 同时通过。 |
 | 42 | 移动重命名时元数据关联更新 | ⬜ | 依赖 38/39 验收；投喂走 seafevents 的提交遍历，很可能**不依赖 `file_op` 钩子**——移动/重命名本就在提交流里 |
 
 **簇 E（`feature/search`）** —— 与簇 D **可真并行**，靠第 67 项的过滤契约解耦。

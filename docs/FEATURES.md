@@ -253,7 +253,7 @@ Compose 的 `search` profile 与 `cf-worker` 已就位，实现时不需要再�
 |---|---|---|---|
 | 43 | OnlyOffice 编辑与回调 | 🟡 | 文件动作页经 C 锁 RPC 创建或加入唯一 `onlyoffice` 租约，再打开上游 CE renderer；callback 影子层执行 JWT 校验、成功回调幂等和最终关闭解锁。生产级协作仍缺少 session/generation 写回 token 与容器级矩阵，不能按“解除两行 Pro 门控”估价。 |
 | 44 | 文件锁定强制校验 | 🟡 | `CF_ENABLE_FILE_LOCK` 打开时，`cf_lock_lease` 成为唯一租约真值，C 侧经写入生命周期在 C、Go fileserver 与 WebDAV 的共享终判点拒绝其他持有人；`cf_lock_*` RPC/Python 绑定供 Hub 调用，`FileLocks` 不在运行期双写。每次获取生成独立 UUID generation，并维护每库 revision。**未完成的兼容面**：session/generation 写回 token、refresh/force-release、虚拟库映射、父目录迁移、桌面 locked-files/通知与 Linux 整机矩阵；在这些完成前不能宣称 Pro 协议兼容。 |
-| 45 | 签入签出流程 | 🟡 | 手工与第三方程序共用 `POST /api/v2.1/cloudfile/repos/<id>/checkout/`，以 `DELETE` + generation 释放；它只在 C provider 实际加载时创建 12 小时租约，冲突返回 423。`local-edit` 返回单文件下载/提交票据，提交端重新比较 lease generation 与源 file ID；Native Messaging 可执行 Agent、心跳与强制解锁仍未交付。 |
+| 45 | 签入签出流程 | 🟡 | 手工与第三方程序共用 `POST /api/v2.1/cloudfile/repos/<id>/checkout/`，以 `DELETE` + generation 释放；它只在 C provider 实际加载时创建 12 小时租约，冲突返回 423。`local-edit` 返回单文件下载/提交票据，提交端重新比较 lease generation 与源 file ID。Go 绿色 Agent 与 MV3 Native Messaging 扩展已交付：一次性 ticket、心跳、受信任 origin、Office/CAD 自动探测和本地规则覆盖均已实现；服务端 fencing 的容器级 E2E 仍是生产启用写回的门槛。 |
 | 46 | iTeam 流程接口 | ⬜ | 依赖 45 |
 | 47 | 编辑超时与异常解锁 | ⬜ | 依赖 44 |
 | 48 | OnlyOffice 回调幂等 | 🟡 | CloudFile callback 影子层按 `document_key + status + source version` 缓存已成功的保存回调；等待 #43 的受控编辑会话接入后做容器级验证。 |

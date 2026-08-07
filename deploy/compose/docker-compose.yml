@@ -120,13 +120,17 @@ services:
       # Write lifecycle gate instrument. Not a capability -- see
       # cloudfile-server/common/cf-fileop-test.h.
       CF_FILEOP_TEST_PROVIDER: ${CF_FILEOP_TEST_PROVIDER:-false}
-      CF_FILEOP_TEST_REFUSE_TOKEN: ${CF_FILEOP_TEST_REFUSE_TOKEN:-cf-refuse}
+      # An explicitly empty token enables observe-only mode for the FileOp
+      # gate.  Use `-`, not `:-`, so Compose does not turn that empty value
+      # back into the refusal default.
+      CF_FILEOP_TEST_REFUSE_TOKEN: ${CF_FILEOP_TEST_REFUSE_TOKEN-cf-refuse}
       CF_FILEOP_TEST_JOURNAL: ${CF_FILEOP_TEST_JOURNAL:-/shared/cf-fileop-journal.log}
       CF_ENABLE_METADATA: ${CF_ENABLE_METADATA:-false}
       CF_ENABLE_TAGS: ${CF_ENABLE_TAGS:-false}
       CF_ENABLE_SEARCH: ${CF_ENABLE_SEARCH:-false}
       CF_PROVIDER_SEARCH: ${CF_PROVIDER_SEARCH:-}
       CF_SEASEARCH_TOKEN: ${CF_SEASEARCH_TOKEN:-}
+      CF_SEASEARCH_INTERVAL: ${CF_SEASEARCH_INTERVAL:-10m}
       CF_MEILISEARCH_URL: ${CF_MEILISEARCH_URL:-http://meilisearch:7700}
       CF_MEILISEARCH_API_KEY: ${MEILI_MASTER_KEY:-}
       CF_SEARCH_INDEX_INTERVAL: ${CF_SEARCH_INDEX_INTERVAL:-60}
@@ -327,13 +331,14 @@ services:
       # Write lifecycle gate instrument. Not a capability -- see
       # cloudfile-server/common/cf-fileop-test.h.
       CF_FILEOP_TEST_PROVIDER: ${CF_FILEOP_TEST_PROVIDER:-false}
-      CF_FILEOP_TEST_REFUSE_TOKEN: ${CF_FILEOP_TEST_REFUSE_TOKEN:-cf-refuse}
+      CF_FILEOP_TEST_REFUSE_TOKEN: ${CF_FILEOP_TEST_REFUSE_TOKEN-cf-refuse}
       CF_FILEOP_TEST_JOURNAL: ${CF_FILEOP_TEST_JOURNAL:-/shared/cf-fileop-journal.log}
       CF_ENABLE_METADATA: ${CF_ENABLE_METADATA:-false}
       CF_ENABLE_TAGS: ${CF_ENABLE_TAGS:-false}
       CF_ENABLE_SEARCH: ${CF_ENABLE_SEARCH:-false}
       CF_PROVIDER_SEARCH: ${CF_PROVIDER_SEARCH:-}
       CF_SEASEARCH_TOKEN: ${CF_SEASEARCH_TOKEN:-}
+      CF_SEASEARCH_INTERVAL: ${CF_SEASEARCH_INTERVAL:-10m}
       CF_MEILISEARCH_URL: ${CF_MEILISEARCH_URL:-http://meilisearch:7700}
       CF_MEILISEARCH_API_KEY: ${MEILI_MASTER_KEY:-}
       CF_SEARCH_INDEX_INTERVAL: ${CF_SEARCH_INDEX_INTERVAL:-60}

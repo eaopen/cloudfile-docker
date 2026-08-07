@@ -98,9 +98,16 @@ if ! command -v docker >/dev/null || ! docker compose version >/dev/null 2>&1; t
 else
     run "Compose 配置" bash -c "
         cd '$docker_repo/deploy/compose'
-        trap 'rm -f .env' EXIT
+        cf_compose_config=\$(mktemp)
+        trap 'rm -f .env \"\$cf_compose_config\"' EXIT
         cp .env.example .env
         docker compose config --quiet
+        # 空标记是 FileOp 门禁的观察模式，不能被 Compose 的默认值吞掉；
+        # SeaSearch 的短间隔则必须真的进入容器，CI 才不会等上游的 10 分钟默认值。
+        CF_FILEOP_TEST_REFUSE_TOKEN='' CF_SEASEARCH_INTERVAL=10s \\
+            docker compose config > \"\$cf_compose_config\"
+        grep -Fq 'CF_FILEOP_TEST_REFUSE_TOKEN: \"\"' \"\$cf_compose_config\"
+        grep -Fq 'CF_SEASEARCH_INTERVAL: 10s' \"\$cf_compose_config\"
         for p in search office worker full; do
             docker compose --profile \$p config --services >/dev/null
         done

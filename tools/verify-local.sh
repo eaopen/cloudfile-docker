@@ -138,6 +138,7 @@ CAPABILITIES=(
     "metadata|CF_ENABLE_METADATA CF_ENABLE_TAGS|tests/e2e/metadata_matrix.py"
     "audit|CF_ENABLE_AUDIT|tests/e2e/audit_matrix.py"
     "storage|CF_ENABLE_S3_STORAGE|tests/e2e/storage_matrix.py"
+    "external_sources|CF_ENABLE_EXTERNAL_SOURCES|tests/e2e/external_sources_matrix.py"
     "search|CF_ENABLE_SEARCH|tests/e2e/search_matrix.py"
     # fileop 是基线扩展点，不是能力，所以它的"开关"不是 CF_ENABLE_*——那份清单
     # 里的每一项都是运维可以合理打开的产品能力，而这个只是门禁用的仪器。
@@ -216,6 +217,19 @@ MINIO_API_PORT=19000
 MINIO_CONSOLE_PORT=19001
 CF_STORAGE_CLASSES_JSON=[{"storage_id":"local","is_default":true,"commits":{"backend":"fs","dir":"/shared/seafile"},"fs":{"backend":"fs","dir":"/shared/seafile"},"blocks":{"backend":"fs","dir":"/shared/seafile"}},{"storage_id":"minio","commits":{"backend":"s3","bucket":"cloudfile-commits","host":"minio:9000","key_id":"minioadmin","key":"change-this-minio-password","use_https":false,"path_style_request":true,"max_retries":2},"fs":{"backend":"s3","bucket":"cloudfile-fs","host":"minio:9000","key_id":"minioadmin","key":"change-this-minio-password","use_https":false,"path_style_request":true,"max_retries":2},"blocks":{"backend":"s3","bucket":"cloudfile-blocks","host":"minio:9000","key_id":"minioadmin","key":"change-this-minio-password","use_https":false,"path_style_request":true,"max_retries":2}}]
 EOF
+}
+
+cap_external_sources_run() {
+    local base=$1
+
+    # E2E 的 fixture 放在持久 /shared 卷中，和生产时宿主机 bind mount 后看到的
+    # 目录形状相同；本地门禁不需要、也不应要求一台真实 NAS。
+    say "准备只读外部资料源 fixture"
+    compose exec -T cloudfile bash -c \
+        "mkdir -p /shared/external/e2e/nested && printf 'CloudFile external source fixture\\n' > /shared/external/e2e/readme.txt && printf 'nested fixture\\n' > /shared/external/e2e/nested/inside.txt" || return 1
+
+    python3 "$repo/tests/e2e/external_sources_matrix.py" --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
 }
 
 # 存储门禁独有的两点，其它能力都不需要：

@@ -345,6 +345,11 @@ def test_external_sources():
     check('默认根前缀是列表且只含 /shared/external',
           values.get('CF_EXTERNAL_SOURCES_ROOTS') == ['/shared/external'],
           repr(values.get('CF_EXTERNAL_SOURCES_ROOTS')))
+    check('默认扫描配置均为正整数',
+          (values.get('CF_EXTERNAL_SCAN_INTERVAL'),
+           values.get('CF_EXTERNAL_SCAN_MAX_DIRS'),
+           values.get('CF_EXTERNAL_SCAN_MAX_FILES')) == (60, 20, 2000),
+          repr(values))
 
     env = {'CF_ENABLE_EXTERNAL_SOURCES': 'true',
            'CF_EXTERNAL_SOURCES_ROOTS': '/mnt/nas:/shared/external'}
@@ -353,6 +358,17 @@ def test_external_sources():
           values.get('CF_EXTERNAL_SOURCES_ROOTS') == ['/mnt/nas',
                                                       '/shared/external'],
           repr(values.get('CF_EXTERNAL_SOURCES_ROOTS')))
+
+    for name, raw in [('扫描间隔不是数字时启动失败', 'soon'),
+                      ('目录批次为 0 时启动失败', '0')]:
+        key = 'CF_EXTERNAL_SCAN_INTERVAL' if '间隔' in name \
+            else 'CF_EXTERNAL_SCAN_MAX_DIRS'
+        env = {'CF_ENABLE_EXTERNAL_SOURCES': 'true', key: raw}
+        try:
+            load('_settings_block_external_sources', env)()
+            check(name, False, '%r 被接受了' % raw)
+        except Exception:
+            check(name, True)
 
     # 下面三项都是"配置错了必须起不来"，而不是"回落到某个默认值"。
     # 空值回落成默认是最坏的一种：运维以为自己限制了范围，实际没有；

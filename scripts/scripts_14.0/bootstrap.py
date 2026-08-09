@@ -329,6 +329,16 @@ def _settings_block_external_sources():
     if not cf_enabled('CF_ENABLE_EXTERNAL_SOURCES'):
         return ''
 
+    def positive_int(name, default):
+        raw = get_conf(name, str(default))
+        try:
+            value = int(raw)
+        except ValueError:
+            raise Exception('%s must be an integer' % name)
+        if value <= 0:
+            raise Exception('%s must be positive' % name)
+        return value
+
     raw = get_conf('CF_EXTERNAL_SOURCES_ROOTS', '/shared/external')
     roots = [part.strip() for part in raw.split(':') if part.strip()]
     if not roots:
@@ -343,7 +353,15 @@ def _settings_block_external_sources():
                             'point it at a directory holding nothing but '
                             'mounts')
 
-    return 'CF_EXTERNAL_SOURCES_ROOTS = %r\n' % (roots,)
+    return ('CF_EXTERNAL_SOURCES_ROOTS = %r\n'
+            'CF_EXTERNAL_SCAN_INTERVAL = %r\n'
+            'CF_EXTERNAL_SCAN_MAX_DIRS = %r\n'
+            'CF_EXTERNAL_SCAN_MAX_FILES = %r\n') % (
+                roots,
+                positive_int('CF_EXTERNAL_SCAN_INTERVAL', 60),
+                positive_int('CF_EXTERNAL_SCAN_MAX_DIRS', 20),
+                positive_int('CF_EXTERNAL_SCAN_MAX_FILES', 2000),
+            )
 
 
 def _settings_block_upstream():

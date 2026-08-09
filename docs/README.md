@@ -24,7 +24,7 @@ CE 扩展版的规格、规划与决策。每份文档只保留**最终版本**�
 | [upstream-reuse.md](upstream-reuse.md) | D 元数据与标签 | Metadata | ✅ 官方 metadata-server 已接入并通过真实 API 验收 |
 | [search.md](search.md) | E 检索 | Full text search | ⬜ 方案已定 |
 | [file-preview-and-edit.md](file-preview-and-edit.md) | F 协同与本地编辑 | File locking / Online editing | 🟡 OnlyOffice、文件锁与签入签出已有部分实现；尚缺生产协议兼容面与容器级 E2E |
-| [external-sources.md](external-sources.md) | G 外部资料源 | SMB/NFS 外部资料源 | 🟡 阶段 1 核心只读已完成；增量扫描、虚拟目录挂载与 Overlay 尚未实现 |
+| [external-sources.md](external-sources.md) | G 外部资料源 | SMB/NFS 外部资料源 | 🟡 阶段 2 自有只读浏览与管理入口已完成；增量扫描、原生库影子挂载与 Overlay 尚未实现 |
 | [storage.md](storage.md) | H 存储 | AWS S3 / 多存储 | ✅ 已完成，并已通过完整整机验证 |
 | [ai.md](ai.md) | AI | 自动属性/标签/摘要（非 Pro 表项） | ⬜ 方案已定 |
 

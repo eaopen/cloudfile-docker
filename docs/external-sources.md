@@ -182,7 +182,7 @@ shadow a native endpoint when it has to」。第 40 项已经用它覆盖了两�
 所以真实取舍不是「两套界面 vs 改上游」，而是「两套界面 vs **影子约 8 个只读
 端点**」。
 
-### 阶段 3 要影子的端点（预先记账，本轮不实现）
+### 阶段 3 已影子的端点
 
 打开一个库时前端实际会打的调用（`frontend/src/pages/lib-content-view/`）：
 
@@ -191,11 +191,14 @@ shadow a native endpoint when it has to」。第 40 项已经用它覆盖了两�
 | `GET /api/v2.1/repos/` | 追加外部源伪库（`repo_type` 标记为外部源） |
 | `GET /api/v2.1/repos/<id>/` | 伪库的 repo info |
 | `GET /api/v2.1/repos/<id>/dir/` | 转发给 provider 的 `list_dir` |
-| `GET /api/v2.1/repos/<id>/file/detail/` | 转发给 `stat` |
-| `GET /api/v2.1/repos/<id>/file/?op=download` | **返回 CloudFile 自己的下载 URL**，不是 fileserver 的 |
-| `GET /api/v2.1/repos/<id>/custom-share-permissions/` | 空列表（伪库没有自定义权限） |
-| `GET /api/v2.1/repos/<id>/file-tags/`、`repo-tags/` | 空列表，直到第 53 项 overlay 落地 |
-| `GET /api/v2.1/repos/<id>/dir/detail/` | 目录大小/数量，或明确返回未知 |
+| `GET /api2/repos/<id>/file/detail/` | 转发给 `stat`，返回没有 Seafile object id 的只读文件详情 |
+| `GET /api2/repos/<id>/file/?op=download` | **返回 CloudFile 自己的下载 URL**，不是 fileserver 的 |
+
+影子层只接管以上浏览必经的端点；对真实库 id 的请求逐个委托回原生 view，保证
+打开此能力不会改变普通库的处理路径。写请求对合成库统一拒绝 403，绝不把 id 传入
+`seafile_api`。原生的分享、目录压缩、历史、锁、WebDAV、标签模型和元数据模型不在
+影子范围内；其中可表达的外部标签/属性由下一节的 Overlay API 提供，而不是伪造
+Seafile 的 `repo_tag` / `file_tag` 记录。
 
 **已知风险**：没被影子到的端点拿到合成 repo_id 会 404/500。合成 repo_id 用
 UUID4 而非可识别的前缀，是刻意的——伪库必须能通过前端所有 `[-0-9a-f]{36}` 的
@@ -210,8 +213,9 @@ UUID4 而非可识别的前缀，是刻意的——伪库必须能通过前端�
 |---|---|---|
 | `smb` provider（`smbprotocol`） | ⬜ 已设计未实现 | 用户态 SMB2/3，可在 Web 上直接配 UNC 与凭据，不需要宿主机挂载。**卡在凭据落库**：明文存 `cf_external_source` 不可接受，而 CloudFile 目前没有密钥管理层。落地前先定这个 |
 | `nfs` provider | ❌ 不做 | 没有可靠的纯 Python NFS 客户端；宿主机挂载 + `local-path` 已经覆盖 |
-| 增量扫描（第 51 项） | ⬜ | `cf-worker` 周期任务 + `cf_external_scan_state` 水位线，喂 `register_search_indexer` 链。大 NAS 上必须是有界增量遍历，不是每轮全扫 |
-| Overlay 属性/标签（第 53 项） | ⬜ | 跨簇 G×D，等簇 D 落地后定归属 |
+| 增量扫描（第 51 项） | ✅ | `CF_PROVIDER_SEARCH=meilisearch` 时才注册 `cf-worker` 周期任务；`cf_external_scan_state.detail` 保存 BFS 目录队列，每轮最多 `CF_EXTERNAL_SCAN_MAX_DIRS` 个目录和 `CF_EXTERNAL_SCAN_MAX_FILES` 个文件。一个完整周期开始时删除该合成 repo 的旧文档，周期内只 upsert；故障保留队列并在下轮重试。外部检索走 `/api/v2.1/cloudfile/external-sources/search/?q=`，先按 source grant 过滤再查询 Meilisearch。外部字节和正文永不进索引。 |
+| 原生库影子挂载（第 52 项） | ✅ | 合成 repo 注入原生共享库列表，并影子 repo info、目录、文件详情与下载 URL；真实 repo id 委托给上游。影子层只读，未覆盖的 commit/block 型端点仍不支持。 |
+| Overlay 属性/标签（第 53 项） | ✅ | `cf_external_overlay` 以 `(source_id, SHA1(path))` 保存 JSON metadata 和字符串 tags；`GET/PUT /api/v2.1/cloudfile/external-sources/<id>/overlay/`。读者可读，写入仅系统管理员，且写入前重新 `stat` 外部路径。它不创建 Seafile 文件、commit 或 tags 记录。 |
 
 ---
 
@@ -236,6 +240,6 @@ UUID4 而非可识别的前缀，是刻意的——伪库必须能通过前端�
 JSON——按 [BRANCHES.md](BRANCHES.md) 第一之二节的判据，这里不共享任何东西。
 
 所以本簇的正确验证形状是：路径安全与授权判定的**单元测试 + 变异验证**，加上
-阶段 2/3 的能力门禁（`external-sources-e2e.yml` + `verify-local.sh cap
-external-sources`，两边必须成对，由 `preflight-checks.py` 的
+阶段 2/3 的能力门禁（`external_sources-e2e.yml` + `verify-local.sh cap
+external_sources`，两边必须成对，由 `preflight-checks.py` 的
 `check_capability_gates` 卡住）。

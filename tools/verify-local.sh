@@ -138,6 +138,7 @@ CAPABILITIES=(
     "metadata|CF_ENABLE_METADATA CF_ENABLE_TAGS|tests/e2e/metadata_matrix.py"
     "audit|CF_ENABLE_AUDIT|tests/e2e/audit_matrix.py"
     "storage|CF_ENABLE_S3_STORAGE|tests/e2e/storage_matrix.py"
+    "external_sources|CF_ENABLE_EXTERNAL_SOURCES|tests/e2e/external_sources_matrix.py"
     "search|CF_ENABLE_SEARCH|tests/e2e/search_matrix.py"
     # fileop 鏄熀绾挎墿灞曠偣锛屼笉鏄兘鍔涳紝鎵€浠ュ畠鐨?寮€鍏?涓嶆槸 CF_ENABLE_*鈥斺€旈偅浠芥竻鍗?
     # 閲岀殑姣忎竴椤归兘鏄繍缁村彲浠ュ悎鐞嗘墦寮€鐨勪骇鍝佽兘鍔涳紝鑰岃繖涓彧鏄棬绂佺敤鐨勪华鍣ㄣ€?
@@ -218,7 +219,37 @@ CF_STORAGE_CLASSES_JSON=[{"storage_id":"local","is_default":true,"commits":{"bac
 EOF
 }
 
+<<<<<<< .mine
 # 瀛樺偍闂ㄧ鐙湁鐨勪袱鐐癸紝鍏跺畠鑳藉姏閮戒笉闇€瑕侊細
+
+
+
+
+
+
+
+
+
+
+
+
+
+=======
+cap_external_sources_run() {
+    local base=$1
+
+    # E2E 的 fixture 放在持久 /shared 卷中，和生产时宿主机 bind mount 后看到的
+    # 目录形状相同；本地门禁不需要、也不应要求一台真实 NAS。
+    say "准备只读外部资料源 fixture"
+    compose exec -T cloudfile bash -c \
+        "mkdir -p /shared/external/e2e/nested && printf 'CloudFile external source fixture\\n' > /shared/external/e2e/readme.txt && printf 'nested fixture\\n' > /shared/external/e2e/nested/inside.txt" || return 1
+
+    python3 "$repo/tests/e2e/external_sources_matrix.py" --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
+}
+
+# 存储门禁独有的两点，其它能力都不需要：
+>>>>>>> .theirs
 #
 #   1. GC/FSCK/杩佺Щ鏄涓绘満渚?CLI 琛屼负锛屼笉缁忚繃 HTTP锛宻torage_matrix.py 瑕嗙洊涓嶅埌锛?
 #      鍙兘鐢?`compose exec`/`compose run` 鐩存帴椹卞姩銆?

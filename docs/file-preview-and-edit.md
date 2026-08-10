@@ -17,10 +17,9 @@ CloudFile 的代理、锁或独立验收对象。
 > `cf_lock_lease`、C RPC、写入终判和手工/第三方 checkout 的最小闭环，但会话
 > fencing、强制解锁和客户端协议仍未完成；OnlyOffice 受控启动不属于 CloudFile 范围。
 >
-> 结论：把能力定义为统一的“文件动作平台”，而不是把
-> `etech-seafile` 的浏览器插件和 Go Bridge 原样搬进 CloudFile。
-> 现有项目可复用编辑器探测、工作区、关联文件和延迟上传思路；认证、传输、
-> 锁和浏览器联动必须按本文重新设计。
+> 结论：把能力定义为统一的“文件动作平台”，而不是搬运任一项目的浏览器插件或
+> 本地 Bridge。编辑器探测、工作区、关联文件和延迟上传可以作为通用产品思路；认证、
+> 传输、锁和浏览器联动必须按本文重新设计。
 
 ---
 
@@ -29,7 +28,7 @@ CloudFile 的代理、锁或独立验收对象。
 ### 1.1 保留的决策
 
 1. **预览与编辑严格分离。** 预览永不获取写锁；本地查看即使产生本地修改也不上传。
-2. **本地专业编辑统一交付。** 浏览器下载 `cloudfile-local/v1` 会话文件；绿色版和
+2. **本地专业编辑统一交付。** 浏览器下载 `cloudfile-local/v2` 会话文件；绿色版和
    已安装版 CloudFile Local 使用同一文件关联，再调用 CAD、设计等专业软件。
 3. **浏览器不桥接 localhost。** 它不判断权限、不抓 Cookie、不持有 Seafile Token，
    也不向页面注入业务规则。
@@ -425,6 +424,21 @@ Pro server 源码不在当前三个仓库中，不能声称内部实现逐行一
 拒绝；当前锁若属于 `pro-compatible`，同 owner 的原生提交可通过。两类锁仍受同一个
 `UNIQUE(repo_id, normalized_path)` 约束，绝不能各建一把。
 
+#### 已实现的 CE 控制面
+
+下列接口是 CloudFile 自己的控制面，不冒充尚未金样验证的 Pro HTTP 接口。它们全部把
+`generation` 带到 C 侧权威租约；因此旧会话无法续租或强制释放一个后来重新取得的锁：
+
+| 操作 | 接口 | 必填字段 | 终判与结果 |
+|---|---|---|---|
+| 续租 | `PATCH /api/v2.1/cloudfile/repos/<repo_id>/file-lock/` | `path`、`generation` | 仅持有人可续租；C 侧将 `lease_until` 截断到原 `hard_expire_at`，不推进锁 revision |
+| 管理员强制释放 | `POST /api/v2.1/admin/cloudfile/repos/<repo_id>/file-lock/force-release/` | `path`、`generation`；`reason` 可选 | 仅系统管理员；C 侧以 generation 精确匹配后写入 `forced_by`、`forced_reason` 并推进 revision |
+
+内部 RPC 分别为 `cf_lock_refresh` 与 `cf_lock_force_release`。它们不暴露给浏览器，Hub
+负责身份与管理员授权；C 侧仍再次校验持有人或 generation，避免 Hub 的陈旧读造成错放。
+这两项补齐的是租约恢复与受控解锁，不代表桌面 `locked-files`、通知、虚拟库映射或 Pro
+金样兼容已经完成。
+
 #### 后端隔离与升级
 
 内部接口使用 `LockBackend`，实现为 `CloudFileLockBackend` 或 `ProLockBackend`。CE 的
@@ -750,6 +764,24 @@ Agent 本地 manifest 决定：
 
 服务端不能发送任意 executable、shell、PowerShell 或命令行模板，否则文件打开能力会
 变成远程代码执行平台。
+
+#### 最小配置与本机软件解析
+
+首次使用只配置受信任的 CloudFile origin；不要求管理员预先为 Office、CAD 或三维软件
+写路径规则。Agent 的解析顺序固定为：**用户 `open_rules` 覆盖 → 已安装软件自动检测 →
+操作系统文件关联**。因此部署只需在需要固定某个专业查看器、编辑器或优先级时才维护本地
+规则。
+
+自动检测覆盖 Word、Excel、PowerPoint、Visio、LibreOffice、AutoCAD、BricsCAD、
+DraftSight、Revit、SOLIDWORKS、Creo、NX、CATIA、SketchUp、Rhino 和 FreeCAD 的常见
+Office/CAD/三维扩展名。Windows 先读取用户/机器的 `App Paths` 注册，再扫描常见安装目录；
+每个候选必须是实际存在的本地可执行文件。macOS/Linux 分别使用已安装 bundle/PATH 候选，
+无匹配时回退用户当前的系统关联。
+
+用户规则只能引用绝对本地程序路径并精确包含一个 `{file}` 参数；Agent 以参数数组直接启动，
+不经 shell。Chrome 扩展只接收 `.cloudfile` 下载（包含 Hub 生成的 `blob:` 下载）并把文件
+路径交给 Native Messaging；它可显示检测到的软件名称，但不接收、保存或执行远端下发的
+程序路径/命令。
 
 绿色软件包至少包含：
 

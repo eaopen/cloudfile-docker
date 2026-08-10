@@ -23,6 +23,7 @@ import ast
 import json
 import os
 import sys
+import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BOOTSTRAP = os.path.join(HERE, '..', 'scripts', 'scripts_14.0', 'bootstrap.py')
@@ -344,6 +345,11 @@ def test_external_sources():
     check('默认根前缀是列表且只含 /shared/external',
           values.get('CF_EXTERNAL_SOURCES_ROOTS') == ['/shared/external'],
           repr(values.get('CF_EXTERNAL_SOURCES_ROOTS')))
+    check('默认扫描配置均为正整数',
+          (values.get('CF_EXTERNAL_SCAN_INTERVAL'),
+           values.get('CF_EXTERNAL_SCAN_MAX_DIRS'),
+           values.get('CF_EXTERNAL_SCAN_MAX_FILES')) == (60, 20, 2000),
+          repr(values))
 
     env = {'CF_ENABLE_EXTERNAL_SOURCES': 'true',
            'CF_EXTERNAL_SOURCES_ROOTS': '/mnt/nas:/shared/external'}
@@ -352,6 +358,17 @@ def test_external_sources():
           values.get('CF_EXTERNAL_SOURCES_ROOTS') == ['/mnt/nas',
                                                       '/shared/external'],
           repr(values.get('CF_EXTERNAL_SOURCES_ROOTS')))
+
+    for name, raw in [('扫描间隔不是数字时启动失败', 'soon'),
+                      ('目录批次为 0 时启动失败', '0')]:
+        key = 'CF_EXTERNAL_SCAN_INTERVAL' if '间隔' in name \
+            else 'CF_EXTERNAL_SCAN_MAX_DIRS'
+        env = {'CF_ENABLE_EXTERNAL_SOURCES': 'true', key: raw}
+        try:
+            load('_settings_block_external_sources', env)()
+            check(name, False, '%r 被接受了' % raw)
+        except Exception:
+            check(name, True)
 
     # 下面三项都是"配置错了必须起不来"，而不是"回落到某个默认值"。
     # 空值回落成默认是最坏的一种：运维以为自己限制了范围，实际没有；
@@ -452,6 +469,83 @@ def test_fileop_seafile_conf():
     del build
 
 
+def test_metadata_schema_compatibility():
+    """The upstream schema omission must be repaired only when needed."""
+    print('── apply_metadata_schema_compatibility')
+
+    class Cursor:
+        def __init__(self, responses):
+            self.responses = iter(responses)
+            self.statements = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *unused):
+            return False
+
+        def execute(self, statement, params=None):
+            self.statements.append((statement, params))
+
+        def fetchone(self):
+            return next(self.responses)
+
+    class Connection:
+        def __init__(self, cursor):
+            self.cursor_value = cursor
+            self.committed = False
+            self.closed = False
+
+        def cursor(self):
+            return self.cursor_value
+
+        def commit(self):
+            self.committed = True
+
+        def close(self):
+            self.closed = True
+
+    def run(env, responses):
+        migrate = load('apply_metadata_schema_compatibility', env)
+        cursor = Cursor(responses)
+        conn = Connection(cursor)
+        pymysql = types.SimpleNamespace(connect=lambda **kwargs: conn)
+        previous = sys.modules.get('pymysql')
+        sys.modules['pymysql'] = pymysql
+        migrate.__globals__['loginfo'] = lambda message: None
+        migrate.__globals__['logwarning'] = lambda message: None
+        try:
+            migrate()
+        finally:
+            if previous is None:
+                del sys.modules['pymysql']
+            else:
+                sys.modules['pymysql'] = previous
+        return conn, cursor
+
+    conn, cursor = run({}, [])
+    check('关闭元数据和标签时不连接 Hub 数据库', not cursor.statements and not conn.closed)
+
+    env = {'CF_ENABLE_METADATA': 'true',
+           'SEAFILE_MYSQL_DB_SEAHUB_DB_NAME': 'metadata_hub'}
+    conn, cursor = run(env, [(1,), None])
+    sql = '\n'.join(statement for statement, unused in cursor.statements)
+    check('缺列时补齐 summary_enabled 与索引',
+          'ADD COLUMN `summary_enabled` TINYINT(1) NOT NULL DEFAULT 0' in sql
+          and 'key_repo_metadata_summary_enabled' in sql, sql)
+    check('补齐后提交并关闭连接', conn.committed and conn.closed)
+
+    conn, cursor = run(env, [(1,), (1,)])
+    sql = '\n'.join(statement for statement, unused in cursor.statements)
+    check('已有列时不重复执行 ALTER', 'ALTER TABLE' not in sql, sql)
+    check('已有列时仍提交并关闭连接', conn.committed and conn.closed)
+
+    conn, cursor = run(env, [None])
+    check('缺少上游表时不执行 ALTER',
+          not any('ALTER TABLE' in statement for statement, unused in cursor.statements))
+    check('缺少上游表时关闭连接', conn.closed)
+
+
 def main():
     print(__doc__.splitlines()[0])
     print()
@@ -460,6 +554,7 @@ def main():
     test_external_sources()
     test_upstream_packages()
     test_fileop_seafile_conf()
+    test_metadata_schema_compatibility()
     print()
     if failures:
         print('\033[31m%d 项失败\033[0m' % len(failures))

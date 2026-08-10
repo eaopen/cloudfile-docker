@@ -1,6 +1,6 @@
 # CloudFile 特性清单与完成情况
 
-Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的实际状态。
+Seafile CE 企业扩展版的全部规划特性，以及截至 `dev`（2026-08-07）的实际状态。
 
 > **按 Pro 对标读这份清单**：哪些是"要构建的机制"、哪些只是"要启用的配置"，
 > 见 [pro-parity.md](pro-parity.md)——它把官方 Pro vs CE 对比逐项映射到这里。
@@ -24,7 +24,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | **扩展基线** | `dev` | 扩展点、构建、部署、发布机制 | 构建镜像 + 原生 CE 冒烟 + 扩展点验收（开关全关） |
 | **能力** | 开发中在 `feature/<簇>`，**验收后合回 `dev`** | 具体能力，默认关闭 | 各自的用例集，开着自己那个开关跑 |
 
-> **开关粒度 ≠ 分支粒度。** 十个 `CF_ENABLE_*` 对应**八个耦合簇**——例如属性与
+> **开关粒度 ≠ 分支粒度。** 十五个 `CF_ENABLE_*` 对应**八个耦合簇**——例如属性与
 > 标签是两个开关、一条分支，因为它们共享同一张表。簇的划分依据（共享表 /
 > 共享规格 / 共享上游补丁 / 运行时互调）见 [BRANCHES.md](BRANCHES.md) 第一之二节。
 
@@ -53,7 +53,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 |---|---|---|---|
 | 1 | 三仓 fork 与分支模型 | ✅ | `dev` 为主干，`upstream/master` remote-tracking ref 作纯净副本，见 [BRANCHING.md](../BRANCHING.md) |
 | 2 | 统一版本号与发布清单 | ✅ | [release.yaml](../release.yaml)，各组件按 commit SHA 锁定 |
-| 3 | 功能开关机制（10 个 `CF_ENABLE_*`） | ✅ | 默认全关；配置块重写幂等性已验证 |
+| 3 | 功能开关机制（15 个 `CF_ENABLE_*`） | ✅ | 默认全关；配置块重写幂等性已验证。8 月 7 日新增关注与转换/导出开关，基线门禁会断言完整清单且全部关闭 |
 | 4 | 扩展注册机制 | ✅ | URL / 菜单 / 权限 / 文件操作 / 索引器 / 外部源 / 周期任务；分发与 seal 行为已验证 |
 | 5 | `cloudfile_ext` Django app | ✅ | 通过 `EXTRA_INSTALLED_APPS` 注册，未改 `settings.py` |
 | 6 | 上游注入点最小化 | ✅ | Hub 7 个（2 处权限/路由 + 2 处检索扩展点 + 1 处数据追加 + 2 处离线 S3 维护 wrapper）；Server 33 个（对象/块/FS 三类存储后端构造入口、GC/FSCK、离线迁移、模块依赖及其测试）；Docker 3 个。合计 **43**，清单由 `check-upstream-patches.sh` 卡住 |
@@ -74,7 +74,7 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 | 63 | 扩展点形状：链 与 provider | ✅ | `providers.py`：同一件事的可互换实现，由 `CF_PROVIDER_<KIND>` 选中，未选中回落原生、选了不存在的名字则显式失败。**8 项单元测试，且经变异测试确认会失败** |
 | 64 | 检索查询侧扩展点 | 🟡 | `register_search_provider()` + `seahub/search/utils.py`、`seahub/utils/__init__.py` 两处上游改动。meilisearch 由此成为**一种** provider 而非唯一方案，且第 40 项已有真实消费者（`MeilisearchProvider`）。**未随镜像验证**——`search-e2e.yml` 是这条扩展点第一次有端到端门禁，尚未在真实容器栈上跑过 |
 | 65 | 外部服务回调机制 | 🟡 | `external_service.py`：超时 / JWT 签名 / 重试 / fail-closed。**刻意不放在同步权限判定路径上**，理由见 EXTENSION-POINTS.md 第五节。**尚无调用方** |
-| 101 | 统一写入生命周期扩展点（P0.5） | 🟡 | **本轮新增，属基线**。`common/cf-fileop.{c,h}` 提供 `PREPARE`（一票否决）/ `COMMITTED`（成功一次的不可变事实）/ `ABORTED`（尽力而为）三相，规格 [fileop-lifecycle.md](fileop-lifecycle.md)、用例集 [fileop-cases.json](fileop-cases.json)。它是缺口 1 的补法，也是 #43–#48（OnlyOffice、文件锁、签入签出）与 #42（元数据跟随）共同的前置。**覆盖**：C `server/repo-op.c` 全部 19 个写入口（含批量删除、跨库复制/移动的异步分支、并发重试循环）；Go `fileserver/cf_fileop.go` 经 RPC 问 C，接进上传/更新/分块提交/裸块/建目录/同步分支更新；**WebDAV 不需要补丁**——seafdav 的写全部经 `seafile_api.*` → RPC → `repo-op.c`，写第二份 Python 校验只会得到第二个真值。**单元级证据**：C 159 项用例 + Go 6 项跨语言契约测试 + `repo-op.c` 50 个调用点的类型检查，**11 个变异全部被捕获**（拒绝后不停、路径折叠大小写、组件匹配退化成子串、空标记匹配一切、词汇表改错、字段名拼错、operation 不存在、COMMITTED 少 commit_id、基线不再惰性、Go 常量漂移、JSON 键漂移）。**整机门禁已补齐**：`fileop-e2e.yml` + `verify-local.sh cap fileop` + `tests/e2e/fileop_matrix.py` 两阶段矩阵，靠 `common/cf-fileop-test.c` 这个假 provider （默认关闭，不在 `CF_ENABLE_*` 清单里）逐入口验证拒绝、零事实和反向对照，并断言关掉 provider 后跑冒烟 journal 一行不长。上游改动 33 → 35（`server/repo-op.c`、`fileserver/fileop.go`），理由是终判点不能有绕行路：`upload-file.c`、虚拟库合并、`copy-mgr` 都绕过 `rpc-service.c` 直接调 `seaf_repo_manager_*`。**尚未验证**：这条 workflow 还没在 CI 上跑过一次，需要 Linux 构建环境。ACL 第 71 项的教训在这里同样适用：门禁写好了不等于门禁跑过了 |
+| 101 | 统一写入生命周期扩展点（P0.5） | 🟡 | **本轮新增，属基线**。`common/cf-fileop.{c,h}` 提供 `PREPARE`（一票否决）/ `COMMITTED`（成功一次的不可变事实）/ `ABORTED`（尽力而为）三相，规格 [fileop-lifecycle.md](fileop-lifecycle.md)、用例集 [fileop-cases.json](fileop-cases.json)。它是缺口 1 的补法，也是 #43–#48（OnlyOffice、文件锁、签入签出）与 #42（元数据跟随）共同的前置。**覆盖**：C `server/repo-op.c` 全部 19 个写入口（含批量删除、跨库复制/移动的异步分支、并发重试循环）；Go `fileserver/cf_fileop.go` 经 RPC 问 C，接进上传/更新/分块提交/裸块/建目录/同步分支更新；**WebDAV 不需要补丁**——seafdav 的写全部经 `seafile_api.*` → RPC → `repo-op.c`，写第二份 Python 校验只会得到第二个真值。**单元级证据**：C 159 项用例 + Go 6 项跨语言契约测试 + `repo-op.c` 50 个调用点的类型检查，**11 个变异全部被捕获**（拒绝后不停、路径折叠大小写、组件匹配退化成子串、空标记匹配一切、词汇表改错、字段名拼错、operation 不存在、COMMITTED 少 commit_id、基线不再惰性、Go 常量漂移、JSON 键漂移）。**整机门禁已补齐**：`fileop-e2e.yml` + `verify-local.sh cap fileop` + `tests/e2e/fileop_matrix.py` 两阶段矩阵，靠 `common/cf-fileop-test.c` 这个假 provider （默认关闭，不在 `CF_ENABLE_*` 清单里）逐入口验证拒绝、零事实和反向对照，并断言关掉 provider 后跑冒烟 journal 一行不长。8 月 7 日修正了门禁的启动竞态与运行期配置/日志路径；**尚未验证**：这条 workflow 还没在 CI 或当前 `dev` 镜像上跑过一次，需要 Linux 构建环境。ACL 第 71 项的教训在这里同样适用：门禁写好了不等于门禁跑过了 |
 | 102 | 路径规范化下沉到基线 | ✅ | `cf_acl_normalize_path` → `common/cf-path.c`，ACL 侧留薄转发，既有用例逐字未改。与第 79 项（身份解析下沉）同一条判据：ACL 按路径存规则、锁按路径存租约，两者必须逐字节一致，否则 `/a/b` 的规则和 `/a/b/` 的锁说的是两个对象。留在能力里还会让基线 seam 在运行时 import 能力，并让 ACL 的开关决定路径能不能被规范化 |
 | 67 | 检索结构化过滤契约 | ✅ | `search_query.py`：属性/标签谓词词汇表 + provider 能力声明。**存在的理由是分支切分**——没有它，组合检索会把元数据和检索焊成一条大分支。硬性规定：provider 收到未声明支持的算子必须拒绝，**不允许静默忽略**（被丢掉的谓词返回比请求更大的结果集，而调用方看不出差别）。**15 项单元测试，3 个变异全部被捕获** |
 
@@ -215,9 +215,9 @@ Seafile CE 企业扩展版的全部规划特性，以及截至 `14.0.0-cf.0` 的
 
 | # | 特性 | 状态 | 说明 |
 |---|---|---|---|
-| 38 | 文件属性扩展 | ✅ | `metadata` profile、上游开关和官方 metadata-server 已接；真实 API 已验收仓库初始化与属性/标签状态。`seafevents` 任务端点已随 Server 修复正常启动。官方尚无稳定 14.x 镜像，当前仅以 `14.0.3-testing` 验证兼容性 |
-| 39 | 标签 | ✅ | 与 38 同表同分支；`CF_ENABLE_TAGS` 依赖校验、标签读写门禁和官方存储服务已通过真实 API 验收（创建与读回） |
-| 42 | 移动重命名时元数据关联更新 | ⬜ | 依赖 38/39 验收；投喂走 seafevents 的提交遍历，很可能**不依赖 `file_op` 钩子**——移动/重命名本就在提交流里 |
+| 38 | 文件属性扩展 | ✅ | `metadata` profile、上游开关和官方 metadata-server 已接；`seafevents` 任务端点已随 Server 修复正常启动。修复上游 14.0 的新装/升级 DDL 漏洞：Hub 模型会读取 `repo_metadata.summary_enabled`，但两份上游 SQL 都没建该列，导致属性状态 API 500；CloudFile 在元数据或标签开关开启时对 Hub DB 执行一次幂等兼容迁移（补列及索引），覆盖新装、升级和既有 CE 接入三条路径。**本机真实栈已验收**：开关开启后的原生冒烟 12/12，管理员建库、读取初始状态、启用元数据、状态回读均通过。 |
+| 39 | 标签 | ✅ | 与 38 同表同分支、共用兼容迁移。`CF_ENABLE_TAGS` 依赖校验和配置生成通过；本机真实 metadata-server 已验标签创建写入与读回，开关开启后的原生冒烟 12/12 同时通过。 |
+| 42 | 移动重命名时元数据关联更新 | 🟡 | 38/39 已验收。已确认走上游 `seaf_server.event:repo-update`：seafevents 的 metadata handler 按库合并提交、投递 `update-metadata` 任务，由提交树差异重建/更新记录；因此不依赖 `file_op` 钩子，也不会维护第二个文件事实源。**待补端到端门禁**：上传带属性/标签的文件后分别重命名、跨目录移动，断言新路径保留同一记录与标签、旧路径不可查询。 |
 
 **簇 E（`feature/search`）** —— 与簇 D **可真并行**，靠第 67 项的过滤契约解耦。
 
@@ -253,7 +253,7 @@ Compose 的 `search` profile 与 `cf-worker` 已就位，实现时不需要再�
 |---|---|---|---|
 | 43 | OnlyOffice 编辑与回调 | 🟡 | 文件动作页经 C 锁 RPC 创建或加入唯一 `onlyoffice` 租约，再打开上游 CE renderer；callback 影子层执行 JWT 校验、成功回调幂等和最终关闭解锁。生产级协作仍缺少 session/generation 写回 token 与容器级矩阵，不能按“解除两行 Pro 门控”估价。 |
 | 44 | 文件锁定强制校验 | 🟡 | `CF_ENABLE_FILE_LOCK` 打开时，`cf_lock_lease` 成为唯一租约真值，C 侧经写入生命周期在 C、Go fileserver 与 WebDAV 的共享终判点拒绝其他持有人；`cf_lock_*` RPC/Python 绑定供 Hub 调用，`FileLocks` 不在运行期双写。每次获取生成独立 UUID generation，并维护每库 revision。**未完成的兼容面**：session/generation 写回 token、refresh/force-release、虚拟库映射、父目录迁移、桌面 locked-files/通知与 Linux 整机矩阵；在这些完成前不能宣称 Pro 协议兼容。 |
-| 45 | 签入签出流程 | 🟡 | 手工与第三方程序共用 `POST /api/v2.1/cloudfile/repos/<id>/checkout/`，以 `DELETE` + generation 释放；它只在 C provider 实际加载时创建 12 小时租约，冲突返回 423。`local-edit` 返回单文件下载/提交票据，提交端重新比较 lease generation 与源 file ID；Native Messaging 可执行 Agent、心跳与强制解锁仍未交付。 |
+| 45 | 签入签出流程 | 🟡 | 手工与第三方程序共用 `POST /api/v2.1/cloudfile/repos/<id>/checkout/`，以 `DELETE` + generation 释放；它只在 C provider 实际加载时创建 12 小时租约，冲突返回 423。`local-edit` 返回单文件下载/提交票据，提交端重新比较 lease generation 与源 file ID。Go 绿色 Agent 与 MV3 Native Messaging 扩展已交付：一次性 ticket、心跳、受信任 origin、Office/CAD 自动探测和本地规则覆盖均已实现；服务端 fencing 的容器级 E2E 仍是生产启用写回的门槛。 |
 | 46 | iTeam 流程接口 | ⬜ | 依赖 45 |
 | 47 | 编辑超时与异常解锁 | ⬜ | 依赖 44 |
 | 48 | OnlyOffice 回调幂等 | 🟡 | CloudFile callback 影子层按 `document_key + status + source version` 缓存已成功的保存回调；等待 #43 的受控编辑会话接入后做容器级验证。 |
@@ -268,10 +268,10 @@ Compose 的 `office` profile 已就位。第一阶段只支持 Seafile 主存储
 |---|---|---|---|
 | 49 | S3 / 多存储 | ✅ | Go fileserver、C 主服务和 seaf-fuse 支持 Commit/FS/Block 的单 S3 与按 `RepoStorageId` 路由；MinIO 数据面、S3-aware GC/FSCK、故障返回码和离线 FS↔S3 往返迁移均完成整机验证。迁移逐对象回读校验，事务切换路由并保留源对象。详见 [storage.md](storage.md)。**能力门禁 `storage-e2e.yml` + `verify-local.sh cap storage`（本轮补齐）**：此前只有 `go test ./objstore`/`cf-s3/run.sh` 这类默认跳过的单元/集成测试，没有任何编排把 GC/FSCK/迁移串成一次可复现的整机验证——跟 ACL 当年"有测试文件不等于有门禁"是同一类缺口。新增 `tests/e2e/storage_matrix.py` 两阶段矩阵，本机真实栈（local+MinIO 多存储类）已跑通：原生冒烟 12/12（S3 配置开着也不影响默认 local 类）、phase 1 上传/下载跨多 block 文件字节一致、GC dry-run 与 FSCK 完整遍历 S3 对象均返回 0、`--repair` 在服务运行时被正确拒绝、离线迁移（停整个容器 -> 一次性容器跑 `seaf-storage-migrate.sh` -> 重启）报告 2 commits/2 fs objects/2 blocks 复制并校验，phase 2 确认迁移后读回内容与迁移前逐字节一致且库仍可继续写入，迁移后 GC/FSCK 再次通过。CI 尚未跑过这条新 workflow。 |
 | 96 | 反病毒集成（簇 I） | ❌ | **已明确放弃，非待办**。Pro 的"缺失机制"里唯一没归簇的一项：上传/文件扫描在 server/pipeline 侧，**镜像已主动剥离 clamav**，且该剥离保持不变——不做门控盘点、不单列分支、不并入任何 server 侧管线线。此前"落地前先做门控盘点"那句已作废，见 [pro-parity.md](pro-parity.md) |
-| 50 | SMB/NFS 外部资料源 | 🟡 | **完整方案见 [external-sources.md](external-sources.md)。阶段 1（与呈现无关的核心）已实现**：`cf_external_source` / `cf_external_source_grant` / `cf_external_scan_state` 三张表（MySQL + SQLite，SQLite DDL 已实际执行并验证幂等）、provider 契约（按类型 keyed）、`local-path` provider、路径包含校验、授权判定、读 API（列源 / 列目录 / 取文件与下载）、`CF_EXTERNAL_SOURCES_ROOTS` 的 bootstrap 生成。**69 项单测全绿，19 个变异全部被捕获**；bootstrap 配置生成 8 项断言 + 5 个变异全部被捕获。**已合回 `dev`**（三仓上游改动清单未变：33 / 7 / 3）。合并的前提是那条铁律**被断言而非假设**：`test_baseline_off.py` 验证开关关闭时 `register()` 不向任何钩子登记、models 与 view 模块根本不被 import、且包 import 不拉进 Django；外加一个对照用例证明这份安静来自开关而不是代码已死。开关关闭时这个能力对部署的全部影响是**三张空表**（schema 每次启动执行，与 `cf_dir_acl`/`cf_sso_*` 同一先例，无数据无触发器）**加一个设置标量**。**尚未验证**：未在真实容器栈上跑过（无 UI、无能力门禁，见 52） |
-| 51 | 外部源增量扫描 | ⬜ | 依赖 50 + `cf-worker`。`cf_external_scan_state` 水位线表已随 50 建好（schema 每次启动执行，晚一个版本加表会导致只有重启过的部署才有它） |
-| 52 | 虚拟目录挂载 | ⬜ | 依赖 50。**缺口 3 已重新定价**：融入原生库列表不需要改上游，用 `rooturl.py` 的 URL 影子机制（第 40 项已验证）影子约 8 个只读端点即可，清单见 [external-sources.md](external-sources.md) 第六节。阶段 2（自有入口前端）与阶段 3（影子层）都消费阶段 1 的同一套核心 |
-| 53 | Overlay 标签与属性 | ⬜ | 依赖 50 + 38 |
+| 50 | SMB/NFS 外部资料源 | ✅ | **完整方案见 [external-sources.md](external-sources.md)。** `local-path` provider 访问宿主机已挂载的 SMB/NFS；路径包含校验、授权、只读 browse/download、自有入口和管理员登记/授权均已实现。`external_sources-e2e.yml` 与 `verify-local.sh cap external_sources` 现覆盖核心数据面、影子库列表/目录/下载路由与 Overlay 读写；能力关闭时不注册路由、菜单、provider 或 worker。 |
+| 51 | 外部源增量扫描 | ✅ | 仅 `CF_PROVIDER_SEARCH=meilisearch` 注册 `cf-worker` 有界 BFS 扫描任务，`cf_external_scan_state` 持久化游标/队列；每周期按 source 清理过期索引文档，失败不清队列。扫描结果通过授权过滤后的外部搜索 API 读取，文件正文与字节不入索引。Hub 单测覆盖分批遍历、完成状态与故障续扫；真实容器 E2E 尚待首次 Linux 构建执行。 |
+| 52 | 虚拟目录挂载 | ✅ | `rooturl.py` URL 影子将合成 repo 注入共享库列表，并接管 repo info、目录、文件详情及下载 URL；真实库请求委托上游，合成库写请求拒绝。没有把任何合成 id 送入 `seafile_api`。 |
+| 53 | Overlay 标签与属性 | ✅ | `cf_external_overlay` 以 source+path 保存 JSON metadata/字符串 tags，读者可读、系统管理员可写且每次写入重新确认挂载路径存在；不伪造 Seafile repo/file tag，不产生 commit/block。 |
 
 **外部源永远不进入 Seafile 的 repo/commit/block 模型**——这是定义，不是首版限制。
 推论：桌面同步、WebDAV、目录打包下载、历史版本/回收站、文件锁与加密库对外部源

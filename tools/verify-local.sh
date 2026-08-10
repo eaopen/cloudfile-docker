@@ -1,29 +1,29 @@
 #!/bin/bash
 #
-# 在本机跑一遍与 CI 完全相同的基线门禁。
+# 鍦ㄦ湰鏈鸿窇涓€閬嶄笌 CI 瀹屽叏鐩稿悓鐨勫熀绾块棬绂併€?
 #
-# 存在的理由很直接：CI 一轮 20 分钟，而前六次失败全是集成边界上的问题——
-# PATH、依赖链、系统库、版本号格式、TLS——没有一个是 `bash -n` 或单元测试能
-# 发现的。一次次"改一行、推一次、等二十分钟"太慢了。这个脚本把同样的步骤
-# 搬到本地，失败在几分钟内就能看见。
+# 瀛樺湪鐨勭悊鐢卞緢鐩存帴锛欳I 涓€杞?20 鍒嗛挓锛岃€屽墠鍏澶辫触鍏ㄦ槸闆嗘垚杈圭晫涓婄殑闂鈥斺€?
+# PATH銆佷緷璧栭摼銆佺郴缁熷簱銆佺増鏈彿鏍煎紡銆乀LS鈥斺€旀病鏈変竴涓槸 `bash -n` 鎴栧崟鍏冩祴璇曡兘
+# 鍙戠幇鐨勩€備竴娆℃"鏀逛竴琛屻€佹帹涓€娆°€佺瓑浜屽崄鍒嗛挓"澶參浜嗐€傝繖涓剼鏈妸鍚屾牱鐨勬楠?
+# 鎼埌鏈湴锛屽け璐ュ湪鍑犲垎閽熷唴灏辫兘鐪嬭銆?
 #
-#   ./tools/verify-local.sh              # 基线全流程（开关全关 = 原生 CE）
-#   ./tools/verify-local.sh preflight    # 只做静态一致性检查（秒级）
-#   ./tools/verify-local.sh build        # 只构建发行包
-#   ./tools/verify-local.sh e2e          # 假设镜像已在，只跑起栈 + E2E
-#   ./tools/verify-local.sh cap acl      # 能力门禁：开着 ACL 跑六入口矩阵
-#   ./tools/verify-local.sh clean        # 清掉本地栈与数据
+#   ./tools/verify-local.sh              # 鍩虹嚎鍏ㄦ祦绋嬶紙寮€鍏冲叏鍏?= 鍘熺敓 CE锛?
+#   ./tools/verify-local.sh preflight    # 鍙仛闈欐€佷竴鑷存€ф鏌ワ紙绉掔骇锛?
+#   ./tools/verify-local.sh build        # 鍙瀯寤哄彂琛屽寘
+#   ./tools/verify-local.sh e2e          # 鍋囪闀滃儚宸插湪锛屽彧璺戣捣鏍?+ E2E
+#   ./tools/verify-local.sh cap acl      # 鑳藉姏闂ㄧ锛氬紑鐫€ ACL 璺戝叚鍏ュ彛鐭╅樀
+#   ./tools/verify-local.sh clean        # 娓呮帀鏈湴鏍堜笌鏁版嵁
 #
-# 基线门禁与能力门禁问的是不同的问题，所以是两条命令：前者问"开关全关时是否
-# 等同原生 CE"，后者问"开着开关时，每个入口是否真的执行了规则"。
+# 鍩虹嚎闂ㄧ涓庤兘鍔涢棬绂侀棶鐨勬槸涓嶅悓鐨勯棶棰橈紝鎵€浠ユ槸涓ゆ潯鍛戒护锛氬墠鑰呴棶"寮€鍏冲叏鍏虫椂鏄惁
+# 绛夊悓鍘熺敓 CE"锛屽悗鑰呴棶"寮€鐫€寮€鍏虫椂锛屾瘡涓叆鍙ｆ槸鍚︾湡鐨勬墽琛屼簡瑙勫垯"銆?
 #
-# 与 CI 的差异（有意为之，且只有这些）：
-#   - 构建在 ubuntu 容器里跑（CI 的 runner 本身就是 ubuntu）
-#   - 端口默认 80/443（与 CI 一致，绝对 URL 才对得上）；被占用时可用
-#     CF_LOCAL_HTTP_PORT / CF_LOCAL_HTTPS_PORT 覆盖
-#   - Compose 跑在临时目录里，不碰 deploy/compose/ 下你自己的 .env 和 data/
-#   - 架构跟随本机（Apple Silicon 上是 arm64）。上游 arm 与 x86 的 Dockerfile
-#     逐字节相同，所以这不影响结论；要验 amd64 就设 CF_PLATFORM=linux/amd64。
+# 涓?CI 鐨勫樊寮傦紙鏈夋剰涓轰箣锛屼笖鍙湁杩欎簺锛夛細
+#   - 鏋勫缓鍦?ubuntu 瀹瑰櫒閲岃窇锛圕I 鐨?runner 鏈韩灏辨槸 ubuntu锛?
+#   - 绔彛榛樿 80/443锛堜笌 CI 涓€鑷达紝缁濆 URL 鎵嶅寰椾笂锛夛紱琚崰鐢ㄦ椂鍙敤
+#     CF_LOCAL_HTTP_PORT / CF_LOCAL_HTTPS_PORT 瑕嗙洊
+#   - Compose 璺戝湪涓存椂鐩綍閲岋紝涓嶇 deploy/compose/ 涓嬩綘鑷繁鐨?.env 鍜?data/
+#   - 鏋舵瀯璺熼殢鏈満锛圓pple Silicon 涓婃槸 arm64锛夈€備笂娓?arm 涓?x86 鐨?Dockerfile
+#     閫愬瓧鑺傜浉鍚岋紝鎵€浠ヨ繖涓嶅奖鍝嶇粨璁猴紱瑕侀獙 amd64 灏辫 CF_PLATFORM=linux/amd64銆?
 
 set -uo pipefail
 
@@ -34,56 +34,56 @@ workspace=$(dirname "$repo")
 VERSION=${CF_VERSION:-14.0.0-cf.0-local}
 IMAGE=cloudfile/cloudfile:$VERSION
 PROJECT=cloudfile-local
-# 默认用 80/443，和 CI 保持一致。
+# 榛樿鐢?80/443锛屽拰 CI 淇濇寔涓€鑷淬€?
 #
-# 改成 8080/8443 看似更"礼貌"，但会让验证失真：seahub 生成的是绝对 URL
-# （上传/下载链接指向 https://<hostname>/seafhttp/...，隐含默认端口），
-# 客户端连过去必然 Connection refused——报错落在"上传文件"上，离真因很远。
-# 端口被占用时用 CF_LOCAL_HTTP_PORT/CF_LOCAL_HTTPS_PORT 覆盖，但要知道
-# 上传下载那几项会因此失败。
+# 鏀规垚 8080/8443 鐪嬩技鏇?绀艰矊"锛屼絾浼氳楠岃瘉澶辩湡锛歴eahub 鐢熸垚鐨勬槸缁濆 URL
+# 锛堜笂浼?涓嬭浇閾炬帴鎸囧悜 https://<hostname>/seafhttp/...锛岄殣鍚粯璁ょ鍙ｏ級锛?
+# 瀹㈡埛绔繛杩囧幓蹇呯劧 Connection refused鈥斺€旀姤閿欒惤鍦?涓婁紶鏂囦欢"涓婏紝绂荤湡鍥犲緢杩溿€?
+# 绔彛琚崰鐢ㄦ椂鐢?CF_LOCAL_HTTP_PORT/CF_LOCAL_HTTPS_PORT 瑕嗙洊锛屼絾瑕佺煡閬?
+# 涓婁紶涓嬭浇閭ｅ嚑椤逛細鍥犳澶辫触銆?
 HTTP_PORT=${CF_LOCAL_HTTP_PORT:-80}
 HTTPS_PORT=${CF_LOCAL_HTTPS_PORT:-443}
 ADMIN_EMAIL=admin@cloudfile.test
 ADMIN_PASSWORD=CloudFile-Local-4417
 STAGE_DIR=${CF_LOCAL_STAGE:-$repo/.local-verify}
 
-say()  { printf '\n\033[1m══ %s\033[0m\n' "$*"; }
-fail() { printf '\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
-ok()   { printf '\033[32m✓ %s\033[0m\n' "$*"; }
+say()  { printf '\n\033[1m鈺愨晲 %s\033[0m\n' "$*"; }
+fail() { printf '\033[31m鉁?%s\033[0m\n' "$*" >&2; exit 1; }
+ok()   { printf '\033[32m鉁?%s\033[0m\n' "$*"; }
 
 need_docker() {
-    docker info >/dev/null 2>&1 || fail "Docker 不可用（启动 OrbStack / Docker Desktop / colima）"
+    docker info >/dev/null 2>&1 || fail "Docker 涓嶅彲鐢紙鍚姩 OrbStack / Docker Desktop / colima锛?
 }
 
-# ── preflight：静态一致性检查 ────────────────────────────────────────────
+# 鈹€鈹€ preflight锛氶潤鎬佷竴鑷存€ф鏌?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 #
-# 专抓"CI 里才会炸"的那类不一致：workflow 引用了不存在的脚本、E2E 的协议和
-# Compose 的 TLS 设置对不上、开关清单三处不同步。都是秒级检查。
+# 涓撴姄"CI 閲屾墠浼氱偢"鐨勯偅绫讳笉涓€鑷达細workflow 寮曠敤浜嗕笉瀛樺湪鐨勮剼鏈€丒2E 鐨勫崗璁拰
+# Compose 鐨?TLS 璁剧疆瀵逛笉涓娿€佸紑鍏虫竻鍗曚笁澶勪笉鍚屾銆傞兘鏄绾ф鏌ャ€?
 preflight() {
-    say "preflight：静态一致性"
+    say "preflight锛氶潤鎬佷竴鑷存€?
     local bad=0
 
     "$here/run-checks.sh" >/dev/null 2>&1 \
-        && ok "run-checks.sh 全部通过" \
-        || { printf '\033[31m✗ run-checks.sh 失败，单独跑一次看详情\033[0m\n'; bad=1; }
+        && ok "run-checks.sh 鍏ㄩ儴閫氳繃" \
+        || { printf '\033[31m鉁?run-checks.sh 澶辫触锛屽崟鐙窇涓€娆＄湅璇︽儏\033[0m\n'; bad=1; }
 
     python3 "$here/preflight-checks.py" "$repo" "$workspace" || bad=1
 
-    [[ $bad -eq 0 ]] || fail "preflight 未通过——先修掉再花二十分钟构建"
-    say "preflight 通过"
+    [[ $bad -eq 0 ]] || fail "preflight 鏈€氳繃鈥斺€斿厛淇帀鍐嶈姳浜屽崄鍒嗛挓鏋勫缓"
+    say "preflight 閫氳繃"
 }
 
-# ── 构建发行包 ──────────────────────────────────────────────────────────
+# 鈹€鈹€ 鏋勫缓鍙戣鍖?鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 build_dist() {
     need_docker
-    say "构建发行包 ${VERSION}（容器内，宿主机不受影响）"
+    say "鏋勫缓鍙戣鍖?${VERSION}锛堝鍣ㄥ唴锛屽涓绘満涓嶅彈褰卞搷锛?
 
-    # 默认构建**并排 checkout 的本地仓库**，而不是去 GitHub 拉。
+    # 榛樿鏋勫缓**骞舵帓 checkout 鐨勬湰鍦颁粨搴?*锛岃€屼笉鏄幓 GitHub 鎷夈€?
     #
-    # 本地门禁的意义就在于验证手头这份代码，包括还没 push 的分支；去拉远端
-    # 等于验证了别的东西。设 CF_SERVER_URL/CF_HUB_URL 可以覆盖回远端。
+    # 鏈湴闂ㄧ鐨勬剰涔夊氨鍦ㄤ簬楠岃瘉鎵嬪ご杩欎唤浠ｇ爜锛屽寘鎷繕娌?push 鐨勫垎鏀紱鍘绘媺杩滅
+    # 绛変簬楠岃瘉浜嗗埆鐨勪笢瑗裤€傝 CF_SERVER_URL/CF_HUB_URL 鍙互瑕嗙洊鍥炶繙绔€?
     #
-    # 只有已提交的内容会进构建（见 build-in-docker.sh），所以跑之前先 commit。
+    # 鍙湁宸叉彁浜ょ殑鍐呭浼氳繘鏋勫缓锛堣 build-in-docker.sh锛夛紝鎵€浠ヨ窇涔嬪墠鍏?commit銆?
     for pair in "CF_SERVER_URL:cloudfile-server" "CF_HUB_URL:cloudfile-hub"; do
         var=${pair%%:*}; dir=${pair#*:}
         if [[ -z ${!var:-} && -d $workspace/$dir/.git ]]; then
@@ -92,46 +92,46 @@ build_dist() {
             if [[ -z ${!ref_var:-} ]]; then
                 export "$ref_var=$(git -C "$workspace/$dir" rev-parse --abbrev-ref HEAD)"
             fi
-            echo "  $dir → ${!ref_var}"
+            echo "  $dir 鈫?${!ref_var}"
         fi
     done
 
-    # 清掉上一次的组装目录与同版本产物。
+    # 娓呮帀涓婁竴娆＄殑缁勮鐩綍涓庡悓鐗堟湰浜х墿銆?
     #
-    # 打包分两步：先把各组件装进 seafile-server/，再整体移进
-    # seafile-server-<版本>/。两个目录**都会**让第二次构建失败，而且报的是不同
-    # 的错——组装目录残留时是 "failed to copy upgrade scripts: File exists"，
-    # 产物目录残留时是 "Destination path ... already exists"。只清后者会让人
-    # 以为修好了，然后在下一层撞上同样的问题（本轮就是这么绕的）。
+    # 鎵撳寘鍒嗕袱姝ワ細鍏堟妸鍚勭粍浠惰杩?seafile-server/锛屽啀鏁翠綋绉昏繘
+    # seafile-server-<鐗堟湰>/銆備袱涓洰褰?*閮戒細**璁╃浜屾鏋勫缓澶辫触锛岃€屼笖鎶ョ殑鏄笉鍚?
+    # 鐨勯敊鈥斺€旂粍瑁呯洰褰曟畫鐣欐椂鏄?"failed to copy upgrade scripts: File exists"锛?
+    # 浜х墿鐩綍娈嬬暀鏃舵槸 "Destination path ... already exists"銆傚彧娓呭悗鑰呬細璁╀汉
+    # 浠ヤ负淇ソ浜嗭紝鐒跺悗鍦ㄤ笅涓€灞傛挒涓婂悓鏍风殑闂锛堟湰杞氨鏄繖涔堢粫鐨勶級銆?
     #
-    # 不碰 src/：那是 clone 缓存，重建它才是真正慢的部分。换架构或构建被中断
-    # 后的彻底清理仍然用 distclean。
+    # 涓嶇 src/锛氶偅鏄?clone 缂撳瓨锛岄噸寤哄畠鎵嶆槸鐪熸鎱㈢殑閮ㄥ垎銆傛崲鏋舵瀯鎴栨瀯寤鸿涓柇
+    # 鍚庣殑褰诲簳娓呯悊浠嶇劧鐢?distclean銆?
     rm -rf "$repo/build/cloudfile_14.0/seafile-server" \
            "$repo/build/cloudfile_14.0/seafile-server-$VERSION"
 
     "$repo/build/cloudfile_14.0/build-in-docker.sh" "$VERSION" \
-        || fail "发行包构建失败"
-    ok "发行包完成"
+        || fail "鍙戣鍖呮瀯寤哄け璐?
+    ok "鍙戣鍖呭畬鎴?
     cat "$repo/build/cloudfile_14.0/seafile-server-$VERSION/cloudfile-build-info.txt" 2>/dev/null || true
 }
 
 build_image() {
     need_docker
-    say "构建镜像 $IMAGE"
-    "$repo/image/cloudfile_14.0/docker-build.sh" "$VERSION" || fail "镜像构建失败"
-    ok "镜像完成"
+    say "鏋勫缓闀滃儚 $IMAGE"
+    "$repo/image/cloudfile_14.0/docker-build.sh" "$VERSION" || fail "闀滃儚鏋勫缓澶辫触"
+    ok "闀滃儚瀹屾垚"
 }
 
-# ── 起栈 + E2E ──────────────────────────────────────────────────────────
+# 鈹€鈹€ 璧锋爤 + E2E 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 #
-# 能力门禁登记表：<名字>|<开关>|<E2E 脚本>
+# 鑳藉姏闂ㄧ鐧昏琛細<鍚嶅瓧>|<寮€鍏?|<E2E 鑴氭湰>
 #
-# 基线门禁问"开关全关时是否等同原生 CE"，所以它一个能力都不测；能力门禁问
-# "规则算出来之后，每个入口是否真的执行了"。两者必须分开跑，而本地此前**只有
-# 前者**——于是每验证一个能力都要手抄一遍 acl-e2e.yml 的步骤，抄错了还看不出来
-# （acl_matrix.py 缺 --insecure 就是这么留到今天的）。
+# 鍩虹嚎闂ㄧ闂?寮€鍏冲叏鍏虫椂鏄惁绛夊悓鍘熺敓 CE"锛屾墍浠ュ畠涓€涓兘鍔涢兘涓嶆祴锛涜兘鍔涢棬绂侀棶
+# "瑙勫垯绠楀嚭鏉ヤ箣鍚庯紝姣忎釜鍏ュ彛鏄惁鐪熺殑鎵ц浜?銆備袱鑰呭繀椤诲垎寮€璺戯紝鑰屾湰鍦版鍓?*鍙湁
+# 鍓嶈€?*鈥斺€斾簬鏄瘡楠岃瘉涓€涓兘鍔涢兘瑕佹墜鎶勪竴閬?acl-e2e.yml 鐨勬楠わ紝鎶勯敊浜嗚繕鐪嬩笉鍑烘潵
+# 锛坅cl_matrix.py 缂?--insecure 灏辨槸杩欎箞鐣欏埌浠婂ぉ鐨勶級銆?
 #
-# 加一个能力＝加一行，并保持与 .github/workflows/<能力>-e2e.yml 一致。
+# 鍔犱竴涓兘鍔涳紳鍔犱竴琛岋紝骞朵繚鎸佷笌 .github/workflows/<鑳藉姏>-e2e.yml 涓€鑷淬€?
 CAPABILITIES=(
     "acl|CF_ENABLE_DIR_ACL|tests/e2e/acl_matrix.py"
     "sso|CF_ENABLE_SSO|tests/e2e/sso_matrix.py"
@@ -139,27 +139,27 @@ CAPABILITIES=(
     "audit|CF_ENABLE_AUDIT|tests/e2e/audit_matrix.py"
     "storage|CF_ENABLE_S3_STORAGE|tests/e2e/storage_matrix.py"
     "search|CF_ENABLE_SEARCH|tests/e2e/search_matrix.py"
-    # fileop 是基线扩展点，不是能力，所以它的"开关"不是 CF_ENABLE_*——那份清单
-    # 里的每一项都是运维可以合理打开的产品能力，而这个只是门禁用的仪器。
+    # fileop 鏄熀绾挎墿灞曠偣锛屼笉鏄兘鍔涳紝鎵€浠ュ畠鐨?寮€鍏?涓嶆槸 CF_ENABLE_*鈥斺€旈偅浠芥竻鍗?
+    # 閲岀殑姣忎竴椤归兘鏄繍缁村彲浠ュ悎鐞嗘墦寮€鐨勪骇鍝佽兘鍔涳紝鑰岃繖涓彧鏄棬绂佺敤鐨勪华鍣ㄣ€?
     "fileop|CF_FILEOP_TEST_PROVIDER|tests/e2e/fileop_matrix.py"
 )
 
-# 由 capability 阶段设置：要在 .env 里打开的开关。
+# 鐢?capability 闃舵璁剧疆锛氳鍦?.env 閲屾墦寮€鐨勫紑鍏炽€?
 ENABLE_SWITCHES=${ENABLE_SWITCHES:-}
-# 当前能力名，供 stage_compose 找到它的 cap_<名>_env / cap_<名>_run 钩子。
+# 褰撳墠鑳藉姏鍚嶏紝渚?stage_compose 鎵惧埌瀹冪殑 cap_<鍚?_env / cap_<鍚?_run 閽╁瓙銆?
 CAP_NAME=${CAP_NAME:-}
 
-# ── 能力自己的配置与跑法 ─────────────────────────────────────────────────
+# 鈹€鈹€ 鑳藉姏鑷繁鐨勯厤缃笌璺戞硶 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 #
-# 光有开关不够：有的能力还要 provider 选型、外部服务地址这类配置，有的要跑不止
-# 一遍。约定用两个可选函数表达，而不是把字段越加越多——字段能表达的东西有限，
-# 而"改配置、重启、再断言"这种形状根本塞不进一行表格。
+# 鍏夋湁寮€鍏充笉澶燂細鏈夌殑鑳藉姏杩樿 provider 閫夊瀷銆佸閮ㄦ湇鍔″湴鍧€杩欑被閰嶇疆锛屾湁鐨勮璺戜笉姝?
+# 涓€閬嶃€傜害瀹氱敤涓や釜鍙€夊嚱鏁拌〃杈撅紝鑰屼笉鏄妸瀛楁瓒婂姞瓒婂鈥斺€斿瓧娈佃兘琛ㄨ揪鐨勪笢瑗挎湁闄愶紝
+# 鑰?鏀归厤缃€侀噸鍚€佸啀鏂█"杩欑褰㈢姸鏍规湰濉炰笉杩涗竴琛岃〃鏍笺€?
 #
-#   cap_<名>_env   往 .env 追加的行（每行 KEY=VALUE）
-#   cap_<名>_run   自定义跑法；不定义则跑一遍 <能力>_matrix.py
+#   cap_<鍚?_env   寰€ .env 杩藉姞鐨勮锛堟瘡琛?KEY=VALUE锛?
+#   cap_<鍚?_run   鑷畾涔夎窇娉曪紱涓嶅畾涔夊垯璺戜竴閬?<鑳藉姏>_matrix.py
 #
-# 必须与 .github/workflows/<能力>-e2e.yml 保持一致——本地门禁存在的全部理由就是
-# 不要再手抄那份 workflow。
+# 蹇呴』涓?.github/workflows/<鑳藉姏>-e2e.yml 淇濇寔涓€鑷粹€斺€旀湰鍦伴棬绂佸瓨鍦ㄧ殑鍏ㄩ儴鐞嗙敱灏辨槸
+# 涓嶈鍐嶆墜鎶勯偅浠?workflow銆?
 
 cap_sso_env() {
     cat <<EOF
@@ -173,24 +173,24 @@ EOF
 cap_sso_run() {
     local base=$1
 
-    say "启动 SSO 周期 worker"
+    say "鍚姩 SSO 鍛ㄦ湡 worker"
     compose --profile worker up -d cf-worker || return 1
 
-    say "阶段 1 —— 组织结构落地"
+    say "闃舵 1 鈥斺€?缁勭粐缁撴瀯钀藉湴"
     python3 "$repo/tests/e2e/sso_matrix.py" --phase 1 --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
         --require-worker \
         --webhook-secret CloudFile-Local-Sso-Webhook-4417 || return 1
 
-    # 删除方向只有把目录改小才能测到，而"只加不删"的同步在阶段 1 里是全绿的。
-    # 重启这一步同时也在测配置每次启动重写——改了 .env 却不生效是这套部署
-    # 踩过的坑。后写的同名键覆盖先写的。
-    say "目录变小并重启（eng 只剩 A，sales 消失）"
+    # 鍒犻櫎鏂瑰悜鍙湁鎶婄洰褰曟敼灏忔墠鑳芥祴鍒帮紝鑰?鍙姞涓嶅垹"鐨勫悓姝ュ湪闃舵 1 閲屾槸鍏ㄧ豢鐨勩€?
+    # 閲嶅惎杩欎竴姝ュ悓鏃朵篃鍦ㄦ祴閰嶇疆姣忔鍚姩閲嶅啓鈥斺€旀敼浜?.env 鍗翠笉鐢熸晥鏄繖濂楅儴缃?
+    # 韪╄繃鐨勫潙銆傚悗鍐欑殑鍚屽悕閿鐩栧厛鍐欑殑銆?
+    say "鐩綍鍙樺皬骞堕噸鍚紙eng 鍙墿 A锛宻ales 娑堝け锛?
     echo 'CF_SSO_DIRECTORY_STATIC=[{"external_id":"eng","name":"SSO Engineering","members":["sso-matrix-a@example.com"]}]' \
         >> "$STAGE_DIR/.env"
     compose up -d || return 1
 
-    say "阶段 2 —— 删除方向与「解除映射不等于删除」"
+    say "闃舵 2 鈥斺€?鍒犻櫎鏂瑰悜涓庛€岃В闄ゆ槧灏勪笉绛変簬鍒犻櫎銆?
     python3 "$repo/tests/e2e/sso_matrix.py" --phase 2 --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
 }
@@ -198,10 +198,10 @@ cap_sso_run() {
 cap_metadata_run() {
     local base=$1
 
-    say "启动官方 metadata-server"
+    say "鍚姩瀹樻柟 metadata-server"
     compose --profile metadata up -d --wait --wait-timeout 150 cloudfile-metadata || return 1
 
-    say "属性/标签验收矩阵"
+    say "灞炴€?鏍囩楠屾敹鐭╅樀"
     python3 "$repo/tests/e2e/metadata_matrix.py" --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
 }
@@ -218,77 +218,77 @@ CF_STORAGE_CLASSES_JSON=[{"storage_id":"local","is_default":true,"commits":{"bac
 EOF
 }
 
-# 存储门禁独有的两点，其它能力都不需要：
+# 瀛樺偍闂ㄧ鐙湁鐨勪袱鐐癸紝鍏跺畠鑳藉姏閮戒笉闇€瑕侊細
 #
-#   1. GC/FSCK/迁移是宿主机侧 CLI 行为，不经过 HTTP，storage_matrix.py 覆盖不到，
-#      只能用 `compose exec`/`compose run` 直接驱动。
-#   2. 迁移必须停服。不能只杀容器内的 seaf-server/fileserver 进程——
-#      start.py 的 watch_controller 每 5 秒检查一次控制器，连续 4 次
-#      (20 秒) 找不到就会杀掉整个容器，迁移一慢就会跟这个内部看门狗撞车。
-#      改成停整个 cloudfile 容器、用同一份 /shared 卷跑一次性容器做迁移，
-#      再重启——不给看门狗任何观察窗口。
+#   1. GC/FSCK/杩佺Щ鏄涓绘満渚?CLI 琛屼负锛屼笉缁忚繃 HTTP锛宻torage_matrix.py 瑕嗙洊涓嶅埌锛?
+#      鍙兘鐢?`compose exec`/`compose run` 鐩存帴椹卞姩銆?
+#   2. 杩佺Щ蹇呴』鍋滄湇銆備笉鑳藉彧鏉€瀹瑰櫒鍐呯殑 seaf-server/fileserver 杩涚▼鈥斺€?
+#      start.py 鐨?watch_controller 姣?5 绉掓鏌ヤ竴娆℃帶鍒跺櫒锛岃繛缁?4 娆?
+#      (20 绉? 鎵句笉鍒板氨浼氭潃鎺夋暣涓鍣紝杩佺Щ涓€鎱㈠氨浼氳窡杩欎釜鍐呴儴鐪嬮棬鐙楁挒杞︺€?
+#      鏀规垚鍋滄暣涓?cloudfile 瀹瑰櫒銆佺敤鍚屼竴浠?/shared 鍗疯窇涓€娆℃€у鍣ㄥ仛杩佺Щ锛?
+#      鍐嶉噸鍚€斺€斾笉缁欑湅闂ㄧ嫍浠讳綍瑙傚療绐楀彛銆?
 cap_storage_run() {
     local base=$1 repo_id
 
-    say "启动 MinIO"
+    say "鍚姩 MinIO"
     compose --profile s3 up -d --wait --wait-timeout 90 minio-init || return 1
 
-    say "阶段 1 —— 上传并校验跨多个 block 的文件"
+    say "闃舵 1 鈥斺€?涓婁紶骞舵牎楠岃法澶氫釜 block 鐨勬枃浠?
     python3 "$repo/tests/e2e/storage_matrix.py" --phase 1 --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
         --state-file "$STAGE_DIR/storage-matrix-state.json" || return 1
 
-    say "GC 与 FSCK 完整遍历 S3 后端"
+    say "GC 涓?FSCK 瀹屾暣閬嶅巻 S3 鍚庣"
     compose exec -T cloudfile bash -c \
         '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seaf-gc.sh --dry-run' || return 1
     compose exec -T cloudfile bash -c \
         '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seaf-fsck.sh' || return 1
 
-    say "修复模式必须先停服——服务仍在运行时应被拒绝"
+    say "淇妯″紡蹇呴』鍏堝仠鏈嶁€斺€旀湇鍔′粛鍦ㄨ繍琛屾椂搴旇鎷掔粷"
     local repair_output repair_status
     repair_output=$(compose exec -T cloudfile bash -c \
         '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seaf-fsck.sh --repair' 2>&1)
     repair_status=$?
     if [[ $repair_status -eq 0 ]]; then
-        echo "✗ seaf-fsck.sh --repair 应在服务运行时被拒绝，却返回了 0" >&2
+        echo "鉁?seaf-fsck.sh --repair 搴斿湪鏈嶅姟杩愯鏃惰鎷掔粷锛屽嵈杩斿洖浜?0" >&2
         return 1
     fi
     if [[ $repair_output != *'stop seaf-server and fileserver'* ]]; then
-        echo "✗ seaf-fsck.sh --repair 被拒绝，但错误信息不是预期的那条：$repair_output" >&2
+        echo "鉁?seaf-fsck.sh --repair 琚嫆缁濓紝浣嗛敊璇俊鎭笉鏄鏈熺殑閭ｆ潯锛?repair_output" >&2
         return 1
     fi
-    ok "seaf-fsck.sh --repair 在服务运行时被正确拒绝"
+    ok "seaf-fsck.sh --repair 鍦ㄦ湇鍔¤繍琛屾椂琚纭嫆缁?
 
     repo_id=$(python3 -c \
         "import json;print(json.load(open('$STAGE_DIR/storage-matrix-state.json'))['repo_id'])") \
-        || { echo "✗ 读不到 phase 1 写入的 repo_id" >&2; return 1; }
+        || { echo "鉁?璇讳笉鍒?phase 1 鍐欏叆鐨?repo_id" >&2; return 1; }
 
-    say "离线迁移：停止整个 cloudfile 容器"
+    say "绂荤嚎杩佺Щ锛氬仠姝㈡暣涓?cloudfile 瀹瑰櫒"
     compose stop cloudfile || return 1
 
-    say "以一次性容器执行 seaf-storage-migrate.sh（共享同一份 /shared 卷）"
+    say "浠ヤ竴娆℃€у鍣ㄦ墽琛?seaf-storage-migrate.sh锛堝叡浜悓涓€浠?/shared 鍗凤級"
     compose run --rm --no-deps --entrypoint bash cloudfile -c \
         "/etc/my_init.d/01_create_data_links.sh && /opt/seafile/\$SEAFILE_SERVER-\$SEAFILE_VERSION/seaf-storage-migrate.sh $repo_id minio" \
         || return 1
 
-    say "重启并等待就绪"
+    say "閲嶅惎骞剁瓑寰呭氨缁?
     compose up -d --wait --wait-timeout 120 cloudfile || return 1
 
-    say "阶段 2 —— 迁移后读写仍然正确"
+    say "闃舵 2 鈥斺€?杩佺Щ鍚庤鍐欎粛鐒舵纭?
     python3 "$repo/tests/e2e/storage_matrix.py" --phase 2 --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
         --state-file "$STAGE_DIR/storage-matrix-state.json" || return 1
 
-    say "迁移后 GC 与 FSCK 仍然通过"
+    say "杩佺Щ鍚?GC 涓?FSCK 浠嶇劧閫氳繃"
     compose exec -T cloudfile bash -c \
         '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seaf-gc.sh --dry-run' || return 1
     compose exec -T cloudfile bash -c \
         '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seaf-fsck.sh' || return 1
 }
 
-# 阶段 1 要先把标记留空（全部放行）才能建出夹具；阶段 2 再把标记打开。
-# 与 sso 的"目录变小 + 重启"、search 的"切 provider + 重启"是同一个形状：
-# 配置切换与重启在这里做，矩阵自己只发 HTTP 请求。
+# 闃舵 1 瑕佸厛鎶婃爣璁扮暀绌猴紙鍏ㄩ儴鏀捐锛夋墠鑳藉缓鍑哄す鍏凤紱闃舵 2 鍐嶆妸鏍囪鎵撳紑銆?
+# 涓?sso 鐨?鐩綍鍙樺皬 + 閲嶅惎"銆乻earch 鐨?鍒?provider + 閲嶅惎"鏄悓涓€涓舰鐘讹細
+# 閰嶇疆鍒囨崲涓庨噸鍚湪杩欓噷鍋氾紝鐭╅樀鑷繁鍙彂 HTTP 璇锋眰銆?
 cap_fileop_env() {
     cat <<EOF
 CF_FILEOP_TEST_REFUSE_TOKEN=
@@ -298,22 +298,22 @@ EOF
 
 cap_fileop_run() {
     local base=$1
-    # 容器里的 /shared 就是宿主机的 data/seafile。
+    # 瀹瑰櫒閲岀殑 /shared 灏辨槸瀹夸富鏈虹殑 data/seafile銆?
     local journal="$STAGE_DIR/data/seafile/cf-fileop-journal.log"
 
-    say "阶段 1 —— 观察模式：每个写入口都产生事实，成功一次只产生一个"
+    say "闃舵 1 鈥斺€?瑙傚療妯″紡锛氭瘡涓啓鍏ュ彛閮戒骇鐢熶簨瀹烇紝鎴愬姛涓€娆″彧浜х敓涓€涓?
     python3 "$repo/tests/e2e/fileop_matrix.py" --phase 1 --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
         --journal "$journal" \
         --state-file "$STAGE_DIR/fileop-matrix-state.json" || return 1
 
-    # 拒绝方向只有把标记打开才能测到，而夹具必须在打开之前建好——拒绝一开，
-    # 建标记路径本身就会被拒，那恰好是被测操作之一。
-    say "打开拒绝标记并重启（cf-refuse）"
+    # 鎷掔粷鏂瑰悜鍙湁鎶婃爣璁版墦寮€鎵嶈兘娴嬪埌锛岃€屽す鍏峰繀椤诲湪鎵撳紑涔嬪墠寤哄ソ鈥斺€旀嫆缁濅竴寮€锛?
+    # 寤烘爣璁拌矾寰勬湰韬氨浼氳鎷掞紝閭ｆ伆濂芥槸琚祴鎿嶄綔涔嬩竴銆?
+    say "鎵撳紑鎷掔粷鏍囪骞堕噸鍚紙cf-refuse锛?
     echo 'CF_FILEOP_TEST_REFUSE_TOKEN=cf-refuse' >> "$STAGE_DIR/.env"
     compose up -d || return 1
 
-    say "阶段 2 —— 逐入口拒绝、零事实，外加反向对照"
+    say "闃舵 2 鈥斺€?閫愬叆鍙ｆ嫆缁濄€侀浂浜嬪疄锛屽鍔犲弽鍚戝鐓?
     python3 "$repo/tests/e2e/fileop_matrix.py" --phase 2 --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
         --journal "$journal" \
@@ -332,55 +332,55 @@ CF_SEARCH_INDEX_INTERVAL=15
 EOF
 }
 
-# 三阶段对应三次配置变更；search_matrix.py 本身只发 HTTP 请求，不碰 .env 或
-# 容器——配置切换与重启统一在这里做，与 sso 的目录变小+重启是同一个理由：
-# 把"改配置会不会真的生效"和"规则算得对不对"分开验证。
+# 涓夐樁娈靛搴斾笁娆￠厤缃彉鏇达紱search_matrix.py 鏈韩鍙彂 HTTP 璇锋眰锛屼笉纰?.env 鎴?
+# 瀹瑰櫒鈥斺€旈厤缃垏鎹笌閲嶅惎缁熶竴鍦ㄨ繖閲屽仛锛屼笌 sso 鐨勭洰褰曞彉灏?閲嶅惎鏄悓涓€涓悊鐢憋細
+# 鎶?鏀归厤缃細涓嶄細鐪熺殑鐢熸晥"鍜?瑙勫垯绠楀緱瀵逛笉瀵?鍒嗗紑楠岃瘉銆?
 cap_search_run() {
     local base=$1
 
-    say "启动 SeaSearch 与 Meilisearch（缩短 SeaSearch 索引间隔到 10s）"
+    say "鍚姩 SeaSearch 涓?Meilisearch锛堢缉鐭?SeaSearch 绱㈠紩闂撮殧鍒?10s锛?
     compose --profile search up -d --wait --wait-timeout 90 seasearch meilisearch || return 1
 
-    say "阶段 1 —— 默认路径：CF_PROVIDER_SEARCH 留空，走 SeaSearch"
+    say "闃舵 1 鈥斺€?榛樿璺緞锛欳F_PROVIDER_SEARCH 鐣欑┖锛岃蛋 SeaSearch"
     python3 "$repo/tests/e2e/search_matrix.py" --phase 1 --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
         --state-file "$STAGE_DIR/search-matrix-state.json" || return 1
 
-    say "切到 CF_PROVIDER_SEARCH=meilisearch 并重启"
+    say "鍒囧埌 CF_PROVIDER_SEARCH=meilisearch 骞堕噸鍚?
     echo 'CF_PROVIDER_SEARCH=meilisearch' >> "$STAGE_DIR/.env"
     compose up -d --wait --wait-timeout 120 cloudfile || return 1
 
-    say "手动跑一轮索引器（不等定时，回填切换前已存在的提交）"
+    say "鎵嬪姩璺戜竴杞储寮曞櫒锛堜笉绛夊畾鏃讹紝鍥炲～鍒囨崲鍓嶅凡瀛樺湪鐨勬彁浜わ級"
     compose exec -T cloudfile bash -c \
         '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seahub.sh python-env python3 /opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seahub/manage.py cf_worker --once' \
         || return 1
 
-    say "阶段 2 —— Meilisearch 路径，验证回填"
+    say "闃舵 2 鈥斺€?Meilisearch 璺緞锛岄獙璇佸洖濉?
     python3 "$repo/tests/e2e/search_matrix.py" --phase 2 --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
         --state-file "$STAGE_DIR/search-matrix-state.json" || return 1
 
-    say "关闭 CF_ENABLE_SEARCH 并重启，确认恢复原生行为"
+    say "鍏抽棴 CF_ENABLE_SEARCH 骞堕噸鍚紝纭鎭㈠鍘熺敓琛屼负"
     sed -i.bak "s|^CF_ENABLE_SEARCH=.*|CF_ENABLE_SEARCH=false|" "$STAGE_DIR/.env" \
         && rm -f "$STAGE_DIR/.env.bak"
     compose up -d --wait --wait-timeout 120 cloudfile || return 1
 
-    say "阶段 3 —— 关闭后恢复原生 403"
+    say "闃舵 3 鈥斺€?鍏抽棴鍚庢仮澶嶅師鐢?403"
     python3 "$repo/tests/e2e/search_matrix.py" --phase 3 --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
         --state-file "$STAGE_DIR/search-matrix-state.json" || return 1
 }
 
 stage_compose() {
-    # 先把还活着的栈拆掉，再动目录。
+    # 鍏堟妸杩樻椿鐫€鐨勬爤鎷嗘帀锛屽啀鍔ㄧ洰褰曘€?
     #
-    # 每个服务的数据都是 ./data/... 的 bind mount，就在 STAGE_DIR 里面。直接
-    # rm -rf 会在容器仍持有这些挂载时把宿主目录抽走：db 容器不会被重建，于是
-    # 继续用着旧库，而 seafile-data 已经空了——setup 以为是全新安装，撞上一个
-    # 已经建好 schema 的数据库，退出 1。
+    # 姣忎釜鏈嶅姟鐨勬暟鎹兘鏄?./data/... 鐨?bind mount锛屽氨鍦?STAGE_DIR 閲岄潰銆傜洿鎺?
+    # rm -rf 浼氬湪瀹瑰櫒浠嶆寔鏈夎繖浜涙寕杞芥椂鎶婂涓荤洰褰曟娊璧帮細db 瀹瑰櫒涓嶄細琚噸寤猴紝浜庢槸
+    # 缁х画鐢ㄧ潃鏃у簱锛岃€?seafile-data 宸茬粡绌轰簡鈥斺€攕etup 浠ヤ负鏄叏鏂板畨瑁咃紝鎾炰笂涓€涓?
+    # 宸茬粡寤哄ソ schema 鐨勬暟鎹簱锛岄€€鍑?1銆?
     #
-    # 表面症状只有一个 Caddy 502，和真因隔着十万八千里。第二次跑本地门禁就是
-    # 这么挂的，而第一次跑没事纯粹因为那时没有存量栈。
+    # 琛ㄩ潰鐥囩姸鍙湁涓€涓?Caddy 502锛屽拰鐪熷洜闅旂潃鍗佷竾鍏崈閲屻€傜浜屾璺戞湰鍦伴棬绂佸氨鏄?
+    # 杩欎箞鎸傜殑锛岃€岀涓€娆¤窇娌′簨绾补鍥犱负閭ｆ椂娌℃湁瀛橀噺鏍堛€?
     if [[ -d $STAGE_DIR ]]; then
         compose down -v >/dev/null 2>&1 || true
     fi
@@ -401,24 +401,24 @@ stage_compose() {
 
     for sw in $ENABLE_SWITCHES; do
         grep -q "^$sw=" "$STAGE_DIR/.env" \
-            || fail "$sw 不在 .env.example 里——开关清单不同步"
+            || fail "$sw 涓嶅湪 .env.example 閲屸€斺€斿紑鍏虫竻鍗曚笉鍚屾"
         sed -i.bak "s|^$sw=.*|$sw=true|" "$STAGE_DIR/.env" && rm -f "$STAGE_DIR/.env.bak"
-        # 确认真的写进去了。开着开关跑却其实没开，全绿的矩阵毫无意义——
-        # 而那种失败是完全静默的。
-        grep -q "^$sw=true$" "$STAGE_DIR/.env" || fail "$sw 未能置为 true"
+        # 纭鐪熺殑鍐欒繘鍘讳簡銆傚紑鐫€寮€鍏宠窇鍗村叾瀹炴病寮€锛屽叏缁跨殑鐭╅樀姣棤鎰忎箟鈥斺€?
+        # 鑰岄偅绉嶅け璐ユ槸瀹屽叏闈欓粯鐨勩€?
+        grep -q "^$sw=true$" "$STAGE_DIR/.env" || fail "$sw 鏈兘缃负 true"
         ok "$sw=true"
     done
 
-    # 能力自己的配置。追加而不是替换：后写的同名键覆盖先写的，而 JSON 值里的
-    # 引号和方括号不必再去和 sed 表达式搏斗。
+    # 鑳藉姏鑷繁鐨勯厤缃€傝拷鍔犺€屼笉鏄浛鎹細鍚庡啓鐨勫悓鍚嶉敭瑕嗙洊鍏堝啓鐨勶紝鑰?JSON 鍊奸噷鐨?
+    # 寮曞彿鍜屾柟鎷彿涓嶅繀鍐嶅幓鍜?sed 琛ㄨ揪寮忔悘鏂椼€?
     if [[ -n $CAP_NAME ]] && declare -F "cap_${CAP_NAME}_env" >/dev/null; then
         local line
         while IFS= read -r line; do
             [[ -z $line ]] && continue
             echo "$line" >> "$STAGE_DIR/.env"
-            # 同上：配置没写进去而门禁全绿，是最没有价值的一种绿。
-            grep -qxF "$line" "$STAGE_DIR/.env" || fail "未能写入 .env：${line%%=*}"
-            ok "${line%%=*} 已配置"
+            # 鍚屼笂锛氶厤缃病鍐欒繘鍘昏€岄棬绂佸叏缁匡紝鏄渶娌℃湁浠峰€肩殑涓€绉嶇豢銆?
+            grep -qxF "$line" "$STAGE_DIR/.env" || fail "鏈兘鍐欏叆 .env锛?{line%%=*}"
+            ok "${line%%=*} 宸查厤缃?
         done < <("cap_${CAP_NAME}_env")
     fi
 }
@@ -428,19 +428,19 @@ compose() { docker compose -p "$PROJECT" --project-directory "$STAGE_DIR" "$@"; 
 up() {
     need_docker
     docker image inspect "$IMAGE" >/dev/null 2>&1 \
-        || fail "本地没有镜像 ${IMAGE}，先跑 build"
+        || fail "鏈湴娌℃湁闀滃儚 ${IMAGE}锛屽厛璺?build"
     if [[ -n $ENABLE_SWITCHES ]]; then
-        say "启动（开启：${ENABLE_SWITCHES}）"
+        say "鍚姩锛堝紑鍚細${ENABLE_SWITCHES}锛?
     else
-        say "启动（开关全关）"
+        say "鍚姩锛堝紑鍏冲叏鍏筹級"
     fi
     stage_compose
-    compose up -d || fail "compose 启动失败"
+    compose up -d || fail "compose 鍚姩澶辫触"
     compose ps
 }
 
 base_url() {
-    # 443 时不带端口，让 URL 与 seahub 生成的绝对链接完全一致
+    # 443 鏃朵笉甯︾鍙ｏ紝璁?URL 涓?seahub 鐢熸垚鐨勭粷瀵归摼鎺ュ畬鍏ㄤ竴鑷?
     local base="https://127.0.0.1"
     [[ $HTTPS_PORT != 443 ]] && base="https://127.0.0.1:$HTTPS_PORT"
     echo "$base"
@@ -448,19 +448,19 @@ base_url() {
 
 e2e() {
     local base; base=$(base_url)
-    say "原生 CE 冒烟 @ $base"
+    say "鍘熺敓 CE 鍐掔儫 @ $base"
     python3 "$repo/tests/e2e/smoke.py" --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
 
-    say "扩展点已装好，但没有能力启用"
+    say "鎵╁睍鐐瑰凡瑁呭ソ锛屼絾娌℃湁鑳藉姏鍚敤"
     python3 "$repo/tests/e2e/baseline.py" --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
 }
 
-# 能力门禁：开着自己的开关起栈，先证明没把原生功能弄坏，再跑能力自己的用例。
+# 鑳藉姏闂ㄧ锛氬紑鐫€鑷繁鐨勫紑鍏宠捣鏍堬紝鍏堣瘉鏄庢病鎶婂師鐢熷姛鑳藉紕鍧忥紝鍐嶈窇鑳藉姏鑷繁鐨勭敤渚嬨€?
 #
-# 顺序是有意的：冒烟先挂的话，能力矩阵的失败信息会指向一堆下游症状，
-# 排查时分不清"规则拦错了"还是"服务压根没起来"。与 <能力>-e2e.yml 同序。
+# 椤哄簭鏄湁鎰忕殑锛氬啋鐑熷厛鎸傜殑璇濓紝鑳藉姏鐭╅樀鐨勫け璐ヤ俊鎭細鎸囧悜涓€鍫嗕笅娓哥棁鐘讹紝
+# 鎺掓煡鏃跺垎涓嶆竻"瑙勫垯鎷﹂敊浜?杩樻槸"鏈嶅姟鍘嬫牴娌¤捣鏉?銆備笌 <鑳藉姏>-e2e.yml 鍚屽簭銆?
 capability_e2e() {
     local name=$1 switch test_rel entry
     for entry in "${CAPABILITIES[@]}"; do
@@ -468,19 +468,19 @@ capability_e2e() {
         [[ $cap == "$name" ]] && break
         cap=''
     done
-    [[ -n ${cap:-} ]] || fail "未知能力：${name}（已登记：$(printf '%s ' "${CAPABILITIES[@]%%|*}"))"
-    [[ -f $repo/$test_rel ]] || fail "找不到 $test_rel"
+    [[ -n ${cap:-} ]] || fail "鏈煡鑳藉姏锛?{name}锛堝凡鐧昏锛?(printf '%s ' "${CAPABILITIES[@]%%|*}"))"
+    [[ -f $repo/$test_rel ]] || fail "鎵句笉鍒?$test_rel"
 
     ENABLE_SWITCHES=$switch
     CAP_NAME=$name
     up
 
     local base; base=$(base_url)
-    say "原生功能未被破坏（$switch 已开启）"
+    say "鍘熺敓鍔熻兘鏈鐮村潖锛?switch 宸插紑鍚級"
     python3 "$repo/tests/e2e/smoke.py" --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
 
-    say "能力门禁：$name"
+    say "鑳藉姏闂ㄧ锛?name"
     if declare -F "cap_${name}_run" >/dev/null; then
         "cap_${name}_run" "$base" || return 1
     else
@@ -490,31 +490,31 @@ capability_e2e() {
 }
 
 dump_logs() {
-    say "容器日志（失败诊断）"
+    say "瀹瑰櫒鏃ュ織锛堝け璐ヨ瘖鏂級"
     compose ps -a || true
     compose logs --tail 200 cloudfile || true
     compose exec -T cloudfile tail -n 120 /opt/seafile/logs/seahub.log 2>/dev/null || true
     compose exec -T cloudfile tail -n 120 /opt/seafile/logs/seafile.log 2>/dev/null || true
 }
 
-# 构建树被中断过、或换过架构之后必须清。
+# 鏋勫缓鏍戣涓柇杩囥€佹垨鎹㈣繃鏋舵瀯涔嬪悗蹇呴』娓呫€?
 #
-# 踩过一次：amd64 构建被 kill 后残留的 src/ 被下一次 arm64 构建复用，vala 生成的
-# repo.c（上游是**提交进仓库**的）状态错乱，编译报一堆 "redefinition of ..."。
-# 症状离原因很远，所以宁可提供一条明确的命令。
+# 韪╄繃涓€娆★細amd64 鏋勫缓琚?kill 鍚庢畫鐣欑殑 src/ 琚笅涓€娆?arm64 鏋勫缓澶嶇敤锛寁ala 鐢熸垚鐨?
+# repo.c锛堜笂娓告槸**鎻愪氦杩涗粨搴?*鐨勶級鐘舵€侀敊涔憋紝缂栬瘧鎶ヤ竴鍫?"redefinition of ..."銆?
+# 鐥囩姸绂诲師鍥犲緢杩滐紝鎵€浠ュ畞鍙彁渚涗竴鏉℃槑纭殑鍛戒护銆?
 distclean() {
-    say "清理构建树"
+    say "娓呯悊鏋勫缓鏍?
     rm -rf "$repo/build/cloudfile_14.0/src" \
            "$repo/build/cloudfile_14.0/seafile-server" \
            "$repo"/build/cloudfile_14.0/seafile-server-*
-    ok "构建树已清空（下次构建会重新 clone，慢但干净）"
+    ok "鏋勫缓鏍戝凡娓呯┖锛堜笅娆℃瀯寤轰細閲嶆柊 clone锛屾參浣嗗共鍑€锛?
 }
 
 clean() {
-    say "清理本地栈"
+    say "娓呯悊鏈湴鏍?
     [[ -d $STAGE_DIR ]] && compose down -v 2>/dev/null
     rm -rf "$STAGE_DIR"
-    ok "已清理（镜像保留，删除用 docker rmi ${IMAGE}）"
+    ok "宸叉竻鐞嗭紙闀滃儚淇濈暀锛屽垹闄ょ敤 docker rmi ${IMAGE}锛?
 }
 
 case "${1:-all}" in
@@ -522,20 +522,20 @@ case "${1:-all}" in
     build)     preflight; build_dist; build_image ;;
     image)     build_image ;;
     up)        up ;;
-    e2e)       e2e || { dump_logs; fail "E2E 未通过"; } ;;
+    e2e)       e2e || { dump_logs; fail "E2E 鏈€氳繃"; } ;;
     clean)     clean ;;
     distclean) clean; distclean ;;
-    # 能力门禁。镜像必须已经在（先跑 build），因为能力代码来自被构建的那个
-    # 分支，不是运行时开关能变出来的。
+    # 鑳藉姏闂ㄧ銆傞暅鍍忓繀椤诲凡缁忓湪锛堝厛璺?build锛夛紝鍥犱负鑳藉姏浠ｇ爜鏉ヨ嚜琚瀯寤虹殑閭ｄ釜
+    # 鍒嗘敮锛屼笉鏄繍琛屾椂寮€鍏宠兘鍙樺嚭鏉ョ殑銆?
     cap|capability)
-        [[ $# -ge 2 ]] || fail "用法：$0 cap <能力名>（已登记：$(printf '%s ' "${CAPABILITIES[@]%%|*}"))"
+        [[ $# -ge 2 ]] || fail "鐢ㄦ硶锛?0 cap <鑳藉姏鍚?锛堝凡鐧昏锛?(printf '%s ' "${CAPABILITIES[@]%%|*}"))"
         if capability_e2e "$2"; then
-            say "能力门禁通过：$2"
+            say "鑳藉姏闂ㄧ閫氳繃锛?2"
             clean
         else
             dump_logs
             echo
-            echo "栈仍在运行，方便你继续排查：" >&2
+            echo "鏍堜粛鍦ㄨ繍琛岋紝鏂逛究浣犵户缁帓鏌ワ細" >&2
             echo "  docker compose -p $PROJECT --project-directory $STAGE_DIR logs -f cloudfile" >&2
             echo "  ./tools/verify-local.sh clean" >&2
             exit 1
@@ -547,16 +547,16 @@ case "${1:-all}" in
         build_image
         up
         if e2e; then
-            say "全部通过——可以推了"
+            say "鍏ㄩ儴閫氳繃鈥斺€斿彲浠ユ帹浜?
             clean
         else
             dump_logs
             echo
-            echo "栈仍在运行，方便你继续排查：" >&2
+            echo "鏍堜粛鍦ㄨ繍琛岋紝鏂逛究浣犵户缁帓鏌ワ細" >&2
             echo "  docker compose -p $PROJECT --project-directory $STAGE_DIR logs -f cloudfile" >&2
-            echo "  ./tools/verify-local.sh clean   # 查完清理" >&2
+            echo "  ./tools/verify-local.sh clean   # 鏌ュ畬娓呯悊" >&2
             exit 1
         fi
         ;;
-    *) fail "未知阶段：$1（preflight|build|image|up|e2e|clean|distclean|all）" ;;
+    *) fail "鏈煡闃舵锛?1锛坧reflight|build|image|up|e2e|clean|distclean|all锛? ;;
 esac

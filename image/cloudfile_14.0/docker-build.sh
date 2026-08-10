@@ -40,11 +40,11 @@ cp -r "$repo_root/scripts/scripts_14.0" "$staging/scripts_14.0"
 cp -r "$repo_root/services" "$staging/services"
 cp -r "$dist" "$staging/seafile-server-${version}"
 
-# 仓库名取自 manifest，标签**必须**用传入的版本号。
+# 浠撳簱鍚嶅彇鑷?manifest锛屾爣绛?*蹇呴』**鐢ㄤ紶鍏ョ殑鐗堟湰鍙枫€?
 #
-# 早先直接拿 manifest 的 image 整串当标签，于是构建 14.0.0-cf.0-local 也会打成
-# 14.0.0-cf.0——任何特性分支或本地构建都会悄悄覆盖正式发布标签。默认路径上
-# 两个版本号恰好相同，所以这个 bug 一直看不出来。
+# 鏃╁厛鐩存帴鎷?manifest 鐨?image 鏁翠覆褰撴爣绛撅紝浜庢槸鏋勫缓 14.0.0-cf.0-local 涔熶細鎵撴垚
+# 14.0.0-cf.0鈥斺€斾换浣曠壒鎬у垎鏀垨鏈湴鏋勫缓閮戒細鎮勬倓瑕嗙洊姝ｅ紡鍙戝竷鏍囩銆傞粯璁よ矾寰勪笂
+# 涓や釜鐗堟湰鍙锋伆濂界浉鍚岋紝鎵€浠ヨ繖涓?bug 涓€鐩寸湅涓嶅嚭鏉ャ€?
 manifest_image=$(python3 "$repo_root/build/cloudfile_14.0/read-manifest.py" \
     "$repo_root/release.yaml" image)
 image="${manifest_image%%:*}:${version}"

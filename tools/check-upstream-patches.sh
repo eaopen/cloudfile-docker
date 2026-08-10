@@ -1,20 +1,20 @@
 #!/bin/bash
 #
-# 检查三个 fork 修改的上游文件是否仍与登记清单一致。
+# 妫€鏌ヤ笁涓?fork 淇敼鐨勪笂娓告枃浠舵槸鍚︿粛涓庣櫥璁版竻鍗曚竴鑷淬€?
 #
-# 这是 CloudFile 唯一真正的 fork 维护成本指标：新增文件几乎不产生同步冲突，
-# 修改上游文件则每次跟随上游都要再付一次。清单一旦悄悄变长，同步的工作量就
-# 会不知不觉上升，而且没人会注意到——所以用脚本卡住，而不是靠自觉。
+# 杩欐槸 CloudFile 鍞竴鐪熸鐨?fork 缁存姢鎴愭湰鎸囨爣锛氭柊澧炴枃浠跺嚑涔庝笉浜х敓鍚屾鍐茬獊锛?
+# 淇敼涓婃父鏂囦欢鍒欐瘡娆¤窡闅忎笂娓搁兘瑕佸啀浠樹竴娆°€傛竻鍗曚竴鏃︽倓鎮勫彉闀匡紝鍚屾鐨勫伐浣滈噺灏?
+# 浼氫笉鐭ヤ笉瑙変笂鍗囷紝鑰屼笖娌′汉浼氭敞鎰忓埌鈥斺€旀墍浠ョ敤鑴氭湰鍗′綇锛岃€屼笉鏄潬鑷銆?
 #
-#   ./tools/check-upstream-patches.sh              # 检查全部三个仓库
+#   ./tools/check-upstream-patches.sh              # 妫€鏌ュ叏閮ㄤ笁涓粨搴?
 #   ./tools/check-upstream-patches.sh cloudfile-hub
-#   ./tools/check-upstream-patches.sh --worktree   # 额外检查未提交修改
-#   ./tools/check-upstream-patches.sh --update     # 把当前状态写回清单
+#   ./tools/check-upstream-patches.sh --worktree   # 棰濆妫€鏌ユ湭鎻愪氦淇敼
+#   ./tools/check-upstream-patches.sh --update     # 鎶婂綋鍓嶇姸鎬佸啓鍥炴竻鍗?
 #
-# 需要三个仓库并排 checkout，且各自配好 upstream remote：
+# 闇€瑕佷笁涓粨搴撳苟鎺?checkout锛屼笖鍚勮嚜閰嶅ソ upstream remote锛?
 #   git remote add upstream https://github.com/haiwen/<repo>.git
 #
-# 退出码：0 = 一致；1 = 清单变长（拒绝）；2 = 环境问题。
+# 閫€鍑虹爜锛? = 涓€鑷达紱1 = 娓呭崟鍙橀暱锛堟嫆缁濓級锛? = 鐜闂銆?
 
 set -u
 
@@ -40,16 +40,16 @@ done
 
 status=0
 
-# 解析比较基线，按可靠性排序：
+# 瑙ｆ瀽姣旇緝鍩虹嚎锛屾寜鍙潬鎬ф帓搴忥細
 #
-#   1. $CF_UPSTREAM_BASE      —— 显式指定
-#   2. upstream/master        —— 本地开发的常态；用三点 diff，合并基点会随
-#                                sync 自动前移，不需要人工维护
-#   3. release.yaml 里的锚点 SHA —— CI 用。只要 fetch 一个 commit，不必拉整个
-#                                上游历史（seahub 很大）。用两点 diff，因为
-#                                浅克隆下没有合并基点可算
+#   1. $CF_UPSTREAM_BASE      鈥斺€?鏄惧紡鎸囧畾
+#   2. upstream/master        鈥斺€?鏈湴寮€鍙戠殑甯告€侊紱鐢ㄤ笁鐐?diff锛屽悎骞跺熀鐐逛細闅?
+#                                sync 鑷姩鍓嶇Щ锛屼笉闇€瑕佷汉宸ョ淮鎶?
+#   3. release.yaml 閲岀殑閿氱偣 SHA 鈥斺€?CI 鐢ㄣ€傚彧瑕?fetch 涓€涓?commit锛屼笉蹇呮媺鏁翠釜
+#                                涓婃父鍘嗗彶锛坰eahub 寰堝ぇ锛夈€傜敤涓ょ偣 diff锛屽洜涓?
+#                                娴呭厠闅嗕笅娌℃湁鍚堝苟鍩虹偣鍙畻
 #
-# 输出 "<baseref> <two|three>"。
+# 杈撳嚭 "<baseref> <two|three>"銆?
 resolve_base() {
     local repo_dir=$1 repo=$2
 
@@ -77,10 +77,10 @@ resolve_base() {
     echo "$sha two"
 }
 
-# 列出相对基线被修改的上游文件。
+# 鍒楀嚭鐩稿鍩虹嚎琚慨鏀圭殑涓婃父鏂囦欢銆?
 #
-# 只算基线里已存在的文件：新增文件不参与合并冲突，把它们混进来会让这个指标
-# 失去意义。
+# 鍙畻鍩虹嚎閲屽凡瀛樺湪鐨勬枃浠讹細鏂板鏂囦欢涓嶅弬涓庡悎骞跺啿绐侊紝鎶婂畠浠贩杩涙潵浼氳杩欎釜鎸囨爣
+# 澶卞幓鎰忎箟銆?
 list_patched() {
     local repo_dir=$1 base=$2 mode=$3
     local range
@@ -89,8 +89,8 @@ list_patched() {
     # shellcheck disable=SC2086
     {
         git -C "$repo_dir" diff --name-only $range
-        # CI 只约束已提交差异，避免前置构建生成的 tracked 文件造成误报。
-        # 本地提交前需要检查 staged/unstaged 修改时显式传 --worktree。
+        # CI 鍙害鏉熷凡鎻愪氦宸紓锛岄伩鍏嶅墠缃瀯寤虹敓鎴愮殑 tracked 鏂囦欢閫犳垚璇姤銆?
+        # 鏈湴鎻愪氦鍓嶉渶瑕佹鏌?staged/unstaged 淇敼鏃舵樉寮忎紶 --worktree銆?
         if [[ $include_worktree -eq 1 ]]; then
             git -C "$repo_dir" diff --name-only HEAD
         fi
@@ -109,20 +109,20 @@ for repo in "${repos[@]}"; do
     echo "=== $repo ==="
 
     if [[ ! -d $repo_dir/.git ]]; then
-        echo "  跳过：$repo_dir 不是 git 仓库" >&2
+        echo "  璺宠繃锛?repo_dir 涓嶆槸 git 浠撳簱" >&2
         status=2
         continue
     fi
     if [[ ! -f $list ]]; then
-        echo "  跳过：清单 $list 不存在" >&2
+        echo "  璺宠繃锛氭竻鍗?$list 涓嶅瓨鍦? >&2
         status=2
         continue
     fi
     if ! read -r base mode < <(resolve_base "$repo_dir" "$repo"); then
-        echo "  跳过：无法确定比较基线。任选其一：" >&2
+        echo "  璺宠繃锛氭棤娉曠‘瀹氭瘮杈冨熀绾裤€備换閫夊叾涓€锛? >&2
         echo "    git -C $repo_dir remote add upstream https://github.com/haiwen/<repo>.git" >&2
         echo "    git -C $repo_dir fetch upstream master" >&2
-        echo "  或 fetch release.yaml 里记录的锚点 SHA，或设置 CF_UPSTREAM_BASE。" >&2
+        echo "  鎴?fetch release.yaml 閲岃褰曠殑閿氱偣 SHA锛屾垨璁剧疆 CF_UPSTREAM_BASE銆? >&2
         status=2
         continue
     fi
@@ -130,12 +130,12 @@ for repo in "${repos[@]}"; do
     actual=$(list_patched "$repo_dir" "$base" "$mode")
 
     if [[ $update -eq 1 ]]; then
-        # 保留清单开头的注释块，只替换文件列表。
+        # 淇濈暀娓呭崟寮€澶寸殑娉ㄩ噴鍧楋紝鍙浛鎹㈡枃浠跺垪琛ㄣ€?
         {
             grep -E '^\s*(#|$)' "$list" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}'
             echo "$actual"
         } > "$list.tmp" && mv "$list.tmp" "$list"
-        echo "  已更新清单：$(echo "$actual" | grep -c . ) 个文件"
+        echo "  宸叉洿鏂版竻鍗曪細$(echo "$actual" | grep -c . ) 涓枃浠?
         continue
     fi
 
@@ -145,20 +145,20 @@ for repo in "${repos[@]}"; do
     removed=$(comm -13 <(echo "$actual") <(echo "$expected"))
 
     if [[ -n $added ]]; then
-        echo "  ✗ 新增了未登记的上游改动："
+        echo "  鉁?鏂板浜嗘湭鐧昏鐨勪笂娓告敼鍔細"
         echo "$added" | sed 's/^/      /'
-        echo "    每一个都会在跟随上游时反复产生冲突。先确认无法改成新增文件，"
-        echo "    再更新 docs/upstream-patches/$repo.txt 与 BRANCHING.md。"
+        echo "    姣忎竴涓兘浼氬湪璺熼殢涓婃父鏃跺弽澶嶄骇鐢熷啿绐併€傚厛纭鏃犳硶鏀规垚鏂板鏂囦欢锛?
+        echo "    鍐嶆洿鏂?docs/upstream-patches/$repo.txt 涓?BRANCHING.md銆?
         status=1
     fi
 
     if [[ -n $removed ]]; then
-        echo "  ! 清单里有已不再修改的文件（清单过期，无害）："
+        echo "  ! 娓呭崟閲屾湁宸蹭笉鍐嶄慨鏀圭殑鏂囦欢锛堟竻鍗曡繃鏈燂紝鏃犲锛夛細"
         echo "$removed" | sed 's/^/      /'
     fi
 
     if [[ -z $added && -z $removed ]]; then
-        echo "  ✓ $(echo "$expected" | grep -c .) 个上游文件，与清单一致"
+        echo "  鉁?$(echo "$expected" | grep -c .) 涓笂娓告枃浠讹紝涓庢竻鍗曚竴鑷?
     fi
 done
 

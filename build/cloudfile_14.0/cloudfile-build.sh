@@ -114,16 +114,16 @@ function install_dependencies() {
         xz-utils
 }
 
-# Node 必须显式装，不能用 apt 的。
+# Node 蹇呴』鏄惧紡瑁咃紝涓嶈兘鐢?apt 鐨勩€?
 #
-# Ubuntu 24.04 的 apt nodejs 是 18.19.1，而 seahub 前端要 20+：
-# css-minimizer 依赖全局 crypto，Node 19 才把它变成全局，18 上构建会以
-# "ReferenceError: crypto is not defined" 失败。上游 seahub 的 CI 也是明确
-# 用 setup-node@v3 node-version 20.x。
+# Ubuntu 24.04 鐨?apt nodejs 鏄?18.19.1锛岃€?seahub 鍓嶇瑕?20+锛?
+# css-minimizer 渚濊禆鍏ㄥ眬 crypto锛孨ode 19 鎵嶆妸瀹冨彉鎴愬叏灞€锛?8 涓婃瀯寤轰細浠?
+# "ReferenceError: crypto is not defined" 澶辫触銆備笂娓?seahub 鐨?CI 涔熸槸鏄庣‘
+# 鐢?setup-node@v3 node-version 20.x銆?
 #
-# GitHub runner 预装了 Node 20+ 且排在 PATH 前面，所以 CI 上碰巧能过——
-# 也就是说这个构建其实不可复现：任何人在干净容器里构建都会失败。固定版本
-# 之后，CI 与本地拿到的是同一个 Node。
+# GitHub runner 棰勮浜?Node 20+ 涓旀帓鍦?PATH 鍓嶉潰锛屾墍浠?CI 涓婄宸ц兘杩団€斺€?
+# 涔熷氨鏄杩欎釜鏋勫缓鍏跺疄涓嶅彲澶嶇幇锛氫换浣曚汉鍦ㄥ共鍑€瀹瑰櫒閲屾瀯寤洪兘浼氬け璐ャ€傚浐瀹氱増鏈?
+# 涔嬪悗锛孋I 涓庢湰鍦版嬁鍒扮殑鏄悓涓€涓?Node銆?
 NODE_VERSION=${CF_NODE_VERSION:-20.20.2}
 
 function install_nodejs() {
@@ -147,9 +147,9 @@ function install_nodejs() {
     npm --version
 }
 
-# 说明：libsasl2-dev 与 python3-cffi 是给 build_seahub_frontend 里那次完整依赖
-# 安装用的（python-ldap 编译需要 sasl/sasl.h）。上游的 dist workflow 装的正是
-# 这一组，这里保持一致。
+# 璇存槑锛歭ibsasl2-dev 涓?python3-cffi 鏄粰 build_seahub_frontend 閲岄偅娆″畬鏁翠緷璧?
+# 瀹夎鐢ㄧ殑锛坧ython-ldap 缂栬瘧闇€瑕?sasl/sasl.h锛夈€備笂娓哥殑 dist workflow 瑁呯殑姝ｆ槸
+# 杩欎竴缁勶紝杩欓噷淇濇寔涓€鑷淬€?
 
 function install_python_dependencies() {
     cat "${code_path}/seafevents/requirements.txt" \
@@ -300,14 +300,14 @@ function write_build_info() {
     cat "$out"
 }
 
-# 构建 seahub 的前端与静态资源。
+# 鏋勫缓 seahub 鐨勫墠绔笌闈欐€佽祫婧愩€?
 #
-# 这一步不能省：cloudfile-build.py 的 Seahub 阶段 build_commands 是空的，它只
-# 复制源码树。上游之所以看不出问题，是因为官方发行包取自 dist 分支——那里的
-# media/assets 是 CI 预先构建好并提交进去的。我们直接从源码分支构建，所以必须
-# 自己产出这些资源，否则镜像里根本没有 Web 界面。
+# 杩欎竴姝ヤ笉鑳界渷锛歝loudfile-build.py 鐨?Seahub 闃舵 build_commands 鏄┖鐨勶紝瀹冨彧
+# 澶嶅埗婧愮爜鏍戙€備笂娓镐箣鎵€浠ョ湅涓嶅嚭闂锛屾槸鍥犱负瀹樻柟鍙戣鍖呭彇鑷?dist 鍒嗘敮鈥斺€旈偅閲岀殑
+# media/assets 鏄?CI 棰勫厛鏋勫缓濂藉苟鎻愪氦杩涘幓鐨勩€傛垜浠洿鎺ヤ粠婧愮爜鍒嗘敮鏋勫缓锛屾墍浠ュ繀椤?
+# 鑷繁浜у嚭杩欎簺璧勬簮锛屽惁鍒欓暅鍍忛噷鏍规湰娌℃湁 Web 鐣岄潰銆?
 #
-# @seafile/* 都是公开 npm 包，不需要 NPM_TOKEN。
+# @seafile/* 閮芥槸鍏紑 npm 鍖咃紝涓嶉渶瑕?NPM_TOKEN銆?
 function build_seahub_frontend() {
     local seahub=${code_path}/seahub
 
@@ -318,12 +318,12 @@ function build_seahub_frontend() {
 
     echo "Generating seahub static assets"
 
-    # compilejsi18n 与 collectstatic 都会 import seahub.settings，而它
-    # `from seaserv import FILE_SERVER_PORT`。所以 seafile-server 与 libsearpc
-    # 的 python 绑定必须先可导入——它们是纯 Python，不必等 C 编译完成。
+    # compilejsi18n 涓?collectstatic 閮戒細 import seahub.settings锛岃€屽畠
+    # `from seaserv import FILE_SERVER_PORT`銆傛墍浠?seafile-server 涓?libsearpc
+    # 鐨?python 缁戝畾蹇呴』鍏堝彲瀵煎叆鈥斺€斿畠浠槸绾?Python锛屼笉蹇呯瓑 C 缂栬瘧瀹屾垚銆?
     #
-    # 不需要 ccnet-server：seaserv 自带 ccnet_api，seahub 从不 import ccnet 模块
-    # 本身（上游 dist 脚本带上它属于防御性冗余）。
+    # 涓嶉渶瑕?ccnet-server锛歴easerv 鑷甫 ccnet_api锛宻eahub 浠庝笉 import ccnet 妯″潡
+    # 鏈韩锛堜笂娓?dist 鑴氭湰甯︿笂瀹冨睘浜庨槻寰℃€у啑浣欙級銆?
     local pypath=${code_path}/site-packages
     rm -rf "$pypath"
     mkdir -p "$pypath"
@@ -331,20 +331,20 @@ function build_seahub_frontend() {
     cp -r "${code_path}/seafile-server/python/seaserv" "$pypath/"
     cp -r "${code_path}/libsearpc/pysearpc" "$pypath/"
 
-    # collectstatic 会加载全部 INSTALLED_APPS，所以 seahub 的依赖必须都能 import。
-    # thirdpartdir 里是**不够**的：install_python_dependencies 刻意注释掉了
-    # captcha、djangosaml2、pillow 等——它们改由 Dockerfile 直接 pip 安装进镜像，
-    # 以便拿到平台相关的 wheel。构建期没有镜像，于是 `No module named 'captcha'`。
+    # collectstatic 浼氬姞杞藉叏閮?INSTALLED_APPS锛屾墍浠?seahub 鐨勪緷璧栧繀椤婚兘鑳?import銆?
+    # thirdpartdir 閲屾槸**涓嶅**鐨勶細install_python_dependencies 鍒绘剰娉ㄩ噴鎺変簡
+    # captcha銆乨jangosaml2銆乸illow 绛夆€斺€斿畠浠敼鐢?Dockerfile 鐩存帴 pip 瀹夎杩涢暅鍍忥紝
+    # 浠ヤ究鎷垮埌骞冲彴鐩稿叧鐨?wheel銆傛瀯寤烘湡娌℃湁闀滃儚锛屼簬鏄?`No module named 'captcha'`銆?
     #
-    # 装一份完整依赖到只在构建期使用的目录，不污染最终会打包进发行版的
-    # thirdpartdir。PYTHONPATH 里放在 thirdpartdir 之后，发行版里的版本优先。
+    # 瑁呬竴浠藉畬鏁翠緷璧栧埌鍙湪鏋勫缓鏈熶娇鐢ㄧ殑鐩綍锛屼笉姹℃煋鏈€缁堜細鎵撳寘杩涘彂琛岀増鐨?
+    # thirdpartdir銆侾YTHONPATH 閲屾斁鍦?thirdpartdir 涔嬪悗锛屽彂琛岀増閲岀殑鐗堟湰浼樺厛銆?
     local builddeps=${code_path}/build-only-deps
     if [[ ! -d $builddeps ]]; then
         pip3 install -r "${seahub}/requirements.txt" -t "$builddeps"
     fi
 
-    # seaserv 在 import 期读取这两个配置目录，没有就会报错。内容只要能解析，
-    # 这里不会真的连数据库。
+    # seaserv 鍦?import 鏈熻鍙栬繖涓や釜閰嶇疆鐩綍锛屾病鏈夊氨浼氭姤閿欍€傚唴瀹瑰彧瑕佽兘瑙ｆ瀽锛?
+    # 杩欓噷涓嶄細鐪熺殑杩炴暟鎹簱銆?
     local confdir=${code_path}/build-conf
     mkdir -p "$confdir" "${code_path}/build-seafile-data"
     cat > "$confdir/ccnet.conf" <<'CONF'
@@ -365,20 +365,20 @@ CONF
 
     cd "${seahub}"
 
-    # 刻意不用 `make dist`：它的 locale 目标调 django-admin 这个 console
-    # script，而 pip install -t 把脚本装进 thirdpartdir/bin，不在 PATH 上，
-    # 于是 "django-admin: No such file or directory"。用 `python3 -m django`
-    # 调同一个命令，既不依赖 PATH，也不必修改上游 Makefile。
+    # 鍒绘剰涓嶇敤 `make dist`锛氬畠鐨?locale 鐩爣璋?django-admin 杩欎釜 console
+    # script锛岃€?pip install -t 鎶婅剼鏈杩?thirdpartdir/bin锛屼笉鍦?PATH 涓婏紝
+    # 浜庢槸 "django-admin: No such file or directory"銆傜敤 `python3 -m django`
+    # 璋冨悓涓€涓懡浠わ紝鏃笉渚濊禆 PATH锛屼篃涓嶅繀淇敼涓婃父 Makefile銆?
     python3 -m django compilemessages
     python3 manage.py compilejsi18n
     python3 manage.py collectstatic --noinput -i admin -i termsandconditions
 
     if [[ ! -d ${seahub}/media/assets ]]; then
-        echo "ERROR: media/assets 没有生成，镜像将没有 Web 界面" >&2
+        echo "ERROR: media/assets 娌℃湁鐢熸垚锛岄暅鍍忓皢娌℃湁 Web 鐣岄潰" >&2
         exit 1
     fi
     if [[ ! -d ${seahub}/frontend/build ]]; then
-        echo "ERROR: frontend/build 没有生成，前端未被打包" >&2
+        echo "ERROR: frontend/build 娌℃湁鐢熸垚锛屽墠绔湭琚墦鍖? >&2
         exit 1
     fi
 

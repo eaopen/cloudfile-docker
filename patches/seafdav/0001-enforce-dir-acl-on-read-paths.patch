@@ -1,10 +1,10 @@
 diff --git a/wsgidav/seafile_dav_provider.py b/wsgidav/seafile_dav_provider.py
-index 7e5fe60..d0144e8 100644
+index 7e5fe60..311a3bc 100644
 --- a/wsgidav/seafile_dav_provider.py
 +++ b/wsgidav/seafile_dav_provider.py
-@@ -33,6 +33,40 @@ def sort_repo_list(repos):
+@@ -32,6 +32,33 @@ INFINITE_QUOTA = -2
+ def sort_repo_list(repos):
      return sorted(repos, key=lambda r: r.id)
- 
  
 +#: Permissions that permit reading. Anything else -- including None, which is
 +#: what an "invisible" rule resolves to -- hides the entry.
@@ -23,12 +23,6 @@ index 7e5fe60..d0144e8 100644
 +    Fails closed: if the RPC errors we hide the entry rather than show it. A
 +    listing that is missing something is a support ticket; a listing that shows
 +    something it should not is a disclosure.
-+
-+    Cost: one RPC per entry when listing. That is real, and it is accepted
-+    because the alternative -- deriving visibility from a repo-level answer --
-+    is exactly the mistake that produced this gap. With no capability
-+    registered the RPC returns the repo permission and nothing is filtered, so
-+    a stock build pays the call but changes no behaviour.
 +    """
 +    try:
 +        perm = seafile_api.check_permission_by_path(repo_id, rel_path or "/",
@@ -39,11 +33,10 @@ index 7e5fe60..d0144e8 100644
 +        return False
 +    return perm in CF_READABLE_PERMS
 +
-+
+ 
  class BlockMap(object):
      def __init__(self):
-         self.block_sizes = []
-@@ -402,7 +436,9 @@ class SeafDirResource(DAVCollection):
+@@ -402,7 +429,9 @@ class SeafDirResource(DAVCollection):
              namelist.append(e[0])
          for e in self.obj.files:
              namelist.append(e[0])
@@ -54,7 +47,7 @@ index 7e5fe60..d0144e8 100644
  
      def get_member(self, name):
          member_rel_path = "/".join([self.rel_path, name])
-@@ -412,6 +448,9 @@ class SeafDirResource(DAVCollection):
+@@ -412,6 +441,9 @@ class SeafDirResource(DAVCollection):
          if not member:
              raise DAVError(HTTP_NOT_FOUND)
  
@@ -64,7 +57,7 @@ index 7e5fe60..d0144e8 100644
          if isinstance(member, SeafFile):
              return SeafileResource(member_path, self.repo, member_rel_path,
                                     member, self.environ)
-@@ -437,6 +476,9 @@ class SeafDirResource(DAVCollection):
+@@ -437,6 +469,9 @@ class SeafDirResource(DAVCollection):
              member_path = posixpath.join(self.path, name)
              member_rel_path = posixpath.join(self.rel_path, name)
  
@@ -74,13 +67,23 @@ index 7e5fe60..d0144e8 100644
              if dent.is_dir():
                  obj = fs_mgr.load_seafdir(d.store_id, d.version, dent.id)
                  res = SeafDirResource(member_path, self.repo, member_rel_path, obj, self.environ)
-@@ -782,6 +824,12 @@ class SeafileProvider(DAVProvider):
+@@ -662,7 +697,9 @@ class RootResource(DAVCollection):
+                     unique_name = repo.name + "-" + repo.id[:6]
+                     namelist.append(unique_name)
+ 
+-        return namelist
++        return [n for n in namelist
++                if cf_readable(self.repo.id,
++                               "/".join([self.rel_path, n]), self.username)]
+ 
+     def get_member(self, name):
+         repo = getRepoByName(name, self.username, self.org_id, self.is_guest)
+@@ -782,6 +819,11 @@ class SeafileProvider(DAVProvider):
                  return None
              raise
  
 +        # CloudFile: an unreadable path must not resolve at all. Returning None
-+        # yields 404 rather than 403 on purpose -- a folder the rules make
-+        # invisible should be indistinguishable from one that is not there.
++        # yields 404 rather than 403 -- invisible = not there.
 +        if not cf_readable(repo.id, rel_path, username):
 +            return None
 +

@@ -87,7 +87,7 @@ echo
 
 # 挂载整个仓库：构建脚本要读 release.yaml，产物也要写回 build/cloudfile_14.0/。
 # git 需要把挂载进来的目录标记为 safe，否则会因 owner 不一致拒绝操作。
-docker run --rm -i \
+docker run -i \
     "${platform_arg[@]}" \
     "${env_args[@]}" \
     "${mount_args[@]+"${mount_args[@]}"}" \

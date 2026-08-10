@@ -383,6 +383,18 @@ def _settings_block_upstream():
             and not cf_enabled('CF_ENABLE_METADATA')):
         raise Exception('CF_ENABLE_TAGS requires CF_ENABLE_METADATA')
 
+    if cf_enabled('CF_ENABLE_METADATA'):
+        server_url = get_conf('CF_METADATA_SERVER_URL', 'http://cloudfile-metadata:8084')
+        lines += [
+            'ENABLE_METADATA_MANAGEMENT = True',
+            'INNER_METADATA_SERVER_URL = %r' % server_url,
+        ]
+
+    if cf_enabled('CF_ENABLE_AUDIT'):
+        lines += [
+            'ENABLE_FILE_AUDIT = True',
+        ]
+
     if (cf_enabled('CF_ENABLE_CONVERT_EXPORT')
             and not get_conf('JWT_PRIVATE_KEY', '')):
         raise Exception(

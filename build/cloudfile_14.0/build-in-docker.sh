@@ -1,20 +1,20 @@
 #!/bin/bash
 #
-# 鍦?Ubuntu 瀹瑰櫒閲岃窇 cloudfile-build.sh锛屼笉鍦ㄥ涓绘満涓婅浠讳綍涓滆タ銆?
+# 在 Ubuntu 容器里跑 cloudfile-build.sh，不在宿主机上装任何东西。
 #
-# cloudfile-build.sh 浼?apt-get install 涓€鏁村 C/Go 宸ュ叿閾撅紝鍙兘鍦?Ubuntu 涓婅窇銆?
-# 鎶婂畠鏀捐繘瀹瑰櫒锛宮acOS / 浠绘剰鍙戣鐗堥兘鑳芥瀯寤猴紝涓斿涓绘満淇濇寔骞插噣銆?
+# cloudfile-build.sh 会 apt-get install 一整套 C/Go 工具链，只能在 Ubuntu 上跑。
+# 把它放进容器，macOS / 任意发行版都能构建，且宿主机保持干净。
 #
 #   ./build-in-docker.sh 14.0.0-cf.0
 #   CF_HUB_REF=feature/x ./build-in-docker.sh 14.0.0-cf.0-dev
 #   CF_PLATFORM=linux/amd64 ./build-in-docker.sh 14.0.0-cf.0
 #
-# 浜х墿钀藉湪 build/cloudfile_14.0/seafile-server-<version>/锛屾帴鐫€鍙互锛?
+# 产物落在 build/cloudfile_14.0/seafile-server-<version>/，接着可以：
 #   ../../image/cloudfile_14.0/docker-build.sh <version>
 #
-# 鏋舵瀯璇存槑锛氶粯璁よ窡闅忓涓绘満銆侫pple Silicon 涓婂師鐢熸瀯寤?arm64 寰堝揩锛涜鍑?amd64
-# 闀滃儚灏辫 CF_PLATFORM=linux/amd64锛岃蛋 QEMU 妯℃嫙锛屾參寰堝浣嗗彲鐢ㄣ€備笂娓哥殑 arm
-# 涓?x86 Dockerfile 瀹屽叏鐩稿悓锛屾墍浠ラ暅鍍忓眰闈笉闇€瑕佸尯鍒嗐€?
+# 架构说明：默认跟随宿主机。Apple Silicon 上原生构建 arm64 很快；要出 amd64
+# 镜像就设 CF_PLATFORM=linux/amd64，走 QEMU 模拟，慢很多但可用。上游的 arm
+# 与 x86 Dockerfile 完全相同，所以镜像层面不需要区分。
 
 set -e
 
@@ -29,25 +29,25 @@ version=$1
 here=$(cd "$(dirname "$0")" && pwd)
 repo_root=$(cd "$here/../.." && pwd)
 
-# 蹇呴』鏄惧紡鎸囧畾骞冲彴銆備笉鎸囧畾鐨勮瘽 docker 浼氭部鐢ㄦ湰鍦扮宸х紦瀛樼殑 ubuntu:24.04鈥斺€?
-# 濡傛灉閭ｆ槸 amd64 鑰屽涓绘槸 Apple Silicon锛屾瀯寤哄氨浼氶潤榛樺湴璺戝湪 QEMU 妯℃嫙涓嬶紝
-# 鎱竴涓暟閲忕骇鍗存病鏈変换浣曟彁绀恒€傞粯璁よ窡闅忓涓绘満銆?
+# 必须显式指定平台。不指定的话 docker 会沿用本地碰巧缓存的 ubuntu:24.04——
+# 如果那是 amd64 而宿主是 Apple Silicon，构建就会静默地跑在 QEMU 模拟下，
+# 慢一个数量级却没有任何提示。默认跟随宿主机。
 if [[ -z ${CF_PLATFORM:-} ]]; then
     case "$(uname -m)" in
         arm64|aarch64) CF_PLATFORM=linux/arm64 ;;
         x86_64)        CF_PLATFORM=linux/amd64 ;;
-        *) echo "鏃犳硶璇嗗埆鐨勫涓绘灦鏋勶細$(uname -m)锛岃鏄惧紡璁剧疆 CF_PLATFORM" >&2; exit 2 ;;
+        *) echo "无法识别的宿主架构：$(uname -m)，请显式设置 CF_PLATFORM" >&2; exit 2 ;;
     esac
 fi
 platform=$CF_PLATFORM
 platform_arg=(--platform "$platform")
 
 if ! docker info >/dev/null 2>&1; then
-    echo "Docker 涓嶅彲鐢ㄣ€傝鍏堝惎鍔?Docker Desktop / OrbStack / colima銆? >&2
+    echo "Docker 不可用。请先启动 Docker Desktop / OrbStack / colima。" >&2
     exit 2
 fi
 
-# 鎶婂彲瑕嗙洊鐨?ref 閫忎紶杩涘鍣紝鏂逛究鏋勫缓鐗规€у垎鏀€?
+# 把可覆盖的 ref 透传进容器，方便构建特性分支。
 env_args=()
 for v in CF_SERVER_REF CF_HUB_REF CF_SERVER_URL CF_HUB_URL \
          CF_SEAFOBJ_REF CF_SEAFDAV_REF CF_SEAFEVENTS_REF \
@@ -55,20 +55,20 @@ for v in CF_SERVER_REF CF_HUB_REF CF_SERVER_URL CF_HUB_URL \
     [[ -n ${!v:-} ]] && env_args+=(-e "$v=${!v}")
 done
 
-# 鏈湴婧愮爜鐩綍锛氭妸瀹冩寕杩涘鍣紝鍚﹀垯瀹瑰櫒閲屽彧鏈?cloudfile-docker銆?
+# 本地源码目录：把它挂进容器，否则容器里只有 cloudfile-docker。
 #
-# 娌℃湁杩欎竴娈电殑璇濓紝**灏氭湭 push 鐨勫垎鏀牴鏈棤娉曞湪鏈湴楠岃瘉**鈥斺€旀瀯寤哄彧浼氬幓
-# GitHub 涓婃壘閭ｄ釜涓嶅瓨鍦ㄧ殑鍒嗘敮銆傝€?鍏堝湪鏈湴璺戜竴閬嶅畬鏁撮棬绂侊紝鍒嬁 CI 褰撹皟璇曞櫒"
-# 姝ｆ槸 verify-local.sh 瀛樺湪鐨勫叏閮ㄧ悊鐢憋紝鎵€浠ヨ繖涓己鍙ｅ繀椤昏ˉ涓娿€?
+# 没有这一段的话，**尚未 push 的分支根本无法在本地验证**——构建只会去
+# GitHub 上找那个不存在的分支。而"先在本地跑一遍完整门禁，别拿 CI 当调试器"
+# 正是 verify-local.sh 存在的全部理由，所以这个缺口必须补上。
 #
 #   CF_SERVER_URL=../../cloudfile-server CF_HUB_URL=../../cloudfile-hub \
 #     ./build-in-docker.sh 14.0.0-cf.0-local
 #
-# 鐢?file:// 鑰屼笉鏄８璺緞锛歡it clone 瀵规湰鍦拌矾寰勯粯璁よ蛋纭摼鎺ワ紝鑰屾簮鐩綍鏄彧璇?
-# 鎸傝浇锛岃法鎸傝浇杈圭晫寤虹‖閾炬帴浼氬け璐ャ€俧ile:// 寮哄埗璧版甯哥殑瀵硅薄鎷疯礉銆?
+# 用 file:// 而不是裸路径：git clone 对本地路径默认走硬链接，而源目录是只读
+# 挂载，跨挂载边界建硬链接会失败。file:// 强制走正常的对象拷贝。
 #
-# 鍓綔鐢ㄦ槸**鍙湁宸叉彁浜ょ殑浠ｇ爜浼氳繘鏋勫缓**鈥斺€斿伐浣滃尯閲屾病 commit 鐨勬敼鍔ㄤ笉鍙備笌銆?
-# 杩欐槸濂戒簨锛氭瀯寤虹粨鏋滀笌鏌愪釜 commit 涓€涓€瀵瑰簲锛屽惁鍒?杩欎釜闀滃儚鏄摢鏉ョ殑"鏃犳硶鍥炵瓟銆?
+# 副作用是**只有已提交的代码会进构建**——工作区里没 commit 的改动不参与。
+# 这是好事：构建结果与某个 commit 一一对应，否则"这个镜像是哪来的"无法回答。
 mount_args=()
 for v in CF_SERVER_URL CF_HUB_URL; do
     src=${!v:-}
@@ -76,17 +76,17 @@ for v in CF_SERVER_URL CF_HUB_URL; do
     abs=$(cd "$src" && pwd)
     name=$(basename "$abs")
     mount_args+=(-v "$abs:/src/$name:ro")
-    # 瑕嗙洊鍓嶉潰閭ｄ竴杞杩涘幓鐨勫涓绘満璺緞
+    # 覆盖前面那一轮塞进去的宿主机路径
     env_args+=(-e "$v=file:///src/$name")
-    echo "鏈湴婧愮爜锛?v = ${abs}锛堝鍣ㄥ唴 /src/${name}锛屽彧璇伙級"
+    echo "本地源码：$v = ${abs}（容器内 /src/${name}，只读）"
 done
 
-echo "鍦ㄥ鍣ㄥ唴鏋勫缓 CloudFile ${version}${platform:+ (${platform})}"
-echo "瀹夸富鏈轰笉浼氳鏀瑰姩锛涗骇鐗╁啓鍥?build/cloudfile_14.0/"
+echo "在容器内构建 CloudFile ${version}${platform:+ (${platform})}"
+echo "宿主机不会被改动；产物写回 build/cloudfile_14.0/"
 echo
 
-# 鎸傝浇鏁翠釜浠撳簱锛氭瀯寤鸿剼鏈璇?release.yaml锛屼骇鐗╀篃瑕佸啓鍥?build/cloudfile_14.0/銆?
-# git 闇€瑕佹妸鎸傝浇杩涙潵鐨勭洰褰曟爣璁颁负 safe锛屽惁鍒欎細鍥?owner 涓嶄竴鑷存嫆缁濇搷浣溿€?
+# 挂载整个仓库：构建脚本要读 release.yaml，产物也要写回 build/cloudfile_14.0/。
+# git 需要把挂载进来的目录标记为 safe，否则会因 owner 不一致拒绝操作。
 docker run --rm -i \
     "${platform_arg[@]}" \
     "${env_args[@]}" \
@@ -105,5 +105,5 @@ docker run --rm -i \
     "
 
 echo
-echo "瀹屾垚锛?here/seafile-server-${version}"
-echo "涓嬩竴姝ワ細$repo_root/image/cloudfile_14.0/docker-build.sh $version"
+echo "完成：$here/seafile-server-${version}"
+echo "下一步：$repo_root/image/cloudfile_14.0/docker-build.sh $version"

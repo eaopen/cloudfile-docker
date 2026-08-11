@@ -44,16 +44,18 @@ created: 2026-08-11
 | 01-04 | 04 | 3 | SEC-02 | Server active unavailable denies at final boundary | C/Go | focused ACL C/Go | ✅ extend | ⬜ pending |
 | 01-05 | 05 | 4 | SEC-01/02 | Real ACL/search plus disabled native matrices | E2E gate | `cap acl` + `cap search` | ✅ extend | ⬜ pending |
 | 01-06 | 06 | 2 | FILEOP-01/LOCK-01 | Canonical operation/fence contract and expected_commit_id | C/Go | focused red suites | ❌ W0 | ⬜ pending |
-| 01-07 | 07 | 4 | FILEOP-01/LOCK-01 | One scope/terminal and generation/version fencing | C/Go/Python | focused C/Go suites | ✅ extend | ⬜ pending |
-| 01-08 | 08 | 5 | FILEOP-01/LOCK-01 | Every write path plus disabled native path | E2E gate | `cap fileop` | ✅ extend | ⬜ pending |
+| 01-07 | 07 | 4 | FILEOP-01/LOCK-01 | Native C/RPC scope, one terminal, and generation/version fence | C | focused C harness | ✅ extend | ⬜ pending |
+| 01-17 | 17 | 5 | FILEOP-01/LOCK-01 | Go/Python adapters preserve native identity and fence fields | Go/Python | focused adapter suites | ✅ extend | ⬜ pending |
+| 01-08 | 08 | 6 | FILEOP-01/LOCK-01 | Every write path plus disabled native path | E2E gate | `cap fileop` | ✅ extend | ⬜ pending |
 | 01-09 | 09 | 2 | LOCAL-01/02 | Four-client v2/status/writeback golden contract | Python/Jest/Go/Node | focused red suites | ❌ W0 | ⬜ pending |
-| 01-10 | 10 | 5 | LOCAL-01/02 | Durable writeback and authenticated status API | Hub pytest | focused file_actions pytest | ❌ W0 | ⬜ pending |
-| 01-11 | 11 | 6 | LOCAL-01/02 | Browser polling and Agent/extension retry | Jest/Go/Node | focused client suites | ❌ W0 | ⬜ pending |
-| 01-12 | 12 | 7 | LOCAL-01/02 | Local flow; unavailable Chrome is explicit SKIP | E2E gate | collaboration local phase | ❌ W0 | ⬜ pending |
+| 01-10 | 10 | 6 | LOCAL-01/02 | Durable writeback and authenticated status API | Hub pytest | focused file_actions pytest | ❌ W0 | ⬜ pending |
+| 01-11 | 11 | 7 | LOCAL-01/02 | Browser polling and Agent/extension retry | Jest/Go/Node | focused client suites | ❌ W0 | ⬜ pending |
+| 01-12 | 12 | 8 | LOCAL-01/02 | Local flow; unavailable Chrome is explicit SKIP | E2E gate | collaboration local phase | ❌ W0 | ⬜ pending |
 | 01-13 | 13 | 2 | OFFICE-01/02 | Startup/JWT and safe-download contracts | Python/pytest | focused red suites | ❌ W0 | ⬜ pending |
-| 01-14 | 14 | 6 | OFFICE-01/02 | Durable callback, safe download, status API | Hub pytest | focused office suites | ❌ W0 | ⬜ pending |
-| 01-15 | 15 | 7 | OFFICE-02 | UI polls authenticated status route | Jest | focused Office Jest | ❌ W0 | ⬜ pending |
-| 01-16 | 16 | 8 | GATE-01/OFFICE-01/02 | Real Docs and same-tuple smoke+baseline final gate | E2E gate | collaboration + dual baseline | ❌ W0 | ⬜ pending |
+| 01-14 | 14 | 7 | OFFICE-01/02 | Durable callback/status transaction and safe download | Hub pytest | focused office suites | ❌ W0 | ⬜ pending |
+| 01-18 | 18 | 8 | OFFICE-01/02 | Deployment/editor hook, focused regression, patch governance | settings/pytest/static | focused Office integration | ❌ W0 | ⬜ pending |
+| 01-15 | 15 | 9 | OFFICE-02 | UI polls authenticated status route | Jest | focused Office Jest | ❌ W0 | ⬜ pending |
+| 01-16 | 16 | 10 | GATE-01/OFFICE-01/02 | Real Docs and same-tuple smoke+baseline final gate | E2E gate | collaboration + dual baseline | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -61,7 +63,7 @@ created: 2026-08-11
 
 ## Wave 0 Requirements
 
-- [ ] Plan 01 dynamic manifest and PASS/SKIP/FAIL/NOT RUN self-tests.
+- [ ] Plan 01 dynamic manifest and PASS/SKIP/FAIL/NOT RUN self-tests；Task 1 必须精确确认 pre-implementation parity 红因为 local missing `[external_sources]`，Task 2 才要求 full preflight green。
 - [ ] Plan 02 ACL authority/search leakage shared fixtures and red tests.
 - [ ] Plan 06 operation/generation fixtures with canonical `expected_commit_id` and red tests.
 - [ ] Plan 09 local-session/status golden fixtures consumed by Hub/Jest/Go/Node red tests.

@@ -30,7 +30,7 @@ CloudFile reaches an independently verifiable CE extension MVP by first closing 
   3. Every supported write, including batch delete, produces one stable PREPARE-to-COMMITTED-or-ABORTED lifecycle, and every racing save or release rejects a stale generation.
   4. A user can launch a versioned local view/edit session, claim it through the browser/extension/agent handoff, update the existing file, and receive deterministic heartbeat, conflict, expiry, retry, and stale-generation outcomes.
   5. An operator can enable OnlyOffice only with matching non-empty JWT configuration and verify save/retry/conflict/release behavior, while the same declared local and CI preflight reports every required capability as PASS, SKIP, or failure truthfully.
-**Plans**: 16 plans
+**Plans**: 18 plans
 
 Plans:
 - [x] 01-01-PLAN.md — 建立动态真实 capability gate 与同 tuple disabled 双基线
@@ -39,14 +39,16 @@ Plans:
 - [ ] 01-04-PLAN.md — 实现 Server/fileserver fail-closed ACL authority
 - [ ] 01-05-PLAN.md — 接入 ACL/search integration gates
 - [ ] 01-06-PLAN.md — 锁定 operation identity 与 fence Wave 0 合同
-- [ ] 01-07-PLAN.md — 实现 C/Go/Python operation scope 与 generation fence
+- [ ] 01-07-PLAN.md — 实现 native C/RPC operation scope 与 generation fence
+- [ ] 01-17-PLAN.md — 接入 Go/Python operation adapter 与 fenced binding
 - [ ] 01-08-PLAN.md — 接入 fileop integration gate
 - [ ] 01-09-PLAN.md — 锁定 local v2/status/writeback Wave 0 合同
 - [ ] 01-10-PLAN.md — 实现 durable local Hub backend 与 status API
 - [ ] 01-11-PLAN.md — 实现 local browser/Agent/extension clients
 - [ ] 01-12-PLAN.md — 接入 local collaboration gate
 - [ ] 01-13-PLAN.md — 锁定并实现 Office startup 配置与安全下载合同
-- [ ] 01-14-PLAN.md — 实现 durable Office callback、safe download 与 status API
+- [ ] 01-14-PLAN.md — 实现 durable Office callback/status transaction
+- [ ] 01-18-PLAN.md — 接入 Office deployment/editor hook、focused tests 与治理
 - [ ] 01-15-PLAN.md — 实现 Office authenticated status UI
 - [ ] 01-16-PLAN.md — 接入真实 Document Server 与 Phase 1 最终 gate
 **UI hint**: yes

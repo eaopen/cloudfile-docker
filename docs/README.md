@@ -22,7 +22,7 @@
 | [多存储与 S3 兼容存储](features/storage-backends.md) | 已完成；优先验证 MinIO |
 | [外部资料联邦与虚拟目录挂载](features/external-directory-mount.md) | 规划；拟拆分为独立项目，为 AI 和 CloudFile 提供不同消费接口 |
 | [Seafile AI 与外接 LLM](features/seafile-ai.md) | 验证中；复用官方 Seafile AI，外接配置模型 |
-| [目录 ACL 语义](acl-semantics.md) | 已完成 |
+| [目录 ACL 语义](acl-semantics.md) | 验证中；active-authority 故障与修订契约尚待跨层实现 |
 | [写入生命周期](fileop-lifecycle.md) | 验证中 |
 | [目录/文件操作日志](features/audit.md) | 验证中；已查询提交变更，完整操作与协议覆盖待补 |
 | [目录/文件标签机制](features/tags.md) | 验证中；CE 通路存在，当前门禁未验证目录/文件绑定闭环 |

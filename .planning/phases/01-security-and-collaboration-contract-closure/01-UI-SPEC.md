@@ -208,4 +208,4 @@ Status panels use the same one-pixel border, paper/white surface, left signal bo
 - [x] Dimension 5 Spacing: PASS
 - [x] Dimension 6 Registry Safety: PASS
 
-**Approval:** approved 2026-08-11 — gsd-ui-checker returned 6/6 PASS (commit de4c1c9); recorded here as the working approval for Plans 04/05.
+**Approval:** approved 2026-08-11 — gsd-ui-checker returned 6/6 PASS (commit de4c1c9); recorded here as the working approval for current UI Plans 11/15.

@@ -347,8 +347,8 @@ def _legacy_capability_table_parity(repo):
         ok(f'{len(local)} 个能力门禁本地与 CI 成对（{", ".join(sorted(local))}）')
 
 
-def check_features_doc_freshness(repo):
-    """FEATURES.md 不能明显落后于它所描述的代码。
+def check_feature_matrix_freshness(repo):
+    """feature-matrix.md 不能明显落后于它所描述的代码。
 
     栽过一次（不是构建失败，是更隐蔽的一类）：基线跑通之后，FEATURES.md 仍然
     写着"完整镜像从未成功构建过。所有 🟡 项的共同前提都是它"，而那时它已经
@@ -357,7 +357,7 @@ def check_features_doc_freshness(repo):
     文档自己写了"把未验证的标成已完成，是这份文档唯一会失去价值的方式"——
     反过来同样成立。
     """
-    doc_rel = 'docs/FEATURES.md'
+    doc_rel = 'docs/feature-matrix.md'
     # 只盯"一改动就意味着某个特性状态变了"的路径。
     #
     # 刻意不含 tools/：改一次 preflight 自己就要求更新特性表，是纯噪音，
@@ -377,7 +377,7 @@ def check_features_doc_freshness(repo):
 
     doc_at = last_commit(doc_rel)
     if doc_at is None:
-        print('  ⊘ 取不到 FEATURES.md 的提交时间（非 git 或未提交），跳过')
+        print('  ⊘ 取不到 feature-matrix.md 的提交时间（非 git 或未提交），跳过')
         return
 
     stale = []
@@ -387,11 +387,11 @@ def check_features_doc_freshness(repo):
             stale.append(path)
 
     if stale:
-        bad(f'FEATURES.md 落后于 {stale}',
+        bad(f'feature-matrix.md 落后于 {stale}',
             '代码已经前进而状态表没跟上。照着旧文档排期会把力气花错地方——\n'
             '基线跑通那次就是这样：文档仍写着"镜像从未构建过"。')
     else:
-        ok('FEATURES.md 不落后于代码')
+        ok('feature-matrix.md 不落后于代码')
 
 
 def stack_workflows(repo):
@@ -437,7 +437,7 @@ def main():
     check_switch_lists(repo, workspace)
     check_extension_points_documented(repo, workspace)
     check_capability_gates(repo)
-    check_features_doc_freshness(repo)
+    check_feature_matrix_freshness(repo)
 
     return 1 if failures else 0
 

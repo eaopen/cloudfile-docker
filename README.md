@@ -7,6 +7,21 @@
 
 CloudFile Docker 面向需要在 Seafile CE 14 基础上部署企业扩展能力的开发和运维团队；本仓不承载 Seahub 或 seaf-server 业务实现，而是负责把三个 CloudFile 仓库构建、打包并部署为可验证的系统。
 
+本仓同时是 CloudFile 跨仓项目文档的权威入口。当前架构、部署、配置、能力状态、路线图和
+上游贡献建议统一维护在 [`docs/`](docs/README.md)；代码、配置、测试与 `release.yaml` 的证据
+优先于规划文档，历史稿不作为当前功能说明。
+
+## 项目组成
+
+| 项目 | 职责 | 文档入口 |
+|---|---|---|
+| `cloudfile-server` | Seafile Server fork；权限终判、写入生命周期和存储扩展 | [`../cloudfile-server/doc/README.md`](../cloudfile-server/doc/README.md) |
+| `cloudfile-hub` | Seahub fork；Web/API、扩展注册和能力界面 | [`../cloudfile-hub/docs/README.md`](../cloudfile-hub/docs/README.md) |
+| `cloudfile-docker` | 构建、镜像、部署、跨仓规格、文档与发布清单 | [`docs/README.md`](docs/README.md) |
+| `cloudfile-local-agent` | 本地查看与编辑的 Native Messaging Host | [`../cloudfile-local-agent/README.md`](../cloudfile-local-agent/README.md) |
+| `cloudfile-chrome-extension` | 浏览器与本地 Agent 之间的受限桥接 | [`../cloudfile-chrome-extension/README.md`](../cloudfile-chrome-extension/README.md) |
+| `seafile`、`seafobj` | 上游依赖检出，不属于 CloudFile 扩展能力实现 | 各上游仓库 README |
+
 ## 边界
 
 - **复用 Seafile CE**：资料库、同步、WebDAV、分享、预览，以及 CE 源码中已有的 LDAP/SAML/OIDC、OnlyOffice、metadata 和 AI 接口。
@@ -68,6 +83,10 @@ docker compose logs -f cloudfile
 - [`docs/configuration.md`](docs/configuration.md)：环境变量与配置语义。
 - [`docs/feature-matrix.md`](docs/feature-matrix.md)：CE 复用、CloudFile 新增、外部组件与验证状态。
 - [`docs/history/README.md`](docs/history/README.md)：失效方案和旧流程索引。
+
+开始部署前阅读 [`docs/deployment.md`](docs/deployment.md) 和
+[`docs/configuration.md`](docs/configuration.md)。判断能力是否可用时，以
+[`docs/feature-matrix.md`](docs/feature-matrix.md) 中的状态、限制和证据为准。
 
 ## 许可证
 

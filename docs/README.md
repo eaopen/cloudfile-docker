@@ -24,7 +24,8 @@
 | [Seafile AI 与外接 LLM](features/seafile-ai.md) | 验证中；复用官方 Seafile AI，外接配置模型 |
 | [目录 ACL 语义](acl-semantics.md) | 已完成 |
 | [写入生命周期](fileop-lifecycle.md) | 验证中 |
-| [操作日志](features/audit.md) | 验证中 |
+| [目录/文件操作日志](features/audit.md) | 验证中；已查询提交变更，完整操作与协议覆盖待补 |
+| [目录/文件标签机制](features/tags.md) | 验证中；CE 通路存在，当前门禁未验证目录/文件绑定闭环 |
 | [检索](features/search.md) | 部分完成 |
 | [文件协作与本地应用](features/file-collaboration.md) | 部分完成 |
 | [外部资料源](features/external-sources.md) | 部分完成 |

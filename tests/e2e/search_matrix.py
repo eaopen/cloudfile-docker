@@ -51,6 +51,47 @@ REPO_PREFIX = 'search-matrix-'
 # discover both freshly-created commits before treating it as a failure.
 POLL_SECONDS = 120
 
+# Shared by the Hub red suite and the container matrix. Both SeaSearch and
+# Meilisearch must run these exact candidate/ACL combinations; a backend is
+# not allowed to substitute its own pagination or leakage semantics.
+AUTHORIZATION_CASES = (
+    {
+        'name': 'all-hidden-first-batch',
+        'page': 1,
+        'per_page': 2,
+        'candidates': (
+            ('hidden-a', False), ('hidden-b', False), ('visible-a', True),
+        ),
+        'expected_ids': ('visible-a',),
+        'expected_total': 1,
+        'expected_has_more': False,
+    },
+    {
+        'name': 'cross-batch-page-fill',
+        'page': 1,
+        'per_page': 2,
+        'candidates': (
+            ('hidden-a', False), ('visible-a', True),
+            ('hidden-b', False), ('visible-b', True), ('visible-c', True),
+        ),
+        'expected_ids': ('visible-a', 'visible-b'),
+        'expected_total': 3,
+        'expected_has_more': True,
+    },
+    {
+        'name': 'exact-second-page',
+        'page': 2,
+        'per_page': 2,
+        'candidates': (
+            ('hidden-a', False), ('visible-a', True),
+            ('hidden-b', False), ('visible-b', True), ('visible-c', True),
+        ),
+        'expected_ids': ('visible-c',),
+        'expected_total': 3,
+        'expected_has_more': False,
+    },
+)
+
 
 def request(url, method='GET', token=None, form=None, data=None, headers=None,
            context=None):

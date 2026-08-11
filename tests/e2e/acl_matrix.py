@@ -410,6 +410,75 @@ def check_invariant(admin, b, repo_id):
                f'status={status} {body[:120]}')
 
 
+def check_revision_revocation(admin, b, repo_id):
+    """Rule writes must advance revision and invalidate live decisions now."""
+    entry = '即时撤权与 revision'
+    admin_endpoint = f'/api/v2.1/admin/cloudfile/repos/{repo_id}/dir-acl/'
+    owner_endpoint = f'/api/v2.1/cloudfile/repos/{repo_id}/dir-acl/'
+
+    status, body = admin.api(admin_endpoint)
+    state = json_body(body) or {}
+    initial_revision = state.get('revision')
+    record(entry, '管理接口返回当前 revision',
+           status == 200 and isinstance(initial_revision, int) and
+           initial_revision >= 3,
+           f'status={status} revision={initial_revision} {body[:160]}')
+
+    query = urllib.parse.urlencode({
+        'path': '/secret', 'subject_type': 'user', 'subject': B_EMAIL,
+    })
+    status, body = admin.api(f'{owner_endpoint}?{query}', method='DELETE')
+    record(entry, '删除 invisible 规则成功', status == 200,
+           f'status={status} {body[:160]}')
+
+    status, body = admin.api(admin_endpoint)
+    removed_state = json_body(body) or {}
+    removed_revision = removed_state.get('revision')
+    record(entry, '删除规则严格递增 revision',
+           isinstance(initial_revision, int) and
+           removed_revision == initial_revision + 1,
+           f'before={initial_revision} after={removed_revision} {body[:160]}')
+
+    status, body = b.api(f'/api2/repos/{repo_id}/dir/?p=/')
+    names = [e.get('name') for e in (json_body(body) or [])]
+    record(entry, '删除后 /secret 立即可见', status == 200 and 'secret' in names,
+           f'status={status} names={names}')
+
+    status, body = b.api(f'/api2/repos/{repo_id}/download-info/')
+    data = json_body(body) or {}
+    record(entry, '删除后同步立即恢复',
+           status == 200 and data.get('is_syncable', True) is not False,
+           f'status={status} {body[:160]}')
+
+    status, body = admin.api(
+        owner_endpoint, method='POST',
+        form={'path': '/secret', 'subject_type': 'user',
+              'subject': B_EMAIL, 'permission': 'invisible',
+              'inherit': 'true'})
+    record(entry, '重新下发 invisible 规则成功', status == 200,
+           f'status={status} {body[:160]}')
+
+    status, body = admin.api(admin_endpoint)
+    restored_state = json_body(body) or {}
+    restored_revision = restored_state.get('revision')
+    record(entry, '重新下发严格递增 revision',
+           isinstance(removed_revision, int) and
+           restored_revision == removed_revision + 1,
+           f'before={removed_revision} after={restored_revision} {body[:160]}')
+
+    status, body = b.api(f'/api2/repos/{repo_id}/dir/?p=/')
+    names = [e.get('name') for e in (json_body(body) or [])]
+    record(entry, '重新下发后 /secret 立即隐藏',
+           status == 200 and 'secret' not in names,
+           f'status={status} names={names}')
+
+    status, body = b.api(f'/api2/repos/{repo_id}/download-info/')
+    data = json_body(body) or {}
+    blocked = status == 403 or data.get('is_syncable') is False
+    record(entry, '重新下发后同步立即拒绝', blocked,
+           f'status={status} {body[:160]}')
+
+
 def check_system_admin(admin, repo_id):
     """Verify the administrator recovery path for a library they do not own."""
     entry = '系统管理员 ACL'
@@ -469,6 +538,7 @@ def main():
     check_webdav(base, repo_id)
     check_move(b, repo_id)
     check_invariant(admin, b, repo_id)
+    check_revision_revocation(admin, b, repo_id)
     check_system_admin(admin, repo_id)
 
     passed = sum(1 for *_, ok, _ in results if ok)

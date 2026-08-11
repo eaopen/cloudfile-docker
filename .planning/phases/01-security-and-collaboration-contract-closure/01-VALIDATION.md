@@ -20,7 +20,7 @@ created: 2026-08-11
 | **Framework** | Python/shell control-plane tests; Hub pytest/Jest; Server C harness/Go tests; Agent Go tests; Compose E2E |
 | **Config file** | Existing repository test configs plus Phase 1 shared contract fixtures |
 | **Quick run command** | `python3 tools/test-bootstrap-settings.py && python3 tools/preflight-checks.py . ..` |
-| **Full suite command** | `PATH="../cloudfile-hub/.venv/bin:$PATH" ./tools/run-checks.sh` followed by `./tools/verify-local.sh cap acl`, `cap search`, `cap fileop`, and `cap collaboration` |
+| **Full suite command** | `PATH="../cloudfile-hub/.venv/bin:$PATH" ./tools/run-checks.sh` followed by ACL/search/fileop/collaboration gates, then same-tuple all-switches-off `python3 tests/e2e/smoke.py` and `python3 tests/e2e/baseline.py` |
 | **Estimated runtime** | Quick: <30 seconds; full local/CI matrices: up to 2 hours |
 
 ---
@@ -38,17 +38,22 @@ created: 2026-08-11
 
 | Task ID | Plan | Wave | Requirement | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------------|-----------|-------------------|-------------|--------|
-| 01-01-01 | 01 | 1 | GATE-01 | No missing or unexecuted capability is reported PASS | unit/static | `python3 tools/preflight-checks.py . ..` | ❌ W0 | ⬜ pending |
-| 01-02-01 | 02 | 1 | SEC-01 | Hidden names, snippets, totals, and cached candidates never cross the response boundary | unit + E2E | `./tools/verify-local.sh cap search` | ✅ extend | ⬜ pending |
-| 01-02-02 | 02 | 1 | SEC-02 | Active unavailable/malformed/stale ACL authority denies; inactive mode passes through | C/Go + E2E | `./tools/verify-local.sh cap acl` | ✅ extend | ⬜ pending |
-| 01-03-01 | 03 | 2 | FILEOP-01 | Each operation has one PREPARE and exactly one terminal fact | C/Go + E2E | `./tools/verify-local.sh cap fileop` | ✅ extend | ⬜ pending |
-| 01-03-02 | 03 | 2 | LOCK-01 | Missing or stale generation cannot mutate or release newer work | C/Go + E2E | `./tools/verify-local.sh cap fileop` | ❌ W0 | ⬜ pending |
-| 01-04-01 | 04 | 3 | LOCAL-01 | All four consumers reject unsupported schema versions and receive required pre-claim fields | Python/Jest/Go | `cd ../cloudfile-local-agent && go test ./...` | ❌ W0 | ⬜ pending |
-| 01-04-02 | 04 | 3 | LOCAL-02 | Existing-file update is idempotent and rejects conflict, expiry, origin mismatch, and stale generation | unit + E2E | `./tools/verify-local.sh cap collaboration` | ❌ W0 | ⬜ pending |
-| 01-05-01 | 05 | 4 | OFFICE-01 | Enabled Office without same-source non-empty JWT fails before serving callbacks | settings/unit + E2E | `python3 tools/test-bootstrap-settings.py` | ✅ extend | ⬜ pending |
-| 01-05-02 | 05 | 4 | OFFICE-02 | Callback retry is authenticated, idempotent, conflict-aware, and generation-fenced | transaction + E2E | `./tools/verify-local.sh cap collaboration` | ❌ W0 | ⬜ pending |
-
-> Threat refs live in each plan's STRIDE register (T-01-01 .. T-01-25); this table tracks requirement → automated check mapping only.
+| 01-01 | 01 | 1 | GATE-01 | Dynamic parity, four-state truth, same-tuple disabled dual baseline | unit/static | capability manifest suite | ❌ W0 | ⬜ pending |
+| 01-02 | 02 | 2 | SEC-01/02 | Shared authority/search contracts distinguish disabled from active outage | Python/C/Go | focused red suites | ❌ W0 | ⬜ pending |
+| 01-03 | 03 | 3 | SEC-01/02 | Hub revision and authorization-before-observability | Hub pytest | focused ACL/search pytest | ✅ extend | ⬜ pending |
+| 01-04 | 04 | 3 | SEC-02 | Server active unavailable denies at final boundary | C/Go | focused ACL C/Go | ✅ extend | ⬜ pending |
+| 01-05 | 05 | 4 | SEC-01/02 | Real ACL/search plus disabled native matrices | E2E gate | `cap acl` + `cap search` | ✅ extend | ⬜ pending |
+| 01-06 | 06 | 2 | FILEOP-01/LOCK-01 | Canonical operation/fence contract and expected_commit_id | C/Go | focused red suites | ❌ W0 | ⬜ pending |
+| 01-07 | 07 | 4 | FILEOP-01/LOCK-01 | One scope/terminal and generation/version fencing | C/Go/Python | focused C/Go suites | ✅ extend | ⬜ pending |
+| 01-08 | 08 | 5 | FILEOP-01/LOCK-01 | Every write path plus disabled native path | E2E gate | `cap fileop` | ✅ extend | ⬜ pending |
+| 01-09 | 09 | 2 | LOCAL-01/02 | Four-client v2/status/writeback golden contract | Python/Jest/Go/Node | focused red suites | ❌ W0 | ⬜ pending |
+| 01-10 | 10 | 5 | LOCAL-01/02 | Durable writeback and authenticated status API | Hub pytest | focused file_actions pytest | ❌ W0 | ⬜ pending |
+| 01-11 | 11 | 6 | LOCAL-01/02 | Browser polling and Agent/extension retry | Jest/Go/Node | focused client suites | ❌ W0 | ⬜ pending |
+| 01-12 | 12 | 7 | LOCAL-01/02 | Local flow; unavailable Chrome is explicit SKIP | E2E gate | collaboration local phase | ❌ W0 | ⬜ pending |
+| 01-13 | 13 | 2 | OFFICE-01/02 | Startup/JWT and safe-download contracts | Python/pytest | focused red suites | ❌ W0 | ⬜ pending |
+| 01-14 | 14 | 6 | OFFICE-01/02 | Durable callback, safe download, status API | Hub pytest | focused office suites | ❌ W0 | ⬜ pending |
+| 01-15 | 15 | 7 | OFFICE-02 | UI polls authenticated status route | Jest | focused Office Jest | ❌ W0 | ⬜ pending |
+| 01-16 | 16 | 8 | GATE-01/OFFICE-01/02 | Real Docs and same-tuple smoke+baseline final gate | E2E gate | collaboration + dual baseline | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -56,12 +61,12 @@ created: 2026-08-11
 
 ## Wave 0 Requirements
 
-- [ ] Canonical capability manifest and status self-tests for PASS/SKIP/FAIL/NOT RUN semantics.
-- [ ] Shared ACL, file-operation, local-session, and generation golden cases consumed by their owning test layers.
-- [ ] Hub search ACL, file-action idempotency, and Office registry/JWT/callback tests.
-- [ ] Server authority-state/revision, operation pairing, and generation-fence C/Go tests.
-- [ ] Local Agent session/runner and Chrome handoff contract tests.
-- [ ] `tests/e2e/collaboration_matrix.py`, matching workflow, and `verify-local` capability entry.
+- [ ] Plan 01 dynamic manifest and PASS/SKIP/FAIL/NOT RUN self-tests.
+- [ ] Plan 02 ACL authority/search leakage shared fixtures and red tests.
+- [ ] Plan 06 operation/generation fixtures with canonical `expected_commit_id` and red tests.
+- [ ] Plan 09 local-session/status golden fixtures consumed by Hub/Jest/Go/Node red tests.
+- [ ] Plan 13 Office startup/JWT/callback/safe-download red tests.
+- [ ] Full matrices are reserved for Plans 05/08/12/16 plan and wave gates.
 
 ---
 

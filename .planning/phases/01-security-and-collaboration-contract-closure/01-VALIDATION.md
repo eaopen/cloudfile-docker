@@ -36,17 +36,19 @@ created: 2026-08-11
 
 ## Per-Task Verification Map
 
-| Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
-|---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 01-01-01 | 01 | 1 | GATE-01 | T-01-01 | No missing or unexecuted capability is reported PASS | unit/static | `python3 tools/preflight-checks.py . ..` | ❌ W0 | ⬜ pending |
-| 01-02-01 | 02 | 1 | SEC-01 | T-01-02 | Hidden names, snippets, totals, and cached candidates never cross the response boundary | unit + E2E | `./tools/verify-local.sh cap search` | ✅ extend | ⬜ pending |
+| Task ID | Plan | Wave | Requirement | Secure Behavior | Test Type | Automated Command | File Exists | Status |
+|---------|------|------|-------------|-----------------|-----------|-------------------|-------------|--------|
+| 01-01-01 | 01 | 1 | GATE-01 | No missing or unexecuted capability is reported PASS | unit/static | `python3 tools/preflight-checks.py . ..` | ❌ W0 | ⬜ pending |
+| 01-02-01 | 02 | 1 | SEC-01 | Hidden names, snippets, totals, and cached candidates never cross the response boundary | unit + E2E | `./tools/verify-local.sh cap search` | ✅ extend | ⬜ pending |
 | 01-02-02 | 02 | 1 | SEC-02 | Active unavailable/malformed/stale ACL authority denies; inactive mode passes through | C/Go + E2E | `./tools/verify-local.sh cap acl` | ✅ extend | ⬜ pending |
-| 01-03-01 | 03 | 1 | FILEOP-01 | Each operation has one PREPARE and exactly one terminal fact | C/Go + E2E | `./tools/verify-local.sh cap fileop` | ✅ extend | ⬜ pending |
-| 01-03-02 | 03 | 1 | LOCK-01 | Missing or stale generation cannot mutate or release newer work | C/Go + E2E | `./tools/verify-local.sh cap fileop` | ❌ W0 | ⬜ pending |
-| 01-04-01 | 04 | 2 | LOCAL-01 | All four consumers reject unsupported schema versions and receive required pre-claim fields | Python/Jest/Go | `cd ../cloudfile-local-agent && go test ./...` | ❌ W0 | ⬜ pending |
-| 01-04-02 | 04 | 2 | LOCAL-02 | Existing-file update is idempotent and rejects conflict, expiry, origin mismatch, and stale generation | unit + E2E | `./tools/verify-local.sh cap collaboration` | ❌ W0 | ⬜ pending |
-| 01-05-01 | 05 | 2 | OFFICE-01 | Enabled Office without same-source non-empty JWT fails before serving callbacks | settings/unit + E2E | `python3 tools/test-bootstrap-settings.py` | ✅ extend | ⬜ pending |
-| 01-05-02 | 05 | 2 | OFFICE-02 | Callback retry is authenticated, idempotent, conflict-aware, and generation-fenced | transaction + E2E | `./tools/verify-local.sh cap collaboration` | ❌ W0 | ⬜ pending |
+| 01-03-01 | 03 | 2 | FILEOP-01 | Each operation has one PREPARE and exactly one terminal fact | C/Go + E2E | `./tools/verify-local.sh cap fileop` | ✅ extend | ⬜ pending |
+| 01-03-02 | 03 | 2 | LOCK-01 | Missing or stale generation cannot mutate or release newer work | C/Go + E2E | `./tools/verify-local.sh cap fileop` | ❌ W0 | ⬜ pending |
+| 01-04-01 | 04 | 3 | LOCAL-01 | All four consumers reject unsupported schema versions and receive required pre-claim fields | Python/Jest/Go | `cd ../cloudfile-local-agent && go test ./...` | ❌ W0 | ⬜ pending |
+| 01-04-02 | 04 | 3 | LOCAL-02 | Existing-file update is idempotent and rejects conflict, expiry, origin mismatch, and stale generation | unit + E2E | `./tools/verify-local.sh cap collaboration` | ❌ W0 | ⬜ pending |
+| 01-05-01 | 05 | 4 | OFFICE-01 | Enabled Office without same-source non-empty JWT fails before serving callbacks | settings/unit + E2E | `python3 tools/test-bootstrap-settings.py` | ✅ extend | ⬜ pending |
+| 01-05-02 | 05 | 4 | OFFICE-02 | Callback retry is authenticated, idempotent, conflict-aware, and generation-fenced | transaction + E2E | `./tools/verify-local.sh cap collaboration` | ❌ W0 | ⬜ pending |
+
+> Threat refs live in each plan's STRIDE register (T-01-01 .. T-01-25); this table tracks requirement → automated check mapping only.
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 

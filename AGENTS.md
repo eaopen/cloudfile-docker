@@ -1,4 +1,3 @@
-<!-- generated-by: gsd-doc-writer -->
 # AGENTS.md — cloudfile-docker
 
 > 用途：约束构建、部署、跨仓规格和上游同步工作。
@@ -6,6 +5,14 @@
 > 当前状态：有效；产品状态以 [`docs/feature-matrix.md`](docs/feature-matrix.md) 为准。
 
 给在本仓库工作的 AI coding agent。人类同样适用。
+
+## 工作方式：不使用 GSD
+
+本项目**不采用 GSD 工作流**。不得运行 GSD 命令、创建或维护 `.planning/`、
+生成 GSD 计划/总结/工作树，也不得以 GSD 产物作为交付依据。
+
+开发按一个可验证改动一次提交的方式推进；现行能力状态与实现依据以
+[`docs/feature-matrix.md`](docs/feature-matrix.md)、代码和可执行测试为准。
 
 ## 这是什么
 

@@ -33,7 +33,7 @@ CloudFile reaches an independently verifiable CE extension MVP by first closing 
 **Plans**: 16 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — 建立动态真实 capability gate 与同 tuple disabled 双基线
+- [x] 01-01-PLAN.md — 建立动态真实 capability gate 与同 tuple disabled 双基线
 - [ ] 01-02-PLAN.md — 锁定 ACL authority 与搜索泄漏 Wave 0 合同
 - [ ] 01-03-PLAN.md — 实现 Hub ACL revision 与授权优先搜索
 - [ ] 01-04-PLAN.md — 实现 Server/fileserver fail-closed ACL authority

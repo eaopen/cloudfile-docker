@@ -639,16 +639,6 @@ def test_office():
     except Exception:
         check('下载上限为 0 时启动失败', True)
 
-    # secret 不得出现在任何"可打印诊断"形式里（这里没有 stdout，但断言 body
-    # 不含 repr 之外的明文是 bootstrap 的固有要求，已由 evaluate 覆盖；
-    # 此处仅断言生成体里没有写日志/回显的 hook 名）。
-    body_text = load('_settings_block_office', env)()
-    if callable(body_text):
-        try:
-            body_text = body_text()
-        except Exception:
-            body_text = ''
-
 
 def main():
     print(__doc__.splitlines()[0])

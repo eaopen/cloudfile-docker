@@ -163,6 +163,7 @@ def write_cloudfile_settings():
     body += _settings_block_sso()
     body += _settings_block_search()
     body += _settings_block_external_sources()
+    body += _settings_block_office()
     body += _settings_block_upstream()
 
     _replace_block(join(topdir, 'conf', 'seahub_settings.py'),
@@ -362,6 +363,100 @@ def _settings_block_external_sources():
                 positive_int('CF_EXTERNAL_SCAN_MAX_DIRS', 20),
                 positive_int('CF_EXTERNAL_SCAN_MAX_FILES', 2000),
             )
+
+
+def _settings_block_office():
+    """OnlyOffice startup contract, or nothing at all when the switch is off.
+
+    OFFICE-01: enabling OnlyOffice requires a matching, non-empty JWT on Hub
+    and Document Server. Compose injects the same ONLYOFFICE_JWT_SECRET env
+    into the Hub, the worker and the Document Server container, so a single
+    source feeds both sides -- that is the runtime pairing proof, not a
+    fingerprint endpoint. Missing or blank secret/APIJS URL fails startup
+    here, while the operator is watching, rather than letting the callback
+    view fall back to the legacy "empty secret means authenticated" mode that
+    this plan removes.
+
+    The renderer also needs ONLYOFFICE_APIJS_URL (upstream derives the
+    converter URL from it), and CloudFile derives the trusted origin for the
+    callback download from that same URL so the SSRF boundary stays tied to
+    the configured Document Server rather than to a second knob.
+
+    Iron rule: switch off writes nothing. Upstream ENABLE_ONLYOFFICE defaults
+    to False and is not overridden, so a deployment that has not opted in is
+    byte-for-byte native CE.
+    """
+    if not cf_enabled('CF_ENABLE_ONLYOFFICE'):
+        return ''
+
+    from urllib.parse import urlsplit
+
+    secret = get_conf('ONLYOFFICE_JWT_SECRET', '').strip()
+    if not secret:
+        raise Exception(
+            'ONLYOFFICE_JWT_SECRET is required when CF_ENABLE_ONLYOFFICE=true; '
+            'set the same non-empty value on the Hub, the worker and the '
+            'Document Server (compose injects one ONLYOFFICE_JWT_SECRET into '
+            'all three). Missing or empty secret would otherwise let '
+            'unsigned callbacks through, which is exactly what this gate '
+            'removes.')
+
+    apijs_url = get_conf('ONLYOFFICE_APIJS_URL', '').strip()
+    if not apijs_url:
+        raise Exception(
+            'ONLYOFFICE_APIJS_URL is required when CF_ENABLE_ONLYOFFICE=true; '
+            'point it at the Document Server '
+            '"/web-apps/apps/api/documents/api.js" the renderer loads.')
+
+    parsed = urlsplit(apijs_url)
+    if parsed.scheme not in ('http', 'https'):
+        raise Exception(
+            'ONLYOFFICE_APIJS_URL must be an http(s) absolute URL, got %r'
+            % apijs_url)
+    if not parsed.hostname:
+        raise Exception(
+            'ONLYOFFICE_APIJS_URL must include a hostname, got %r' % apijs_url)
+    # Normalized origin used by the callback download as its sole trust
+    # boundary: scheme + hostname + effective port (omit the default port for
+    # the scheme). userinfo/fragment/path never enter this value.
+    default_port = 443 if parsed.scheme == 'https' else 80
+    port = parsed.port
+    if port and port != default_port:
+        trusted_origin = '%s://%s:%d' % (parsed.scheme, parsed.hostname, port)
+    else:
+        trusted_origin = '%s://%s' % (parsed.scheme, parsed.hostname)
+
+    def positive_int(name, default):
+        raw = get_conf(name, str(default))
+        try:
+            value = int(raw)
+        except ValueError:
+            raise Exception('%s must be an integer' % name)
+        if value <= 0:
+            raise Exception('%s must be positive' % name)
+        return value
+
+    lines = [
+        # Upstream gate on the renderer. Native CE default is False; we only
+        # raise it when the secure configuration is complete.
+        'ENABLE_ONLYOFFICE = True',
+        # Same-source JWT shared with the Document Server. The callback view
+        # rejects any token that does not verify under this secret, and
+        # rejects every callback outright when the secret is empty.
+        'ONLYOFFICE_JWT_SECRET = %r' % secret,
+        # Renderer + converter endpoint. Upstream derives ONLYOFFICE_CONVERTER_URL
+        # from this in seahub/onlyoffice/settings.py.
+        'ONLYOFFICE_APIJS_URL = %r' % apijs_url,
+        # Trusted Document Server origin for the callback download. The
+        # callback download refuses any URL whose scheme+host+port differs.
+        'CF_ONLYOFFICE_TRUSTED_ORIGIN = %r' % trusted_origin,
+        # Bounded streaming download, with a safe default (256 MiB). The
+        # callback download streams into a tempfile and fails closed when the
+        # declared or actual byte count exceeds this cap.
+        'CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES = %r'
+        % positive_int('CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES', 256 * 1024 * 1024),
+    ]
+    return '\n'.join(lines) + '\n'
 
 
 def _settings_block_upstream():

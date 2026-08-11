@@ -198,8 +198,38 @@ def _settings_block_sso():
 
     lines = []
 
-    client_id = get_conf('CF_SSO_OAUTH_CLIENT_ID', '')
+    client_id = get_conf('CF_SSO_OAUTH_CLIENT_ID', '').strip()
     if client_id:
+        def boolean(name, default):
+            raw = get_conf(name, default).strip().lower()
+            if raw not in ('true', 'false'):
+                raise Exception('%s must be true or false' % name)
+            return raw == 'true'
+
+        insecure = boolean('CF_SSO_OAUTH_INSECURE', 'false')
+
+        def endpoint(name, required=True):
+            """Return a safe OAuth endpoint or fail while startup is visible."""
+            from urllib.parse import urlsplit
+
+            value = get_conf(name, '').strip()
+            if not value:
+                if required:
+                    raise Exception('%s is required when OAuth login is enabled'
+                                    % name)
+                return ''
+
+            parsed = urlsplit(value)
+            allowed_schemes = ('http', 'https') if insecure else ('https',)
+            if parsed.scheme not in allowed_schemes or not parsed.hostname:
+                transport = 'http(s)' if insecure else 'https'
+                raise Exception('%s must be an absolute %s URL, got %r'
+                                % (name, transport, value))
+            if parsed.username or parsed.password or parsed.fragment:
+                raise Exception('%s must not contain userinfo or a fragment'
+                                % name)
+            return value
+
         proto = get_proto()
         host = get_conf('SEAFILE_SERVER_HOSTNAME', 'seafile.example.com')
 
@@ -209,9 +239,30 @@ def _settings_block_sso():
         # typo that caused it, and in a place the operator cannot see logs.
         redirect_url = '%s://%s/oauth/callback/' % (proto, host)
 
-        uid_claim = get_conf('CF_SSO_OAUTH_UID_CLAIM', 'sub')
-        email_claim = get_conf('CF_SSO_OAUTH_EMAIL_CLAIM', 'email')
-        name_claim = get_conf('CF_SSO_OAUTH_NAME_CLAIM', 'name')
+        client_secret = get_conf('CF_SSO_OAUTH_CLIENT_SECRET', '').strip()
+        if not client_secret:
+            raise Exception('CF_SSO_OAUTH_CLIENT_SECRET is required when '
+                            'CF_SSO_OAUTH_CLIENT_ID is set')
+
+        authorization_url = endpoint('CF_SSO_OAUTH_AUTHORIZATION_URL')
+        token_url = endpoint('CF_SSO_OAUTH_TOKEN_URL')
+        user_info_url = endpoint('CF_SSO_OAUTH_USER_INFO_URL')
+        logout_url = endpoint('CF_SSO_OAUTH_LOGOUT_URL', required=False)
+        provider = get_conf('CF_SSO_OAUTH_PROVIDER', '').strip()
+        if not provider:
+            raise Exception('CF_SSO_OAUTH_PROVIDER is required when OAuth '
+                            'login is enabled')
+
+        scope = get_conf('CF_SSO_OAUTH_SCOPE', 'openid email profile').split()
+        if not scope:
+            raise Exception('CF_SSO_OAUTH_SCOPE must list at least one scope')
+
+        uid_claim = get_conf('CF_SSO_OAUTH_UID_CLAIM', 'sub').strip()
+        email_claim = get_conf('CF_SSO_OAUTH_EMAIL_CLAIM', 'email').strip()
+        name_claim = get_conf('CF_SSO_OAUTH_NAME_CLAIM', 'name').strip()
+        if not uid_claim or not email_claim:
+            raise Exception('CF_SSO_OAUTH_UID_CLAIM and '
+                            'CF_SSO_OAUTH_EMAIL_CLAIM must not be empty')
 
         # Upstream's shape is {claim: (required, seahub_attr)}. The email claim
         # is the required one: seahub/oauth/views.py falls back to it when no
@@ -231,18 +282,23 @@ def _settings_block_sso():
         lines += [
             'ENABLE_OAUTH = True',
             'OAUTH_ENABLE_INSECURE_TRANSPORT = %r'
-            % (get_conf('CF_SSO_OAUTH_INSECURE', 'false').lower() == 'true',),
+            % (insecure,),
             'OAUTH_CLIENT_ID = %r' % client_id,
-            'OAUTH_CLIENT_SECRET = %r' % get_conf('CF_SSO_OAUTH_CLIENT_SECRET', ''),
-            'OAUTH_AUTHORIZATION_URL = %r'
-            % get_conf('CF_SSO_OAUTH_AUTHORIZATION_URL', ''),
-            'OAUTH_TOKEN_URL = %r' % get_conf('CF_SSO_OAUTH_TOKEN_URL', ''),
-            'OAUTH_USER_INFO_URL = %r' % get_conf('CF_SSO_OAUTH_USER_INFO_URL', ''),
-            'OAUTH_SCOPE = %r' % get_conf('CF_SSO_OAUTH_SCOPE',
-                                          'openid email profile').split(),
-            'OAUTH_PROVIDER = %r' % get_conf('CF_SSO_OAUTH_PROVIDER', ''),
+            'OAUTH_CLIENT_SECRET = %r' % client_secret,
+            'OAUTH_AUTHORIZATION_URL = %r' % authorization_url,
+            'OAUTH_TOKEN_URL = %r' % token_url,
+            'OAUTH_USER_INFO_URL = %r' % user_info_url,
+            'OAUTH_SCOPE = %r' % scope,
+            'OAUTH_PROVIDER = %r' % provider,
             'OAUTH_REDIRECT_URL = %r' % redirect_url,
             'OAUTH_ATTRIBUTE_MAP = %r' % (attribute_map,),
+            # Seahub redirects an OAuth-authenticated user's local logout to
+            # this configured RP-initiated logout endpoint.  Authentik's
+            # end-session URL is supplied by the operator; no provider-
+            # specific protocol code is introduced here.
+            'OAUTH_LOGOUT_URL = %r' % logout_url,
+            'OAUTH_CREATE_UNKNOWN_USER = %r'
+            % boolean('CF_SSO_OAUTH_CREATE_UNKNOWN_USER', 'true'),
         ]
 
     lines += [

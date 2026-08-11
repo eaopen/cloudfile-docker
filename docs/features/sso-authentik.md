@@ -82,17 +82,24 @@ CF_SSO_OAUTH_CLIENT_SECRET=<authentik provider client secret>
 CF_SSO_OAUTH_AUTHORIZATION_URL=https://<Authentik 主机>/application/o/authorize/
 CF_SSO_OAUTH_TOKEN_URL=https://<Authentik 主机>/application/o/token/
 CF_SSO_OAUTH_USER_INFO_URL=https://<Authentik 主机>/application/o/userinfo/
+CF_SSO_OAUTH_LOGOUT_URL=https://<Authentik 主机>/application/o/<application_slug>/end-session/
 CF_SSO_OAUTH_SCOPE=openid email profile
 CF_SSO_OAUTH_PROVIDER=authentik:<application_slug>
 CF_SSO_OAUTH_UID_CLAIM=sub
 CF_SSO_OAUTH_EMAIL_CLAIM=email
 CF_SSO_OAUTH_NAME_CLAIM=name
+CF_SSO_OAUTH_CREATE_UNKNOWN_USER=true
 CF_SSO_OAUTH_INSECURE=false
 ```
 
 `CF_SSO_OAUTH_PROVIDER` 是 Seahub 写入 `SocialAuthUser.provider` 的本地稳定标识，并非
 discovery URL。上线后不要修改；多个 Authentik Provider 必须使用不同且稳定的值，否则既有
 账号绑定可能失联或冲突。
+
+启用 OAuth 登录时，client secret、三个登录端点和 provider 均为启动必填项；默认只接受
+HTTPS 绝对 URL。`CF_SSO_OAUTH_INSECURE=true` 仅允许实验环境使用 HTTP。首次登录是否自动
+创建 CE 用户由 `CF_SSO_OAUTH_CREATE_UNKNOWN_USER` 控制，默认 `true`；设置为 `false` 时必须
+预先创建用户。无论采用哪种策略，都必须保留独立的本地管理员。
 
 ## 登录流程
 
@@ -131,10 +138,10 @@ Seahub 当前 `OAuth2Session` 调用没有生成或发送 `code_challenge`、`co
 
 ## 登出
 
-`/accounts/logout/` 会清除 Seahub 本地会话。Seafile CE 只有设置 `OAUTH_LOGOUT_URL` 时才
-继续跳转到身份提供方登出地址；当前 CloudFile `.env` 和 bootstrap 没有暴露该设置，
-因此 Authentik end-session 端点虽然已知，单点登出仍未接线和验收。项目负责人需确认回跳
-地址和多应用会话策略后再增加配置与测试。
+`/accounts/logout/` 会清除 Seahub 本地会话。对通过 OAuth 登录的用户，CloudFile 还会将
+`CF_SSO_OAUTH_LOGOUT_URL` 写入上游 `OAUTH_LOGOUT_URL`，使 Seahub 重定向到 Authentik 的
+application-scoped end-session 端点。应在 Authentik Provider 中把 CloudFile 的公开根 URL
+登记为 logout redirect URI；端点、回跳和多应用会话策略仍须通过容器 E2E 验收。
 
 ## 组织与组同步
 

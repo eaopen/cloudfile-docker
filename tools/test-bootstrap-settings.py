@@ -88,7 +88,9 @@ BASE_ENV = {
     'CF_SSO_OAUTH_AUTHORIZATION_URL': 'https://idp.example.com/authorize',
     'CF_SSO_OAUTH_TOKEN_URL': 'https://idp.example.com/token',
     'CF_SSO_OAUTH_USER_INFO_URL': 'https://idp.example.com/userinfo',
+    'CF_SSO_OAUTH_LOGOUT_URL': 'https://idp.example.com/end-session/',
     'CF_SSO_OAUTH_PROVIDER': 'idp.example.com',
+    'CF_SSO_OAUTH_CREATE_UNKNOWN_USER': 'false',
     'CF_PROVIDER_SSO_DIRECTORY': 'static',
     'CF_SSO_GROUP_OWNER': 'admin@example.com',
     'CF_SSO_DIRECTORY_STATIC':
@@ -126,6 +128,13 @@ def test_sso():
     check('scope 是列表而不是一整个字符串',
           values.get('OAUTH_SCOPE') == ['openid', 'email', 'profile'],
           repr(values.get('OAUTH_SCOPE')))
+    check('OAuth 登出交给配置的通用 RP 端点',
+          values.get('OAUTH_LOGOUT_URL')
+          == 'https://idp.example.com/end-session/',
+          repr(values.get('OAUTH_LOGOUT_URL')))
+    check('首次 OAuth 用户创建策略可显式关闭',
+          values.get('OAUTH_CREATE_UNKNOWN_USER') is False,
+          repr(values.get('OAUTH_CREATE_UNKNOWN_USER')))
     check('email claim 是必需项',
           values.get('OAUTH_ATTRIBUTE_MAP', {}).get('email') == (True, 'email'),
           repr(values.get('OAUTH_ATTRIBUTE_MAP')))
@@ -148,6 +157,33 @@ def test_sso():
     check('没配 client id 就不打开 OAuth', 'ENABLE_OAUTH' not in values)
     check('但组织映射的配置照写',
           values.get('CF_SSO_GROUP_OWNER') == 'admin@example.com')
+
+    # OAuth 的必填项和 TLS 要在启动阶段阻止，不要等首次用户登录才报一个
+    # 无法定位的上游错误。实验环境可显式允许 HTTP，生产默认不允许。
+    for name, changes in (
+            ('缺 OAuth secret 时启动失败',
+             {'CF_SSO_OAUTH_CLIENT_SECRET': ''}),
+            ('缺 OAuth provider 时启动失败',
+             {'CF_SSO_OAUTH_PROVIDER': ''}),
+            ('生产配置拒绝 HTTP token endpoint',
+             {'CF_SSO_OAUTH_TOKEN_URL': 'http://idp.example.com/token'}),
+            ('非法首次用户创建开关时启动失败',
+             {'CF_SSO_OAUTH_CREATE_UNKNOWN_USER': 'sometimes'})):
+        try:
+            load('_settings_block_sso', dict(BASE_ENV, **changes))()
+            check(name, False, '被接受了')
+        except Exception:
+            check(name, True)
+
+    env = dict(BASE_ENV,
+               CF_SSO_OAUTH_INSECURE='true',
+               CF_SSO_OAUTH_AUTHORIZATION_URL='http://idp.example.com/authorize',
+               CF_SSO_OAUTH_TOKEN_URL='http://idp.example.com/token',
+               CF_SSO_OAUTH_USER_INFO_URL='http://idp.example.com/userinfo')
+    values = evaluate(load('_settings_block_sso', env)())
+    check('实验配置显式允许 HTTP IdP',
+          values.get('OAUTH_ENABLE_INSECURE_TRANSPORT') is True,
+          repr(values.get('OAUTH_ENABLE_INSECURE_TRANSPORT')))
 
     # JSON 写错要在启动时炸（运维正看着），不是在第一次同步时才炸。
     env = dict(BASE_ENV, CF_SSO_DIRECTORY_STATIC='{oops')

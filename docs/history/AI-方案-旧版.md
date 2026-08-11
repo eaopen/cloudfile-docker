@@ -1,4 +1,10 @@
+<!-- generated-by: gsd-doc-writer -->
 # AI 能力：自动属性 / 标签 / 摘要（及语义检索）
+
+> **用途**：说明 AI 能力的复用方案、自动化管线边界和分阶段状态。
+> **适用版本**：CloudFile `14.0.0-cf.0`，基于 Seafile CE 14 源码重构。
+> **状态**：部分实现、部分待验证；官方按需 AI 已完成打包配置，AI 容器尚无真实端到端门禁，自动入库管线不是当前已交付能力。
+> **边界**：CE 提供 Hub 入口与用量模型；CloudFile 负责部署接线和可选自动化；`seafile-ai`、LLM 与其计费/数据治理属于外部组件。
 
 CE 扩展版的 AI 能力规格，最低目标是**文件自动属性 / 自动标签 / 自动摘要**。
 配套：[search.md](search.md)（检索）、[upstream-reuse.md](upstream-reuse.md)（元数据）、

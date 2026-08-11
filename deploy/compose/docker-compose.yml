@@ -172,7 +172,7 @@ services:
       ENABLE_METADATA_MANAGEMENT: ${CF_ENABLE_METADATA:-false}
       INNER_METADATA_SERVER_URL: ${CF_METADATA_SERVER_URL:-http://cloudfile-metadata:8084}
       MD_FILE_COUNT_LIMIT: ${CF_METADATA_FILE_COUNT_LIMIT:-100000}
-      # -- AI (docs/ai.md P0: packaging layer, no CF_ENABLE_* branch) --
+      # -- AI (docs/features/seafile-ai.md: reuse Seafile AI; deployment layer) --
       # Per https://manual.seafile.com/14.0/extension/seafile-ai/.
       # ENABLE_SEAFILE_AI/SEAFILE_AI_SERVER_URL/SEAFILE_AI_SECRET_KEY and
       # ENABLE_FACE_RECOGNITION are read straight from the process environment
@@ -478,11 +478,10 @@ services:
       start_period: 5s
     restart: unless-stopped
 
-  # docs/ai.md: on-demand file tagging/summary/image-caption/OCR, already in CE
-  # and not Pro-gated (ENABLE_SEAFILE_AI). CloudFile does not build an
-  # automatic ingest pipeline for this (that is P1 in ai.md, deliberately not
-  # built -- the packaged, on-demand capability is the default; extend only
-  # if it stops covering a real need).
+  # docs/features/seafile-ai.md: reuse Seafile's on-demand tagging, summary,
+  # image caption and OCR integration, which is not Pro-gated
+  # (ENABLE_SEAFILE_AI). CloudFile does not build a parallel AI backend or
+  # automatic ingest pipeline; extend only after a verified requirement.
   #
   # Deployment shape per the official manual
   # (https://manual.seafile.com/14.0/extension/seafile-ai/), not a guess from

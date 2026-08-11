@@ -1,4 +1,10 @@
+<!-- generated-by: gsd-doc-writer -->
 # 操作日志
+
+> **用途**：说明 CloudFile 操作日志的事件链路、查询接口、管理界面和验收范围。
+> **适用版本**：CloudFile `14.0.0-cf.0`，基于 Seafile CE 14 源码重构。
+> **状态**：已实现并有 `audit-e2e.yml` 与 `tests/e2e/audit_matrix.py` 门禁；具体运行结果以对应提交的 CI 记录为准。
+> **边界**：CE 的提交活动是事实来源；CloudFile 新增审计投影、API 和管理员界面；外部归档或 SIEM 不在本仓实现范围。
 
 ## 事件链路
 

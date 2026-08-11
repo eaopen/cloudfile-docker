@@ -1,4 +1,10 @@
-# Pro 对标：CloudFile 站在哪，以及"打包"还是"构建"
+<!-- generated-by: gsd-doc-writer -->
+# Pro 对标：CloudFile 站在哪，以及“打包”还是“构建”
+
+> **用途**：按能力对比 Seafile Pro、CE 复用范围、CloudFile 新建成本和当前状态。
+> **适用版本**：CloudFile `14.0.0-cf.0`，对照 Seafile CE 14 源码。
+> **状态**：当前对标快照；能力状态以本表证据和专项规格为准，不代表获得 Seafile Pro 兼容认证。
+> **边界**：能通过 CE 配置启用的能力归“复用/打包”，缺失机制才由 CloudFile 构建，商业二进制和第三方服务仍由各自供应方负责。
 
 以 Seafile 官方 [Pro vs CE 对比](https://www.seafile.com/en/pricing/?produce=on-premises)
 为基准，把每一项 Pro 独占特性映射到 CloudFile 的现状。配套：

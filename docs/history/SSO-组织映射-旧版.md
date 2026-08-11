@@ -1,4 +1,10 @@
+<!-- generated-by: gsd-doc-writer -->
 # SSO 与组织映射语义
+
+> **用途**：规定 OIDC 登录配置与外部目录到 Seafile 组的同步语义、保护阈值和接口。
+> **适用版本**：CloudFile `14.0.0-cf.0`，基于 Seafile CE 14 源码重构。
+> **状态**：通用组织映射已实现并通过本地两阶段矩阵；CI 成功跑次和 LDAP 专用目录源仍待确认/实现。
+> **边界**：登录复用 CE OAuth2/OIDC；CloudFile 新增目录 provider、计划与本地组投影；Authentik 等 IdP 的部署、可用性和账号生命周期在外部边界。
 
 簇 B（特性 36）的规格。配套：[FEATURES.md](FEATURES.md)（特性状态）、
 [EXTENSION-POINTS.md](EXTENSION-POINTS.md)（扩展点）、

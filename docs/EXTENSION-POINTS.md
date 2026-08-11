@@ -1,8 +1,14 @@
+<!-- generated-by: gsd-doc-writer -->
 # 扩展点清单与特性关联
 
+> **用途**：登记 Hub/Server 扩展点、消费者、上游改动成本和已知缺口。
+> **适用版本**：CloudFile `14.0.0-cf.0`，基于 Seafile CE 14 源码重构。
+> **状态**：当前技术清单；各项按正文标记区分已验证、已实现待验与未实现。
+> **边界**：CE 保留原生调用链；CloudFile 新增注册与终判接缝；SeaSearch、Metadata Server 等外部实现仅通过契约接入。
+
 CloudFile 的**基础扩展能力**（基线 `dev` 提供的全部机制），以及每一个扩展点被
-哪些后续特性依赖。配套：[FEATURES.md](FEATURES.md)（特性状态）、
-[BRANCHES.md](BRANCHES.md)（分支与排期）、[BRANCHING.md](../BRANCHING.md)（分支模型）。
+哪些后续特性依赖。配套：[扩展能力矩阵](feature-matrix.md)（特性状态）、
+[BRANCHES.md](BRANCHES.md)（当前分支规则）、[BRANCHING.md](../BRANCHING.md)（分支模型）。
 
 这份文档回答两个问题：
 
@@ -124,7 +130,7 @@ seasearch、Elasticsearch、企业自有检索服务都可以是同一个 kind �
 **簇 B 拆成两行是探针的结果**，不是排版。SSO **登录**整行为空——CE 14.0 自带
 OAuth2/SAML/CAS/LDAP 且无 Pro 门控，打开它只是往配置块里写标量，一个扩展点
 都不需要。真正用到扩展点的是**组织映射**，上游对通用目录没有。
-详见 [upstream-reuse.md](upstream-reuse.md) 探针 0。
+当前结论见 [Authentik 与企业认证](features/sso-authentik.md)；探针过程已归档。
 它同时是"**先查上游再登记扩展点**"的一个实例：按原计划，这一行会占掉一个
 `provider(认证后端)`，而那个扩展点根本不需要存在。
 
@@ -195,7 +201,7 @@ shadow a native endpoint when it has to」。第 40 项已经用这个机制覆�
 门控端点（`cloudfile_ext/search/views.py` 的影子子类），**零上游改动**。
 
 所以真实取舍不是「两套界面 vs 改上游」，而是「两套界面 vs **影子约 8 个只读
-端点**」——端点清单见 [external-sources.md](external-sources.md) 第六节。
+端点**」——当前能力边界见 [SMB/NFS 外部资料源](features/external-sources.md)。
 
 **但真正的硬边界不是库列表，是数据面**，而它原先根本没被计价：
 
@@ -215,7 +221,7 @@ token = seafile_api.get_fileserver_access_token(repo_id, obj_id, 'download', use
 
 ### 缺口 4：C 核心生命周期仍只有 FS 后端 🔴
 
-完整核对见 [storage.md](storage.md)。Go fileserver 已实现 S3 与按库路由并经 MinIO
+完整核对见 [多存储与 S3](features/storage-backends.md)。Go fileserver 已实现 S3 与按库路由并经 MinIO
 对象读写验证；C 主服务生命周期仍只有 FS：
 
 - `common/obj-store.c:28` 写死 `obj_backend_fs_new`，只有 `obj-backend-fs.c` +
@@ -271,7 +277,7 @@ capability 并发布 CloudFile 客户端补丁。未修改客户端只能得到�
 `OnlineOffice`、四态 `check_file_lock`、虚拟库映射、目录锁字段、每库 revision 和通知。
 父目录同库移动/重命名默认允许并原子迁移后代锁，父目录删除允许并撤销后代锁；原方案
 默认 `strict` 与官方 Pro 语义冲突，已改为显式增强选项。完整矩阵见
-[file-preview-and-edit.md](file-preview-and-edit.md) §4.9/§14.2。
+[文件协作与本地应用](features/file-collaboration.md)。
 
 ---
 
@@ -425,7 +431,7 @@ class MeilisearchProvider:
 | name | 归属 | 说明 |
 |---|---|---|
 | `meilisearch` | 簇 E，✅ 已实现 | `cloudfile_ext/search/backends/meilisearch.py`，`CF_PROVIDER_SEARCH=meilisearch` 选中 |
-| （无 `seasearch` provider） | — | **确认不需要注册**：上游 CE 14.0 的 SeaSearch 走 `seahub/api2/views.py` 里独立的 `elif HAS_FILE_SEASEARCH` 分支（`ai_search_files`），完全不经过这个 provider 机制——`CF_PROVIDER_SEARCH` 留空就是默认，见 [search.md](search.md) |
+| （无 `seasearch` provider） | — | **确认不需要注册**：上游 CE 14.0 的 SeaSearch 走 `seahub/api2/views.py` 里独立的 `elif HAS_FILE_SEASEARCH` 分支（`ai_search_files`），完全不经过这个 provider 机制——`CF_PROVIDER_SEARCH` 留空就是默认，见 [检索](features/search.md) |
 | 企业自有检索 | 客户对接，⬜ 未实现 | 经 `external_service.py` 调用，契约同上 |
 
 > **两个上游改动的取舍**：`search/utils.py`（查询分发）与 `utils/__init__.py`

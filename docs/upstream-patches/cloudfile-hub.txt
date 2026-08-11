@@ -1,8 +1,10 @@
 # cloudfile-hub 允许修改的上游文件。
 #
-# 九个。加新能力**通常不需要**再动上游：路由用 registry.register_urls()，
+# 当前登记 32 个。加新能力**通常不需要**再动上游：路由用 registry.register_urls()，
 # 权限用 register_permission_check()，检索后端用 register_search_provider()，
 # Django app 用 seahub_settings.py 的 EXTRA_INSTALLED_APPS。
+#
+# 下面只解释其中最承重、最容易在同步时被误删的入口；完整清单以文件末尾为准。
 #
 #   frontend/config/webpack.entry.js  纯数据追加（往 entryFiles 加一个 key）
 #   seahub/utils/rooturl.py           追加 CloudFile 路由
@@ -30,6 +32,7 @@
 # 见 AGENTS.md「最重要的一条：不要改上游文件」。
 .gitignore
 frontend/config/webpack.entry.js
+frontend/src/components/dir-view-mode/utils/menuHandlers.js
 frontend/src/components/dir-view-mode/dir-others/index.js
 frontend/src/components/dirent-detail/dirent-details/file-details/index.js
 frontend/src/components/dirent-detail/index.js
@@ -40,9 +43,12 @@ frontend/src/hooks/file-operations/permission.js
 frontend/src/pages/file-history-old/history-item.js
 frontend/src/pages/file-history/side-panel.js
 frontend/src/tag/hooks/tags.js
+frontend/src/tag/utils/file.js
 frontend/src/utils/constants.js
 frontend/src/utils/seafile-api.js
+frontend/src/utils/text-translation.js
 frontend/src/utils/utils.js
+frontend/webpack-stats.pro.json
 scripts/seaf-fsck.sh
 scripts/seaf-gc.sh
 seahub/api2/endpoints/monitored_repos.py

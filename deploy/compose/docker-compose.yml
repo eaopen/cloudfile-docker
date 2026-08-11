@@ -136,6 +136,14 @@ services:
       CF_SEARCH_INDEX_INTERVAL: ${CF_SEARCH_INDEX_INTERVAL:-60}
       CF_SEARCH_INDEX_TEXT_MAX_BYTES: ${CF_SEARCH_INDEX_TEXT_MAX_BYTES:-1048576}
       CF_ENABLE_ONLYOFFICE: ${CF_ENABLE_ONLYOFFICE:-false}
+      # Same-source OnlyOffice JWT + Document Server endpoint. Compose
+      # interpolates the whole file regardless of which profile is active, so
+      # neither value is marked required (':?'); bootstrap.py refuses to start
+      # when CF_ENABLE_ONLYOFFICE=true and either is empty, which is the
+      # startup gate OFFICE-01 requires. See scripts/scripts_14.0/bootstrap.py
+      # _settings_block_office().
+      ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-}
+      ONLYOFFICE_APIJS_URL: ${ONLYOFFICE_APIJS_URL:-}
       CF_ENABLE_FILE_PREVIEW: ${CF_ENABLE_FILE_PREVIEW:-false}
       CF_ENABLE_FILE_LOCK: ${CF_ENABLE_FILE_LOCK:-false}
       CF_ENABLE_WATCH: ${CF_ENABLE_WATCH:-false}
@@ -348,6 +356,14 @@ services:
       CF_SEARCH_INDEX_INTERVAL: ${CF_SEARCH_INDEX_INTERVAL:-60}
       CF_SEARCH_INDEX_TEXT_MAX_BYTES: ${CF_SEARCH_INDEX_TEXT_MAX_BYTES:-1048576}
       CF_ENABLE_ONLYOFFICE: ${CF_ENABLE_ONLYOFFICE:-false}
+      # Same-source OnlyOffice JWT + Document Server endpoint. Compose
+      # interpolates the whole file regardless of which profile is active, so
+      # neither value is marked required (':?'); bootstrap.py refuses to start
+      # when CF_ENABLE_ONLYOFFICE=true and either is empty, which is the
+      # startup gate OFFICE-01 requires. See scripts/scripts_14.0/bootstrap.py
+      # _settings_block_office().
+      ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-}
+      ONLYOFFICE_APIJS_URL: ${ONLYOFFICE_APIJS_URL:-}
       CF_ENABLE_FILE_PREVIEW: ${CF_ENABLE_FILE_PREVIEW:-false}
       CF_ENABLE_FILE_LOCK: ${CF_ENABLE_FILE_LOCK:-false}
       CF_ENABLE_WATCH: ${CF_ENABLE_WATCH:-false}

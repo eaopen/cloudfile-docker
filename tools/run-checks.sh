@@ -40,8 +40,9 @@ skip() {
     skipped+=("$1（$2）")
 }
 
-# 1. 上游改动登记 —— fork 维护成本的硬约束
+# 1. 上游改动登记 —— fork 维护成本的可观测警告，不阻断 CI
 run "上游改动登记" "$docker_repo/tools/check-upstream-patches.sh"
+run "上游改动警告语义" "$docker_repo/tests/tools/test-check-upstream-patches.sh"
 
 # 2. Hub 侧扩展测试（能力分支上还包括与 C 端共用用例集的求解器测试）
 if [[ -d $hub ]]; then

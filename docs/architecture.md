@@ -49,7 +49,7 @@ cloudfile-server（seafile-server fork）
 | 部署 | 上游镜像脚本与组件约定 | CE 14 源码构建、统一环境变量、profile、配置块和跨仓门禁 |
 
 修改上游文件的权威清单位于 `docs/upstream-patches/`，由
-`tools/check-upstream-patches.sh` 检查。能力代码优先放在新文件；新增上游修改必须同时
+`tools/check-upstream-patches.sh` 检查并输出非阻断警告。能力代码优先放在新文件；新增上游修改仍应同时
 更新清单和[上游贡献建议](upstream-contribution.md)。
 
 ## 扩展注册与开关

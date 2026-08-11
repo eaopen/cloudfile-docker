@@ -74,6 +74,7 @@ docs/upstream-patches/cloudfile-docker.txt
 ```
 
 登记清单用于发现 fork 维护面是否意外扩大，不代表某项能力已经通过运行时验证。扩展点与消费者见 [`EXTENSION-POINTS.md`](EXTENSION-POINTS.md)。
+清单差异和比较环境缺失只产生警告，不再使快速检查或 CI 失败；评审时仍应确认新增 fork 维护面是否必要。
 
 ## 上游同步
 

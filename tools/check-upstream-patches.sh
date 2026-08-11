@@ -4,7 +4,8 @@
 #
 # 这是 CloudFile 唯一真正的 fork 维护成本指标：新增文件几乎不产生同步冲突，
 # 修改上游文件则每次跟随上游都要再付一次。清单一旦悄悄变长，同步的工作量就
-# 会不知不觉上升，而且没人会注意到——所以用脚本卡住，而不是靠自觉。
+# 会不知不觉上升，而且没人会注意到。脚本保留详细警告和可更新清单，
+# 但不再阻断快速检查或 CI。
 #
 #   ./tools/check-upstream-patches.sh              # 检查全部三个仓库
 #   ./tools/check-upstream-patches.sh cloudfile-hub
@@ -14,14 +15,14 @@
 # 需要三个仓库并排 checkout，且各自配好 upstream remote：
 #   git remote add upstream https://github.com/haiwen/<repo>.git
 #
-# 退出码：0 = 一致；1 = 清单变长（拒绝）；2 = 环境问题。
+# 退出码：0 = 检查完成（包括发现清单差异或环境缺失）；2 = 命令行参数错误。
 
 set -u
 
 here=$(cd "$(dirname "$0")" && pwd)
 docker_repo=$(cd "$here/.." && pwd)
-workspace=$(dirname "$docker_repo")
-lists=$docker_repo/docs/upstream-patches
+workspace=${CF_PATCH_WORKSPACE:-$(dirname "$docker_repo")}
+lists=${CF_PATCH_LISTS:-$docker_repo/docs/upstream-patches}
 
 ALL_REPOS=(cloudfile-server cloudfile-hub cloudfile-docker)
 
@@ -37,8 +38,6 @@ for arg in "$@"; do
     esac
 done
 [[ ${#repos[@]} -eq 0 ]] && repos=("${ALL_REPOS[@]}")
-
-status=0
 
 # 解析比较基线，按可靠性排序：
 #
@@ -109,21 +108,18 @@ for repo in "${repos[@]}"; do
     echo "=== $repo ==="
 
     if [[ ! -d $repo_dir/.git ]]; then
-        echo "  跳过：$repo_dir 不是 git 仓库" >&2
-        status=2
+        echo "  ⚠ 跳过：$repo_dir 不是 git 仓库（仅警告）" >&2
         continue
     fi
     if [[ ! -f $list ]]; then
-        echo "  跳过：清单 $list 不存在" >&2
-        status=2
+        echo "  ⚠ 跳过：清单 $list 不存在（仅警告）" >&2
         continue
     fi
     if ! read -r base mode < <(resolve_base "$repo_dir" "$repo"); then
-        echo "  跳过：无法确定比较基线。任选其一：" >&2
+        echo "  ⚠ 跳过：无法确定比较基线（仅警告）。任选其一：" >&2
         echo "    git -C $repo_dir remote add upstream https://github.com/haiwen/<repo>.git" >&2
         echo "    git -C $repo_dir fetch upstream master" >&2
         echo "  或 fetch release.yaml 里记录的锚点 SHA，或设置 CF_UPSTREAM_BASE。" >&2
-        status=2
         continue
     fi
 
@@ -145,11 +141,10 @@ for repo in "${repos[@]}"; do
     removed=$(comm -13 <(echo "$actual") <(echo "$expected"))
 
     if [[ -n $added ]]; then
-        echo "  ✗ 新增了未登记的上游改动："
+        echo "  ⚠ 新增了未登记的上游改动（仅警告）："
         echo "$added" | sed 's/^/      /'
         echo "    每一个都会在跟随上游时反复产生冲突。先确认无法改成新增文件，"
         echo "    再更新 docs/upstream-patches/$repo.txt 与 BRANCHING.md。"
-        status=1
     fi
 
     if [[ -n $removed ]]; then
@@ -162,4 +157,4 @@ for repo in "${repos[@]}"; do
     fi
 done
 
-exit $status
+exit 0

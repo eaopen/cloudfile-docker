@@ -30,7 +30,14 @@ CloudFile reaches an independently verifiable CE extension MVP by first closing 
   3. Every supported write, including batch delete, produces one stable PREPARE-to-COMMITTED-or-ABORTED lifecycle, and every racing save or release rejects a stale generation.
   4. A user can launch a versioned local view/edit session, claim it through the browser/extension/agent handoff, update the existing file, and receive deterministic heartbeat, conflict, expiry, retry, and stale-generation outcomes.
   5. An operator can enable OnlyOffice only with matching non-empty JWT configuration and verify save/retry/conflict/release behavior, while the same declared local and CI preflight reports every required capability as PASS, SKIP, or failure truthfully.
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — 建立本地与 CI 共用的真实能力门禁合同
+- [ ] 01-02-PLAN.md — 统一 Hub、Server 与 fileserver 的当前 ACL 裁决
+- [ ] 01-03-PLAN.md — 建立稳定操作身份与 generation/version fence
+- [ ] 01-04-PLAN.md — 交付版本化本地编辑与 durable writeback
+- [ ] 01-05-PLAN.md — 交付认证 OnlyOffice 启动与持久化回调状态机
 **UI hint**: yes
 
 ### Phase 2: Immutable Release Evidence
@@ -112,4 +119,3 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 5. Tags and Audit Lifecycle | 0/TBD | Not started | - |
 | 6. Permission-Trimmed Seafile AI | 0/TBD | Not started | - |
 | 7. MVP Qualification and Release | 0/TBD | Not started | - |
-

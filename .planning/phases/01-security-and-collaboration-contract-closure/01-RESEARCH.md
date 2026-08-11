@@ -471,18 +471,15 @@ Python bootstrap/preflight、Shell syntax、Server C harness、Server Go tests�
 
 1. **SeaSearch 是否提供可验证的服务端 ACL filter 能力？**
    - What we know: 当前 Hub SeaSearch 分支没有 CloudFile ACL 输入，后过滤会泄漏 total。 [VERIFIED: `../cloudfile-hub/seahub/api2/views.py`]
-   - What's unclear: 当前 pinned SeaSearch 服务的查询 API 是否能表达动态 subject/rule/revision 且保证精确 total，本次本地代码中没有该服务实现。 [VERIFIED: repository ownership boundary]
-   - RESOLVED: 计划以 backend-independent over-fetch/authorization 流保证正确性；只有经容器实测和官方接口验证后才允许下推优化。 [VERIFIED: locked correctness requirement; adopted by Plan 02 Task 2-3]
+   - RESOLVED: 本阶段选择 correctness-first、backend-independent 的分批 over-fetch/authorization 流，直到得到精确 authorized total/page；不依赖未验证的 SeaSearch 服务端 ACL filter。只有后续经容器实测和官方接口证明语义等价，才可单独优化下推。 [RESOLVED: adopted by Plans 02-03]
 
 2. **”matching secret” 的运行时证明边界是什么？**
    - What we know: Compose 可由同一 env 注入 Hub 与 Docs，真实 signed callback 可证明配对。 [VERIFIED: Compose seam; CITED official signature docs]
-   - What's unclear: Document Server 未在已查配置中暴露可安全读取/比较的 secret fingerprint。 [VERIFIED: inspected local Compose/config surface]
-   - RESOLVED: startup 验证同源非空配置，integration 用签名 callback 验证；不要新增泄露 secret 的诊断 API。 [VERIFIED: security constraint; adopted by Plan 05 Task 1]
+   - RESOLVED: 选择 same-source secret：Compose 将同一 env 值注入 Hub/worker/Docs，startup 验证非空，真实 signed callback smoke 作为运行时配对证明；不得新增 secret fingerprint 或明文比较 API。 [RESOLVED: adopted by Plans 13-16]
 
 3. **真实 Chrome handoff 是否作为 CI required？**
    - What we know: extension 只负责 `.cloudfile` 下载到 Native Messaging handoff，独立于 Server image；当前没有浏览器自动化 harness。 [VERIFIED: `../cloudfile-chrome-extension/background.js`; current tests]
-   - What's unclear: CI runner 是否具备 Chrome、extension 安装与 native-host 注册。 [VERIFIED: current workflow inventory]
-   - RESOLVED: schema/JS/Agent handoff contract 必须自动化；真实浏览器 handoff 在 capability manifest 中仅当 runner 明确提供依赖时 required，否则明确 SKIP，不能 PASS。 [VERIFIED: GATE-01 semantics; adopted by Plan 01 capability manifest + Plan 04 contract tests]
+   - RESOLVED: schema/JS/Agent handoff contract 始终 required；真实浏览器 handoff 只在 runner 具备 Chrome、extension 安装与 native-host 注册时执行，否则必须输出带 reason 的显式 SKIP，绝不能 PASS。 [RESOLVED: adopted by Plans 09-12]
 
 ## Sources
 

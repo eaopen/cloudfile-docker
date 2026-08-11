@@ -82,43 +82,43 @@
 
 ## Traceability
 
-Roadmap creation assigns every v1 requirement to exactly one phase.
+Every v1 requirement is assigned to exactly one roadmap phase.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEC-01 | Unassigned | Pending |
-| SEC-02 | Unassigned | Pending |
-| FILEOP-01 | Unassigned | Pending |
-| LOCK-01 | Unassigned | Pending |
-| GATE-01 | Unassigned | Pending |
-| LOCAL-01 | Unassigned | Pending |
-| LOCAL-02 | Unassigned | Pending |
-| OFFICE-01 | Unassigned | Pending |
-| OFFICE-02 | Unassigned | Pending |
-| REL-01 | Unassigned | Pending |
-| REL-02 | Unassigned | Pending |
-| OIDC-01 | Unassigned | Pending |
-| OIDC-02 | Unassigned | Pending |
-| OIDC-03 | Unassigned | Pending |
-| STOR-01 | Unassigned | Pending |
-| STOR-02 | Unassigned | Pending |
-| STOR-03 | Unassigned | Pending |
-| STOR-04 | Unassigned | Pending |
-| TAG-01 | Unassigned | Pending |
-| TAG-02 | Unassigned | Pending |
-| AUDIT-01 | Unassigned | Pending |
-| AUDIT-02 | Unassigned | Pending |
-| AI-01 | Unassigned | Pending |
-| AI-02 | Unassigned | Pending |
-| AI-03 | Unassigned | Pending |
-| QUAL-01 | Unassigned | Pending |
-| QUAL-02 | Unassigned | Pending |
+| SEC-01 | Phase 1 | Pending |
+| SEC-02 | Phase 1 | Pending |
+| FILEOP-01 | Phase 1 | Pending |
+| LOCK-01 | Phase 1 | Pending |
+| GATE-01 | Phase 1 | Pending |
+| LOCAL-01 | Phase 1 | Pending |
+| LOCAL-02 | Phase 1 | Pending |
+| OFFICE-01 | Phase 1 | Pending |
+| OFFICE-02 | Phase 1 | Pending |
+| REL-01 | Phase 2 | Pending |
+| REL-02 | Phase 2 | Pending |
+| OIDC-01 | Phase 3 | Pending |
+| OIDC-02 | Phase 3 | Pending |
+| OIDC-03 | Phase 3 | Pending |
+| STOR-01 | Phase 4 | Pending |
+| STOR-02 | Phase 4 | Pending |
+| STOR-03 | Phase 4 | Pending |
+| STOR-04 | Phase 4 | Pending |
+| TAG-01 | Phase 5 | Pending |
+| TAG-02 | Phase 5 | Pending |
+| AUDIT-01 | Phase 5 | Pending |
+| AUDIT-02 | Phase 5 | Pending |
+| AI-01 | Phase 6 | Pending |
+| AI-02 | Phase 6 | Pending |
+| AI-03 | Phase 6 | Pending |
+| QUAL-01 | Phase 7 | Pending |
+| QUAL-02 | Phase 7 | Pending |
 
 **Coverage:**
 - v1 requirements: 27 total
-- Mapped to phases: 0
-- Unmapped: 27
+- Mapped to phases: 27
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-08-11*
-*Last updated: 2026-08-11 after initial definition*
+*Last updated: 2026-08-11 after roadmap creation*

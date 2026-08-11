@@ -1,0 +1,84 @@
+{
+  "_comment": "Canonical machine-readable capability declaration. Consumed by BOTH tools/verify-local.sh (local) and tools/capability_manifest.py / preflight-checks.py (CI). Adding a capability = adding a matrix file (tests/e2e/<id>_matrix.py) + a workflow (.github/workflows/<id>-e2e.yml) + an entry here. Parity is enforced dynamically; do not hardcode counts.",
+  "version": 1,
+  "phase_gate": {
+    "switches_off_required": true,
+    "scripts": ["tests/e2e/smoke.py", "tests/e2e/baseline.py"],
+    "_comment": "Disabled-CE dual baseline: same source SHA + image digest tuple, all CF_ENABLE_* off, smoke.py then baseline.py back-to-back."
+  },
+  "capabilities": [
+    {
+      "id": "acl",
+      "feature_switches": ["CF_ENABLE_DIR_ACL"],
+      "matrix": "tests/e2e/acl_matrix.py",
+      "workflow": "acl-e2e.yml",
+      "required": true,
+      "profiles": [],
+      "dependencies": []
+    },
+    {
+      "id": "sso",
+      "feature_switches": ["CF_ENABLE_SSO"],
+      "matrix": "tests/e2e/sso_matrix.py",
+      "workflow": "sso-e2e.yml",
+      "required": true,
+      "profiles": ["worker"],
+      "dependencies": []
+    },
+    {
+      "id": "metadata",
+      "feature_switches": ["CF_ENABLE_METADATA", "CF_ENABLE_TAGS"],
+      "matrix": "tests/e2e/metadata_matrix.py",
+      "workflow": "metadata-e2e.yml",
+      "required": true,
+      "profiles": ["metadata"],
+      "dependencies": []
+    },
+    {
+      "id": "audit",
+      "feature_switches": ["CF_ENABLE_AUDIT"],
+      "matrix": "tests/e2e/audit_matrix.py",
+      "workflow": "audit-e2e.yml",
+      "required": true,
+      "profiles": [],
+      "dependencies": []
+    },
+    {
+      "id": "storage",
+      "feature_switches": ["CF_ENABLE_S3_STORAGE"],
+      "matrix": "tests/e2e/storage_matrix.py",
+      "workflow": "storage-e2e.yml",
+      "required": true,
+      "profiles": ["s3"],
+      "dependencies": ["minio"]
+    },
+    {
+      "id": "search",
+      "feature_switches": ["CF_ENABLE_SEARCH"],
+      "matrix": "tests/e2e/search_matrix.py",
+      "workflow": "search-e2e.yml",
+      "required": true,
+      "profiles": ["search"],
+      "dependencies": []
+    },
+    {
+      "id": "external_sources",
+      "feature_switches": ["CF_ENABLE_EXTERNAL_SOURCES"],
+      "matrix": "tests/e2e/external_sources_matrix.py",
+      "workflow": "external_sources-e2e.yml",
+      "required": true,
+      "profiles": [],
+      "dependencies": []
+    },
+    {
+      "id": "fileop",
+      "feature_switches": ["CF_FILEOP_TEST_PROVIDER"],
+      "matrix": "tests/e2e/fileop_matrix.py",
+      "workflow": "fileop-e2e.yml",
+      "required": true,
+      "profiles": [],
+      "dependencies": [],
+      "_comment": "fileop is a baseline extension point instrument, not a CF_ENABLE_* product capability; its switch is the test provider flag."
+    }
+  ]
+}

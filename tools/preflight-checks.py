@@ -275,11 +275,51 @@ def check_extension_points_documented(repo, workspace):
 
 
 def check_capability_gates(repo):
-    """每个能力的本地门禁与 CI 门禁必须成对存在。
+    """能力声明在 manifest、matrix、workflow、本地 runner 四处必须同集合。
 
-    verify-local.sh 存在的全部理由是"不要再手抄 <能力>-e2e.yml"——而只抄了一半
-    正是它要防的事：acl_matrix.py 缺 --insecure 就是这么留下来的。两边缺任何
-    一边，本地和 CI 就在验不同的东西，而且没有任何信号。
+    单一机器可读清单（config/capabilities.json）现在是真相来源：本地
+    verify-local.sh 与 CI 都解析它，新增能力只要加一处（matrix 文件 +
+    workflow + manifest 条目）即自动进入 parity。这正是 external_sources
+    当初让门禁变红的那种漂移（CI 有 8、本地只有 7）要彻底防住的事。
+    """
+    if os.path.isfile(os.path.join(repo, 'tools', 'capability_manifest.py')):
+        # 用 manifest 模块做动态 parity：manifest == matrices == workflows。
+        # 同时校验 manifest 每条都指向真实存在的 matrix 与 workflow 文件。
+        result = subprocess.run(
+            [sys.executable,
+             os.path.join(repo, 'tools', 'capability_manifest.py'),
+             'validate', repo],
+            capture_output=True, text=True, timeout=30)
+        for line in result.stdout.splitlines():
+            print(f'  {line}')
+        if result.returncode != 0:
+            for line in result.stderr.splitlines():
+                print(f'      {line}')
+            bad('能力 manifest parity 失败',
+                'config/capabilities.json、tests/e2e/*_matrix.py 与 '
+                '.github/workflows/*-e2e.yml 必须声明同一 capability 集合')
+        else:
+            ok('能力 manifest 与 matrices/workflows 同集合（动态校验）')
+
+        # 第二半：verify-local.sh 不再手抄能力清单——它从 manifest 派生。
+        # 这里只确认它确实派生自 manifest，而不是又回到写死的 CAPABILITIES 表。
+        script = read(os.path.join(repo, 'tools', 'verify-local.sh'))
+        if script and 'capability_manifest.py' in script:
+            ok('verify-local.sh 由 manifest 派生能力清单')
+        elif script and re.search(r'^CAPABILITIES=\(\n', script, re.M):
+            bad('verify-local.sh 仍使用写死的 CAPABILITIES 表',
+                '改为调用 capability_manifest.py list 派生，否则新增能力必漂移')
+    else:
+        # ponytail: manifest 模块尚未引入时的回退路径——仅在此仓库刚接入
+        # Phase 1 之前有效；上限：manifest 模块一旦提交，此分支应当消失。
+        print('  ⊘ capability_manifest.py 不存在，跳过 manifest parity')
+        _legacy_capability_table_parity(repo)
+
+
+def _legacy_capability_table_parity(repo):
+    """旧路径：直接比较 verify-local.sh 的 CAPABILITIES 表与 workflow 集合。
+
+    仅在 manifest 模块未提交时使用；上限见 check_capability_gates。
     """
     script = read(os.path.join(repo, 'tools', 'verify-local.sh'))
     if not script:

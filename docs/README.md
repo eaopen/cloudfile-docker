@@ -1,58 +1,45 @@
-# CloudFile 文档地图
+# CloudFile 文档
 
-CE 扩展版的规格、规划与决策。每份文档只保留**最终版本**内容；被取代但仍有价值的
-推理（反转、被更正的判断）在 [历史版本/](历史版本/)。
+> 用途：当前文档入口与阅读顺序
+> 适用版本：Seafile CE 14 参考基线
+> 当前状态：有效
 
-## 框架与规划
+## 使用与运维
 
 | 文档 | 内容 |
 |---|---|
-| [FEATURES.md](FEATURES.md) | 全部特性清单与完成状态（✅ 已验 / 🟡 未验 / ⬜ 未做）。**先看这个** |
-| [BRANCHES.md](BRANCHES.md) | 首要原则（复用官方优先）、分支模型、八个耦合簇、上游成本、排期 |
-| [EXTENSION-POINTS.md](EXTENSION-POINTS.md) | 扩展点 × 特性关联矩阵，已知缺口 |
-| [fileop-lifecycle.md](fileop-lifecycle.md) + [fileop-cases.json](fileop-cases.json) | **写入生命周期契约**（PREPARE / COMMITTED / ABORTED）。属基线，不属任何簇——文件锁、签入签出、OnlyOffice 写回、属性、标签、元数据跟随六个特性共同的前置 |
-| [pro-parity.md](pro-parity.md) | 官方 Pro vs CE 逐项对标：哪些是"打包"（启用即可）、哪些要"构建" |
-| [upstream-reuse.md](upstream-reuse.md) | 决策探针结论：上游已有什么，哪些能白拿 |
+| [项目概览](overview.md) | 基线、产品边界和事实口径 |
+| [当前架构](architecture.md) | 三仓职责、数据边界和故障隔离 |
+| [部署](deployment.md) | Compose 部署、升级、备份和恢复 |
+| [配置](configuration.md) | 环境变量、profile 和配置生成规则 |
+| [扩展能力矩阵](feature-matrix.md) | 每项能力的状态、来源、定位、证据和上游策略 |
 
-## 能力规格（一簇一份）
+## 能力说明
 
-| 文档 | 簇 | 对应 Pro 特性 | 状态 |
-|---|---|---|---|
-| [acl-semantics.md](acl-semantics.md) + [acl-cases.json](acl-cases.json) | A 目录 ACL | Fine-grained folder permission | ✅ 已落地 |
-| [sso-mapping.md](sso-mapping.md) | B 身份与目录同步 | Syncing LDAP/AD Users & Groups | ✅ 本机两阶段门禁与 CI 均通过；LDAP 目录源待补 |
-| [audit.md](audit.md) | C 审计 | Audit Log | ✅ API、筛选与管理员页面已验收 |
-| [upstream-reuse.md](upstream-reuse.md) | D 元数据与标签 | Metadata | ✅ 官方 metadata-server 已接入并通过真实 API 验收 |
-| [search.md](search.md) | E 检索 | Full text search | ⬜ 方案已定 |
-| [file-preview-and-edit.md](file-preview-and-edit.md) | F 协同与本地编辑 | File locking / Online editing | 🟡 OnlyOffice、文件锁与签入签出已有部分实现；尚缺生产协议兼容面与容器级 E2E |
-| [external-sources.md](external-sources.md) | G 外部资料源 | SMB/NFS 外部资料源 | 🟡 阶段 2 自有只读浏览与管理入口已完成；增量扫描、原生库影子挂载与 Overlay 尚未实现 |
-| [storage.md](storage.md) | H 存储 | AWS S3 / 多存储 | ✅ 已完成，并已通过完整整机验证 |
-| [ai.md](ai.md) | AI | 自动属性/标签/摘要（非 Pro 表项） | ⬜ 方案已定 |
-
-> 元数据（簇 D）默认用官方 `seafile-md-server`，规格与探针结论在
-> [upstream-reuse.md](upstream-reuse.md)；各簇（含 E 检索、F 协同、G 外部源、H 存储）的
-> 细项状态见 [FEATURES.md](FEATURES.md)。
-
-## 决策记录
-
-| 文档 | 决策 |
+| 文档 | 当前状态 |
 |---|---|
-| [decision-image-baseline.md](decision-image-baseline.md) | 镜像基线维持 CE 14.0（否决退回 13.0） |
+| [Authentik 与企业认证](features/sso-authentik.md) | 部分完成；通用 OIDC 与组织映射已有，Authentik 端到端待验证 |
+| [多存储与 S3 兼容存储](features/storage-backends.md) | 已完成；优先验证 MinIO |
+| [外部资料联邦与虚拟目录挂载](features/external-directory-mount.md) | 规划；拟拆分为独立项目，为 AI 和 CloudFile 提供不同消费接口 |
+| [Seafile AI 与外接 LLM](features/seafile-ai.md) | 验证中；复用官方 Seafile AI，外接配置模型 |
+| [目录 ACL 语义](acl-semantics.md) | 验证中；active-authority 故障与修订契约尚待跨层实现 |
+| [写入生命周期](fileop-lifecycle.md) | 验证中 |
+| [目录/文件操作日志](features/audit.md) | 验证中；已查询提交变更，完整操作与协议覆盖待补 |
+| [目录/文件标签机制](features/tags.md) | 验证中；CE 通路存在，当前门禁未验证目录/文件绑定闭环 |
+| [检索](features/search.md) | 部分完成 |
+| [文件协作与本地应用](features/file-collaboration.md) | 部分完成 |
+| [外部资料源](features/external-sources.md) | 部分完成 |
 
-## 数据与登记
+## 研发与决策
 
-| 路径 | 内容 |
+| 文档 | 内容 |
 |---|---|
-| [acl-cases.json](acl-cases.json) | ACL 共享用例集，同时驱动 C 与 Python 两端 |
-| [fileop-cases.json](fileop-cases.json) | 写入生命周期共享用例集，同时驱动 C 与 Go 两端 |
-| [upstream-patches/](upstream-patches/) | 各仓允许修改的上游文件登记（fork 成本的硬约束） |
+| [上游贡献建议](upstream-contribution.md) | 可提交、拆分后提交和内部保留的改动 |
+| [路线图](roadmap.md) | 仅保留未完成项，不承诺日期 |
+| [分支与上游跟随](BRANCHES.md) | 当前分支、合并门槛和同步步骤 |
+| [扩展点清单](EXTENSION-POINTS.md) | Hub/Server 扩展点及消费者技术参考 |
+| [历史版本](history/README.md) | 被替代方案、旧规划和决策过程索引 |
 
----
-
-## 两条贯穿全部文档的原则
-
-1. **优先复用官方组件**（[BRANCHES.md 原则 0](BRANCHES.md)）：官方镜像/实现能用就用，
-   是否开源不是首要约束；官方不满足需求时才自建，且尽量留协议 seam 以便替换。
-2. **最小化上游改动**：fork 唯一的持续成本是改了多少上游文件（当前 7/35/3，
-   见 [upstream-patches/](upstream-patches/)；权威值以
-   `tools/check-upstream-patches.sh` 为准，这里的数字只是提醒它有代价）。
-   能力只新增文件、经扩展点接线；打包类特性只写配置、不开分支。
+`docs/upstream-patches/` 是上游修改登记，`acl-cases.json` 和
+`fileop-cases.json` 是机器可读契约，不属于导航正文。历史文档不作为当前配置或功能状态
+依据。

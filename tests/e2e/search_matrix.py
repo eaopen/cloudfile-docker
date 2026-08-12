@@ -51,7 +51,6 @@ REPO_PREFIX = 'search-matrix-'
 # discover both freshly-created commits before treating it as a failure.
 POLL_SECONDS = 120
 
-
 def request(url, method='GET', token=None, form=None, data=None, headers=None,
            context=None):
     hdrs = dict(headers or {})

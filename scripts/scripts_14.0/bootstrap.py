@@ -163,6 +163,7 @@ def write_cloudfile_settings():
     body += _settings_block_sso()
     body += _settings_block_search()
     body += _settings_block_external_sources()
+    body += _settings_block_office()
     body += _settings_block_upstream()
 
     _replace_block(join(topdir, 'conf', 'seahub_settings.py'),
@@ -197,8 +198,38 @@ def _settings_block_sso():
 
     lines = []
 
-    client_id = get_conf('CF_SSO_OAUTH_CLIENT_ID', '')
+    client_id = get_conf('CF_SSO_OAUTH_CLIENT_ID', '').strip()
     if client_id:
+        def boolean(name, default):
+            raw = get_conf(name, default).strip().lower()
+            if raw not in ('true', 'false'):
+                raise Exception('%s must be true or false' % name)
+            return raw == 'true'
+
+        insecure = boolean('CF_SSO_OAUTH_INSECURE', 'false')
+
+        def endpoint(name, required=True):
+            """Return a safe OAuth endpoint or fail while startup is visible."""
+            from urllib.parse import urlsplit
+
+            value = get_conf(name, '').strip()
+            if not value:
+                if required:
+                    raise Exception('%s is required when OAuth login is enabled'
+                                    % name)
+                return ''
+
+            parsed = urlsplit(value)
+            allowed_schemes = ('http', 'https') if insecure else ('https',)
+            if parsed.scheme not in allowed_schemes or not parsed.hostname:
+                transport = 'http(s)' if insecure else 'https'
+                raise Exception('%s must be an absolute %s URL, got %r'
+                                % (name, transport, value))
+            if parsed.username or parsed.password or parsed.fragment:
+                raise Exception('%s must not contain userinfo or a fragment'
+                                % name)
+            return value
+
         proto = get_proto()
         host = get_conf('SEAFILE_SERVER_HOSTNAME', 'seafile.example.com')
 
@@ -208,9 +239,30 @@ def _settings_block_sso():
         # typo that caused it, and in a place the operator cannot see logs.
         redirect_url = '%s://%s/oauth/callback/' % (proto, host)
 
-        uid_claim = get_conf('CF_SSO_OAUTH_UID_CLAIM', 'sub')
-        email_claim = get_conf('CF_SSO_OAUTH_EMAIL_CLAIM', 'email')
-        name_claim = get_conf('CF_SSO_OAUTH_NAME_CLAIM', 'name')
+        client_secret = get_conf('CF_SSO_OAUTH_CLIENT_SECRET', '').strip()
+        if not client_secret:
+            raise Exception('CF_SSO_OAUTH_CLIENT_SECRET is required when '
+                            'CF_SSO_OAUTH_CLIENT_ID is set')
+
+        authorization_url = endpoint('CF_SSO_OAUTH_AUTHORIZATION_URL')
+        token_url = endpoint('CF_SSO_OAUTH_TOKEN_URL')
+        user_info_url = endpoint('CF_SSO_OAUTH_USER_INFO_URL')
+        logout_url = endpoint('CF_SSO_OAUTH_LOGOUT_URL', required=False)
+        provider = get_conf('CF_SSO_OAUTH_PROVIDER', '').strip()
+        if not provider:
+            raise Exception('CF_SSO_OAUTH_PROVIDER is required when OAuth '
+                            'login is enabled')
+
+        scope = get_conf('CF_SSO_OAUTH_SCOPE', 'openid email profile').split()
+        if not scope:
+            raise Exception('CF_SSO_OAUTH_SCOPE must list at least one scope')
+
+        uid_claim = get_conf('CF_SSO_OAUTH_UID_CLAIM', 'sub').strip()
+        email_claim = get_conf('CF_SSO_OAUTH_EMAIL_CLAIM', 'email').strip()
+        name_claim = get_conf('CF_SSO_OAUTH_NAME_CLAIM', 'name').strip()
+        if not uid_claim or not email_claim:
+            raise Exception('CF_SSO_OAUTH_UID_CLAIM and '
+                            'CF_SSO_OAUTH_EMAIL_CLAIM must not be empty')
 
         # Upstream's shape is {claim: (required, seahub_attr)}. The email claim
         # is the required one: seahub/oauth/views.py falls back to it when no
@@ -230,18 +282,23 @@ def _settings_block_sso():
         lines += [
             'ENABLE_OAUTH = True',
             'OAUTH_ENABLE_INSECURE_TRANSPORT = %r'
-            % (get_conf('CF_SSO_OAUTH_INSECURE', 'false').lower() == 'true',),
+            % (insecure,),
             'OAUTH_CLIENT_ID = %r' % client_id,
-            'OAUTH_CLIENT_SECRET = %r' % get_conf('CF_SSO_OAUTH_CLIENT_SECRET', ''),
-            'OAUTH_AUTHORIZATION_URL = %r'
-            % get_conf('CF_SSO_OAUTH_AUTHORIZATION_URL', ''),
-            'OAUTH_TOKEN_URL = %r' % get_conf('CF_SSO_OAUTH_TOKEN_URL', ''),
-            'OAUTH_USER_INFO_URL = %r' % get_conf('CF_SSO_OAUTH_USER_INFO_URL', ''),
-            'OAUTH_SCOPE = %r' % get_conf('CF_SSO_OAUTH_SCOPE',
-                                          'openid email profile').split(),
-            'OAUTH_PROVIDER = %r' % get_conf('CF_SSO_OAUTH_PROVIDER', ''),
+            'OAUTH_CLIENT_SECRET = %r' % client_secret,
+            'OAUTH_AUTHORIZATION_URL = %r' % authorization_url,
+            'OAUTH_TOKEN_URL = %r' % token_url,
+            'OAUTH_USER_INFO_URL = %r' % user_info_url,
+            'OAUTH_SCOPE = %r' % scope,
+            'OAUTH_PROVIDER = %r' % provider,
             'OAUTH_REDIRECT_URL = %r' % redirect_url,
             'OAUTH_ATTRIBUTE_MAP = %r' % (attribute_map,),
+            # Seahub redirects an OAuth-authenticated user's local logout to
+            # this configured RP-initiated logout endpoint.  Authentik's
+            # end-session URL is supplied by the operator; no provider-
+            # specific protocol code is introduced here.
+            'OAUTH_LOGOUT_URL = %r' % logout_url,
+            'OAUTH_CREATE_UNKNOWN_USER = %r'
+            % boolean('CF_SSO_OAUTH_CREATE_UNKNOWN_USER', 'true'),
         ]
 
     lines += [
@@ -362,6 +419,100 @@ def _settings_block_external_sources():
                 positive_int('CF_EXTERNAL_SCAN_MAX_DIRS', 20),
                 positive_int('CF_EXTERNAL_SCAN_MAX_FILES', 2000),
             )
+
+
+def _settings_block_office():
+    """OnlyOffice startup contract, or nothing at all when the switch is off.
+
+    OFFICE-01: enabling OnlyOffice requires a matching, non-empty JWT on Hub
+    and Document Server. Compose injects the same ONLYOFFICE_JWT_SECRET env
+    into the Hub, the worker and the Document Server container, so a single
+    source feeds both sides -- that is the runtime pairing proof, not a
+    fingerprint endpoint. Missing or blank secret/APIJS URL fails startup
+    here, while the operator is watching, rather than letting the callback
+    view fall back to the legacy "empty secret means authenticated" mode that
+    this plan removes.
+
+    The renderer also needs ONLYOFFICE_APIJS_URL (upstream derives the
+    converter URL from it), and CloudFile derives the trusted origin for the
+    callback download from that same URL so the SSRF boundary stays tied to
+    the configured Document Server rather than to a second knob.
+
+    Iron rule: switch off writes nothing. Upstream ENABLE_ONLYOFFICE defaults
+    to False and is not overridden, so a deployment that has not opted in is
+    byte-for-byte native CE.
+    """
+    if not cf_enabled('CF_ENABLE_ONLYOFFICE'):
+        return ''
+
+    from urllib.parse import urlsplit
+
+    secret = get_conf('ONLYOFFICE_JWT_SECRET', '').strip()
+    if not secret:
+        raise Exception(
+            'ONLYOFFICE_JWT_SECRET is required when CF_ENABLE_ONLYOFFICE=true; '
+            'set the same non-empty value on the Hub, the worker and the '
+            'Document Server (compose injects one ONLYOFFICE_JWT_SECRET into '
+            'all three). Missing or empty secret would otherwise let '
+            'unsigned callbacks through, which is exactly what this gate '
+            'removes.')
+
+    apijs_url = get_conf('ONLYOFFICE_APIJS_URL', '').strip()
+    if not apijs_url:
+        raise Exception(
+            'ONLYOFFICE_APIJS_URL is required when CF_ENABLE_ONLYOFFICE=true; '
+            'point it at the Document Server '
+            '"/web-apps/apps/api/documents/api.js" the renderer loads.')
+
+    parsed = urlsplit(apijs_url)
+    if parsed.scheme not in ('http', 'https'):
+        raise Exception(
+            'ONLYOFFICE_APIJS_URL must be an http(s) absolute URL, got %r'
+            % apijs_url)
+    if not parsed.hostname:
+        raise Exception(
+            'ONLYOFFICE_APIJS_URL must include a hostname, got %r' % apijs_url)
+    # Normalized origin used by the callback download as its sole trust
+    # boundary: scheme + hostname + effective port (omit the default port for
+    # the scheme). userinfo/fragment/path never enter this value.
+    default_port = 443 if parsed.scheme == 'https' else 80
+    port = parsed.port
+    if port and port != default_port:
+        trusted_origin = '%s://%s:%d' % (parsed.scheme, parsed.hostname, port)
+    else:
+        trusted_origin = '%s://%s' % (parsed.scheme, parsed.hostname)
+
+    def positive_int(name, default):
+        raw = get_conf(name, str(default))
+        try:
+            value = int(raw)
+        except ValueError:
+            raise Exception('%s must be an integer' % name)
+        if value <= 0:
+            raise Exception('%s must be positive' % name)
+        return value
+
+    lines = [
+        # Upstream gate on the renderer. Native CE default is False; we only
+        # raise it when the secure configuration is complete.
+        'ENABLE_ONLYOFFICE = True',
+        # Same-source JWT shared with the Document Server. The callback view
+        # rejects any token that does not verify under this secret, and
+        # rejects every callback outright when the secret is empty.
+        'ONLYOFFICE_JWT_SECRET = %r' % secret,
+        # Renderer + converter endpoint. Upstream derives ONLYOFFICE_CONVERTER_URL
+        # from this in seahub/onlyoffice/settings.py.
+        'ONLYOFFICE_APIJS_URL = %r' % apijs_url,
+        # Trusted Document Server origin for the callback download. The
+        # callback download refuses any URL whose scheme+host+port differs.
+        'CF_ONLYOFFICE_TRUSTED_ORIGIN = %r' % trusted_origin,
+        # Bounded streaming download, with a safe default (256 MiB). The
+        # callback download streams into a tempfile and fails closed when the
+        # declared or actual byte count exceeds this cap.
+        'CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES = %r'
+        % positive_int('CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES', 256 * 1024 * 1024),
+    ]
+    return '\n'.join(lines) + '\n'
 
 
 def _settings_block_upstream():

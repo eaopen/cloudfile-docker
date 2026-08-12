@@ -136,6 +136,14 @@ services:
       CF_SEARCH_INDEX_INTERVAL: ${CF_SEARCH_INDEX_INTERVAL:-60}
       CF_SEARCH_INDEX_TEXT_MAX_BYTES: ${CF_SEARCH_INDEX_TEXT_MAX_BYTES:-1048576}
       CF_ENABLE_ONLYOFFICE: ${CF_ENABLE_ONLYOFFICE:-false}
+      # Same-source OnlyOffice JWT + Document Server endpoint. Compose
+      # interpolates the whole file regardless of which profile is active, so
+      # neither value is marked required (':?'); bootstrap.py refuses to start
+      # when CF_ENABLE_ONLYOFFICE=true and either is empty, which is the
+      # startup gate OFFICE-01 requires. See scripts/scripts_14.0/bootstrap.py
+      # _settings_block_office().
+      ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-}
+      ONLYOFFICE_APIJS_URL: ${ONLYOFFICE_APIJS_URL:-}
       CF_ENABLE_FILE_PREVIEW: ${CF_ENABLE_FILE_PREVIEW:-false}
       CF_ENABLE_FILE_LOCK: ${CF_ENABLE_FILE_LOCK:-false}
       CF_ENABLE_WATCH: ${CF_ENABLE_WATCH:-false}
@@ -172,7 +180,7 @@ services:
       ENABLE_METADATA_MANAGEMENT: ${CF_ENABLE_METADATA:-false}
       INNER_METADATA_SERVER_URL: ${CF_METADATA_SERVER_URL:-http://cloudfile-metadata:8084}
       MD_FILE_COUNT_LIMIT: ${CF_METADATA_FILE_COUNT_LIMIT:-100000}
-      # -- AI (docs/ai.md P0: packaging layer, no CF_ENABLE_* branch) --
+      # -- AI (docs/features/seafile-ai.md: reuse Seafile AI; deployment layer) --
       # Per https://manual.seafile.com/14.0/extension/seafile-ai/.
       # ENABLE_SEAFILE_AI/SEAFILE_AI_SERVER_URL/SEAFILE_AI_SECRET_KEY and
       # ENABLE_FACE_RECOGNITION are read straight from the process environment
@@ -201,11 +209,13 @@ services:
       CF_SSO_OAUTH_AUTHORIZATION_URL: ${CF_SSO_OAUTH_AUTHORIZATION_URL:-}
       CF_SSO_OAUTH_TOKEN_URL: ${CF_SSO_OAUTH_TOKEN_URL:-}
       CF_SSO_OAUTH_USER_INFO_URL: ${CF_SSO_OAUTH_USER_INFO_URL:-}
+      CF_SSO_OAUTH_LOGOUT_URL: ${CF_SSO_OAUTH_LOGOUT_URL:-}
       CF_SSO_OAUTH_SCOPE: ${CF_SSO_OAUTH_SCOPE:-openid email profile}
       CF_SSO_OAUTH_PROVIDER: ${CF_SSO_OAUTH_PROVIDER:-}
       CF_SSO_OAUTH_UID_CLAIM: ${CF_SSO_OAUTH_UID_CLAIM:-sub}
       CF_SSO_OAUTH_EMAIL_CLAIM: ${CF_SSO_OAUTH_EMAIL_CLAIM:-email}
       CF_SSO_OAUTH_NAME_CLAIM: ${CF_SSO_OAUTH_NAME_CLAIM:-name}
+      CF_SSO_OAUTH_CREATE_UNKNOWN_USER: ${CF_SSO_OAUTH_CREATE_UNKNOWN_USER:-true}
       CF_SSO_OAUTH_INSECURE: ${CF_SSO_OAUTH_INSECURE:-false}
       CF_PROVIDER_SSO_DIRECTORY: ${CF_PROVIDER_SSO_DIRECTORY:-}
       CF_SSO_GROUP_OWNER: ${CF_SSO_GROUP_OWNER:-}
@@ -348,6 +358,14 @@ services:
       CF_SEARCH_INDEX_INTERVAL: ${CF_SEARCH_INDEX_INTERVAL:-60}
       CF_SEARCH_INDEX_TEXT_MAX_BYTES: ${CF_SEARCH_INDEX_TEXT_MAX_BYTES:-1048576}
       CF_ENABLE_ONLYOFFICE: ${CF_ENABLE_ONLYOFFICE:-false}
+      # Same-source OnlyOffice JWT + Document Server endpoint. Compose
+      # interpolates the whole file regardless of which profile is active, so
+      # neither value is marked required (':?'); bootstrap.py refuses to start
+      # when CF_ENABLE_ONLYOFFICE=true and either is empty, which is the
+      # startup gate OFFICE-01 requires. See scripts/scripts_14.0/bootstrap.py
+      # _settings_block_office().
+      ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-}
+      ONLYOFFICE_APIJS_URL: ${ONLYOFFICE_APIJS_URL:-}
       CF_ENABLE_FILE_PREVIEW: ${CF_ENABLE_FILE_PREVIEW:-false}
       CF_ENABLE_FILE_LOCK: ${CF_ENABLE_FILE_LOCK:-false}
       CF_ENABLE_WATCH: ${CF_ENABLE_WATCH:-false}
@@ -366,11 +384,13 @@ services:
       CF_SSO_OAUTH_AUTHORIZATION_URL: ${CF_SSO_OAUTH_AUTHORIZATION_URL:-}
       CF_SSO_OAUTH_TOKEN_URL: ${CF_SSO_OAUTH_TOKEN_URL:-}
       CF_SSO_OAUTH_USER_INFO_URL: ${CF_SSO_OAUTH_USER_INFO_URL:-}
+      CF_SSO_OAUTH_LOGOUT_URL: ${CF_SSO_OAUTH_LOGOUT_URL:-}
       CF_SSO_OAUTH_SCOPE: ${CF_SSO_OAUTH_SCOPE:-openid email profile}
       CF_SSO_OAUTH_PROVIDER: ${CF_SSO_OAUTH_PROVIDER:-}
       CF_SSO_OAUTH_UID_CLAIM: ${CF_SSO_OAUTH_UID_CLAIM:-sub}
       CF_SSO_OAUTH_EMAIL_CLAIM: ${CF_SSO_OAUTH_EMAIL_CLAIM:-email}
       CF_SSO_OAUTH_NAME_CLAIM: ${CF_SSO_OAUTH_NAME_CLAIM:-name}
+      CF_SSO_OAUTH_CREATE_UNKNOWN_USER: ${CF_SSO_OAUTH_CREATE_UNKNOWN_USER:-true}
       CF_SSO_OAUTH_INSECURE: ${CF_SSO_OAUTH_INSECURE:-false}
       CF_PROVIDER_SSO_DIRECTORY: ${CF_PROVIDER_SSO_DIRECTORY:-}
       CF_SSO_GROUP_OWNER: ${CF_SSO_GROUP_OWNER:-}
@@ -478,11 +498,10 @@ services:
       start_period: 5s
     restart: unless-stopped
 
-  # docs/ai.md: on-demand file tagging/summary/image-caption/OCR, already in CE
-  # and not Pro-gated (ENABLE_SEAFILE_AI). CloudFile does not build an
-  # automatic ingest pipeline for this (that is P1 in ai.md, deliberately not
-  # built -- the packaged, on-demand capability is the default; extend only
-  # if it stops covering a real need).
+  # docs/features/seafile-ai.md: reuse Seafile's on-demand tagging, summary,
+  # image caption and OCR integration, which is not Pro-gated
+  # (ENABLE_SEAFILE_AI). CloudFile does not build a parallel AI backend or
+  # automatic ingest pipeline; extend only after a verified requirement.
   #
   # Deployment shape per the official manual
   # (https://manual.seafile.com/14.0/extension/seafile-ai/), not a guess from

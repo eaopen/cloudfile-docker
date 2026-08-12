@@ -1,13 +1,13 @@
 #!/bin/bash
 #
-# CloudFile 蹇€熸鏌ャ€備笉闇€瑕佹瀯寤洪暅鍍忥紝鍑犲垎閽熷唴鍑虹粨鏋溿€?
+# CloudFile 快速检查。不需要构建镜像，几分钟内出结果。
 #
-# 涓変釜浠撳簱鐨?CI 閮借皟鐢ㄨ繖涓€浠斤紝閬垮厤妫€鏌ラ€昏緫澶嶅埗涓夐亶鍚庡悇鑷紓绉汇€傛湰鍦颁篃鍙互鐩存帴璺戯細
+# 三个仓库的 CI 都调用这一份，避免检查逻辑复制三遍后各自漂移。本地也可以直接跑：
 #
 #   ./tools/run-checks.sh
 #
-# 闇€瑕佷笁浠撳苟鎺?checkout銆傜己灏戞煇涓彲閫夊伐鍏凤紙go / cc / docker锛夋椂璺宠繃瀵瑰簲妫€鏌?
-# 骞惰鏄庡師鍥狅紝鑰屼笉鏄亣瑁呴€氳繃鈥斺€旈潤榛樿烦杩囩殑妫€鏌ユ瘮娌℃湁妫€鏌ユ洿鍗遍櫓銆?
+# 需要三仓并排 checkout。缺少某个可选工具（go / cc / docker）时跳过对应检查
+# 并说明原因，而不是假装通过——静默跳过的检查比没有检查更危险。
 
 set -uo pipefail
 
@@ -24,39 +24,40 @@ skipped=()
 run() {
     local name=$1; shift
     echo
-    echo "鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ $name 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€"
+    echo "──────── $name ────────"
     if "$@"; then
-        echo "鉁?$name"
+        echo "✓ $name"
     else
-        echo "鉁?$name"
+        echo "✗ $name"
         failed+=("$name")
     fi
 }
 
 skip() {
     echo
-    echo "鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€ $1 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€"
-    echo "鈯?璺宠繃锛?2"
-    skipped+=("$1锛?2锛?)
+    echo "──────── $1 ────────"
+    echo "⊘ 跳过：$2"
+    skipped+=("$1（$2）")
 }
 
-# 1. 涓婃父鏀瑰姩鐧昏 鈥斺€?fork 缁存姢鎴愭湰鐨勭‖绾︽潫
-run "涓婃父鏀瑰姩鐧昏" "$docker_repo/tools/check-upstream-patches.sh"
+# 1. 上游改动登记 —— fork 维护成本的可观测警告，不阻断 CI
+run "上游改动登记" "$docker_repo/tools/check-upstream-patches.sh"
+run "上游改动警告语义" "$docker_repo/tests/tools/test-check-upstream-patches.sh"
 
-# 2. Hub 渚ф墿灞曟祴璇曪紙鑳藉姏鍒嗘敮涓婅繕鍖呮嫭涓?C 绔叡鐢ㄧ敤渚嬮泦鐨勬眰瑙ｅ櫒娴嬭瘯锛?
+# 2. Hub 侧扩展测试（能力分支上还包括与 C 端共用用例集的求解器测试）
 if [[ -d $hub ]]; then
-    # pytest 鏀堕泦涓嶅埌鐢ㄤ緥鏃堕€€鍑虹爜鏄?5銆傚熀绾夸笂纭疄涓€涓兘鍔涙祴璇曢兘娌℃湁锛岄偅鏄?
-    # 姝ｅ父鐘舵€侊紝涓嶈鍒や负澶辫触鈥斺€斾絾鐪熸鐨勫け璐ワ紙閫€鍑虹爜 1锛変粛鐒惰绾€?
-    run "Hub 鎵╁睍娴嬭瘯 (Python)" bash -c \
+    # pytest 收集不到用例时退出码是 5。基线上确实一个能力测试都没有，那是
+    # 正常状态，不该判为失败——但真正的失败（退出码 1）仍然要红。
+    run "Hub 扩展测试 (Python)" bash -c \
         "cd '$hub' && python3 -m pytest cloudfile_ext/ -q; rc=\$?; [ \$rc -eq 0 ] || [ \$rc -eq 5 ]"
 else
-    skip "Hub 鎵╁睍娴嬭瘯" "鎵句笉鍒?$hub"
+    skip "Hub 扩展测试" "找不到 $hub"
 fi
 
-# 3. Server 渚ц兘鍔涙祴璇曪紙鍙渶瑕?glib锛屼笉闇€瑕佸畬鏁存瀯寤猴級
+# 3. Server 侧能力测试（只需要 glib，不需要完整构建）
 #
-# 鐢ㄥ彂鐜拌€屼笉鏄啓姝伙細鍩虹嚎涓婁竴涓兘鍔涢兘娌℃湁锛岃兘鍔涘垎鏀笂鍒欏悇鏈夊悇鐨?
-# tests/cf-<鑳藉姏>/run.sh銆傚啓姝绘煇涓兘鍔涚殑璺緞浼氳鍩虹嚎姘歌繙鎶?缂哄け"銆?
+# 用发现而不是写死：基线上一个能力都没有，能力分支上则各有各的
+# tests/cf-<能力>/run.sh。写死某个能力的路径会让基线永远报"缺失"。
 server_cap_tests=()
 if [[ -d $server/tests ]]; then
     while IFS= read -r t; do server_cap_tests+=("$t"); done \
@@ -64,46 +65,46 @@ if [[ -d $server/tests ]]; then
 fi
 
 if [[ ! -d $server ]]; then
-    skip "Server 鑳藉姏娴嬭瘯" "鎵句笉鍒?$server"
+    skip "Server 能力测试" "找不到 $server"
 elif [[ ${#server_cap_tests[@]} -eq 0 ]]; then
-    skip "Server 鑳藉姏娴嬭瘯" "鍩虹嚎鏃犺兘鍔涘疄鐜帮紝鏃犳祴璇曞彲璺?
+    skip "Server 能力测试" "基线无能力实现，无测试可跑"
 elif ! command -v cc >/dev/null; then
-    skip "Server 鑳藉姏娴嬭瘯" "娌℃湁 C 缂栬瘧鍣?
+    skip "Server 能力测试" "没有 C 编译器"
 elif ! pkg-config --exists glib-2.0 2>/dev/null; then
-    skip "Server 鑳藉姏娴嬭瘯" "娌℃湁 glib-2.0锛坅pt install libglib2.0-dev锛?
+    skip "Server 能力测试" "没有 glib-2.0（apt install libglib2.0-dev）"
 else
     for t in "${server_cap_tests[@]}"; do
-        run "Server 鑳藉姏娴嬭瘯 $(basename "$(dirname "$t")")" "$t"
+        run "Server 能力测试 $(basename "$(dirname "$t")")" "$t"
     done
 fi
 
 # 4. Go fileserver
 if [[ ! -d $server/fileserver ]]; then
-    skip "Go fileserver" "鎵句笉鍒?$server/fileserver"
+    skip "Go fileserver" "找不到 $server/fileserver"
 elif ! command -v go >/dev/null; then
-    skip "Go fileserver" "娌℃湁瀹夎 go"
+    skip "Go fileserver" "没有安装 go"
 else
     run "Go fileserver" bash -c \
         "cd '$server/fileserver' && go build ./... && go vet ./..."
 
-    # 鍙窇 CloudFile 鑷繁鐨勬祴璇曪紝涓嶈窇 `go test ./...`锛氫笂娓哥殑 repomgr 娴嬭瘯瑕佽繛
-    # MySQL锛屽湪杩欐潯绉掔骇闂ㄧ閲屽繀鐒跺け璐ワ紝鑰屼竴涓€绘槸绾㈢殑妫€鏌ョ瓑浜庢病鏈夋鏌ャ€?
-    run "Go fileserver 濂戠害娴嬭瘯" bash -c \
+    # 只跑 CloudFile 自己的测试，不跑 `go test ./...`：上游的 repomgr 测试要连
+    # MySQL，在这条秒级门禁里必然失败，而一个总是红的检查等于没有检查。
+    run "Go fileserver 契约测试" bash -c \
         "cd '$server/fileserver' && go test -count=1 -run 'Cf[A-Z]' ."
 fi
 
-# 5. Compose 閰嶇疆涓?profile
+# 5. Compose 配置与 profile
 if ! command -v docker >/dev/null || ! docker compose version >/dev/null 2>&1; then
-    skip "Compose 閰嶇疆" "娌℃湁 docker compose"
+    skip "Compose 配置" "没有 docker compose"
 else
-    run "Compose 閰嶇疆" bash -c "
+    run "Compose 配置" bash -c "
         cd '$docker_repo/deploy/compose'
         cf_compose_config=\$(mktemp)
         trap 'rm -f .env \"\$cf_compose_config\"' EXIT
         cp .env.example .env
         docker compose config --quiet
-        # 绌烘爣璁版槸 FileOp 闂ㄧ鐨勮瀵熸ā寮忥紝涓嶈兘琚?Compose 鐨勯粯璁ゅ€煎悶鎺夛紱
-        # SeaSearch 鐨勭煭闂撮殧鍒欏繀椤荤湡鐨勮繘鍏ュ鍣紝CI 鎵嶄笉浼氱瓑涓婃父鐨?10 鍒嗛挓榛樿鍊笺€?
+        # 空标记是 FileOp 门禁的观察模式，不能被 Compose 的默认值吞掉；
+        # SeaSearch 的短间隔则必须真的进入容器，CI 才不会等上游的 10 分钟默认值。
         CF_FILEOP_TEST_REFUSE_TOKEN='' CF_SEASEARCH_INTERVAL=10s \\
             docker compose config > \"\$cf_compose_config\"
         grep -Fq 'CF_FILEOP_TEST_REFUSE_TOKEN: \"\"' \"\$cf_compose_config\"
@@ -114,18 +115,18 @@ else
     "
 fi
 
-# 6. Shell 涓?Python 璇硶
+# 6. Shell 与 Python 语法
 #
-# 鍙壂 CloudFile 鑷繁鐨勬枃浠躲€俠uild/seafile_*/ 鏄笂娓稿師鏍蜂繚鐣欑殑锛屽畠浠殑
-# SyntaxWarning 涓嶅綊鎴戜滑绠★紝娣疯繘鏉ュ彧浼氭饭娌＄湡姝ｇ殑闂銆?
-run "鑴氭湰璇硶" bash -c "
+# 只扫 CloudFile 自己的文件。build/seafile_*/ 是上游原样保留的，它们的
+# SyntaxWarning 不归我们管，混进来只会淹没真正的问题。
+run "脚本语法" bash -c "
     set -e
-    # -prune 鎺?src/ 涓庢瀯寤轰骇鐗╋細閭ｉ噷鏄?clone 涓嬫潵鐨勪笂娓告簮鐮佸拰鍙戣鍖咃紝涓嶅綊
-    # 鎴戜滑绠★紝鑰屼笖涓婃父鐨?bash-4 璇硶锛?>>锛夊湪 macOS 鑷甫鐨?bash 3.2 涓婁細璇姤銆?
+    # -prune 掉 src/ 与构建产物：那里是 clone 下来的上游源码和发行包，不归
+    # 我们管，而且上游的 bash-4 语法（&>>）在 macOS 自带的 bash 3.2 上会误报。
     #
-    # 'seafile-server' 蹇呴』鍗曞垪锛歝lone 鍑烘潵鐨勫伐浣滄爲灏卞彨杩欎釜鍚嶅瓧锛屾病鏈夊悗缂€锛?
-    # 'seafile-server-*' 鍖归厤涓嶅埌銆傝繖涓紡娲炰竴鐩磋棌鐫€锛屽洜涓洪偅涓洰褰曞彧鍦?*鏋勫缓
-    # 璺戣繃涔嬪悗**鎵嶅瓨鍦ㄢ€斺€斿共鍑€鐨勬爲涓婃鏌ユ槸缁跨殑锛岃窇杩囦竴娆℃瀯寤哄啀璺戝氨绾€?
+    # 'seafile-server' 必须单列：clone 出来的工作树就叫这个名字，没有后缀，
+    # 'seafile-server-*' 匹配不到。这个漏洞一直藏着，因为那个目录只在**构建
+    # 跑过之后**才存在——干净的树上检查是绿的，跑过一次构建再跑就红。
     for f in \$(find '$docker_repo/tools' '$docker_repo/build/cloudfile_14.0' \
                      '$docker_repo/image/cloudfile_14.0' \
                      \\( -name src -o -name seafile-server -o -name 'seafile-server-*' \
@@ -142,38 +143,38 @@ run "鑴氭湰璇硶" bash -c "
     done
 "
 
-# 7. 鏋勫缓鑴氭湰鍓湰涓庝笂娓哥殑鍋忕娌℃湁鍙樺ぇ
+# 7. 构建脚本副本与上游的偏离没有变大
 #
-# build/cloudfile_14.0/cloudfile-build.py 鏄笂娓?seafile-build.py 鐨勫壇鏈紝棰勬湡
-# 鏀逛簡涓ゅ锛氭斁瀹界増鏈彿鏍￠獙浠ユ帴鍙?14.0.0-cf.0锛涘湪 copy_scripts_and_libs() 鐨?
-# must_copy 寰幆閲屽姞涓€琛岋紝鎶婄绾?S3 杩佺Щ宸ュ叿 seaf-storage-migrate.sh锛堟柊鏂囦欢锛?
-# 闅?seaf-fsck.sh/seaf-gc.sh 涓€璧锋潵鑷?Seahub scripts/锛夐殢鍙戣鍖呬竴璧峰鍒跺嚭鍘?
-# 鈥斺€斾笉鍔犺繖琛岋紝鏋勫缓浜х墿閲屽氨娌℃湁杩欎釜宸ュ叿銆備笂娓告洿鏂伴偅涓枃浠舵椂锛屾垜浠殑鍓湰
-# 浼?*闈欓粯鍙樻棫**鈥斺€斿拰涓婃父鏀瑰姩鐧昏涓€鏍风殑闂锛屾墍浠ュ悓鏍风敤鑴氭湰鍗′綇銆?
-run "鏋勫缓鑴氭湰鍓湰鍋忕" bash -c "
+# build/cloudfile_14.0/cloudfile-build.py 是上游 seafile-build.py 的副本，预期
+# 改了两处：放宽版本号校验以接受 14.0.0-cf.0；在 copy_scripts_and_libs() 的
+# must_copy 循环里加一行，把离线 S3 迁移工具 seaf-storage-migrate.sh（新文件，
+# 随 seaf-fsck.sh/seaf-gc.sh 一起来自 Seahub scripts/）随发行包一起复制出去
+# ——不加这行，构建产物里就没有这个工具。上游更新那个文件时，我们的副本
+# 会**静默变旧**——和上游改动登记一样的问题，所以同样用脚本卡住。
+run "构建脚本副本偏离" bash -c "
     upstream='$docker_repo/build/seafile_14.0/seafile-build.py'
     ours='$docker_repo/build/cloudfile_14.0/cloudfile-build.py'
     hunks=\$(diff -u \"\$upstream\" \"\$ours\" | grep -c '^@@' || true)
     if [ \"\$hunks\" != '2' ]; then
-        echo \"鍓湰涓庝笂娓哥浉宸?\$hunks 澶勶紝棰勬湡 2 澶勶紙鐗堟湰鍙锋牎楠?+ seaf-storage-migrate.sh 澶嶅埗锛夈€俓"
-        echo \"涓婃父鍙兘鏇存柊浜?seafile-build.py锛氬厛 diff 纭锛屽啀鍐冲畾鏄悓姝ュ壇鏈琝"
-        echo \"杩樻槸鎺ュ彈鏂扮殑鍋忕骞舵洿鏂拌繖涓鏌ャ€俓"
+        echo \"副本与上游相差 \$hunks 处，预期 2 处（版本号校验 + seaf-storage-migrate.sh 复制）。\"
+        echo \"上游可能更新了 seafile-build.py：先 diff 确认，再决定是同步副本\"
+        echo \"还是接受新的偏离并更新这个检查。\"
         diff -u \"\$upstream\" \"\$ours\" | head -40
         exit 1
     fi
-    echo '浠?2 澶勯鏈熷亸绂?
+    echo '仅 2 处预期偏离'
 "
 
-# 8. bootstrap 鐢熸垚鐨?seahub_settings.py 鐗囨鐪熺殑鑳藉姞杞?
+# 8. bootstrap 生成的 seahub_settings.py 片段真的能加载
 #
-# preflight 閭ｆ潯鏄潤鎬佺殑锛屽彧璁?`FOO['bar'] =` 杩欎竴绉嶅舰鐘躲€傝繖鏉℃妸鐢熸垚鍑芥暟鎶犲嚭鏉?
-# 瀹為檯鎵ц锛岃鐩栧紩鍙枫€佸瓧闈㈤噺銆乧laim 鍐茬獊杩欎簺闈欐€佹鏌ョ湅涓嶅嚭鐨勫啓娉曗€斺€斿畠浠殑鍚庢灉
-# 涓庡綋骞撮偅娆′竴鏍凤細seahub 鍚炴帀寮傚父锛?*鏁翠釜鏂囦欢鐨?CloudFile 閰嶇疆涓€璧蜂涪**锛岃€屾湇鍔?
-# 鐪嬭捣鏉ユ槸濂界殑銆?
-run "閰嶇疆鐢熸垚" python3 "$docker_repo/tools/test-bootstrap-settings.py"
+# preflight 那条是静态的，只认 `FOO['bar'] =` 这一种形状。这条把生成函数抠出来
+# 实际执行，覆盖引号、字面量、claim 冲突这些静态检查看不出的写法——它们的后果
+# 与当年那次一样：seahub 吞掉异常，**整个文件的 CloudFile 配置一起丢**，而服务
+# 看起来是好的。
+run "配置生成" python3 "$docker_repo/tools/test-bootstrap-settings.py"
 
-# 9. release.yaml 鍙В鏋愪笖鍏抽敭閿綈鍏?
-run "鍙戝竷娓呭崟" bash -c "
+# 9. release.yaml 可解析且关键键齐全
+run "发布清单" bash -c "
     set -e
     for k in product image forks.cloudfile_server.ref forks.cloudfile_hub.ref \
              upstream.seahub upstream.seafile_server database_schema; do
@@ -183,12 +184,12 @@ run "鍙戝竷娓呭崟" bash -c "
 "
 
 echo
-echo "鈺愨晲鈺愨晲鈺愨晲鈺愨晲 缁撴灉 鈺愨晲鈺愨晲鈺愨晲鈺愨晲"
-for s in "${skipped[@]:-}"; do [[ -n $s ]] && echo "鈯?$s"; done
+echo "════════ 结果 ════════"
+for s in "${skipped[@]:-}"; do [[ -n $s ]] && echo "⊘ $s"; done
 if [[ ${#failed[@]} -gt 0 ]]; then
-    for f in "${failed[@]}"; do echo "鉁?$f"; done
+    for f in "${failed[@]}"; do echo "✗ $f"; done
     echo
-    echo "${#failed[@]} 椤瑰け璐?
+    echo "${#failed[@]} 项失败"
     exit 1
 fi
-echo "鍏ㄩ儴閫氳繃"
+echo "全部通过"

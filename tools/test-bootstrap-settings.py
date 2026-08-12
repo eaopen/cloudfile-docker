@@ -88,7 +88,9 @@ BASE_ENV = {
     'CF_SSO_OAUTH_AUTHORIZATION_URL': 'https://idp.example.com/authorize',
     'CF_SSO_OAUTH_TOKEN_URL': 'https://idp.example.com/token',
     'CF_SSO_OAUTH_USER_INFO_URL': 'https://idp.example.com/userinfo',
+    'CF_SSO_OAUTH_LOGOUT_URL': 'https://idp.example.com/end-session/',
     'CF_SSO_OAUTH_PROVIDER': 'idp.example.com',
+    'CF_SSO_OAUTH_CREATE_UNKNOWN_USER': 'false',
     'CF_PROVIDER_SSO_DIRECTORY': 'static',
     'CF_SSO_GROUP_OWNER': 'admin@example.com',
     'CF_SSO_DIRECTORY_STATIC':
@@ -126,6 +128,13 @@ def test_sso():
     check('scope 是列表而不是一整个字符串',
           values.get('OAUTH_SCOPE') == ['openid', 'email', 'profile'],
           repr(values.get('OAUTH_SCOPE')))
+    check('OAuth 登出交给配置的通用 RP 端点',
+          values.get('OAUTH_LOGOUT_URL')
+          == 'https://idp.example.com/end-session/',
+          repr(values.get('OAUTH_LOGOUT_URL')))
+    check('首次 OAuth 用户创建策略可显式关闭',
+          values.get('OAUTH_CREATE_UNKNOWN_USER') is False,
+          repr(values.get('OAUTH_CREATE_UNKNOWN_USER')))
     check('email claim 是必需项',
           values.get('OAUTH_ATTRIBUTE_MAP', {}).get('email') == (True, 'email'),
           repr(values.get('OAUTH_ATTRIBUTE_MAP')))
@@ -148,6 +157,33 @@ def test_sso():
     check('没配 client id 就不打开 OAuth', 'ENABLE_OAUTH' not in values)
     check('但组织映射的配置照写',
           values.get('CF_SSO_GROUP_OWNER') == 'admin@example.com')
+
+    # OAuth 的必填项和 TLS 要在启动阶段阻止，不要等首次用户登录才报一个
+    # 无法定位的上游错误。实验环境可显式允许 HTTP，生产默认不允许。
+    for name, changes in (
+            ('缺 OAuth secret 时启动失败',
+             {'CF_SSO_OAUTH_CLIENT_SECRET': ''}),
+            ('缺 OAuth provider 时启动失败',
+             {'CF_SSO_OAUTH_PROVIDER': ''}),
+            ('生产配置拒绝 HTTP token endpoint',
+             {'CF_SSO_OAUTH_TOKEN_URL': 'http://idp.example.com/token'}),
+            ('非法首次用户创建开关时启动失败',
+             {'CF_SSO_OAUTH_CREATE_UNKNOWN_USER': 'sometimes'})):
+        try:
+            load('_settings_block_sso', dict(BASE_ENV, **changes))()
+            check(name, False, '被接受了')
+        except Exception:
+            check(name, True)
+
+    env = dict(BASE_ENV,
+               CF_SSO_OAUTH_INSECURE='true',
+               CF_SSO_OAUTH_AUTHORIZATION_URL='http://idp.example.com/authorize',
+               CF_SSO_OAUTH_TOKEN_URL='http://idp.example.com/token',
+               CF_SSO_OAUTH_USER_INFO_URL='http://idp.example.com/userinfo')
+    values = evaluate(load('_settings_block_sso', env)())
+    check('实验配置显式允许 HTTP IdP',
+          values.get('OAUTH_ENABLE_INSECURE_TRANSPORT') is True,
+          repr(values.get('OAUTH_ENABLE_INSECURE_TRANSPORT')))
 
     # JSON 写错要在启动时炸（运维正看着），不是在第一次同步时才炸。
     env = dict(BASE_ENV, CF_SSO_DIRECTORY_STATIC='{oops')
@@ -546,6 +582,100 @@ def test_metadata_schema_compatibility():
     check('缺少上游表时关闭连接', conn.closed)
 
 
+def test_office():
+    """OnlyOffice startup contract.
+
+    OFFICE-01: enabling requires a matching non-empty JWT on Hub and Document
+    Server, plus the APIJS URL the renderer and the safe-download boundary both
+    need. Missing or incomplete config FAILS startup here -- while the operator
+    is watching -- rather than accepting unauthenticated callbacks. The
+    same-source secret (compose injects the same ONLYOFFICE_JWT_SECRET into both
+    services) is the runtime pairing proof; this test is the startup half.
+    """
+    print('── _settings_block_office')
+    try:
+        block = load('_settings_block_office', {})
+    except SystemExit as e:
+        check('bootstrap 实现了 _settings_block_office', False, str(e))
+        return
+
+    # 铁律：开关关掉 = 原生 CE。一个字节都不该写。
+    check('开关关闭时不写任何内容', block() == '', repr(block()))
+
+    # 启用但缺 secret：必须起不来。空 secret 不允许回退成"兼容模式"——
+    # 那正是 OFFICE-01 要堵的洞（callback 在无签名时也返回 error 0）。
+    env = {'CF_ENABLE_ONLYOFFICE': 'true',
+           'ONLYOFFICE_APIJS_URL': 'https://docs.example.com/web-apps/apps/api/documents/api.js'}
+    try:
+        block = load('_settings_block_office', env)
+        block()
+        check('启用但缺 JWT secret 时启动失败', False, '被接受了')
+    except Exception:
+        check('启用但缺 JWT secret 时启动失败', True)
+
+    # 启用但缺 APIJS URL：没有它，Hub 无法构造编辑器入口，也无法验证
+    # 内部 origin（safe-download 的信任边界来自这一处源）。
+    env = {'CF_ENABLE_ONLYOFFICE': 'true',
+           'ONLYOFFICE_JWT_SECRET': 'same-source-secret'}
+    try:
+        block = load('_settings_block_office', env)
+        block()
+        check('启用但缺 APIJS URL 时启动失败', False, '被接受了')
+    except Exception:
+        check('启用但缺 APIJS URL 时启动失败', True)
+
+    # 启用但只有空白：等价于未配置，同样必须失败。
+    env = {'CF_ENABLE_ONLYOFFICE': 'true',
+           'ONLYOFFICE_JWT_SECRET': '   ',
+           'ONLYOFFICE_APIJS_URL': '  '}
+    try:
+        load('_settings_block_office', env)()
+        check('secret/APIJS 仅空白时启动失败', False, '被接受了')
+    except Exception:
+        check('secret/APIJS 仅空白时启动失败', True)
+
+    # 完整配置：写出 secret、APIJS URL，以及一个有安全默认的下载字节上限。
+    env = {'CF_ENABLE_ONLYOFFICE': 'true',
+           'ONLYOFFICE_JWT_SECRET': 'same-source-secret',
+           'ONLYOFFICE_APIJS_URL': 'https://docs.example.com/web-apps/apps/api/documents/api.js'}
+    try:
+        values = evaluate(load('_settings_block_office', env)())
+    except Exception as e:
+        check('完整配置可以被加载', False, '%s: %s' % (type(e).__name__, e))
+        return
+
+    check('完整配置可以被加载', True)
+    check('JWT secret 逐字写入（与 Document Server 同源）',
+          values.get('ONLYOFFICE_JWT_SECRET') == 'same-source-secret',
+          repr(values.get('ONLYOFFICE_JWT_SECRET')))
+    check('APIJS URL 逐字写入',
+          values.get('ONLYOFFICE_APIJS_URL')
+          == 'https://docs.example.com/web-apps/apps/api/documents/api.js',
+          repr(values.get('ONLYOFFICE_APIJS_URL')))
+    check('下载字节上限有安全默认',
+          isinstance(values.get('CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES'), int)
+          and values.get('CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES') > 0,
+          repr(values.get('CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES')))
+    check('允许信任的内部 origin 来自 APIJS 源',
+          isinstance(values.get('CF_ONLYOFFICE_TRUSTED_ORIGIN'), str)
+          and values.get('CF_ONLYOFFICE_TRUSTED_ORIGIN'),
+          repr(values.get('CF_ONLYOFFICE_TRUSTED_ORIGIN')))
+
+    # 运算符可覆盖下载上限，但不得越过安全下限。
+    env = dict(env, CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES='4194304')
+    values = evaluate(load('_settings_block_office', env)())
+    check('下载字节上限可覆盖为 4MiB',
+          values.get('CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES') == 4 * 1024 * 1024,
+          repr(values.get('CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES')))
+
+    env = dict(env, CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES='0')
+    try:
+        load('_settings_block_office', env)()
+        check('下载上限为 0 时启动失败', False, '被接受了')
+    except Exception:
+        check('下载上限为 0 时启动失败', True)
+
+
 def main():
     print(__doc__.splitlines()[0])
     print()
@@ -553,6 +683,7 @@ def main():
     test_search()
     test_external_sources()
     test_upstream_packages()
+    test_office()
     test_fileop_seafile_conf()
     test_metadata_schema_compatibility()
     print()

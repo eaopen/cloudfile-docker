@@ -1,179 +1,193 @@
+<!-- generated-by: gsd-doc-writer -->
 # CloudFile Compose 部署
+
+> **用途**：部署和维护 CloudFile 单机 Compose 栈，并说明各可选组件的启用边界。
+> **适用版本**：CloudFile `14.0.0-cf.0`，基于 Seafile CE 14 源码重构。
+> **状态**：当前有效；核心栈和能力门禁已有自动化配置检查，AI 容器仍待真实端到端验证。
+
+## 组件边界
+
+- **复用 Seafile CE**：CloudFile 主服务沿用 Seafile 的资料库、同步、WebDAV、分享、预览及 CE 内已有的 LDAP、SAML、Shibboleth、角色、2FA、OnlyOffice、metadata/AI 接口。
+- **CloudFile 新增**：统一环境变量写入、目录 ACL、组织映射、审计、可替换检索、多存储、外部资料源、文件操作生命周期和相应门禁；所有 `CF_ENABLE_*` 默认关闭。
+- **外部组件**：MariaDB、Redis、Caddy、SeaSearch、Meilisearch、Metadata Server、seafile-ai、OnlyOffice、SeaDoc 和 MinIO 均为独立容器，不由 CloudFile 业务代码实现；其许可证、容量与升级策略需单独评估。
 
 ## 快速开始
 
+1. 复制配置并修改主机名、管理员密码和两个数据库密码：
+
+   ```bash
+   cd deploy/compose
+   cp .env.example .env
+   ```
+
+2. 检查解析后的配置：
+
+   ```bash
+   docker compose config --quiet
+   ```
+
+3. 启动核心栈：
+
+   ```bash
+   docker compose up -d
+   docker compose logs -f cloudfile
+   ```
+
+首次启动会初始化数据库、Seafile 配置和管理员账号。`INIT_SEAFILE_ADMIN_*` 只在首次初始化时使用。
+
+## Profile
+
+| Profile | 新增服务 | 用途与状态 |
+|---|---|---|
+| 默认 | `cloudfile`、`db`、`cache`、`proxy` | 核心栈 |
+| `worker` | `cf-worker` | 组织同步、Meilisearch 索引和外部资料源扫描等周期任务 |
+| `search` | `seasearch`、`meilisearch` | 同时提供默认 SeaSearch 与可选 Meilisearch；由 `CF_PROVIDER_SEARCH` 选择查询路径 |
+| `metadata` | `cloudfile-metadata` | 官方 Metadata Server；当前默认镜像是兼容验证用 `14.0.3-testing`，生产必须固定已验版本 |
+| `ai` | `seafile-ai` | 官方按需 AI 组件；需自备 LLM 配置，真实端到端仍待验证 |
+| `office` | `onlyoffice` | OnlyOffice Document Server |
+| `convert` | `seadoc` | SeaDoc 转换与导出 |
+| `s3` | `minio`、`minio-init` | 仅用于本地 S3/多存储验证，不是生产对象存储方案 |
+| `full` | `worker`、`search`、`metadata`、`ai`、`office`、`convert` 的服务 | 启动应用扩展组件；**不包含**仅属于 `s3` profile 的 MinIO |
+
+启动示例：
+
 ```bash
-cp .env.example .env
-```
-
-编辑 `.env`，至少改掉 `SEAFILE_SERVER_HOSTNAME` 和四个密码，然后：
-
-```bash
-docker compose up -d
-```
-
-首次启动会创建数据库、初始化 Seafile 并建立管理员账号，需要一两分钟。
-
-```bash
-docker compose logs -f cloudfile
-```
-
-## 可选组件
-
-```bash
+docker compose --profile worker up -d
 docker compose --profile search up -d
-```
-```bash
-docker compose --profile office up -d
-```
-```bash
-docker compose --profile convert up -d
-```
-```bash
+docker compose --profile metadata up -d
 docker compose --profile full up -d
 ```
 
-| profile | 服务 | 说明 |
-|---|---|---|
-| （默认） | `cloudfile`、`db`、`cache`、`proxy` | 核心栈 |
-| `search` | `meilisearch` | 全文与属性检索 |
-| `office` | `onlyoffice` | Word/Excel/PPT 协同编辑 |
-| `convert` | `seadoc` | 文件转换与导出 |
-| `worker` | `cf-worker` | 后台任务 |
-| `metadata` | `cloudfile-metadata` | 文件属性、标签与多视图的上游元数据服务 |
-| `full` | 全部 | |
+profile 只决定容器是否启动，能力开关仍需在 `.env` 中显式设置。不要在 Compose 文件中给 profile 专属变量加 `:?`：Compose 会在 profile 未启用时仍解析整份文件。
 
-`cf-worker` 不在默认集合里。启用 SSO 后，它会按 `CF_SSO_SYNC_INTERVAL`
-执行目录同步；后续的搜索、审计等周期任务也使用同一 worker。它与主服务通过共享的
-Seafile RPC socket 通信，必须始终通过本 Compose 文件启动。
+## 功能开关与配置刷新
 
-## 功能开关
+所有 `CF_ENABLE_*` 在 [`.env.example`](.env.example) 中默认为 `false`。全部关闭时应走原生 CE 路径；该性质由 `tests/e2e/smoke.py` 与 `tests/e2e/baseline.py` 分别验证原生行为和扩展框架已加载但未启用。
 
-`.env` 里所有 `CF_ENABLE_*` 默认为 `false`。**全部关闭时，这套部署的行为与原生
-Seafile CE 完全一致**——这是 P0 的核心验收项，也是跟随上游成本可控的前提。
-
-改完开关直接：
+修改 `.env` 后运行：
 
 ```bash
 docker compose up -d
 ```
 
-配置在**每次启动时**重写（`scripts_14.0/start.py` → `write_cloudfile_config`），
-不需要删数据重装。写入的是 `conf/seahub_settings.py` 和 `conf/seafile.conf` 里
-一段带标记的区块，你在这两个文件里的其它改动不会被动到。
+`scripts/scripts_14.0/start.py` 每次启动都会调用配置写入逻辑，将带 `CF_BEGIN`/`CF_END` 标记的区块幂等写入 Seafile 配置，区块外的人工配置不应被覆盖。
 
-### 目录级 ACL
+## 常用能力
+
+### 目录 ACL
 
 ```bash
 CF_ENABLE_DIR_ACL=true docker compose up -d
 ```
 
-同一个环境变量会同时写进 Seahub 和 seaf-server 两处配置，二者不会漂移。Seahub 那份
-只决定界面显示什么，seaf-server 那份才是强制校验。覆盖范围与已知缺口见
-[../../docs/acl-semantics.md](../../docs/acl-semantics.md)。
-
-规则通过 REST API 或管理后台配置：
+Seahub 负责界面和 API，seaf-server 是权限终判层。规则、入口覆盖和限制见 [`../../docs/acl-semantics.md`](../../docs/acl-semantics.md)。
 
 ```bash
 curl -X POST -H "Authorization: Token $TOKEN" \
   -F path=/受限 -F subject_type=user -F subject=b@example.com \
   -F permission=r \
-  https://cloudfile.example.com/api/v2.1/cloudfile/repos/$REPO_ID/dir-acl/
+  "https://cloudfile.example.com/api/v2.1/cloudfile/repos/$REPO_ID/dir-acl/"
 ```
 
-排查"为什么某人打不开某个目录"：
+### SSO 与组织映射
+
+CloudFile 默认以 Authentik 作为企业身份入口，当前稳定参考版本为 `2026.5.6`；实现复用 Seafile CE 的通用 OAuth2/OIDC Authorization Code，并没有 Authentik 专用协议或 preset。`CF_ENABLE_SSO=true` 后，CloudFile 新增的目录 provider 可将外部组织结构同步到本地组；当前只实现 `static` 与 `external-service`，不是直连 Authentik 的组织目录。启用周期同步时同时启动 `worker` profile。端点、字段映射、登录/登出、首次用户和恢复方式见 [`../../docs/features/sso-authentik.md`](../../docs/features/sso-authentik.md)。
+
+LDAP、ADFS/SAML、Shibboleth 是 CE 兼容路径，不是 CloudFile 的默认企业入口；角色和 2FA 也是 CE 已有设置。CloudFile 只将它们暴露为可重建的 `.env` 配置：
+
+- LDAP：设置 `CF_LDAP_ENABLED=true` 并填写连接、Base DN、管理员 DN、密码与登录属性。
+- ADFS/SAML：设置 `CF_ADFS_ENABLED=true`，配置元数据 URL 和属性映射，并将 `sp.key`、`sp.crt` 放入 `data/seafile/seahub-data/certs/`。
+- Shibboleth：默认 Caddy 不提供 Shibboleth SP；必须使用可信认证代理清理客户端身份头后再注入远程用户头。
+- 2FA：设置 `CF_TWO_FACTOR_ENABLED=true`；角色权限使用对应 JSON 变量增量配置。
+
+### 检索
+
+默认 SeaSearch：
 
 ```bash
-curl -H "Authorization: Token $TOKEN" \
-  "https://cloudfile.example.com/api/v2.1/cloudfile/repos/$REPO_ID/dir-acl/effective/?path=/受限&user=b@example.com"
+docker compose --profile search up -d
 ```
 
-### 已打包的 CE 企业设置
+在 `.env` 中设置 `CF_ENABLE_SEARCH=true`、SeaSearch 首次管理员凭据，并令 `CF_SEASEARCH_TOKEN` 为 `用户名:密码` 的 Base64。若改用 Meilisearch，另设 `CF_PROVIDER_SEARCH=meilisearch`、`MEILI_MASTER_KEY` 和同值的 `CF_MEILISEARCH_API_KEY`，并启动 `worker` profile。限制见 [`../../docs/features/search.md`](../../docs/features/search.md)。
 
-LDAP/AD、ADFS/SAML、Shibboleth、角色权限和 2FA 都是 Seafile CE 已有能力；CloudFile
-只把它们变成可重建的 `.env` 配置。变量说明和安全前提在
-[.env.example](.env.example)，每次启动都会重新写入上游的 `seahub_settings.py`。
-
-- LDAP/AD：设 `CF_LDAP_ENABLED=true`，并填写五个 LDAP 连接参数；缺一项即失败，避免服务
-  在看似正常时悄悄跳过 LDAP。
-- ADFS/SAML：设 `CF_ADFS_ENABLED=true`，填写元数据 URL 和 JSON 属性映射；把 `sp.key`、`sp.crt`
-  放在 `data/seafile/seahub-data/certs/`。镜像已包含 `xmlsec1`。
-- Shibboleth：默认 Caddy 不提供 Shibboleth SP，不能直接打开。必须换成/扩展为可信认证代理，先剥离
-  客户端伪造的身份头，再向 CloudFile 写入 `CF_SHIBBOLETH_REMOTE_USER_HEADER` 指定的头。
-- 角色/2FA：角色 JSON 是对 CE 默认策略的增量覆盖；`CF_TWO_FACTOR_ENABLED=true` 开启用户自助 2FA。
-
-### 文件属性与标签
-
-启用属性和标签需要官方元数据组件，它保存/查询元数据；Hub 前端、REST API 与 `seafevents`
-增量投喂仍使用 CE 自带代码。
+### 属性与标签
 
 ```bash
-CF_ENABLE_METADATA=true CF_ENABLE_TAGS=true docker compose --profile metadata up -d
+docker compose --profile metadata up -d
 ```
 
-`cloudfile-metadata` 会在主服务健康后从共享的 `conf/.env` 读取同一把
-`JWT_PRIVATE_KEY`，而不是把密钥复制到 Compose `.env`。目前上游 Docker Hub 尚未发布稳定
-14.x metadata-server tag，示例默认仅用于兼容验证的官方 `14.0.3-testing`；生产启用前必须
-在 `CF_METADATA_IMAGE` 固定经过验收的官方镜像。关闭 `CF_ENABLE_METADATA` 时服务不在默认
-profile，CE 行为不变。
+在 `.env` 中设置 `CF_ENABLE_METADATA=true`；标签还需 `CF_ENABLE_TAGS=true`。前端、REST API 与 seafevents 投喂链路复用 CE，`cloudfile-metadata` 提供外部存储/查询服务。生产环境必须将 `CF_METADATA_IMAGE` 固定到已验证镜像。
 
-### 文件锁、关注与转换导出
+### S3 与多存储
 
-原生菜单分别由独立开关控制，关闭时仍走 CE 默认行为：
+设置 `CF_ENABLE_S3_STORAGE=true` 后，按 [`.env.example`](.env.example) 提供三类 bucket 和凭据；多存储还需 `SEAF_SERVER_STORAGE_TYPE=multiple` 与 `CF_STORAGE_CLASSES_JSON`。本地验证可启动 MinIO：
+
+```bash
+docker compose --profile s3 up -d
+```
+
+MinIO 的示例凭据只能用于本地测试。对象布局、迁移、GC/FSCK 约束见 [`../../docs/features/storage-backends.md`](../../docs/features/storage-backends.md)。
+
+### 外部资料源
+
+CloudFile 不负责挂载 SMB/NFS。运维先在宿主机挂载，再只读 bind mount 到 `CF_EXTERNAL_SOURCES_ROOTS` 允许的容器路径；CloudFile 负责登记、授权、浏览与下载。具体边界见 [`../../docs/features/external-sources.md`](../../docs/features/external-sources.md)。
+
+### 文件锁、关注、转换与导出
 
 ```bash
 CF_ENABLE_FILE_LOCK=true CF_ENABLE_WATCH=true docker compose up -d
 ```
 
-文件锁写入 `cf_lock_lease`，同步、WebDAV 和 HTTP 写路径使用同一终判点；关注复用
-Seahub 的 `UserMonitoredRepos` 和文件更新邮件任务，邮件投递仍要求站点已配置 SMTP。
-
-转换/导出使用官方 SeaDoc 2.0 服务。先在 `.env` 固定一次 `JWT_PRIVATE_KEY`
-（`openssl rand -hex 32`），再启动对应 profile：
+SeaDoc 转换/导出需先生成并持久化 `JWT_PRIVATE_KEY`，再启用开关与 profile：
 
 ```bash
-CF_ENABLE_CONVERT_EXPORT=true docker compose --profile convert up -d
+openssl rand -hex 32
+docker compose --profile convert up -d
 ```
 
-启动时会拒绝空 JWT 或与既有 Seafile 持久化密钥不一致的配置，避免 SeaDoc 看似启动、
-实际无法读取文件。
+OnlyOffice 另需 `ONLYOFFICE_JWT_SECRET`、`CF_ENABLE_ONLYOFFICE=true` 与 `office` profile。完整锁与写回限制见 [`../../docs/features/file-collaboration.md`](../../docs/features/file-collaboration.md)。
 
 ## TLS
 
-`CADDY_TLS=internal` 签发自签证书，适合内网和试用。填邮箱地址则申请 Let's Encrypt
-正式证书，前提是 `SEAFILE_SERVER_HOSTNAME` 已解析到本机且 80/443 可从公网访问。
+`CADDY_TLS=internal` 使用 Caddy 内部 CA，适合本地或内网验证。将其设为邮箱地址会请求公开证书，要求 `SEAFILE_SERVER_HOSTNAME` 的 DNS 和公网 80/443 连通。实际域名、证书与 DNS 由部署环境负责，仓库无法验证。
 
-## 数据
+## 持久化与备份
 
-全部落在 `./data/` 下：
+所有本地卷位于 `data/`：
 
-```
+```text
 data/
-├── db/            MariaDB
-├── redis/         缓存
-├── seafile/       资料库、配置、日志（容器内 /shared）
-├── caddy/         证书
-├── meilisearch/   索引（search profile）
-└── onlyoffice/    文档服务数据（office profile）
+├── db/             MariaDB
+├── redis/          Redis
+├── seafile/        资料库、配置和日志
+├── caddy/          Caddy 证书与状态
+├── seadoc/         SeaDoc 数据
+├── seasearch/      SeaSearch 索引
+├── meilisearch/    Meilisearch 索引
+├── minio/          本地测试对象
+└── onlyoffice/     OnlyOffice 数据与日志
 ```
 
-备份 `data/db` 和 `data/seafile` 即可覆盖全部业务数据。备份前先
-`docker compose stop cloudfile`，避免拿到写到一半的资料库。
+核心业务备份至少覆盖 `data/db/` 与 `data/seafile/`。启用外部状态组件后，还需按恢复目标备份对应目录或确认其可重建；生产 S3/SMB/NFS 数据不在本地 `data/` 内。执行一致性备份前停止写入，并验证数据库与对象存储的恢复流程。
 
-## 原生 CE 回归
+## 验证
 
-P0 的核心验收项。把 `.env` 里所有 `CF_ENABLE_*` 设为 `false`，然后逐项确认行为与
-同 SHA 的原生 CE 镜像一致：
-
-- 登录、建库、上传下载
-- 分享链接（下载与上传）
-- WebDAV（`/seafdav`）
-- 桌面客户端同步
-- 在线预览
+静态检查：
 
 ```bash
-cd ../../../cloudfile-hub && python3 -m pytest cloudfile_ext/
+cp .env.example .env
+docker compose config --quiet
+for p in search office convert worker metadata ai s3 full; do
+  docker compose --profile "$p" config --services
+done
 ```
+
+本地整机门禁：
+
 ```bash
-cd ../../../cloudfile-server && ./tests/cf-acl/run.sh
+../../tools/verify-local.sh preflight
+../../tools/verify-local.sh
+../../tools/verify-local.sh cap acl
 ```
+
+能力名与门禁映射以 [`../../tools/verify-local.sh`](../../tools/verify-local.sh) 的 `CAPABILITIES` 表为准。AI 当前没有登记在该表中，因此不能标记为已整机验证。

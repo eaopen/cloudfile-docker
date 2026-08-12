@@ -1,0 +1,69 @@
+ARG UBUNTU_BASE=ubuntu:24.04
+FROM ${UBUNTU_BASE}
+
+ARG NODE_VERSION=20.20.2
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8 \
+    CLOUDFILE_BUILD_BASE=true \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Build this image only on a machine with reliable public or mirrored package
+# access. Daily CloudFile builds consume the resulting image with --pull=false.
+COPY base_scripts /bd_build
+RUN /bd_build/prepare.sh && \
+    /bd_build/system_services.sh && \
+    /bd_build/utilities.sh && \
+    /bd_build/cleanup.sh
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo "deb http://nginx.org/packages/ubuntu `lsb_release -cs` nginx" \
+      | tee /etc/apt/sources.list.d/nginx.list && \
+    curl -fsSL https://nginx.org/keys/nginx_signing.key | apt-key add - && \
+    apt-get update --fix-missing && \
+    apt-get install -y --no-install-recommends \
+      build-essential ca-certificates cargo cmake curl dnsutils exiftool fuse \
+      gettext git golang-go google-perftools intltool ldap-utils \
+      libarchive-dev libargon2-dev libcurl4-openssl-dev libevent-dev libffi-dev \
+      libfuse-dev libglib2.0-dev libgoogle-perftools-dev libhiredis-dev \
+      libjansson-dev libjpeg-dev libjwt-dev libldap2-dev libmariadbclient-dev-compat \
+      libmemcached-dev libonig-dev libpq-dev libsasl2-dev \
+      libsqlite3-dev libssl-dev libtool libunwind-dev libxml2-dev libxmlsec1 \
+      libxslt-dev make net-tools nginx pkg-config poppler-utils psmisc \
+      python3 python3-cffi python3-distro python3-ldap python3-lxml python3-pip \
+      python3-setuptools python3-wheel tzdata unzip uuid-dev valac wget xmlsec1 \
+      xz-utils && \
+    rm /usr/lib/python3.12/EXTERNALLY-MANAGED && \
+    rm -f /usr/bin/python && \
+    ln -s /usr/bin/python3 /usr/bin/python
+
+RUN arch="$(dpkg --print-architecture)" && \
+    case "$arch" in amd64) node_arch=x64 ;; arm64) node_arch=arm64 ;; \
+      *) echo "unsupported architecture: $arch" >&2; exit 1 ;; esac && \
+    name="node-v${NODE_VERSION}-linux-${node_arch}" && \
+    mkdir -p /usr/local/lib/nodejs && \
+    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/${name}.tar.xz" \
+      | tar -xJ -C /usr/local/lib/nodejs && \
+    ln -s "/usr/local/lib/nodejs/${name}/bin/node" /usr/local/bin/node && \
+    ln -s "/usr/local/lib/nodejs/${name}/bin/npm" /usr/local/bin/npm && \
+    ln -s "/usr/local/lib/nodejs/${name}/bin/npx" /usr/local/bin/npx
+
+# Runtime pins tracked from image/pro_seafile_14.0/Dockerfile. Build-only
+# project dependencies remain in the source distribution build cache.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install --ignore-installed -U setuptools cryptography && \
+    rm -rf /usr/lib/python3/dist-packages/setuptools* \
+           /usr/lib/python3/dist-packages/cryptography*
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install --timeout=3600 --ignore-installed \
+      click termcolor colorlog pytz \
+      sqlalchemy==2.0.* pymysql==1.1.* jinja2 django-pylibmc pylibmc psd-tools lxml \
+      django==5.2.* cffi==2.0.* future==1.0.* mysqlclient==2.2.* captcha==0.7.* django_simple_captcha==0.6.* \
+      pyjwt==2.13.* djangosaml2==1.11.* pysaml2==7.5.* pycryptodome==3.23.* python-ldap==3.4.* \
+      pillow==12.2.* pillow-heif==1.2.* cairosvg==2.9.* scikit-learn==1.7.* boto3
+
+WORKDIR /opt/cloudfile-build

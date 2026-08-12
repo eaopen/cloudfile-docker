@@ -1,0 +1,16 @@
+# Purpose: example LLM_MODELS configuration for the reused Seafile AI service.
+# Applies to: Seafile CE 14 / CloudFile 14.0.0-cf.0.
+# Status: template only; copy to the runtime central configuration directory.
+# Never commit a real model API key.
+
+global:
+  LLM_MODELS:
+    - type: other
+      url: https://llm.example.com/v1
+      key: replace-with-model-api-key
+      model: replace-with-model-id
+      label: Private LLM
+      default: true
+      tier: high
+      hidden: false
+      disable: false

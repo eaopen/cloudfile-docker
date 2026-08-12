@@ -1,4 +1,10 @@
+<!-- generated-by: gsd-doc-writer -->
 # 统一写入生命周期契约
+
+> **用途**：规定所有写入口共享的 PREPARE、COMMITTED、ABORTED 三相契约和错误语义。
+> **适用版本**：CloudFile `14.0.0-cf.0`，基于 Seafile CE 14 源码重构。
+> **状态**：已实现、待整机验收；单元与跨语言契约测试已覆盖，`fileop-e2e.yml` 已存在但文档记录尚无成功跑次。
+> **边界**：CE 写路径保留为生产者；CloudFile 新增统一 veto/事实扩展点；外部 provider 不得绕过同步终判或建立第二事实源。
 
 CloudFile 的**写入扩展点**规格。本文件是**规范**：C、Go 两处实现和后续每一个
 provider 都必须与它逐字一致。
@@ -6,7 +12,7 @@ provider 都必须与它逐字一致。
 配套文档：
 
 - [EXTENSION-POINTS.md](EXTENSION-POINTS.md)：这个扩展点补的是缺口 1
-- [file-preview-and-edit.md](file-preview-and-edit.md)：P0.5 的来源与 P1 的消费者
+- [文件协作与本地应用](features/file-collaboration.md)：锁、签入签出与 OnlyOffice 消费者
 - [acl-semantics.md](acl-semantics.md)：路径规范化与子树包含语义的先例
 
 配套用例集 [`fileop-cases.json`](fileop-cases.json) 是这份规格的可执行形式，
@@ -88,7 +94,7 @@ PREPARE **不预留任何资源**。它是一次纯判断：问"当前状态下�
 
 所以任何需要"预留 → 释放"语义的 provider **必须自己带租约和超时**，
 不能把 ABORTED 当成释放信号。文件锁正是这么设计的（心跳 + `lease_until` +
-`hard_expire_at`，见 [file-preview-and-edit.md](file-preview-and-edit.md) §4.4），
+`hard_expire_at`，见 [文件协作与本地应用](features/file-collaboration.md)），
 这不是巧合——**契约里做不到的保证，就不要让能力去依赖**。
 
 ABORTED 的正当用途只有两个：资源回收（provider 自己在 PREPARE 里建的临时状态）
@@ -175,7 +181,7 @@ provider 拿完整路径用 `cf_fileop_subject_path()` / `cf_fileop_subject_path
 **`user` 是身份不是邮箱。** Seafile 14 把账号主键（`<hex>@auth.local`）与登录
 邮箱拆开了，而写入口拿到的是身份。这一条已经在 ACL 上付过一次代价：按邮箱下发
 的规则永远匹配不上，且不报错、不记日志、接口返回 200
-（[FEATURES.md](FEATURES.md) 第 71 项）。provider 若要与人类可读的邮箱比较，
+（当前状态见[扩展能力矩阵](feature-matrix.md)）。provider 若要与人类可读的邮箱比较，
 必须自己经 `cloudfile_ext/identity.py` 的映射，**不能假设这个字段是邮箱**。
 
 **`expect_commit_id` 在 P0.5 只做透传。** C 的 `put_file` / `update_dir` 已有
@@ -198,7 +204,7 @@ P1，本契约只负责把这个值送到 provider 面前。
 **不复用第二套实现**：规范化只有一份，`common/cf-path.c` 的
 `cf_path_normalize()` / `cf_path_join()`。它原本长在 `cf-acl-resolve.c` 里，
 这次下沉到基线，ACL 侧留一层薄转发（既有用例逐字未改）。理由和身份解析下沉
-（[FEATURES.md](FEATURES.md) 第 79 项）一样：ACL 按路径存规则、锁按路径存租约，
+（当前状态见[扩展能力矩阵](feature-matrix.md)）一样：ACL 按路径存规则、锁按路径存租约，
 两者必须逐字节一致，否则 `/a/b` 的规则和 `/a/b/` 的锁说的是两个对象；
 而且留在能力里会让基线 seam 在运行时 import 能力，并让 ACL 的开关决定路径
 能不能被规范化。
@@ -413,8 +419,9 @@ journal 一行一个事件，字段固定顺序、空值写 `-`：
 
 后半句是重点。上游 CE 的锁接口就是这么坏的：`check_file_lock()` 恒返回 false，
 随后调用不存在的 `seafile_api.lock_file` 抛 `AttributeError`，代码只捕获
-`SearpcError`，于是普通 rw 用户就能触发 500（[FEATURES.md](FEATURES.md) 待办
-第 6 条）。被吞成 500 的拒绝对用户是"服务坏了"，对监控是噪声，对排查毫无信息。
+`SearpcError`，于是普通 rw 用户就能触发 500（旧问题记录见
+[历史功能清单](history/FEATURES-旧版.md)第 6 条）。被吞成 500 的拒绝对用户是
+“服务坏了”，对监控是噪声，对排查毫无信息。
 
 ### 8.4 基线关闭
 

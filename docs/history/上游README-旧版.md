@@ -1,3 +1,10 @@
+<!-- generated-by: gsd-doc-writer -->
+# 上游 README（旧版）
+
+> **用途**：保留 fork 初始继承的 Seafile Docker 通用入口。
+> **适用版本**：未声明；不适用于 CloudFile 14 当前构建与部署。
+> **状态**：已归档；当前入口见 [`../../README.md`](../../README.md)。
+
 # About
 
 - [Docker](https://docker.com/) is an open source project to pack, ship and run any Linux application in a lighter weight, faster container than a traditional virtual machine.
@@ -10,4 +17,4 @@ If you are not familiar with docker commands, please refer to [docker documentat
 
 ## Getting Started
 
-Please refer to the [Deploy Pro Documentation](https://manual.seafile.com/docker/pro-edition/deploy_seafile_pro_with_docker/).
+Please refer to the [Deploy Documentation](https://manual.seafile.com/latest/setup/overview/).

@@ -1,6 +1,18 @@
 # AGENTS.md — cloudfile-docker
 
+> 用途：约束构建、部署、跨仓规格和上游同步工作。
+> 适用版本：CloudFile `dev`，面向 Seafile CE 14 参考基线。
+> 当前状态：有效；产品状态以 [`docs/feature-matrix.md`](docs/feature-matrix.md) 为准。
+
 给在本仓库工作的 AI coding agent。人类同样适用。
+
+## 工作方式：不使用 GSD
+
+本项目**不采用 GSD 工作流**。不得运行 GSD 命令、创建或维护 `.planning/`、
+生成 GSD 计划/总结/工作树，也不得以 GSD 产物作为交付依据。
+
+开发按一个可验证改动一次提交的方式推进；现行能力状态与实现依据以
+[`docs/feature-matrix.md`](docs/feature-matrix.md)、代码和可执行测试为准。
 
 ## 这是什么
 
@@ -21,7 +33,7 @@ workspace/
 
 ## 一个必须知道的前提：上游 14.0 CE 不存在
 
-> **曾评估退回 CE 13.0，已否决——维持 14.0**（见 [docs/decision-image-baseline.md](docs/decision-image-baseline.md)）。
+> **曾评估退回 CE 13.0，已否决——维持 14.0**（当前结论见 [docs/overview.md](docs/overview.md)，完整决策已归档）。
 > 关键事实：CloudFile 改了 C/Go 服务端，**13 和 14 都得重新编译**，于是 13.0
 > "复用官方镜像"的核心收益不成立；而 14.0 已跑通、更新、迁移成本为零。等上游
 > 发布 CE 14.0 镜像时再同版本平移。下面的"从源码重构 14.0 CE"仍是现行做法。
@@ -52,8 +64,8 @@ diff <(sed 's/scripts_13.0/scripts_14.0/' image/seafile_13.0/Dockerfile) image/c
 ```
 release.yaml                       构建清单：各组件的 SHA/ref、镜像名、schema 版本
 BRANCHING.md                       三仓共用分支模型 + 上游改动文件清单
-docs/FEATURES.md                   特性清单与完成情况 —— 先看这个再动手
-docs/BRANCHES.md                   特性分支、依赖关系、上游成本、排期建议
+docs/feature-matrix.md             特性状态、来源、定位、证据和上游策略 —— 先看这个再动手
+docs/BRANCHES.md                   当前分支、合并门槛与上游同步规则
 docs/EXTENSION-POINTS.md           扩展点清单 × 特性关联矩阵、已知缺口
 docs/upstream-patches/             各仓允许修改的上游文件登记
 tools/check-upstream-patches.sh    强制登记清单不被悄悄变长
@@ -62,8 +74,10 @@ build/cloudfile_14.0/
 ├── cloudfile-build.py             上游 seafile-build.py 的副本（13.0/14.0 版本完全相同）
 └── read-manifest.py               读 release.yaml，不依赖 PyYAML
 image/cloudfile_14.0/
-├── Dockerfile                     CE 14.0 镜像
-└── docker-build.sh                暂存构建上下文并 docker build
+├── Dockerfile.base                一次性联网构建的 CE 14 工具链/运行时基础镜像
+├── base-build.sh                  构建并加载基础镜像
+├── Dockerfile                     断网构建的 CE 14 应用镜像
+└── docker-build.sh                禁止拉取与联网的应用镜像构建
 deploy/compose/                    一键部署，含 search/office/worker/full profile
 scripts/scripts_14.0/              容器内运行时脚本（上游文件，改动见下）
 ```

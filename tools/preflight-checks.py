@@ -151,10 +151,49 @@ def check_branch_ref_is_remote(repo):
     required = ('refs/remotes/origin/${ref}', 'target="origin/${ref}"',
                 'rm -rf "${current_dir}/seafile-server-${version}"')
     if all(fragment in build for fragment in required):
-        ok('构建分支与发行目录均不会复用旧产物')
+        ok('构建分支使用远端 tip，重建前清理旧发行包')
     else:
         bad('构建分支或发行目录可能复用旧产物',
-            '已存在源码目录时，必须检出 origin/<branch> 并清理旧发行目录；否则本地验证的镜像可能不是当前 dev。')
+            '必须检出 origin/<branch>，并在重建前清理旧发行目录。')
+
+
+def check_offline_image_build(repo):
+    """日常应用镜像构建不能退回公网依赖或隐式拉取。"""
+    dockerfile = read(os.path.join(repo, 'image', 'cloudfile_14.0',
+                                   'Dockerfile'))
+    build_script = read(os.path.join(repo, 'image', 'cloudfile_14.0',
+                                     'docker-build.sh'))
+    source_script = read(os.path.join(repo, 'build', 'cloudfile_14.0',
+                                      'build-in-docker.sh'))
+    basefile = read(os.path.join(repo, 'image', 'cloudfile_14.0',
+                                 'Dockerfile.base'))
+    if not all((dockerfile, build_script, source_script, basefile)):
+        bad('离线镜像构建文件不完整')
+        return
+
+    forbidden = re.findall(
+        r'^\s*(?:RUN\s+.*)?\b(?:apt-get|pip3?|npm|curl|wget)\b',
+        dockerfile, re.M)
+    if forbidden:
+        bad('应用 Dockerfile 仍包含联网安装命令', '\n'.join(forbidden))
+    elif not re.search(r'^FROM\s+\$\{CLOUDFILE_BASE\}', dockerfile, re.M):
+        bad('应用 Dockerfile 未使用预制 CLOUDFILE_BASE')
+    else:
+        ok('应用 Dockerfile 只从预制基础镜像组装')
+
+    required = ('docker image inspect', '--pull=false', '--network=none',
+                '--build-context cloudfile_dist=', '--build-arg CLOUDFILE_BASE=')
+    if all(part in build_script for part in required):
+        ok('应用镜像构建禁止隐式拉取和构建期联网')
+    else:
+        bad('docker-build.sh 缺少离线保护',
+            '必须检查本地基础镜像，并使用 --pull=false --network=none。')
+
+    direct_ubuntu = re.search(r'^\s+ubuntu:24\.04\s*\\?$', source_script, re.M)
+    if '--pull=never' in source_script and not direct_ubuntu:
+        ok('源码构建容器复用基础镜像且禁止隐式拉取')
+    else:
+        bad('源码构建容器仍可能直接拉取 Ubuntu')
 
 
 def check_seahub_settings_block(repo):
@@ -275,11 +314,9 @@ def check_extension_points_documented(repo, workspace):
 
 
 def check_capability_gates(repo):
-    """每个能力的本地门禁与 CI 门禁必须成对存在。
+    """本地能力表与 CI workflow 必须包含同一组能力。
 
-    verify-local.sh 存在的全部理由是"不要再手抄 <能力>-e2e.yml"——而只抄了一半
-    正是它要防的事：acl_matrix.py 缺 --insecure 就是这么留下来的。两边缺任何
-    一边，本地和 CI 就在验不同的东西，而且没有任何信号。
+    MVP 只比较两个集合；不引入结果分类器或阶段状态机。
     """
     script = read(os.path.join(repo, 'tools', 'verify-local.sh'))
     if not script:
@@ -307,8 +344,8 @@ def check_capability_gates(repo):
         ok(f'{len(local)} 个能力门禁本地与 CI 成对（{", ".join(sorted(local))}）')
 
 
-def check_features_doc_freshness(repo):
-    """FEATURES.md 不能明显落后于它所描述的代码。
+def check_feature_matrix_freshness(repo):
+    """feature-matrix.md 不能明显落后于它所描述的代码。
 
     栽过一次（不是构建失败，是更隐蔽的一类）：基线跑通之后，FEATURES.md 仍然
     写着"完整镜像从未成功构建过。所有 🟡 项的共同前提都是它"，而那时它已经
@@ -317,13 +354,20 @@ def check_features_doc_freshness(repo):
     文档自己写了"把未验证的标成已完成，是这份文档唯一会失去价值的方式"——
     反过来同样成立。
     """
-    doc_rel = 'docs/FEATURES.md'
+    doc_rel = 'docs/feature-matrix.md'
     # 只盯"一改动就意味着某个特性状态变了"的路径。
     #
     # 刻意不含 tools/：改一次 preflight 自己就要求更新特性表，是纯噪音，
     # 而会误报的硬门禁最后一定会被人关掉——那比没有这个检查更糟。
     watched = ['tests/e2e/', 'build/cloudfile_14.0/', 'image/',
                'scripts/scripts_14.0/']
+
+    status = subprocess.run(
+        ['git', '-C', repo, 'status', '--porcelain', '--', doc_rel],
+        capture_output=True, text=True, timeout=10)
+    if status.stdout.strip():
+        ok('feature-matrix.md 已在当前工作区同步修改')
+        return
 
     def last_commit(path):
         try:
@@ -337,7 +381,7 @@ def check_features_doc_freshness(repo):
 
     doc_at = last_commit(doc_rel)
     if doc_at is None:
-        print('  ⊘ 取不到 FEATURES.md 的提交时间（非 git 或未提交），跳过')
+        print('  ⊘ 取不到 feature-matrix.md 的提交时间（非 git 或未提交），跳过')
         return
 
     stale = []
@@ -347,11 +391,11 @@ def check_features_doc_freshness(repo):
             stale.append(path)
 
     if stale:
-        bad(f'FEATURES.md 落后于 {stale}',
+        bad(f'feature-matrix.md 落后于 {stale}',
             '代码已经前进而状态表没跟上。照着旧文档排期会把力气花错地方——\n'
             '基线跑通那次就是这样：文档仍写着"镜像从未构建过"。')
     else:
-        ok('FEATURES.md 不落后于代码')
+        ok('feature-matrix.md 不落后于代码')
 
 
 def stack_workflows(repo):
@@ -393,11 +437,12 @@ def main():
 
     check_node_pin(repo, workspace)
     check_branch_ref_is_remote(repo)
+    check_offline_image_build(repo)
     check_seahub_settings_block(repo)
     check_switch_lists(repo, workspace)
     check_extension_points_documented(repo, workspace)
     check_capability_gates(repo)
-    check_features_doc_freshness(repo)
+    check_feature_matrix_freshness(repo)
 
     return 1 if failures else 0
 

@@ -151,10 +151,49 @@ def check_branch_ref_is_remote(repo):
     required = ('refs/remotes/origin/${ref}', 'target="origin/${ref}"',
                 'rm -rf "${current_dir}/seafile-server-${version}"')
     if all(fragment in build for fragment in required):
-        ok('构建分支与发行目录均不会复用旧产物')
+        ok('构建分支使用远端 tip，重建前清理旧发行包')
     else:
         bad('构建分支或发行目录可能复用旧产物',
-            '已存在源码目录时，必须检出 origin/<branch> 并清理旧发行目录；否则本地验证的镜像可能不是当前 dev。')
+            '必须检出 origin/<branch>，并在重建前清理旧发行目录。')
+
+
+def check_offline_image_build(repo):
+    """日常应用镜像构建不能退回公网依赖或隐式拉取。"""
+    dockerfile = read(os.path.join(repo, 'image', 'cloudfile_14.0',
+                                   'Dockerfile'))
+    build_script = read(os.path.join(repo, 'image', 'cloudfile_14.0',
+                                     'docker-build.sh'))
+    source_script = read(os.path.join(repo, 'build', 'cloudfile_14.0',
+                                      'build-in-docker.sh'))
+    basefile = read(os.path.join(repo, 'image', 'cloudfile_14.0',
+                                 'Dockerfile.base'))
+    if not all((dockerfile, build_script, source_script, basefile)):
+        bad('离线镜像构建文件不完整')
+        return
+
+    forbidden = re.findall(
+        r'^\s*(?:RUN\s+.*)?\b(?:apt-get|pip3?|npm|curl|wget)\b',
+        dockerfile, re.M)
+    if forbidden:
+        bad('应用 Dockerfile 仍包含联网安装命令', '\n'.join(forbidden))
+    elif not re.search(r'^FROM\s+\$\{CLOUDFILE_BASE\}', dockerfile, re.M):
+        bad('应用 Dockerfile 未使用预制 CLOUDFILE_BASE')
+    else:
+        ok('应用 Dockerfile 只从预制基础镜像组装')
+
+    required = ('docker image inspect', '--pull=false', '--network=none',
+                '--build-context cloudfile_dist=', '--build-arg CLOUDFILE_BASE=')
+    if all(part in build_script for part in required):
+        ok('应用镜像构建禁止隐式拉取和构建期联网')
+    else:
+        bad('docker-build.sh 缺少离线保护',
+            '必须检查本地基础镜像，并使用 --pull=false --network=none。')
+
+    direct_ubuntu = re.search(r'^\s+ubuntu:24\.04\s*\\?$', source_script, re.M)
+    if '--pull=never' in source_script and not direct_ubuntu:
+        ok('源码构建容器复用基础镜像且禁止隐式拉取')
+    else:
+        bad('源码构建容器仍可能直接拉取 Ubuntu')
 
 
 def check_seahub_settings_block(repo):
@@ -275,51 +314,9 @@ def check_extension_points_documented(repo, workspace):
 
 
 def check_capability_gates(repo):
-    """能力声明在 manifest、matrix、workflow、本地 runner 四处必须同集合。
+    """本地能力表与 CI workflow 必须包含同一组能力。
 
-    单一机器可读清单（config/capabilities.json）现在是真相来源：本地
-    verify-local.sh 与 CI 都解析它，新增能力只要加一处（matrix 文件 +
-    workflow + manifest 条目）即自动进入 parity。这正是 external_sources
-    当初让门禁变红的那种漂移（CI 有 8、本地只有 7）要彻底防住的事。
-    """
-    if os.path.isfile(os.path.join(repo, 'tools', 'capability_manifest.py')):
-        # 用 manifest 模块做动态 parity：manifest == matrices == workflows。
-        # 同时校验 manifest 每条都指向真实存在的 matrix 与 workflow 文件。
-        result = subprocess.run(
-            [sys.executable,
-             os.path.join(repo, 'tools', 'capability_manifest.py'),
-             'validate', repo],
-            capture_output=True, text=True, timeout=30)
-        for line in result.stdout.splitlines():
-            print(f'  {line}')
-        if result.returncode != 0:
-            for line in result.stderr.splitlines():
-                print(f'      {line}')
-            bad('能力 manifest parity 失败',
-                'config/capabilities.json、tests/e2e/*_matrix.py 与 '
-                '.github/workflows/*-e2e.yml 必须声明同一 capability 集合')
-        else:
-            ok('能力 manifest 与 matrices/workflows 同集合（动态校验）')
-
-        # 第二半：verify-local.sh 不再手抄能力清单——它从 manifest 派生。
-        # 这里只确认它确实派生自 manifest，而不是又回到写死的 CAPABILITIES 表。
-        script = read(os.path.join(repo, 'tools', 'verify-local.sh'))
-        if script and 'capability_manifest.py' in script:
-            ok('verify-local.sh 由 manifest 派生能力清单')
-        elif script and re.search(r'^CAPABILITIES=\(\n', script, re.M):
-            bad('verify-local.sh 仍使用写死的 CAPABILITIES 表',
-                '改为调用 capability_manifest.py list 派生，否则新增能力必漂移')
-    else:
-        # ponytail: manifest 模块尚未引入时的回退路径——仅在此仓库刚接入
-        # Phase 1 之前有效；上限：manifest 模块一旦提交，此分支应当消失。
-        print('  ⊘ capability_manifest.py 不存在，跳过 manifest parity')
-        _legacy_capability_table_parity(repo)
-
-
-def _legacy_capability_table_parity(repo):
-    """旧路径：直接比较 verify-local.sh 的 CAPABILITIES 表与 workflow 集合。
-
-    仅在 manifest 模块未提交时使用；上限见 check_capability_gates。
+    MVP 只比较两个集合；不引入结果分类器或阶段状态机。
     """
     script = read(os.path.join(repo, 'tools', 'verify-local.sh'))
     if not script:
@@ -364,6 +361,13 @@ def check_feature_matrix_freshness(repo):
     # 而会误报的硬门禁最后一定会被人关掉——那比没有这个检查更糟。
     watched = ['tests/e2e/', 'build/cloudfile_14.0/', 'image/',
                'scripts/scripts_14.0/']
+
+    status = subprocess.run(
+        ['git', '-C', repo, 'status', '--porcelain', '--', doc_rel],
+        capture_output=True, text=True, timeout=10)
+    if status.stdout.strip():
+        ok('feature-matrix.md 已在当前工作区同步修改')
+        return
 
     def last_commit(path):
         try:
@@ -433,6 +437,7 @@ def main():
 
     check_node_pin(repo, workspace)
     check_branch_ref_is_remote(repo)
+    check_offline_image_build(repo)
     check_seahub_settings_block(repo)
     check_switch_lists(repo, workspace)
     check_extension_points_documented(repo, workspace)

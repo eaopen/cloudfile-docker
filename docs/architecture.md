@@ -86,6 +86,7 @@ AI 能力优先复用 [Seafile AI](features/seafile-ai.md)。模型服务故障�
 
 ## 构建与发布
 
-`build/cloudfile_14.0/` 从锁定提交构建发行包，`image/cloudfile_14.0/` 生成镜像，
+`build/cloudfile_14.0/` 从锁定提交构建发行包，`image/cloudfile_14.0/Dockerfile.base`
+一次性固化系统、Node 与 Python 依赖，业务 Dockerfile 在断网模式下组装镜像，
 `deploy/compose/` 提供部署。`dev` 表示当前集成基线与已合入能力；功能是否可发布仍以
 [功能矩阵](feature-matrix.md)和对应门禁结果为准，不能仅凭分支存在判断。

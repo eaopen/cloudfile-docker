@@ -124,15 +124,18 @@ build_image() {
 
 # ── 起栈 + E2E ──────────────────────────────────────────────────────────
 #
-# 能力清单来自 config/capabilities.json（经 capability_manifest.py list）。
-# 这里不再手抄 <能力>-e2e.yml：那份清单一度只有 7 项而 CI 是 8 项，
-# external_sources 就这么漏出了本地门禁。manifest 是本地与 CI 共用的同一份
-# 真相，capability_manifest.py validate 在 preflight 里强制 manifest ==
-# matrices == workflows，因此这一行派生的能力集合与 CI 永远一致。
-load_capabilities() {
-    # 输出形如 "id|switch matrix...|tests/e2e/<id>_matrix.py" 逐行。
-    python3 "$here/capability_manifest.py" list "$repo"
-}
+# 能力门禁登记表：<名字>|<开关>|<E2E 脚本>。preflight 会将这里的名字
+# 与 .github/workflows/*-e2e.yml 比较，避免本地与 CI 漂移。
+CAPABILITIES=(
+    "acl|CF_ENABLE_DIR_ACL|tests/e2e/acl_matrix.py"
+    "sso|CF_ENABLE_SSO|tests/e2e/sso_matrix.py"
+    "metadata|CF_ENABLE_METADATA CF_ENABLE_TAGS|tests/e2e/metadata_matrix.py"
+    "audit|CF_ENABLE_AUDIT|tests/e2e/audit_matrix.py"
+    "storage|CF_ENABLE_S3_STORAGE|tests/e2e/storage_matrix.py"
+    "search|CF_ENABLE_SEARCH|tests/e2e/search_matrix.py"
+    "external_sources|CF_ENABLE_EXTERNAL_SOURCES|tests/e2e/external_sources_matrix.py"
+    "fileop|CF_FILEOP_TEST_PROVIDER|tests/e2e/fileop_matrix.py"
+)
 
 # 由 capability 阶段设置：要在 .env 里打开的开关。
 ENABLE_SWITCHES=${ENABLE_SWITCHES:-}
@@ -453,13 +456,12 @@ e2e() {
 # 排查时分不清"规则拦错了"还是"服务压根没起来"。与 <能力>-e2e.yml 同序。
 capability_e2e() {
     local name=$1 switch test_rel entry
-    while IFS= read -r entry; do
-        [[ -z $entry ]] && continue
+    for entry in "${CAPABILITIES[@]}"; do
         IFS='|' read -r cap switch test_rel <<< "$entry"
         [[ $cap == "$name" ]] && break
         cap=''
-    done < <(load_capabilities)
-    [[ -n ${cap:-} ]] || fail "未知能力：${name}（已登记：$(load_capabilities | cut -d'|' -f1 | tr '\n' ' '))"
+    done
+    [[ -n ${cap:-} ]] || fail "未知能力：${name}（已登记：$(printf '%s ' "${CAPABILITIES[@]%%|*}")）"
     [[ -f $repo/$test_rel ]] || fail "找不到 $test_rel"
 
     ENABLE_SWITCHES=$switch
@@ -519,7 +521,7 @@ case "${1:-all}" in
     # 能力门禁。镜像必须已经在（先跑 build），因为能力代码来自被构建的那个
     # 分支，不是运行时开关能变出来的。
     cap|capability)
-        [[ $# -ge 2 ]] || fail "用法：$0 cap <能力名>（已登记：$(load_capabilities | cut -d'|' -f1 | tr '\n' ' '))"
+        [[ $# -ge 2 ]] || fail "用法：$0 cap <能力名>（已登记：$(printf '%s ' "${CAPABILITIES[@]%%|*}")）"
         if capability_e2e "$2"; then
             say "能力门禁通过：$2"
             clean

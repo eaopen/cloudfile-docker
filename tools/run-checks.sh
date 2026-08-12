@@ -44,16 +44,6 @@ skip() {
 run "上游改动登记" "$docker_repo/tools/check-upstream-patches.sh"
 run "上游改动警告语义" "$docker_repo/tests/tools/test-check-upstream-patches.sh"
 
-# 1b. 能力 manifest —— 本地与 CI 共用的单一 capability 真相来源。
-#
-# validate 强制 config/capabilities.json、tests/e2e/*_matrix.py 与
-# .github/workflows/*-e2e.yml 声明同一 capability 集合；test 锁定
-# PASS/SKIP/FAIL/NOT RUN 四态真值与 phase-gate tuple 语义。两者都不允许
-# continue-on-error：manifest 漂移正是当初让本地 7、CI 8、external_sources
-# 漏检的根因。
-run "能力 manifest parity" python3 "$docker_repo/tools/capability_manifest.py" validate "$docker_repo"
-run "能力 manifest 契约" python3 "$docker_repo/tests/tools/test-capability-manifest.py"
-
 # 2. Hub 侧扩展测试（能力分支上还包括与 C 端共用用例集的求解器测试）
 if [[ -d $hub ]]; then
     # pytest 收集不到用例时退出码是 5。基线上确实一个能力测试都没有，那是

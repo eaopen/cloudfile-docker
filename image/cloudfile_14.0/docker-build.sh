@@ -2,11 +2,14 @@
 #
 # Build the CloudFile image.
 #
-# The Dockerfile COPYs base_scripts/, scripts_14.0/, services/ and the built
-# seafile-server-<version>/ tree, all of which live outside this directory, so
-# the build context is the repo root and the assets are staged here first.
+# The Dockerfile uses the repository root for small runtime assets and passes
+# the selected distribution as a named BuildKit context. This avoids copying
+# it to a staging directory or scanning unrelated historical distributions.
 #
 # Run build/cloudfile_14.0/cloudfile-build.sh <version> before this.
+#
+# The base image must already exist in the Docker image store. This command
+# never pulls it and gives build steps no network access.
 #
 # Usage: ./docker-build.sh <version>            e.g. 14.0.0-cf.0
 
@@ -31,15 +34,6 @@ if [[ ! -d $dist ]]; then
     exit 1
 fi
 
-staging=$(mktemp -d "${TMPDIR:-/tmp}/cloudfile-image.XXXXXX")
-trap 'rm -rf "$staging"' EXIT
-
-cp "$here/Dockerfile" "$staging/"
-cp -r "$repo_root/base_scripts" "$staging/base_scripts"
-cp -r "$repo_root/scripts/scripts_14.0" "$staging/scripts_14.0"
-cp -r "$repo_root/services" "$staging/services"
-cp -r "$dist" "$staging/seafile-server-${version}"
-
 # 仓库名取自 manifest，标签**必须**用传入的版本号。
 #
 # 早先直接拿 manifest 的 image 整串当标签，于是构建 14.0.0-cf.0-local 也会打成
@@ -48,16 +42,24 @@ cp -r "$dist" "$staging/seafile-server-${version}"
 manifest_image=$(python3 "$repo_root/build/cloudfile_14.0/read-manifest.py" \
     "$repo_root/release.yaml" image)
 image="${manifest_image%%:*}:${version}"
+base_image=${CF_BASE_IMAGE:-$(python3 \
+    "$repo_root/build/cloudfile_14.0/read-manifest.py" \
+    "$repo_root/release.yaml" build_base_image)}
 
-pull_args=()
-if [[ ${CF_DOCKER_PULL:-true} == true ]]; then
-    pull_args=(--pull)
+if ! docker image inspect "$base_image" >/dev/null 2>&1; then
+    echo "build base image is not loaded: $base_image" >&2
+    echo "build it on a networked machine with image/cloudfile_14.0/base-build.sh," >&2
+    echo "then docker save/load it or pull it from the internal registry first." >&2
+    exit 2
 fi
 
-docker build "${pull_args[@]}" \
+DOCKER_BUILDKIT=${DOCKER_BUILDKIT:-1} docker build --pull=false --network=none \
+    -f "$here/Dockerfile" \
+    --build-context cloudfile_dist="$dist" \
+    --build-arg CLOUDFILE_BASE="$base_image" \
     --build-arg server_version="${version}" \
     -t "${image}" \
-    "$staging"
+    "$repo_root"
 
 echo ''
 echo "Built ${image}"

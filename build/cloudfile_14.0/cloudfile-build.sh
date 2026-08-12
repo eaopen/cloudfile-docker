@@ -63,10 +63,15 @@ libsearpc_ref=${CF_LIBSEARPC_REF:-$(manifest_get 'upstream.libsearpc')}
 libevhtp_ref=${CF_LIBEVHTP_REF:-$(manifest_get 'upstream.libevhtp')}
 
 function install_dependencies() {
-    apt-get update && apt-get upgrade -y
-    apt-get install -y build-essential
-    export DEBIAN_FRONTEND=noninteractive && apt-get install -y tzdata
-    apt-get install -y \
+    if [[ ${CLOUDFILE_BUILD_BASE:-false} == true ]]; then
+        echo "Using system dependencies from the CloudFile build base"
+        return
+    fi
+
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        build-essential \
+        tzdata \
         ca-certificates \
         cargo \
         cmake \
@@ -137,6 +142,14 @@ function install_nodejs() {
     local name=node-v${NODE_VERSION}-linux-${arch}
     local prefix=/usr/local/lib/nodejs
 
+    if [[ -x ${prefix}/${name}/bin/node ]]; then
+        export PATH="${prefix}/${name}/bin:${PATH}"
+        echo "Using cached Node ${NODE_VERSION} (${arch})"
+        node --version
+        npm --version
+        return
+    fi
+
     echo "Installing Node ${NODE_VERSION} (${arch})"
     mkdir -p "$prefix"
     curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/${name}.tar.xz" \
@@ -186,7 +199,21 @@ function install_python_dependencies() {
     # pymysql for scripts
     sed -i '$a\pymysql' requirements-thirdpart.txt
 
-    pip3 install -r requirements-thirdpart.txt -t "${code_path}/thirdpartdir"
+    local cache_dir=${code_path}/.cache
+    local target=${code_path}/thirdpartdir
+    local stamp=${cache_dir}/requirements-thirdpart.sha256
+    local digest
+    mkdir -p "$cache_dir"
+    digest=$(sha256sum requirements-thirdpart.txt | cut -d' ' -f1)
+    if [[ -d $target && -f $stamp && $(<"$stamp") == "$digest" ]]; then
+        echo "Using cached Python runtime dependencies"
+        return
+    fi
+
+    rm -rf "$target"
+    mkdir -p "$target"
+    pip3 install -r requirements-thirdpart.txt -t "$target"
+    echo "$digest" > "$stamp"
 }
 
 # clone_or_update <directory> <url>
@@ -313,7 +340,8 @@ function build_seahub_frontend() {
 
     echo "Building seahub frontend"
     cd "${seahub}/frontend"
-    npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund
+    npm ci --prefer-offline --no-audit --no-fund 2>/dev/null \
+        || npm install --prefer-offline --no-audit --no-fund
     CI=false npm run build
 
     echo "Generating seahub static assets"
@@ -339,8 +367,16 @@ function build_seahub_frontend() {
     # 装一份完整依赖到只在构建期使用的目录，不污染最终会打包进发行版的
     # thirdpartdir。PYTHONPATH 里放在 thirdpartdir 之后，发行版里的版本优先。
     local builddeps=${code_path}/build-only-deps
-    if [[ ! -d $builddeps ]]; then
+    local builddeps_stamp=${code_path}/.cache/requirements-build.sha256
+    local builddeps_digest
+    builddeps_digest=$(sha256sum "${seahub}/requirements.txt" | cut -d' ' -f1)
+    if [[ ! -d $builddeps || ! -f $builddeps_stamp ||
+          $(<"$builddeps_stamp") != "$builddeps_digest" ]]; then
+        rm -rf "$builddeps"
         pip3 install -r "${seahub}/requirements.txt" -t "$builddeps"
+        echo "$builddeps_digest" > "$builddeps_stamp"
+    else
+        echo "Using cached Seahub build dependencies"
     fi
 
     # seaserv 在 import 期读取这两个配置目录，没有就会报错。内容只要能解析，

@@ -74,8 +74,10 @@ build/cloudfile_14.0/
 ├── cloudfile-build.py             上游 seafile-build.py 的副本（13.0/14.0 版本完全相同）
 └── read-manifest.py               读 release.yaml，不依赖 PyYAML
 image/cloudfile_14.0/
-├── Dockerfile                     CE 14.0 镜像
-└── docker-build.sh                暂存构建上下文并 docker build
+├── Dockerfile.base                一次性联网构建的 CE 14 工具链/运行时基础镜像
+├── base-build.sh                  构建并加载基础镜像
+├── Dockerfile                     断网构建的 CE 14 应用镜像
+└── docker-build.sh                禁止拉取与联网的应用镜像构建
 deploy/compose/                    一键部署，含 search/office/worker/full profile
 scripts/scripts_14.0/              容器内运行时脚本（上游文件，改动见下）
 ```

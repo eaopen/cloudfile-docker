@@ -94,6 +94,7 @@ docker compose --profile worker up -d
 完整构建和容器 E2E 需要 Linux 与足够磁盘空间：
 
 ```bash
+./image/cloudfile_14.0/base-build.sh  # 仅在网络正常机器或基础镜像版本变化时
 ./build/cloudfile_14.0/cloudfile-build.sh 14.0.0-cf.0
 ./image/cloudfile_14.0/docker-build.sh 14.0.0-cf.0
 ./tools/verify-local.sh

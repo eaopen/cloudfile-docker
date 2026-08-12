@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# 在 Ubuntu 容器里跑 cloudfile-build.sh，不在宿主机上装任何东西。
+# 在预制构建基础镜像里跑 cloudfile-build.sh，不在宿主机上装任何东西。
 #
-# cloudfile-build.sh 会 apt-get install 一整套 C/Go 工具链，只能在 Ubuntu 上跑。
-# 把它放进容器，macOS / 任意发行版都能构建，且宿主机保持干净。
+# 基础镜像已经包含 C/Go/Python/Node 工具链，因此日常源码构建不再执行 APT
+# 或下载 Node。Git、PyPI 和 npm 是否联网仍取决于源码与项目依赖缓存是否齐全。
 #
 #   ./build-in-docker.sh 14.0.0-cf.0
 #   CF_HUB_REF=feature/x ./build-in-docker.sh 14.0.0-cf.0-dev
@@ -28,9 +28,11 @@ fi
 version=$1
 here=$(cd "$(dirname "$0")" && pwd)
 repo_root=$(cd "$here/../.." && pwd)
+base_image=${CF_BASE_IMAGE:-$(python3 "$here/read-manifest.py" \
+    "$repo_root/release.yaml" build_base_image)}
 
-# 必须显式指定平台。不指定的话 docker 会沿用本地碰巧缓存的 ubuntu:24.04——
-# 如果那是 amd64 而宿主是 Apple Silicon，构建就会静默地跑在 QEMU 模拟下，
+# 必须显式指定平台。不指定的话 Docker 会沿用本地基础镜像的架构——如果那是
+# amd64 而宿主是 Apple Silicon，构建就会静默地跑在 QEMU 模拟下，
 # 慢一个数量级却没有任何提示。默认跟随宿主机。
 if [[ -z ${CF_PLATFORM:-} ]]; then
     case "$(uname -m)" in
@@ -44,6 +46,13 @@ platform_arg=(--platform "$platform")
 
 if ! docker info >/dev/null 2>&1; then
     echo "Docker 不可用。请先启动 Docker Desktop / OrbStack / colima。" >&2
+    exit 2
+fi
+
+if ! docker image inspect "$base_image" >/dev/null 2>&1; then
+    echo "构建基础镜像未加载：$base_image" >&2
+    echo "请先在网络正常的机器运行 image/cloudfile_14.0/base-build.sh，" >&2
+    echo "再通过 docker save/load 或内网 Registry 导入。" >&2
     exit 2
 fi
 
@@ -87,19 +96,16 @@ echo
 
 # 挂载整个仓库：构建脚本要读 release.yaml，产物也要写回 build/cloudfile_14.0/。
 # git 需要把挂载进来的目录标记为 safe，否则会因 owner 不一致拒绝操作。
-docker run --rm -i \
+docker run --rm -i --pull=never \
     "${platform_arg[@]}" \
     "${env_args[@]}" \
     "${mount_args[@]+"${mount_args[@]}"}" \
     -v "$repo_root:/work" \
     -w /work/build/cloudfile_14.0 \
-    ubuntu:24.04 \
+    "$base_image" \
     bash -c "
         set -e
-        export DEBIAN_FRONTEND=noninteractive
         export TZ=Etc/UTC
-        apt-get update -qq
-        apt-get install -y -qq git python3 ca-certificates >/dev/null
         git config --global --add safe.directory '*'
         ./cloudfile-build.sh '$version'
     "

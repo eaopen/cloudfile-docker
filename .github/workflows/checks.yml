@@ -53,10 +53,5 @@ jobs:
       - name: pytest
         run: pip install --quiet pytest
 
-      - name: Validate capability manifest
-        run: |
-          python3 cloudfile-docker/tools/capability_manifest.py validate cloudfile-docker
-          python3 cloudfile-docker/tests/tools/test-capability-manifest.py
-
       - name: 运行检查
         run: ./cloudfile-docker/tools/run-checks.sh

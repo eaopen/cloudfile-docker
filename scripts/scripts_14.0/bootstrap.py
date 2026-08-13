@@ -1012,6 +1012,51 @@ def write_seafevents_search_config():
         fp.writelines(fp_lines)
 
 
+def write_seafevents_audit_config():
+    """Point seafevents at file-audit collection, gated on CF_ENABLE_AUDIT.
+
+    This is the read/download/preview access log (Seafile Pro's FileAudit),
+    distinct from CloudFile's own commit-diff operation log (the Activity
+    table behind /cloudfile/audit/). Upstream CE ships the whole data path --
+    seahub publishes 'seahub.audit' events, seafevents' FileAuditEventHandler
+    persists them to the FileAudit table when [Audit] enabled=true -- but the
+    section is never written, so seafevents never registers the handler and
+    the table stays empty. Writing it on every start (not just first install)
+    keeps a switch flip in .env effective, mirroring write_seafevents_search_config().
+    """
+    path = join(topdir, 'conf', 'seafevents.conf')
+    if not exists(path):
+        return
+
+    with open(path, 'r') as fp:
+        fp_lines = fp.readlines()
+
+    values = {
+        'enabled': 'true' if cf_enabled('CF_ENABLE_AUDIT') else 'false',
+    }
+
+    # is_audit_enabled()/init_message_handlers() accept either [Audit] or
+    # [AUDIT]; canonicalise on [Audit] and reuse whichever is already present.
+    if '[Audit]\n' not in fp_lines and '[AUDIT]\n' not in fp_lines:
+        fp_lines += [
+            '\n[Audit]\n',
+            'enabled = %s\n' % values['enabled'],
+            '\n',
+        ]
+    else:
+        section_index = fp_lines.index('[Audit]\n') + 1 \
+            if '[Audit]\n' in fp_lines else fp_lines.index('[AUDIT]\n') + 1
+        end = len(fp_lines)
+        for i in range(section_index, len(fp_lines)):
+            if fp_lines[i].startswith('['):
+                end = i
+                break
+        end = _set_ini_value(fp_lines, section_index, end, 'enabled', values['enabled'])
+
+    with open(path, 'w') as fp:
+        fp.writelines(fp_lines)
+
+
 def write_cloudfile_config():
     """Apply CloudFile configuration. Safe to call on every start."""
     loginfo('Applying CloudFile configuration')
@@ -1019,6 +1064,7 @@ def write_cloudfile_config():
     write_cloudfile_settings()
     write_cloudfile_seafile_conf()
     write_seafevents_search_config()
+    write_seafevents_audit_config()
     apply_cloudfile_schema()
     apply_metadata_schema_compatibility()
 

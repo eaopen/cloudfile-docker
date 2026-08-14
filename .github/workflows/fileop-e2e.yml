@@ -83,6 +83,10 @@ jobs:
           CF_HUB_REF: ${{ inputs.hub_ref }}
         run: sudo -E ./cloudfile-build.sh "$CF_VERSION"
 
+      - name: 构建 CE 14 基础镜像
+        working-directory: cloudfile-docker/image/cloudfile_14.0
+        run: ./base-build.sh
+
       - name: 构建镜像
         working-directory: cloudfile-docker/image/cloudfile_14.0
         run: ./docker-build.sh "$CF_VERSION"

@@ -97,6 +97,7 @@ jobs:
           sed -i "s|^INIT_SEAFILE_ADMIN_PASSWORD=.*|INIT_SEAFILE_ADMIN_PASSWORD=$ADMIN_PASSWORD|" .env
           sed -i "s|^CADDY_TLS=.*|CADDY_TLS=internal|" .env
           sed -i "s|^CF_ENABLE_SEARCH=.*|CF_ENABLE_SEARCH=true|" .env
+          sed -i "s|^CF_ENABLE_DIR_ACL=.*|CF_ENABLE_DIR_ACL=true|" .env
           {
             echo "CLOUDFILE_IMAGE=cloudfile/cloudfile:$CF_VERSION"
             echo "INIT_SS_ADMIN_USER=cf-search-admin"
@@ -108,6 +109,7 @@ jobs:
             echo "CF_SEARCH_INDEX_INTERVAL=15"
           } >> .env
           grep '^CF_ENABLE_SEARCH=' .env    # 开关确实开着，别在红了之后才发现
+          grep '^CF_ENABLE_DIR_ACL=true$' .env
           docker compose up -d
           docker compose --profile search up -d --wait --wait-timeout 90 seasearch meilisearch
           docker compose ps

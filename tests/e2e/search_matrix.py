@@ -26,11 +26,9 @@ search-e2e.yml 编排，这份脚本本身不改配置、不重启容器）：
                "每次启动都执行"这个改动本身要证明的事：开关反复切换必须真的
                生效，而不是被 init_seafile_server() 提前返回吃掉。
 
-已知不覆盖：跨用户的库级可见性（谁能看见谁的库）不是这条门禁的职责——那是
-seahub 自己的仓库解析逻辑，acl-e2e.yml/baseline.py 已经在验；这里只验证
-同一个用户名下多个库之间检索不串号，因为这才是 MeilisearchProvider 里
-`repo_id IN [...]` 过滤这段新代码真正的风险点。目录 ACL 与原生 SeaSearch
-分支组合使用时的已知边界见 docs/search.md。
+矩阵同时建立跨用户 rw 共享和 invisible 目录，用同一关键词的可见/隐藏
+文件做对照，分别在 SeaSearch 与 Meilisearch 路径断言目录 ACL 零泄漏。
+管理员必须先能搜到两个文件，避免“隐藏文件未被索引”的假阳性。
 """
 
 import argparse
@@ -44,6 +42,8 @@ import urllib.request
 import uuid
 
 REPO_PREFIX = 'search-matrix-'
+B_EMAIL = 'search-matrix-b@example.com'
+B_PASSWORD = 'SearchMatrix-B-7142'
 #: SeaSearch 的索引间隔由编排层设成短值（CF_SEASEARCH_INTERVAL），但仍是异步
 #: 的；Meilisearch 那一侧编排层显式跑过 cf_worker --once，同步完成，不需要轮询。
 # SeaSearch's updater runs asynchronously.  In a cold CI image its first scan
@@ -106,13 +106,14 @@ def login(base, admin, password, context):
     return json_body(body).get('token'), status, body
 
 
-def upload(base, token, repo_id, filename, content, context):
-    status, body = request(base + '/api2/repos/%s/upload-link/?p=/' % repo_id,
+def upload(base, token, repo_id, filename, content, context, parent_dir='/'):
+    status, body = request(base + '/api2/repos/%s/upload-link/?p=%s' %
+                           (repo_id, urllib.parse.quote(parent_dir)),
                            token=token, context=context)
     upload_url = body.strip('"')
     if status != 200 or not upload_url.startswith('http'):
         return False, 'status=%s %s' % (status, body[:200])
-    data, ctype = multipart({'parent_dir': '/', 'replace': '1'}, filename,
+    data, ctype = multipart({'parent_dir': parent_dir, 'replace': '1'}, filename,
                             content.encode('utf-8'))
     status, body = request(upload_url, method='POST', token=token, data=data,
                            headers={'Content-Type': ctype}, context=context)
@@ -145,6 +146,29 @@ def result_names(parsed):
     return sorted(r.get('name') for r in parsed.get('results', []))
 
 
+def resolve_identity(base, token, email, context):
+    status, body = request(base + '/api/v2.1/admin/users/', token=token,
+                           context=context)
+    for user in json_body(body).get('data', []):
+        if email in (user.get('email'), user.get('contact_email'),
+                     user.get('login_id')):
+            return user.get('email')
+        if user.get('name') == email.split('@')[0]:
+            return user.get('email')
+    return None
+
+
+def check_acl_search(base, token, marker, visible_name, hidden_name, context,
+                     backend):
+    status, parsed, raw = search_until_found(base, token, marker, context,
+                                              POLL_SECONDS)
+    names = result_names(parsed)
+    return check(
+        '%s 检索遵守目录 ACL：可读命中、invisible 零泄漏' % backend,
+        status == 200 and visible_name in names and hidden_name not in names,
+        'status=%s names=%s body=%s' % (status, names, raw[:300]))
+
+
 def phase1(base, admin, password, context, state_file):
     token, status, body = login(base, admin, password, context)
     if not check('管理员登录', bool(token), 'status=%s %s' % (status, body[:200])):
@@ -171,6 +195,52 @@ def phase1(base, admin, password, context, state_file):
                         'second file, marker %s\n' % beta_marker, context)
     passed &= check('上传 beta 文件', ok, detail)
 
+    # 跨用户 ACL 场景。两个文件使用同一关键词，只有路径可见性
+    # 能将它们区分；不能用“搜到了任意结果”蒙混过关。
+    status, body = request(base + '/api/v2.1/admin/users/', method='POST',
+                           token=token,
+                           form={'email': B_EMAIL, 'password': B_PASSWORD},
+                           context=context)
+    if status not in (200, 201) and 'exist' not in body.lower():
+        return check('创建 ACL 验收用户', False,
+                     'status=%s %s' % (status, body[:200]))
+    b_token, status, body = login(base, B_EMAIL, B_PASSWORD, context)
+    if not b_token:
+        return check('ACL 验收用户登录', False,
+                     'status=%s %s' % (status, body[:200]))
+    b_id = resolve_identity(base, token, B_EMAIL, context)
+    if not b_id:
+        return check('解析 ACL 验收用户身份', False)
+    for folder in ('visible', 'hidden'):
+        request(base + '/api2/repos/%s/dir/?p=/%s' % (repo_id, folder),
+                method='POST', token=token, form={'operation': 'mkdir'},
+                context=context)
+    acl_marker = 'cfsearch-acl-' + tag
+    visible_name = 'acl-visible-%s.txt' % tag
+    hidden_name = 'acl-hidden-%s.txt' % tag
+    ok, detail = upload(base, token, repo_id, visible_name,
+                        'shared marker %s\n' % acl_marker, context, '/visible')
+    passed &= check('上传 ACL 可见文件', ok, detail)
+    ok, detail = upload(base, token, repo_id, hidden_name,
+                        'shared marker %s\n' % acl_marker, context, '/hidden')
+    passed &= check('上传 ACL 隐藏文件', ok, detail)
+    status, body = request(
+        base + '/api2/repos/%s/dir/shared_items/?p=/' % repo_id,
+        method='PUT', token=token,
+        form={'share_type': 'user', 'username': b_id, 'permission': 'rw'},
+        context=context)
+    passed &= check('资料库以 rw 共享给 ACL 验收用户',
+                    status == 200 and not json_body(body).get('failed'),
+                    'status=%s %s' % (status, body[:300]))
+    status, body = request(
+        base + '/api/v2.1/cloudfile/repos/%s/dir-acl/' % repo_id,
+        method='POST', token=token,
+        form={'path': '/hidden', 'subject_type': 'user',
+              'subject': B_EMAIL, 'permission': 'invisible',
+              'inherit': 'true'}, context=context)
+    passed &= check('下发 invisible 目录 ACL', status == 200,
+                    'status=%s %s' % (status, body[:300]))
+
     status, parsed, raw = search_until_found(base, token, alpha_marker, context, POLL_SECONDS)
     passed &= check('搜索 alpha 关键词只命中 alpha 文件（默认 SeaSearch 路径）',
                     status == 200 and result_names(parsed) == [alpha_name],
@@ -181,11 +251,24 @@ def phase1(base, admin, password, context, state_file):
                     status == 200 and result_names(parsed) == [beta_name],
                     'status=%s names=%s body=%s' % (status, result_names(parsed), raw[:200]))
 
+    # 先等管理员能搜到两个同关键词文件，证明隐藏文件确实进了
+    # 索引，再断言 B 的结果被查询层过滤，避免“根本没索引”假阳性。
+    status, parsed, raw = search_until_found(base, token, acl_marker, context,
+                                              POLL_SECONDS)
+    names = result_names(parsed)
+    passed &= check('SeaSearch 索引中同时存在 ACL 两个对照文件',
+                    status == 200 and visible_name in names and hidden_name in names,
+                    'status=%s names=%s body=%s' % (status, names, raw[:300]))
+    passed &= check_acl_search(base, b_token, acl_marker, visible_name,
+                               hidden_name, context, 'SeaSearch')
+
     if passed:
         with open(state_file, 'w') as fh:
             json.dump({'repo_id': repo_id, 'alpha_marker': alpha_marker,
                       'alpha_name': alpha_name, 'beta_marker': beta_marker,
-                      'beta_name': beta_name}, fh)
+                      'beta_name': beta_name, 'acl_marker': acl_marker,
+                      'visible_name': visible_name,
+                      'hidden_name': hidden_name}, fh)
 
     print('\n════════ phase 1 %s ════════' % ('通过' if passed else '失败'))
     return passed
@@ -217,6 +300,14 @@ def phase2(base, admin, password, context, state_file):
     passed &= check('不存在的关键词不返回任何结果（无假阳性）',
                     status == 200 and not parsed.get('results'),
                     'status=%s body=%s' % (status, raw[:200]))
+
+    b_token, status, body = login(base, B_EMAIL, B_PASSWORD, context)
+    passed &= check('ACL 验收用户登录', bool(b_token),
+                    'status=%s %s' % (status, body[:200]))
+    if b_token:
+        passed &= check_acl_search(
+            base, b_token, state['acl_marker'], state['visible_name'],
+            state['hidden_name'], context, 'Meilisearch')
 
     print('\n════════ phase 2 %s ════════' % ('通过' if passed else '失败'))
     return passed

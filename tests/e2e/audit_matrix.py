@@ -145,6 +145,64 @@ def main():
     passed &= check('重命名目录', status == 200,
                     'status=%s %s' % (status, body[:300]))
 
+    status, body = request(base + '/api2/repos/%s/dir/?p=/destination' % repo_id,
+                           method='POST', token=token, form={'operation': 'mkdir'},
+                           context=context)
+    passed &= check('创建移动目标目录', status in (200, 201),
+                    'status=%s %s' % (status, body[:200]))
+
+    move_payload = json.dumps({
+        'src_repo_id': repo_id, 'dst_repo_id': repo_id,
+        'paths': [{'src_path': '/audited-dir/audit.txt',
+                   'dst_path': '/destination'}],
+    })
+    status, body = request(base + '/api/v2.1/repos/batch-move-item/',
+                           method='POST', token=token, data=move_payload,
+                           headers={'Content-Type': 'application/json'},
+                           context=context)
+    move_result = json_body(body)
+    passed &= check('移动文件', status == 200 and
+                    bool(move_result.get('success')) and
+                    not move_result.get('failed'),
+                    'status=%s %s' % (status, body[:300]))
+
+    moved_path = '/destination/audit.txt'
+    status, body = request(base + '/api2/repos/%s/file/?p=%s' % (
+        repo_id, urllib.parse.quote(moved_path)), method='DELETE', token=token,
+        context=context)
+    passed &= check('删除文件', status == 200,
+                    'status=%s %s' % (status, body[:300]))
+
+    trash_item = None
+    deadline = time.time() + 75
+    while time.time() < deadline:
+        status, body = request(
+            base + '/api/v2.1/repos/%s/trash2/?per_page=100' % repo_id,
+            token=token, context=context)
+        for item in json_body(body).get('items') or []:
+            full_path = (item.get('parent_dir') or '/').rstrip('/') + '/' + \
+                        (item.get('obj_name') or '')
+            if full_path == moved_path:
+                trash_item = item
+                break
+        if trash_item:
+            break
+        time.sleep(3)
+    passed &= check('回收站可找到删除项', bool(trash_item),
+                    'status=%s %s' % (status, body[:500]))
+
+    if trash_item:
+        recover_payload = json.dumps({trash_item['commit_id']: [moved_path]})
+        status, body = request(
+            base + '/api/v2.1/repos/%s/trash2/revert/' % repo_id,
+            method='POST', token=token, data=recover_payload,
+            headers={'Content-Type': 'application/json'}, context=context)
+        recover_result = json_body(body)
+        passed &= check('从回收站恢复文件', status == 200 and
+                        bool(recover_result.get('success')) and
+                        not recover_result.get('failed'),
+                        'status=%s %s' % (status, body[:300]))
+
     events = []
     deadline = time.time() + 75
     while time.time() < deadline:
@@ -153,14 +211,20 @@ def main():
                                token=token, context=context)
         events = json_body(body).get('events') or []
         has_file = any(event.get('object_type') == 'file' and
-                       event.get('path') == '/audit-dir/audit.txt' for event in events)
+                       event.get('path') in ('/audit-dir/audit.txt', moved_path)
+                       for event in events)
         has_dir = any(event.get('object_type') == 'dir' and
                       event.get('path') == '/audited-dir' for event in events)
-        if status == 200 and has_file and has_dir:
+        operations = {event.get('operation') for event in events}
+        if status == 200 and has_file and has_dir and \
+                {'move', 'delete', 'recover'} <= operations:
             break
         time.sleep(3)
-    passed &= check('API 列出文件与目录操作', status == 200 and has_file and has_dir,
-                    'status=%s events=%s %s' % (status, len(events), body[:500]))
+    passed &= check('API 列出创建、重命名、移动、删除与恢复',
+                    status == 200 and has_file and has_dir and
+                    {'move', 'delete', 'recover'} <= operations,
+                    'status=%s operations=%s events=%s %s' %
+                    (status, sorted(operations), len(events), body[:500]))
 
     status, body = request(base + '/api/v2.1/cloudfile/audit/?' +
                            urllib.parse.urlencode({'repo_id': repo_id, 'obj_type': 'file'}),
@@ -179,6 +243,18 @@ def main():
                         event.get('path') == '/audited-dir'
                         for event in rename_events),
                     'status=%s %s' % (status, body[:500]))
+
+    for operation in ('move', 'delete', 'recover'):
+        status, body = request(base + '/api/v2.1/cloudfile/audit/?' +
+                               urllib.parse.urlencode({
+                                   'repo_id': repo_id, 'op_type': operation}),
+                               token=token, context=context)
+        selected = json_body(body).get('events') or []
+        passed &= check('按 %s 操作筛选' % operation,
+                        status == 200 and selected and
+                        all(event.get('operation') == operation
+                            for event in selected),
+                        'status=%s %s' % (status, body[:500]))
 
     status, page = load_audit_page(base, args.admin, args.admin_password, context)
     passed &= check('管理员可打开操作日志清单 UI', status == 200 and

@@ -198,12 +198,15 @@ def main():
                                     'column_type': 'text'}, context=context)
     column = body_json(body).get('column') or {}
     column_key = column.get('key')
+    # The metadata-server keys row cells by the column's display name, not its
+    # internal key (the /rows update rejects an unknown "column name").
+    column_data_name = column.get('name') or column_name
     passed &= check('创建自定义文件属性列', status == 200 and bool(column_key),
                     'status=%s %s' % (status, body[:300]))
     if record_id and column_key:
         status, body = request(root + 'record/', method='PUT', token=token,
                                payload={'record_id': record_id,
-                                        'data': {column_key: '法务'}},
+                                        'data': {column_data_name: '法务'}},
                                context=context)
         passed &= check('写入自定义文件属性', status == 200,
                         'status=%s %s' % (status, body[:300]))
@@ -212,7 +215,7 @@ def main():
                                context=context)
         rows = body_json(body).get('results') or []
         passed &= check('自定义属性可读回', status == 200 and rows and
-                        rows[0].get(column_key) == '法务',
+                        rows[0].get(column_data_name) == '法务',
                         'status=%s %s' % (status, body[:400]))
 
     tag_name = 'cloudfile-metadata-' + uuid.uuid4().hex[:8]
@@ -281,7 +284,7 @@ def main():
             root, token, '/archive', 'renamed.txt', context)
         passed &= check('移动后自定义属性跟随',
                         moved_record is not None and
-                        moved_record.get(column_key) == '法务',
+                        moved_record.get(column_data_name) == '法务',
                         'status=%s %s' % (status, body[:400]))
 
         moved_path = '/archive/renamed.txt'
@@ -327,7 +330,7 @@ def main():
                 root, token, '/archive', 'renamed.txt', context)
             passed &= check('恢复后自定义属性回归',
                             recovered_record is not None and
-                            recovered_record.get(column_key) == '法务',
+                            recovered_record.get(column_data_name) == '法务',
                             'status=%s %s' % (status, body[:400]))
 
     request(base + '/api2/repos/%s/' % repo_id, method='DELETE', token=token,

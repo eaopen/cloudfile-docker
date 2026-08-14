@@ -56,11 +56,33 @@ if ! docker image inspect "$base_image" >/dev/null 2>&1; then
     exit 2
 fi
 
-# 把可覆盖的 ref 透传进容器，方便构建特性分支。
+# 基础镜像架构必须与请求的 platform 一致。Apple Silicon 上若加载的是 amd64
+# 基础镜像，默认跟随宿主机的 arm64 会在真正跑起来时被 docker 拒掉（platform
+# does not match）。这里用一次秒级的 inspect 提前拦截，别让一个 QEMU 构建
+# 跑了几十分钟才在别处暴露错配。
+image_arch=$(docker image inspect --format '{{.Architecture}}' "$base_image" 2>/dev/null || true)
+case "$platform" in
+    linux/amd64) want_arch=amd64 ;;
+    linux/arm64) want_arch=arm64 ;;
+    *)           want_arch= ;;
+esac
+if [[ -n $want_arch && -n $image_arch && $image_arch != "$want_arch" ]]; then
+    echo "基础镜像架构不匹配：${base_image} 是 ${image_arch}，但请求 ${platform}" >&2
+    echo "修复方法二选一：" >&2
+    echo "  1. 用匹配的基础镜像：在 ${want_arch} 机器上跑 base-build.sh 后 docker save/load；" >&2
+    echo "  2. 或匹配现有镜像：CF_PLATFORM=linux/${image_arch} ./build-in-docker.sh ..." >&2
+    if [[ $image_arch == amd64 ]]; then
+        echo "     （amd64 在 arm64 上走 QEMU 模拟，慢一个数量级）" >&2
+    fi
+    exit 2
+fi
+
+# 把可覆盖的 ref 透传进容器，方便构建特性分支；CF_FORCE_REBUILD=1
+# 强制全量重建、忽略 cloudfile-build.sh 的分层缓存。
 env_args=()
 for v in CF_SERVER_REF CF_HUB_REF CF_SERVER_URL CF_HUB_URL \
          CF_SEAFOBJ_REF CF_SEAFDAV_REF CF_SEAFEVENTS_REF \
-         CF_LIBSEARPC_REF CF_LIBEVHTP_REF; do
+         CF_LIBSEARPC_REF CF_LIBEVHTP_REF CF_FORCE_REBUILD; do
     [[ -n ${!v:-} ]] && env_args+=(-e "$v=${!v}")
 done
 

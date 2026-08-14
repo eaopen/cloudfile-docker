@@ -62,6 +62,61 @@ seafevents_ref=${CF_SEAFEVENTS_REF:-$(manifest_get 'upstream.seafevents')}
 libsearpc_ref=${CF_LIBSEARPC_REF:-$(manifest_get 'upstream.libsearpc')}
 libevhtp_ref=${CF_LIBEVHTP_REF:-$(manifest_get 'upstream.libevhtp')}
 
+# ============================================================================
+# 分层构建（layered build）
+#
+# 把原来的一次性长流程拆成 5 层，每层：
+#   1. 打印明确的层横幅与耗时，长时间执行时能看到进度和每层结果；
+#   2. 用「输入指纹」做产物缓存——输入未变化时跳过该层，避免每次都
+#      从头重跑最耗时的 npm 构建与 C/Go 编译。
+#
+# 缓存键以「源码指纹」为基础：各组件按 commit 检出，提交 SHA 完整决定
+# 源码内容（build-in-docker.sh 也保证只有已提交的代码进构建）。因此任何
+# 组件 ref 变化都会使相关层的指纹失效、触发重建，不会误用陈旧产物。
+#
+# 逃生阀：CF_FORCE_REBUILD=1 强制全量重建，忽略一切缓存。
+# ============================================================================
+CF_FORCE_REBUILD=${CF_FORCE_REBUILD:-0}
+
+layer_state_dir=${code_path}/.cf-layers
+mkdir -p "$layer_state_dir"
+
+# 七个组件联合 HEAD 的指纹。任何 ref 变化都会改变它。
+function source_fingerprint() {
+    {
+        for d in seafile-server seahub seafobj seafdav seafevents libsearpc libevhtp; do
+            printf '%s %s\n' "$d" "$(git -C "${code_path}/$d" rev-parse HEAD 2>/dev/null || echo no-repo)"
+        done
+    } | sha256sum | cut -d' ' -f1
+}
+
+function layer_hit() {
+    local name=$1 fp=$2
+    [[ -f ${layer_state_dir}/${name}.fp && $(<"${layer_state_dir}/${name}.fp") == "$fp" ]]
+}
+
+function layer_mark() {
+    local name=$1 fp=$2
+    echo "$fp" > "${layer_state_dir}/${name}.fp"
+}
+
+# 层进度横幅与耗时。
+_layer_total=5
+_layer_started_at=0
+
+function layer_start() {
+    local idx=$1 name=$2 desc=$3
+    _layer_started_at=$(date +%s)
+    printf '\n============================================================\n'
+    printf '[%d/%d] %s\n      %s\n' "$idx" "$_layer_total" "$name" "$desc"
+    printf '============================================================\n'
+}
+
+function layer_done() {
+    local name=$1
+    printf '[done] %s (%ds)\n' "$name" "$(( $(date +%s) - _layer_started_at ))"
+}
+
 function install_dependencies() {
     if [[ ${CLOUDFILE_BUILD_BASE:-false} == true ]]; then
         echo "Using system dependencies from the CloudFile build base"
@@ -421,6 +476,43 @@ CONF
     cd "${code_path}"
 }
 
+function frontend_fingerprint() {
+    {
+        source_fingerprint
+        echo "script: $(sha256sum "${current_dir}/cloudfile-build.sh" | cut -d' ' -f1)"
+    } | sha256sum | cut -d' ' -f1
+}
+
+# 前端产物（frontend/build、media/assets）落在 seahub 源码树内，会被 fetch
+# 的 `git clean -xfd` 清掉。所以命中时从缓存目录恢复产物，而不是跳过整层
+# —— 否则下一轮 fetch 之后产物就没了。恢复只花复制时间，远快于
+# npm ci + build + compilemessages + collectstatic 一整趟。
+function layer_frontend() {
+    local seahub=${code_path}/seahub
+    local cache=${code_path}/.cache/frontend-build
+    local fp
+    fp=$(frontend_fingerprint)
+
+    if [[ ${CF_FORCE_REBUILD} != 1 ]] && layer_hit frontend "$fp" \
+        && [[ -d ${cache}/build && -d ${cache}/media-assets ]]; then
+        echo "[cache] 前端产物命中，跳过 npm build / collectstatic，从缓存恢复"
+        rm -rf "${seahub}/frontend/build" "${seahub}/media/assets"
+        mkdir -p "${seahub}/frontend" "${seahub}/media"
+        cp -a "${cache}/build" "${seahub}/frontend/build"
+        cp -a "${cache}/media-assets" "${seahub}/media/assets"
+        layer_mark frontend "$fp"
+        return
+    fi
+
+    build_seahub_frontend
+
+    rm -rf "$cache"
+    mkdir -p "$cache"
+    cp -a "${seahub}/frontend/build" "$cache/build"
+    cp -a "${seahub}/media/assets" "$cache/media-assets"
+    layer_mark frontend "$fp"
+}
+
 function build() {
     cd "${current_dir}"
     # cloudfile-build.py uses shutil.move("seafile-server", versioned_dir).
@@ -437,20 +529,63 @@ function build() {
         --mysql_config=/usr/bin/mariadb_config
 }
 
+function dist_fingerprint() {
+    {
+        source_fingerprint
+        echo "version: ${version}"
+        echo "script: $(sha256sum "${current_dir}/cloudfile-build.sh" | cut -d' ' -f1)"
+        echo "builder: $(sha256sum "${current_dir}/cloudfile-build.py" | cut -d' ' -f1)"
+        echo "thirdpart: $(cat "${code_path}/.cache/requirements-thirdpart.sha256" 2>/dev/null || echo none)"
+    } | sha256sum | cut -d' ' -f1
+}
+
+# 发行包（seafile-server-<version>/）是 C/Go 编译 + 打包的最终产物，也是整个
+# 流程里最耗时的一层。命中时直接复用 builddir 里已有的发行包，跳过 cloudfile-build.py
+# 的完整重编译；write_build_info 仍然每次重写，保证产物里的构建信息与源码一致。
+function layer_dist() {
+    local fp
+    fp=$(dist_fingerprint)
+
+    if [[ ${CF_FORCE_REBUILD} != 1 ]] && layer_hit dist "$fp" \
+        && [[ -d "${current_dir}/seafile-server-${version}" ]]; then
+        echo "[cache] 发行包命中，跳过 C/Go 编译与打包"
+        write_build_info
+        layer_mark dist "$fp"
+        return
+    fi
+
+    build
+    write_build_info
+    layer_mark dist "$fp"
+}
+
 echo ''
 echo "Info: CloudFile version [ ${version} ]"
 echo "      cloudfile-server ${cloudfile_server_url} @ ${cloudfile_server_ref}"
 echo "      cloudfile-hub    ${cloudfile_hub_url} @ ${cloudfile_hub_ref}"
 echo ''
 
+layer_start 1 deps "系统依赖与 Node 工具链"
 install_dependencies
 install_nodejs
+layer_done deps
+
+layer_start 2 source "克隆并检出七个组件（commit 锁定）"
 clone_code
 fetch
+layer_done source
+
+layer_start 3 python-deps "Python 运行时依赖（thirdpartdir）"
 install_python_dependencies
-build_seahub_frontend
-build
-write_build_info
+layer_done python-deps
+
+layer_start 4 frontend "Seahub 前端与静态资源"
+layer_frontend
+layer_done frontend
+
+layer_start 5 dist "C/Go 编译与发行包组装"
+layer_dist
+layer_done dist
 
 echo ''
 echo "Info: Successfully built cloudfile-server-${version}"

@@ -328,7 +328,7 @@ def check_capability_gates(repo):
         bad('verify-local.sh 里找不到 CAPABILITIES 表')
         return
 
-    local = set(re.findall(r'"(\w+)\|', block.group(1)))
+    local = set(re.findall(r'"([\w-]+)\|', block.group(1)))
 
     wf_dir = os.path.join(repo, '.github', 'workflows')
     names = os.listdir(wf_dir) if os.path.isdir(wf_dir) else []

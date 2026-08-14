@@ -132,9 +132,11 @@ CAPABILITIES=(
     "metadata|CF_ENABLE_METADATA CF_ENABLE_TAGS|tests/e2e/metadata_matrix.py"
     "audit|CF_ENABLE_AUDIT|tests/e2e/audit_matrix.py"
     "storage|CF_ENABLE_S3_STORAGE|tests/e2e/storage_matrix.py"
-    "search|CF_ENABLE_SEARCH|tests/e2e/search_matrix.py"
+    "search|CF_ENABLE_SEARCH CF_ENABLE_DIR_ACL|tests/e2e/search_matrix.py"
     "external_sources|CF_ENABLE_EXTERNAL_SOURCES|tests/e2e/external_sources_matrix.py"
     "fileop|CF_FILEOP_TEST_PROVIDER|tests/e2e/fileop_matrix.py"
+    "lock|CF_ENABLE_FILE_LOCK CF_ENABLE_CHECKOUT|tests/e2e/lock_matrix.py"
+    "local-edit|CF_ENABLE_FILE_LOCK CF_ENABLE_LOCAL_APP|tests/e2e/local_edit_matrix.py"
 )
 
 # 由 capability 阶段设置：要在 .env 里打开的开关。
@@ -311,6 +313,30 @@ cap_fileop_run() {
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
         --journal "$journal" \
         --state-file "$STAGE_DIR/fileop-matrix-state.json" || return 1
+}
+
+# 锁门禁与 CI（lock-e2e.yml）同序：先开锁/签入签出跑跨协议矩阵，再关开关证原生透传。
+# 矩阵自己只发 HTTP，配置切换与重启在这里做。
+cap_lock_run() {
+    local base=$1
+
+    say "锁提供器确实注册"
+    compose exec -T cloudfile grep -n 'file_lock_enabled = true' \
+        /shared/seafile/conf/seafile.conf || return 1
+
+    say "锁与签入签出跨协议矩阵"
+    python3 "$repo/tests/e2e/lock_matrix.py" --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
+
+    say "关闭后恢复原生 CE 透传"
+    sed -i.bak -e "s|^CF_ENABLE_FILE_LOCK=.*|CF_ENABLE_FILE_LOCK=false|" \
+               -e "s|^CF_ENABLE_CHECKOUT=.*|CF_ENABLE_CHECKOUT=false|" "$STAGE_DIR/.env" \
+        && rm -f "$STAGE_DIR/.env.bak"
+    compose up -d --wait --wait-timeout 120 cloudfile || return 1
+    compose exec -T cloudfile grep -n 'file_lock_enabled = false' \
+        /shared/seafile/conf/seafile.conf || return 1
+    python3 "$repo/tests/e2e/smoke.py" --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
 }
 
 cap_search_env() {

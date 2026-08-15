@@ -918,22 +918,21 @@ def apply_cloudfile_schema():
 
 
 def apply_metadata_schema_compatibility():
-    """Repair the upstream 14.0 metadata schema when the capability is on.
+    """Repair the upstream 14.0 metadata schema.
 
     Seahub 14.0's ``RepoMetadata`` model unconditionally reads
     ``summary_enabled``, but its fresh-install SQL and 14.0 upgrade SQL both
-    omit that column.  This makes even the status endpoint return 500 on a
-    new installation before an operator has enabled any AI feature.
+    omit that column.  This makes even the directory-listing endpoint
+    (``/api/v2.1/repos/{id}/dir/``, which filters ``RepoMetadata``) return 500
+    on a new installation before an operator has enabled any AI feature.
 
     Keep the narrowly scoped compatibility migration here rather than editing
     the upstream SQL files: it must also cover an existing CE deployment that
-    adopts CloudFile without running Seafile's versioned upgrade scripts.  It
-    is gated by the metadata capability, checks the actual schema first, and
-    is safe on every restart.
+    adopts CloudFile without running Seafile's versioned upgrade scripts.  The
+    column is required regardless of whether the metadata capability is on
+    (the model reads it unconditionally), so this is NOT gated by the switch;
+    it checks the actual schema first and is safe on every restart.
     """
-    if not (cf_enabled('CF_ENABLE_METADATA') or cf_enabled('CF_ENABLE_TAGS')):
-        return
-
     import pymysql
 
     conn = pymysql.connect(

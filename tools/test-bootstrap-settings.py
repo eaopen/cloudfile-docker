@@ -559,14 +559,13 @@ def test_metadata_schema_compatibility():
                 sys.modules['pymysql'] = previous
         return conn, cursor
 
-    conn, cursor = run({}, [])
-    check('关闭元数据和标签时不连接 Hub 数据库', not cursor.statements and not conn.closed)
-
-    env = {'CF_ENABLE_METADATA': 'true',
-           'SEAFILE_MYSQL_DB_SEAHUB_DB_NAME': 'metadata_hub'}
+    # The column is required regardless of the metadata switch (the upstream
+    # model reads it unconditionally), so a switch-off deployment with the
+    # upstream table present must still get the column.
+    env = {'SEAFILE_MYSQL_DB_SEAHUB_DB_NAME': 'metadata_hub'}
     conn, cursor = run(env, [(1,), None])
     sql = '\n'.join(statement for statement, unused in cursor.statements)
-    check('缺列时补齐 summary_enabled 与索引',
+    check('开关关闭但上游表存在时也补齐 summary_enabled',
           'ADD COLUMN `summary_enabled` TINYINT(1) NOT NULL DEFAULT 0' in sql
           and 'key_repo_metadata_summary_enabled' in sql, sql)
     check('补齐后提交并关闭连接', conn.committed and conn.closed)

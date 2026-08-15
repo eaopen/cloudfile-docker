@@ -157,8 +157,10 @@ channel=ui 的 15 条用例，逐个核对前端代码后判定：
 | search-009 文件夹打开/定位 | 已实现 | 同文件 `item-folder-action`「Open folder · Locate」 |
 | share-001 分享入口隐藏 | 已实现 | `utils.js` `isHasPermissionToShare`（CF_ENABLE_SHARE_RESTRICT） |
 | tree-002 悬停收藏按钮 | 已实现且浏览器验证通过（文件行 hover 显示 Star） | `dirent-list-item.js`（tooltip Star/Unstar） |
-| tags-006 系统标签锁形图标 | 待实现（跨系统断层） | `is_system` 在 CE `repo_tags`（P2-07），而标签树/文件标签显示走 metadata-server `/metadata/tags/`（无该字段） |
+| tags-006 系统标签锁形图标 | 已实现（da287e9fe） | `repo-info-bar.js` 对 `is_system` 标签渲染 `Icon symbol="lock"`；`models/repo-tag.js` 解析 `is_system`。系统/用户标签只存在于 CE `repo_tags`（P2-07），故锁形图标落在消费 `repo-tags` 的「已用标签栏」；metadata-server `/metadata/tags/` 无 `is_system` 概念（上游无系统标签） |
+| tags-007 用户标签在前系统标签在后 | 已实现（后端排序 + 前端保序） | `api2/endpoints/repo_tags.py` `.order_by('is_system', 'id')`；`lib-content-view.js` `usedRepoTags` 按后端返回顺序渲染 |
 | tags-008 超过两枚折叠 | 已实现（b24ae487c） | `file-tags/index.js` 前两枚 + `…`（+n） |
+| tags-009 点击标签仅选中不弹列表 | 已实现（metadata 标签树本就走「选中过滤」） | `tag/tags-tree-view/index.js` `selectNode` → `selectTag`（不弹关联文件列表） |
 | recycle-001 | 已按决策移除（维持原生 CE） | — |
 
 浏览器套件入口 `tests/e2e/review_ui_matrix.py`（Playwright）已就绪并覆盖 icon-001..005；

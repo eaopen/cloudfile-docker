@@ -80,11 +80,11 @@ def main():
         count = items.count()
         record('icon 视图渲染文件', count >= 3, f'grid-item 数={count}')
 
-        # icon-001: marquee drag selection — drag from empty space across the
-        # grid items (they render near the top-left of the content area).
-        page.mouse.move(520, 100)
+        # icon-001: marquee drag selection — mousedown on empty space inside
+        # the grid container, then drag a rect that covers the item row.
+        page.mouse.move(1250, 500)
         page.mouse.down()
-        page.mouse.move(1000, 400, steps=12)
+        page.mouse.move(620, 110, steps=12)
         page.mouse.up()
         time.sleep(1)
         selected = page.locator('.grid-selected-active').count()

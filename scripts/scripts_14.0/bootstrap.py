@@ -993,6 +993,65 @@ def apply_tag_schema_compatibility():
         conn.close()
 
 
+def apply_audit_schema():
+    """Create CloudFile's append-only audit sidecar when audit is enabled.
+
+    seafevents' Activity table only holds file/directory commit-diff events.
+    Repo tags are mutated exclusively through Seahub's API, so P2-08 records
+    those tag changes -- with their before/after values -- in a CloudFile-owned
+    ``cf_audit_event`` table. It lives in seafile-db (next to the other cf_*
+    tables, which is what cloudfile_ext.db_router points the model at) and is
+    created here so all three entry points are covered: a fresh install, a
+    version upgrade, and an existing CE deployment adopting CloudFile.
+
+    Gated on CF_ENABLE_AUDIT because the Django model is only imported when
+    that switch is on; the statement is IF NOT EXISTS, so running it on every
+    start is cheap and safe.
+    """
+    if not cf_enabled('CF_ENABLE_AUDIT'):
+        return
+
+    import pymysql
+
+    conn = pymysql.connect(
+        host=get_conf('SEAFILE_MYSQL_DB_HOST', 'db'),
+        port=int(get_conf('SEAFILE_MYSQL_DB_PORT', '3306')),
+        user=get_conf('SEAFILE_MYSQL_DB_USER', 'seafile'),
+        password=get_conf('SEAFILE_MYSQL_DB_PASSWORD', ''),
+        database=get_conf('SEAFILE_MYSQL_DB_SEAFILE_DB_NAME', 'seafile_db'),
+        charset='utf8mb4',
+    )
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS cf_audit_event (
+                  id BIGINT NOT NULL PRIMARY KEY AUTO_INCREMENT,
+                  repo_id VARCHAR(36) NOT NULL,
+                  object_type VARCHAR(32) NOT NULL,
+                  object_id VARCHAR(64) NOT NULL,
+                  operation VARCHAR(32) NOT NULL,
+                  operator VARCHAR(255) NOT NULL,
+                  source VARCHAR(16) NOT NULL,
+                  `before` TEXT,
+                  `after` TEXT,
+                  source_path VARCHAR(1000),
+                  target_path VARCHAR(1000),
+                  result VARCHAR(16) NOT NULL,
+                  failure_reason TEXT,
+                  occurred_at DATETIME NOT NULL,
+                  KEY cf_audit_event_time (occurred_at),
+                  KEY cf_audit_event_repo (repo_id),
+                  KEY cf_audit_event_operator (operator),
+                  KEY cf_audit_event_operation (operation),
+                  KEY cf_audit_event_source (source),
+                  KEY cf_audit_event_result (result)
+                ) ENGINE=INNODB
+            """)
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _set_ini_value(lines, start, end, key, value):
     """Set `key = value` within lines[start:end], appending if absent.
 
@@ -1124,6 +1183,7 @@ def write_cloudfile_config():
     apply_cloudfile_schema()
     apply_metadata_schema_compatibility()
     apply_tag_schema_compatibility()
+    apply_audit_schema()
 
 
 def init_seafile_server():

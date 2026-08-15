@@ -256,6 +256,86 @@ def main():
                             for event in selected),
                         'status=%s %s' % (status, body[:500]))
 
+    # P2-08: tag add/rename/delete must surface as audit events carrying the
+    # before/after values of each change.
+    tag_name = 'audit-tag-' + uuid.uuid4().hex[:6]
+    status, body = request(base + '/api/v2.1/repos/%s/repo-tags/' % repo_id,
+                           method='POST', token=token,
+                           data=json.dumps({'name': tag_name, 'color': '#ff0000'}),
+                           headers={'Content-Type': 'application/json'},
+                           context=context)
+    tag_id = (json_body(body).get('repo_tag') or {}).get('repo_tag_id')
+    passed &= check('创建标签', status in (200, 201) and bool(tag_id),
+                    'status=%s %s' % (status, body[:300]))
+
+    renamed = tag_name + '-renamed'
+    status, body = request(
+        base + '/api/v2.1/repos/%s/repo-tags/%s/' % (repo_id, tag_id),
+        method='PUT', token=token,
+        data=json.dumps({'name': renamed, 'color': '#00ff00'}),
+        headers={'Content-Type': 'application/json'}, context=context)
+    passed &= check('重命名标签', status == 200,
+                    'status=%s %s' % (status, body[:300]))
+
+    status, body = request(
+        base + '/api/v2.1/repos/%s/repo-tags/%s/' % (repo_id, tag_id),
+        method='DELETE', token=token, context=context)
+    passed &= check('删除标签', status == 200,
+                    'status=%s %s' % (status, body[:300]))
+
+    tag_events = []
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        status, body = request(base + '/api/v2.1/cloudfile/audit/?' +
+                               urllib.parse.urlencode({
+                                   'repo_id': repo_id, 'obj_type': 'tag',
+                                   'per_page': 200}),
+                               token=token, context=context)
+        tag_events = json_body(body).get('events') or []
+        has_create = any(e.get('operation') == 'create' and
+                         (e.get('after') or {}).get('name') == tag_name
+                         for e in tag_events)
+        has_update = any(e.get('operation') == 'update' and
+                         (e.get('before') or {}).get('name') == tag_name and
+                         (e.get('after') or {}).get('name') == renamed
+                         for e in tag_events)
+        has_delete = any(e.get('operation') == 'delete' and
+                         (e.get('before') or {}).get('name') == renamed and
+                         e.get('after') is None
+                         for e in tag_events)
+        if status == 200 and has_create and has_update and has_delete:
+            break
+        time.sleep(3)
+    passed &= check('标签增删与系统标签变化记录 before/after',
+                    status == 200 and has_create and has_update and has_delete,
+                    'status=%s events=%s %s' %
+                    (status, len(tag_events), body[:600]))
+
+    status, body = request(base + '/api/v2.1/cloudfile/audit/?' +
+                           urllib.parse.urlencode({
+                               'repo_id': repo_id, 'source': 'api'}),
+                           token=token, context=context)
+    src_events = json_body(body).get('events') or []
+    passed &= check('按来源筛选（api → 标签事件）', status == 200 and src_events and
+                    all(e.get('source') == 'api' for e in src_events),
+                    'status=%s %s' % (status, body[:400]))
+
+    status, body = request(base + '/api/v2.1/cloudfile/audit/?' +
+                           urllib.parse.urlencode({
+                               'repo_id': repo_id, 'source': 'commit'}),
+                           token=token, context=context)
+    commit_events = json_body(body).get('events') or []
+    passed &= check('按来源筛选（commit → 提交事件）', status == 200 and commit_events and
+                    all(e.get('source') == 'commit' for e in commit_events),
+                    'status=%s %s' % (status, body[:400]))
+
+    status, body = request(base + '/api/v2.1/cloudfile/audit/export/?' +
+                           urllib.parse.urlencode({'repo_id': repo_id}),
+                           token=token, context=context)
+    passed &= check('导出 CSV', status == 200 and
+                    body.lstrip('\ufeff').startswith('event_id,time,user'),
+                    'status=%s %s' % (status, body[:200]))
+
     status, page = load_audit_page(base, args.admin, args.admin_password, context)
     passed &= check('管理员可打开操作日志清单 UI', status == 200 and
                     'audit-filters' in page and 'audit-events' in page,

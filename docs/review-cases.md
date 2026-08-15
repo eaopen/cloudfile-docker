@@ -61,9 +61,9 @@
 | 标签 tags | 5 | 4 | 9 |
 | 搜索 search | 7 | 2 | 9 |
 | 操作历史 history | 7 | 0 | 7 |
-| 回收站 recycle | 3 | 1 | 4 |
+| 回收站 recycle | 2 | 0 | 2 |
 | 外部分享 share | 3 | 1 | 4 |
-| **合计** | **40** | **16** | **56** |
+| **合计** | **39** | **15** | **54** |
 
 ## 4. 验证与运行
 
@@ -82,7 +82,7 @@ python3 tests/e2e/review_copy_matrix.py --url https://127.0.0.1 --insecure \
 
 CI 门禁在 `.github/workflows/review-<模块>-e2e.yml`。当前为契约期，矩阵对
 CE 已原生支持的部分应绿（如复制"来源可读+目标可写"、标签"创建需 rw"、文件修订历史），
-对评审新要求应红（如权限变化提示、回收站对普通用户拒绝、分享开关关闭）。这条红/绿
+对评审新要求应红（如权限变化提示、分享开关关闭）。这条红/绿
 边界就是 P2-03/P2-06/P2-07 的施工清单。
 
 P2-07 已把标签模块的 api 用例（tags-001～tags-005）做成绿：系统标签仅 `admin`
@@ -127,15 +127,11 @@ P2-10 已把操作历史模块的 5 条 api 用例做成绿（history-002/003/00
 与 CE 行为一致。history-001/005（修订列表含创建人、修订详情）为 CE 原生已绿。
 容器验收 7/7 通过（2026-08-15 本地栈复验）。
 
-P2-10 同时把回收站模块的 api 用例做成绿（recycle-002/003/004）：回收站改为
-管理员专用面——普通用户（`r`/`rw`）经 `/api/v2.1/repos/{id}/trash/` 列表、
-`repo/{id}/trash/` 页面与 `trash/files/` 旧路由一律 403/拒绝（recycle-002）；
-资料库管理员与系统管理员可列举/恢复/永久删除（recycle-003），软删除可恢复性
-（recycle-004）为 CE 原生。前端回收站入口对普通用户隐藏（recycle-001 属
-浏览器用例，随浏览器套件验收）。实现见 `seahub/api2/endpoints/repo_trash.py`、
-`seahub/views/__init__.py`、`seahub/views/file.py` 与
+回收站模块决策（2026-08-15）：**维持原生 Seafile CE 回收站行为**，不做管理员
+门禁、不隐藏普通用户入口。用例集只保留 CE 原生就绿的 recycle-003（管理员列举/
+恢复/永久删除）与 recycle-004（软删除可恢复）；原 recycle-001（普通用户隐藏
+入口）与 recycle-002（普通用户 API 拒绝）随决策移除。实现见
 [`review_recycle_matrix.py`](../tests/e2e/review_recycle_matrix.py)。
-
 P2-11 已把外部分享模块的 api 用例做成绿（share-002/003/004）：新增开关
 `CF_ENABLE_SHARE_RESTRICT`（默认 false = 原生 CE）。开启后非管理员创建外链
 被拒（403）、匿名访问旧外链按不存在处理（404）、列表/查询端点保留、管理员仍可

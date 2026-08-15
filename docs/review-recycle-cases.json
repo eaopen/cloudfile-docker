@@ -3,24 +3,8 @@
   "module": "recycle",
   "title": "回收站",
   "review": "couldfile_review20260814.md 二、核心功能设计·回收站 / 五、验收重点",
-  "comment": "Executable form of the review checklist `couldfile_review20260814.md` for this module. channel: `api` = assertable over HTTP by tests/e2e/review_<module>_matrix.py; channel: `ui` = browser-only, reported as skipped by the API matrix and deferred to a future browser suite. perm is the CE permission level the principal exercises (r / rw / admin / none / n/a); the five-level role model is NOT adopted (see docs/roles-semantics.md), so role-level cases are absent by design.",
+  "comment": "Executable form of the review checklist `couldfile_review20260814.md` for this module. Decision (2026-08-15): keep native Seafile CE recycle-bin behavior — no admin-only gate, no UI entry hiding. channel: `api` = assertable over HTTP by tests/e2e/review_<module>_matrix.py. perm is the CE permission level the principal exercises (r / rw / admin / none / n/a); the five-level role model is NOT adopted (see docs/roles-semantics.md).",
   "cases": [
-    {
-      "id": "recycle-001",
-      "name": "recycle bin entry hidden for normal users",
-      "review": "普通用户不展示回收站入口",
-      "channel": "ui",
-      "perm": "n/a",
-      "expect": "the recycle-bin entry is not rendered for a non-admin"
-    },
-    {
-      "id": "recycle-002",
-      "name": "recycle bin API rejects normal users",
-      "review": "普通用户无法通过接口访问回收站",
-      "channel": "api",
-      "perm": "rw",
-      "expect": "a non-admin listing trash gets 403 or no access"
-    },
     {
       "id": "recycle-003",
       "name": "admin lists restores and deletes via recycle bin",

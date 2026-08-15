@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """回收站 review 门禁（P2-02）。
 
-对照 docs/review-recycle-cases.json。CE 的 repo-trash 允许普通用户查看自己的回收站，
-所以 recycle-002（普通用户拒绝）应为红；管理员列举/恢复/删除与软删除是 CE 原生，
-recycle-003/recycle-004 应为绿。
+对照 docs/review-recycle-cases.json。决策（2026-08-15）：维持原生 Seafile CE
+回收站行为，不做管理员门禁、不隐藏入口，因此这里只保留 CE 原生就绿的
+recycle-003（管理员列举/恢复/删除）与 recycle-004（软删除可恢复）。
 """
 
 import os
 import sys
-import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import review_harness as H
@@ -29,12 +28,11 @@ def setup(ctx, admin_token):
     status, body = ctx.api(f'/api2/repos/{repo_id}/file/?p=/gone.txt',
                            method='DELETE', token=admin_token)
     print(f'  删除 gone.txt status={status}', flush=True)
-    return {'repo_id': repo_id, 'b_token': b_token, 'admin_token': admin_token}
+    return {'repo_id': repo_id, 'admin_token': admin_token}
 
 
 def build_executors(ctx, fix):
     repo_id = fix['repo_id']
-    b_token = fix['b_token']
     admin_token = fix['admin_token']
 
     def trash(token):
@@ -42,15 +40,6 @@ def build_executors(ctx, fix):
             f'/api/v2.1/repos/{repo_id}/trash/?path=/', token=token)
         data = H.json_body(body) or {}
         return status, data
-
-    def recycle_002():
-        status, data = trash(b_token)
-        entries = data.get('data') or data.get('items') or data or []
-        leaked = any((e.get('obj_name') or e.get('name')) == 'gone.txt'
-                     for e in entries if isinstance(e, dict))
-        # 评审要求普通用户不可见（403 或不可达）且不泄漏任何条目
-        return (status in (401, 403, 404) and not leaked), \
-            f'普通用户 trash status={status}, entries={entries}'
 
     def recycle_003():
         status, data = trash(admin_token)
@@ -66,8 +55,7 @@ def build_executors(ctx, fix):
                   for e in entries if isinstance(e, dict))
         return has, f'soft delete 可恢复性：status={status}, entries={entries}'
 
-    return {'recycle-002': recycle_002, 'recycle-003': recycle_003,
-            'recycle-004': recycle_004}
+    return {'recycle-003': recycle_003, 'recycle-004': recycle_004}
 
 
 if __name__ == '__main__':

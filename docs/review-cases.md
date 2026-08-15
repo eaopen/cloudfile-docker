@@ -139,6 +139,30 @@ P2-11 已把外部分享模块的 api 用例做成绿（share-002/003/004）：�
 [`review_share_matrix.py`](../tests/e2e/review_share_matrix.py)；share-001
 （前端隐藏分享入口）属浏览器用例，随浏览器套件验收。
 
+## 4.5 UI 用例实现状态（2026-08-15 代码核对）
+
+channel=ui 的 15 条用例，逐个核对前端代码后判定：
+
+| 用例 | 实现状态 | 证据（frontend/src/） |
+|---|---|---|
+| icon-001 框选 | 已实现 | `dirent-grid-view.js` marquee（getSelectionRect/determineSelectedItems） |
+| icon-002 ctrl 离散多选 | 已实现 | `lib-content-view.js` `onDirentClick` 的 ctrl/meta 分支 |
+| icon-003 shift 连续多选 | 已实现 | 同上 shift 分支（lastSelectedIndex 区间） |
+| icon-004 全选当前页 | 已实现 | `isAllDirentSelected`/select-all |
+| icon-005 批量操作栏 | 已实现 | `selected-dirents-toolbar`（多选后出现） |
+| tree-003/004 悬停更多含复制 | 已实现 | `tree-node-view.js` `calculateMenuList`（COPY/MOVE） |
+| search-008 匹配标签徽标 | 已实现 | `search-result-item.js` `matched-tag-badge` |
+| search-009 文件夹打开/定位 | 已实现 | 同文件 `item-folder-action`「Open folder · Locate」 |
+| share-001 分享入口隐藏 | 已实现 | `utils.js` `isHasPermissionToShare`（CF_ENABLE_SHARE_RESTRICT） |
+| tree-002 悬停收藏按钮 | 待核对 | 树节点无 star 项，收藏入口在文件行 hover（待确认映射） |
+| tags-006 系统标签锁形图标 | 待实现 | metadata 标签数据未贯通 `is_system`（repo_tags 才有） |
+| tags-008 超过两枚折叠 | 待实现 | `file-tags` formatter 未做 2+省略 |
+| recycle-001 | 已按决策移除（维持原生 CE） | — |
+
+浏览器套件入口 `tests/e2e/review_ui_matrix.py`（Playwright）已就绪并覆盖 icon-001..005；
+图标多选在真实栈上跑通前需先解决「DIR_ACL 开启时前端目录视图渲染『Folder does not
+exist』」这一独立前端问题（API 目录列举正常，仅前端渲染路径异常）。
+
 ## 5. 与既有能力的边界
 
 复制/移动与 `fileop`（写生命周期）、标签与 `metadata`、搜索与 `search`、

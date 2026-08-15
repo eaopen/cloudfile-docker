@@ -156,7 +156,7 @@ channel=ui 的 15 条用例，逐个核对前端代码后判定：
 | share-001 分享入口隐藏 | 已实现 | `utils.js` `isHasPermissionToShare`（CF_ENABLE_SHARE_RESTRICT） |
 | tree-002 悬停收藏按钮 | 已实现且浏览器验证通过（文件行 hover 显示 Star） | `dirent-list-item.js`（tooltip Star/Unstar） |
 | tags-006 系统标签锁形图标 | 待实现 | metadata 标签数据未贯通 `is_system`（repo_tags 才有） |
-| tags-008 超过两枚折叠 | 待实现 | `file-tags` formatter 未做 2+省略 |
+| tags-008 超过两枚折叠 | 已实现（b24ae487c） | `file-tags/index.js` 前两枚 + `…`（+n） |
 | recycle-001 | 已按决策移除（维持原生 CE） | — |
 
 浏览器套件入口 `tests/e2e/review_ui_matrix.py`（Playwright）已就绪并覆盖 icon-001..005；

@@ -56,13 +56,14 @@ def web_login(base, email, password):
             .decode(errors='replace')
     except urllib.error.HTTPError as exc:
         page = exc.read().decode(errors='replace')
-    match = re.search(r'name="csrfmiddlewaretoken"\s+value="([^"]+)"', page)
+    match = re.search(r'name="csrfmiddlewaretoken"[^>]*value="([^"]+)"', page)
     csrf = match.group(1) if match else ''
     form = urllib.parse.urlencode({
         'login': email, 'password': password, 'csrfmiddlewaretoken': csrf,
     }).encode()
     req = urlreq.Request(base + '/accounts/login/', data=form, headers={
-        'Content-Type': 'application/x-www-form-urlencoded'})
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Referer': base + '/accounts/login/'})
     try:
         opener.open(req, timeout=60)
     except urllib.error.HTTPError:

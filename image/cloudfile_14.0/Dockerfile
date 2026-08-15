@@ -1,4 +1,4 @@
-ARG CLOUDFILE_BASE=cloudfile-build-base:ce14-v1
+ARG CLOUDFILE_BASE=cloudfile-build-base:ce14-v2
 FROM ${CLOUDFILE_BASE}
 ARG server_version=
 ENV SEAFILE_SERVER=seafile-server SEAFILE_VERSION=$server_version

@@ -25,7 +25,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     curl -fsSL https://nginx.org/keys/nginx_signing.key | apt-key add - && \
     apt-get update --fix-missing && \
     apt-get install -y --no-install-recommends \
-      build-essential ca-certificates cargo cmake curl dnsutils exiftool fuse \
+      build-essential ca-certificates cargo ccache cmake curl dnsutils exiftool fuse \
       gettext git golang-go google-perftools intltool ldap-utils \
       libarchive-dev libargon2-dev libcurl4-openssl-dev libevent-dev libffi-dev \
       libfuse-dev libglib2.0-dev libgoogle-perftools-dev libhiredis-dev \

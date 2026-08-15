@@ -26,6 +26,7 @@ version=$1
 
 here=$(cd "$(dirname "$0")" && pwd)
 repo_root=$(cd "$here/../.." && pwd)
+source "$repo_root/tools/build-platform.sh"
 
 dist=$repo_root/build/cloudfile_14.0/seafile-server-${version}
 if [[ ! -d $dist ]]; then
@@ -53,7 +54,27 @@ if ! docker image inspect "$base_image" >/dev/null 2>&1; then
     exit 2
 fi
 
+# The base image is single-arch. Without an explicit --platform, Docker targets
+# the host architecture, so an amd64 base on Apple Silicon (or the reverse)
+# fails to resolve with a confusing "pull access denied". Mirror
+# build-in-docker.sh: default to the host arch, allow CF_PLATFORM to override,
+# and fail fast when the loaded base image does not match.
+if [[ -z ${CF_PLATFORM:-} ]]; then
+    platform=$(cf_host_platform) || exit 2
+else
+    platform=$(cf_normalize_platform "$CF_PLATFORM") || exit 2
+fi
+
+image_arch=$(docker image inspect --format '{{.Architecture}}' "$base_image" 2>/dev/null || true)
+want_arch=$(cf_platform_arch "$platform") || exit 2
+if [[ -n $image_arch && $image_arch != "$want_arch" ]]; then
+    echo "base image architecture mismatch: ${base_image} is ${image_arch}, requested ${platform}" >&2
+    echo "load a matching base image, or set CF_PLATFORM=linux/${image_arch}" >&2
+    exit 2
+fi
+
 DOCKER_BUILDKIT=${DOCKER_BUILDKIT:-1} docker build --pull=false --network=none \
+    --platform "$platform" \
     -f "$here/Dockerfile" \
     --build-context cloudfile_dist="$dist" \
     --build-arg CLOUDFILE_BASE="$base_image" \

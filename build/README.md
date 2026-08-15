@@ -29,21 +29,21 @@ Seafile 上游未发布 CE 14 分支、CE 14 tag 或 CE 14 镜像，因此本仓
 ./image/cloudfile_14.0/base-build.sh
 ```
 
-默认构建 `linux/amd64` 的 `cloudfile-build-base:ce14-v1`。通过文件传入目标机器：
+默认构建 `linux/amd64` 的 `cloudfile-build-base:ce14-v2`。通过文件传入目标机器：
 
 ```bash
-docker save cloudfile-build-base:ce14-v1 |
-  zstd -T0 -10 -o cloudfile-build-base-ce14-v1.tar.zst
+docker save cloudfile-build-base:ce14-v2 |
+  zstd -T0 -10 -o cloudfile-build-base-ce14-v2.tar.zst
 
-zstd -dc cloudfile-build-base-ce14-v1.tar.zst |
+zstd -dc cloudfile-build-base-ce14-v2.tar.zst |
   docker load
 ```
 
 长期使用内网 Registry 时，先把基础镜像推入内网，再在构建前显式拉取并覆盖名称：
 
 ```bash
-docker pull registry.internal/cloudfile/build-base:ce14-v1
-CF_BASE_IMAGE=registry.internal/cloudfile/build-base:ce14-v1 \
+docker pull registry.internal/cloudfile/build-base:ce14-v2
+CF_BASE_IMAGE=registry.internal/cloudfile/build-base:ce14-v2 \
   ./image/cloudfile_14.0/docker-build.sh 14.0.0-cf.0
 ```
 
@@ -62,6 +62,33 @@ CF_BASE_IMAGE=registry.internal/cloudfile/build-base:ce14-v1 \
 
 ```text
 build/cloudfile_14.0/seafile-server-14.0.0-cf.0/
+```
+
+C/Go 编译并行度默认跟随机器核数（`nproc`），可用 `CF_BUILD_JOBS` 覆盖：
+
+```bash
+CF_BUILD_JOBS=8 ./build/cloudfile_14.0/build-in-docker.sh 14.0.0-cf.0
+```
+
+增量编译缓存（ccache、Go module/build cache、npm/pip cache）默认落在
+`build/cloudfile_14.0/.cache/`，跨构建持久；C 代码只改一行时 ccache 让 `make`
+只重编一个目标文件，Go/npm 依赖也不再重复下载。CI 用 `actions/cache` 复用同一目录。
+可用 `CF_CACHE_DIR` 把缓存根目录改到别处。
+
+前端依赖树按 package/lockfile、Node/npm ABI 和平台生成指纹。输入不变时保留
+`node_modules`，避免重复执行 `npm ci`；CI 只保存约 60 MiB 的 Babel/ESLint
+loader 缓存，不上传约 1 GiB 的完整依赖树。frontend 层指纹只包含 Seahub 及构建期
+实际读取的 server/libsearpc Python 树，因此只改 C/Go 不会再触发 webpack。
+
+需要单独重测某一层时，不要使用会同时重跑前端和 C/Go 的
+`CF_FORCE_REBUILD=1`：
+
+```bash
+# 只重跑 webpack / collectstatic
+CF_FORCE_FRONTEND_REBUILD=1 ./build/cloudfile_14.0/build-in-docker.sh 14.0.0-cf.0
+
+# 只重跑 C/Go/打包；前端仍从产物缓存恢复
+CF_FORCE_DIST_REBUILD=1 ./build/cloudfile_14.0/build-in-docker.sh 14.0.0-cf.0
 ```
 
 也可在已满足依赖的 Linux 主机直接运行：

@@ -56,18 +56,37 @@ jobs:
                       /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
           df -h / | tail -1
 
+      - name: 设置 BuildKit builder（基础镜像复用 Actions 缓存）
+        uses: docker/setup-buildx-action@v3
+
+      - name: 恢复编译缓存（ccache / Go / npm）
+        uses: actions/cache/restore@v4
+        with:
+          path: cloudfile-docker/build/cloudfile_14.0/.cache
+          key: cf-build-cache-${{ hashFiles('cloudfile-docker/image/cloudfile_14.0/Dockerfile.base', 'cloudfile-docker/build/cloudfile_14.0/cloudfile-build.sh', 'cloudfile-docker/build/cloudfile_14.0/build-in-docker.sh') }}
+          restore-keys: |
+            cf-build-cache-
+
+      - name: 构建 CE 14 基础镜像
+        working-directory: cloudfile-docker/image/cloudfile_14.0
+        run: ./base-build.sh
+
       - name: 构建发行包
         working-directory: cloudfile-docker/build/cloudfile_14.0
         env:
           CF_SERVER_REF: ${{ inputs.server_ref }}
           CF_HUB_REF: ${{ inputs.hub_ref }}
         run: |
-          # runner 本身就是 ubuntu-24.04，构建脚本可以直接跑，不必再套容器。
-          sudo -E ./cloudfile-build.sh "$CF_VERSION"
+          # 在基础镜像容器内构建，复用工具链；ccache/Go/npm 缓存落到
+          # build/cloudfile_14.0/.cache，被上一步 restore、下一步 save 持久化。
+          ./build-in-docker.sh "$CF_VERSION"
 
-      - name: 构建 CE 14 基础镜像
-        working-directory: cloudfile-docker/image/cloudfile_14.0
-        run: ./base-build.sh
+      - name: 保存编译缓存
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: cloudfile-docker/build/cloudfile_14.0/.cache
+          key: cf-build-cache-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: 构建镜像
         working-directory: cloudfile-docker/image/cloudfile_14.0

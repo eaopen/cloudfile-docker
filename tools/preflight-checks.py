@@ -148,13 +148,13 @@ def check_branch_ref_is_remote(repo):
         print('  ⊘ 读不到 cloudfile-build.sh，跳过分支检出校验')
         return
 
-    required = ('refs/remotes/origin/${ref}', 'target="origin/${ref}"',
+    required = ('git fetch --no-tags origin "$ref"', 'target=FETCH_HEAD',
                 'rm -rf "${current_dir}/seafile-server-${version}"')
     if all(fragment in build for fragment in required):
         ok('构建分支使用远端 tip，重建前清理旧发行包')
     else:
         bad('构建分支或发行目录可能复用旧产物',
-            '必须检出 origin/<branch>，并在重建前清理旧发行目录。')
+            '可变 ref 必须 fetch 后检出 FETCH_HEAD，并在重建前清理旧发行目录。')
 
 
 def check_offline_image_build(repo):

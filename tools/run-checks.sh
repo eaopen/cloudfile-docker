@@ -44,6 +44,8 @@ skip() {
 run "上游改动登记" "$docker_repo/tools/check-upstream-patches.sh"
 run "上游改动警告语义" "$docker_repo/tests/tools/test-check-upstream-patches.sh"
 run "容器工作流基础镜像契约" "$docker_repo/tests/tools/test-image-workflows.sh"
+run "构建平台规范化" "$docker_repo/tests/tools/test-build-platform.sh"
+run "构建缓存契约" "$docker_repo/tests/tools/test-build-cache-contract.sh"
 
 # 2. Hub 侧扩展测试（能力分支上还包括与 C 端共用用例集的求解器测试）
 if [[ -d $hub ]]; then
@@ -147,23 +149,26 @@ run "脚本语法" bash -c "
 # 7. 构建脚本副本与上游的偏离没有变大
 #
 # build/cloudfile_14.0/cloudfile-build.py 是上游 seafile-build.py 的副本，预期
-# 改了两处：放宽版本号校验以接受 14.0.0-cf.0；在 copy_scripts_and_libs() 的
+# 改了六处：放宽版本号校验以接受 14.0.0-cf.0；在 copy_scripts_and_libs() 的
 # must_copy 循环里加一行，把离线 S3 迁移工具 seaf-storage-migrate.sh（新文件，
 # 随 seaf-fsck.sh/seaf-gc.sh 一起来自 Seahub scripts/）随发行包一起复制出去
-# ——不加这行，构建产物里就没有这个工具。上游更新那个文件时，我们的副本
-# 会**静默变旧**——和上游改动登记一样的问题，所以同样用脚本卡住。
+# ——不加这行，构建产物里就没有这个工具；给 Libevhtp 的 `make` 加 `-j`，让它
+# 与 libsearpc/seafile 一样并行编译；新增 --compile-only / --package-only 两个
+# CLI 开关并把 main() 的编译与打包拆开，让 C/Go 编译能与前端构建并行。
+# 上游更新那个文件时，我们的副本会**静默变旧**——和上游改动登记一样的问题，
+# 所以同样用脚本卡住。
 run "构建脚本副本偏离" bash -c "
     upstream='$docker_repo/build/seafile_14.0/seafile-build.py'
     ours='$docker_repo/build/cloudfile_14.0/cloudfile-build.py'
     hunks=\$(diff -u \"\$upstream\" \"\$ours\" | grep -c '^@@' || true)
-    if [ \"\$hunks\" != '2' ]; then
-        echo \"副本与上游相差 \$hunks 处，预期 2 处（版本号校验 + seaf-storage-migrate.sh 复制）。\"
+    if [ \"\$hunks\" != '6' ]; then
+        echo \"副本与上游相差 \$hunks 处，预期 6 处（版本号校验 + seaf-storage-migrate.sh 复制 + libevhtp make -j + compile/package 拆分）。\"
         echo \"上游可能更新了 seafile-build.py：先 diff 确认，再决定是同步副本\"
         echo \"还是接受新的偏离并更新这个检查。\"
         diff -u \"\$upstream\" \"\$ours\" | head -40
         exit 1
     fi
-    echo '仅 2 处预期偏离'
+    echo '仅 6 处预期偏离'
 "
 
 # 8. bootstrap 生成的 seahub_settings.py 片段真的能加载

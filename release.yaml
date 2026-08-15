@@ -9,7 +9,7 @@
 
 product: 14.0.0-cf.0
 image: cloudfile/cloudfile:14.0.0-cf.0
-build_base_image: cloudfile-build-base:ce14-v1
+build_base_image: cloudfile-build-base:ce14-v2
 ubuntu_base_image: ubuntu:24.04
 
 # Filled in at release time with the CloudFile commit each image was built from.

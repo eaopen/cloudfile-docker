@@ -203,7 +203,7 @@ class Libevhtp(Project):
         Project.__init__(self)
         self.build_commands = [
             'cmake -DEVHTP_DISABLE_SSL=ON -DEVHTP_BUILD_SHARED=OFF .',
-            'make',
+            'make -j%s' % conf[CONF_JOBS],
             'make install',
             'ldconfig'
         ]
@@ -310,6 +310,8 @@ def validate_args(usage, options):
     conf[CONF_THIRDPARTDIR] = thirdpartdir
     conf[CONF_JOBS] = jobs
     conf[CONF_MYSQL_CONFIG] = mysql_config_path
+    conf['compile_only'] = getattr(options, 'compile_only', False)
+    conf['package_only'] = getattr(options, 'package_only', False)
 
     show_build_info()
 
@@ -374,6 +376,18 @@ def parse_args():
                       dest=CONF_MYSQL_CONFIG,
                       nargs=1,
                       help='''Absolute path to mysql_config or mariadb_config program.''')
+
+    parser.add_option('--compile-only',
+                      dest='compile_only',
+                      action='store_true',
+                      default=False,
+                      help='compile C/Go components, then stop before packaging')
+
+    parser.add_option('--package-only',
+                      dest='package_only',
+                      action='store_true',
+                      default=False,
+                      help='package an already-compiled tree, skipping C/Go compile')
 
     usage = parser.format_help()
     options, remain = parser.parse_args()
@@ -717,13 +731,19 @@ def main():
     seafile = Seafile()
     seahub = Seahub()
 
-    libsearpc.build()
-    libevhtp.build()
-    seafile.build()
-    seahub.build()
+    # CloudFile splits the C/Go compile from packaging so the compile can run
+    # in parallel with the seahub frontend build (which packaging depends on,
+    # because it copies the frontend's webpack/collectstatic output). With
+    # neither flag set, both phases run as before.
+    if not conf['package_only']:
+        libsearpc.build()
+        libevhtp.build()
+        seafile.build()
+        seahub.build()
 
-    copy_scripts_and_libs()
-    strip_and_rename()
+    if not conf['compile_only']:
+        copy_scripts_and_libs()
+        strip_and_rename()
 
 
 if __name__ == '__main__':

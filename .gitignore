@@ -21,6 +21,7 @@ build/seafile-server-*
 build/*/src
 build/*/seafile-server-*
 build/*/seafile-server/
+build/*/.cache
 
 # Deployment secrets and data. .env holds database and admin passwords, and
 # data/ is the live deployment -- neither belongs in the repo.

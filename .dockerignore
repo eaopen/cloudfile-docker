@@ -1,8 +1,36 @@
+# Editor and OS noise
 *~
 *#
 *.swp
 .DS_Store
 *.pyc
 
+# VCS and CI metadata
+.git/
+.gitignore
+.github/
+
+# Build outputs and source caches. The image Dockerfiles only COPY
+# scripts/scripts_14.0, services/ and base_scripts/; these directories are
+# multi-GB (git clones, C/Go/npm caches, prior distributions) and have no
+# business being shipped as build context.
+build/
+src/
+
+# Tooling, docs, tests and other repo-only content
+.claude/
+.idea/
+.planning/
+.pytest_cache/
+config/
+custom/
+deploy/
+docs/
+patches/
+templates/
+tests/
+tools/
+
+# kept from upstream
 shared/*
 .snapshot/*

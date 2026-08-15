@@ -28,6 +28,7 @@ fi
 version=$1
 here=$(cd "$(dirname "$0")" && pwd)
 repo_root=$(cd "$here/../.." && pwd)
+source "$repo_root/tools/build-platform.sh"
 base_image=${CF_BASE_IMAGE:-$(python3 "$here/read-manifest.py" \
     "$repo_root/release.yaml" build_base_image)}
 
@@ -35,14 +36,16 @@ base_image=${CF_BASE_IMAGE:-$(python3 "$here/read-manifest.py" \
 # amd64 而宿主是 Apple Silicon，构建就会静默地跑在 QEMU 模拟下，
 # 慢一个数量级却没有任何提示。默认跟随宿主机。
 if [[ -z ${CF_PLATFORM:-} ]]; then
-    case "$(uname -m)" in
-        arm64|aarch64) CF_PLATFORM=linux/arm64 ;;
-        x86_64)        CF_PLATFORM=linux/amd64 ;;
-        *) echo "无法识别的宿主架构：$(uname -m)，请显式设置 CF_PLATFORM" >&2; exit 2 ;;
-    esac
+    platform=$(cf_host_platform) || exit 2
+else
+    platform=$(cf_normalize_platform "$CF_PLATFORM") || exit 2
 fi
-platform=$CF_PLATFORM
 platform_arg=(--platform "$platform")
+
+if [[ -n ${CF_BUILD_JOBS:-} && ! $CF_BUILD_JOBS =~ ^[1-9][0-9]*$ ]]; then
+    echo "CF_BUILD_JOBS 必须是正整数，当前值：${CF_BUILD_JOBS}" >&2
+    exit 2
+fi
 
 if ! docker info >/dev/null 2>&1; then
     echo "Docker 不可用。请先启动 Docker Desktop / OrbStack / colima。" >&2
@@ -61,12 +64,8 @@ fi
 # does not match）。这里用一次秒级的 inspect 提前拦截，别让一个 QEMU 构建
 # 跑了几十分钟才在别处暴露错配。
 image_arch=$(docker image inspect --format '{{.Architecture}}' "$base_image" 2>/dev/null || true)
-case "$platform" in
-    linux/amd64) want_arch=amd64 ;;
-    linux/arm64) want_arch=arm64 ;;
-    *)           want_arch= ;;
-esac
-if [[ -n $want_arch && -n $image_arch && $image_arch != "$want_arch" ]]; then
+want_arch=$(cf_platform_arch "$platform") || exit 2
+if [[ -n $image_arch && $image_arch != "$want_arch" ]]; then
     echo "基础镜像架构不匹配：${base_image} 是 ${image_arch}，但请求 ${platform}" >&2
     echo "修复方法二选一：" >&2
     echo "  1. 用匹配的基础镜像：在 ${want_arch} 机器上跑 base-build.sh 后 docker save/load；" >&2
@@ -82,7 +81,8 @@ fi
 env_args=()
 for v in CF_SERVER_REF CF_HUB_REF CF_SERVER_URL CF_HUB_URL \
          CF_SEAFOBJ_REF CF_SEAFDAV_REF CF_SEAFEVENTS_REF \
-         CF_LIBSEARPC_REF CF_LIBEVHTP_REF CF_FORCE_REBUILD; do
+         CF_LIBSEARPC_REF CF_LIBEVHTP_REF CF_FORCE_REBUILD \
+         CF_FORCE_FRONTEND_REBUILD CF_FORCE_DIST_REBUILD CF_BUILD_JOBS; do
     [[ -n ${!v:-} ]] && env_args+=(-e "$v=${!v}")
 done
 
@@ -116,11 +116,39 @@ echo "在容器内构建 CloudFile ${version}${platform:+ (${platform})}"
 echo "宿主机不会被改动；产物写回 build/cloudfile_14.0/"
 echo
 
+# Persistent build caches (ccache / Go / npm / pip). They are bind-mounted into
+# the container at /cache so they survive across runs, and the compiler is
+# routed through ccache's compiler symlinks. The cache root defaults to a
+# gitignored directory under the repo and can be relocated with CF_CACHE_DIR;
+# GitHub Actions caches it with actions/cache so CI runs are incremental too.
+cache_root=${CF_CACHE_DIR:-"$repo_root/build/cloudfile_14.0/.cache"}
+mkdir -p "$cache_root/ccache" "$cache_root/gocache" \
+         "$cache_root/gomodcache" "$cache_root/npm" "$cache_root/pip" \
+         "$cache_root/frontend-tools"
+# Docker treats a relative -v source as a named volume. Resolve the configured
+# cache directory after creating it so CF_CACHE_DIR=../cache remains a bind.
+cache_root=$(cd "$cache_root" && pwd)
+cache_args=(
+    -v "$cache_root:/cache"
+    # Ubuntu's ccache package provides compiler symlinks here. PATH-based
+    # interception also catches tools that reject a multi-word CC/CXX value.
+    -e "PATH=/usr/lib/ccache:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    -e "CCACHE_DIR=/cache/ccache"
+    -e "CCACHE_COMPRESS=true"
+    -e "CCACHE_MAXSIZE=5G"
+    -e "GOCACHE=/cache/gocache"
+    -e "GOMODCACHE=/cache/gomodcache"
+    -e "npm_config_cache=/cache/npm"
+    -e "PIP_CACHE_DIR=/cache/pip"
+    -e "CF_FRONTEND_TOOL_CACHE_DIR=/cache/frontend-tools"
+)
+
 # 挂载整个仓库：构建脚本要读 release.yaml，产物也要写回 build/cloudfile_14.0/。
 # git 需要把挂载进来的目录标记为 safe，否则会因 owner 不一致拒绝操作。
 docker run --rm -i --pull=never \
     "${platform_arg[@]}" \
     "${env_args[@]}" \
+    "${cache_args[@]}" \
     "${mount_args[@]+"${mount_args[@]}"}" \
     -v "$repo_root:/work" \
     -w /work/build/cloudfile_14.0 \
@@ -129,6 +157,8 @@ docker run --rm -i --pull=never \
         set -e
         export TZ=Etc/UTC
         git config --global --add safe.directory '*'
+        ccache --zero-stats
+        trap 'ccache --show-stats || true' EXIT
         ./cloudfile-build.sh '$version'
     "
 

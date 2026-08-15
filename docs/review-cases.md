@@ -118,6 +118,14 @@ P2-05 已把树结构/移动模块里「收藏跟随对象」这条做成绿：�
 旧 path 记录经 `manage.py backfill_starred_obj_ids` 无损回填。实现见
 [features/favorites.md](features/favorites.md)；开关关闭时保持原生 CE 行为。
 
+P2-10 已把操作历史模块的 5 条 api 用例做成绿（history-002/003/004/006/007）：
+`file/history` 增加可选的 `q`（搜索）、`operator`/`source`（按创建人筛选）、
+`page`/`per_page`（分页 + `page_next`）；`repo/history` 增加可选的 `path`
+（文件夹历史默认只看文件夹自身 + 直属下一级，不递归）与 `current_folder_only`
+（仅文件夹自身，排除直属子级）。实现见 [features/history.md](features/history.md)
+与 [`review_history_matrix.py`](../tests/e2e/review_history_matrix.py)；不传参数时
+与 CE 行为一致。history-001/005（修订列表含创建人、修订详情）为 CE 原生已绿。
+
 ## 5. 与既有能力的边界
 
 复制/移动与 `fileop`（写生命周期）、标签与 `metadata`、搜索与 `search`、

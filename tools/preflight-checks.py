@@ -148,9 +148,13 @@ def check_branch_ref_is_remote(repo):
         print('  ⊘ 读不到 cloudfile-build.sh，跳过分支检出校验')
         return
 
-    required = ('git fetch --no-tags origin "$ref"', 'target=FETCH_HEAD',
-                'rm -rf "${current_dir}/seafile-server-${version}"')
-    if all(fragment in build for fragment in required):
+    required = ('git fetch --no-tags origin "$ref"', 'target=FETCH_HEAD')
+    # 8-15 构建加速提交把清理合并成一行：先删 seafile-server 再删
+    # seafile-server-${version}。这里只要求"rm -rf 后出现版本化发行目录"这一
+    # 意图，别用整行字面量匹配——否则未来再调整清理顺序又会误报。
+    cleans_release = re.search(
+        r'rm -rf .*"\$\{current_dir\}/seafile-server-\$\{version\}"', build)
+    if all(fragment in build for fragment in required) and cleans_release:
         ok('构建分支使用远端 tip，重建前清理旧发行包')
     else:
         bad('构建分支或发行目录可能复用旧产物',

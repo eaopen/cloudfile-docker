@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "module": "tags",
+  "title": "标签",
+  "review": "couldfile_review20260814.md 二、核心功能设计·标签 / 四、权限与标签模型",
+  "comment": "Executable form of the review checklist `couldfile_review20260814.md` for this module. channel: `api` = assertable over HTTP by tests/e2e/review_<module>_matrix.py; channel: `ui` = browser-only, reported as skipped by the API matrix and deferred to a future browser suite. perm is the CE permission level the principal exercises (r / rw / admin / none / n/a); the five-level role model is NOT adopted (see docs/roles-semantics.md), so role-level cases are absent by design.",
+  "cases": [
+    {
+      "id": "tags-001",
+      "name": "tags bind uniformly to files and folders",
+      "review": "文件与文件夹统一支持标签",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "the same tag can attach to both a file and a folder and round-trips"
+    },
+    {
+      "id": "tags-002",
+      "name": "system tags are read-only for non-admin",
+      "review": "系统标签只读",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "a non-admin cannot create/delete/rename a system tag (403)"
+    },
+    {
+      "id": "tags-003",
+      "name": "user tags are editable with rw permission",
+      "review": "用户标签按权限编辑",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "a rw user can create/delete/rename their own user tags"
+    },
+    {
+      "id": "tags-004",
+      "name": "user tags are not editable with r permission",
+      "review": "用户标签按权限编辑",
+      "channel": "api",
+      "perm": "r",
+      "expect": "a r user cannot create/delete/rename user tags (403)"
+    },
+    {
+      "id": "tags-005",
+      "name": "batch add tag respects the object limit",
+      "review": "支持批量加标签（建议单次对象上限）",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "batch tagging beyond the configured limit is rejected or chunked"
+    },
+    {
+      "id": "tags-006",
+      "name": "system tag shows a lock icon",
+      "review": "标签展示锁形图标",
+      "channel": "ui",
+      "perm": "n/a",
+      "expect": "system tags render with a lock icon, user tags do not"
+    },
+    {
+      "id": "tags-007",
+      "name": "tags ordered user-tags then system-tags",
+      "review": "展示顺序为用户标签→系统标签",
+      "channel": "ui",
+      "perm": "n/a",
+      "expect": "user tags render before system tags"
+    },
+    {
+      "id": "tags-008",
+      "name": "three or more tags fold to two plus ellipsis",
+      "review": "三个及以上展示前两个和…",
+      "channel": "ui",
+      "perm": "n/a",
+      "expect": "three or more tags render as the first two plus an ellipsis"
+    },
+    {
+      "id": "tags-009",
+      "name": "clicking a tag does not pop the related-file list",
+      "review": "点击标签仅选中或展示信息，不再直接弹关联文件列表",
+      "channel": "ui",
+      "perm": "n/a",
+      "expect": "clicking a tag does not open a related-file list popup"
+    }
+  ]
+}

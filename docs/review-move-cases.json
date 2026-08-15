@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "module": "move",
+  "title": "移动",
+  "review": "couldfile_review20260814.md 二、核心功能设计·移动 / 三、复制与移动流程",
+  "comment": "Executable form of the review checklist `couldfile_review20260814.md` for this module. channel: `api` = assertable over HTTP by tests/e2e/review_<module>_matrix.py; channel: `ui` = browser-only, reported as skipped by the API matrix and deferred to a future browser suite. perm is the CE permission level the principal exercises (r / rw / admin / none / n/a); the five-level role model is NOT adopted (see docs/roles-semantics.md), so role-level cases are absent by design.",
+  "cases": [
+    {
+      "id": "move-001",
+      "name": "move requires source move/delete permission",
+      "review": "校验来源移动/删除权限",
+      "channel": "api",
+      "perm": "r",
+      "expect": "moving from a source the user cannot write is rejected (403)"
+    },
+    {
+      "id": "move-002",
+      "name": "move requires target create permission",
+      "review": "校验目标目录新建权限",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "moving into a read-only target directory is rejected (403)"
+    },
+    {
+      "id": "move-003",
+      "name": "cross-space move requires elevated permission",
+      "review": "跨团队空间移动增加更高权限控制",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "a cross-space move is rejected unless the user holds admin"
+    },
+    {
+      "id": "move-004",
+      "name": "move warns about permission-inheritance change",
+      "review": "移动前提示权限影响（如 N 名成员可能失去访问）",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "the move precheck reports the number of members who would lose access"
+    },
+    {
+      "id": "move-005",
+      "name": "move rejects cyclic directory move",
+      "review": "循环目录校验",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "moving a folder into its own subtree is rejected"
+    },
+    {
+      "id": "move-006",
+      "name": "move enforces same-name conflict policy",
+      "review": "同名冲突",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "a name conflict resolves by policy, never a silent overwrite"
+    },
+    {
+      "id": "move-007",
+      "name": "move runs precheck-async-report with idempotent task id",
+      "review": "预检查—异步执行—结果报告；任务 ID 幂等",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "move returns a task id and a duplicate submission does not move the item twice"
+    }
+  ]
+}

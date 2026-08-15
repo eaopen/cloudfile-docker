@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "module": "copy",
+  "title": "复制",
+  "review": "couldfile_review20260814.md 二、核心功能设计·复制 / 三、复制与移动流程",
+  "comment": "Executable form of the review checklist `couldfile_review20260814.md` for this module. channel: `api` = assertable over HTTP by tests/e2e/review_<module>_matrix.py; channel: `ui` = browser-only, reported as skipped by the API matrix and deferred to a future browser suite. perm is the CE permission level the principal exercises (r / rw / admin / none / n/a); the five-level role model is NOT adopted (see docs/roles-semantics.md), so role-level cases are absent by design.",
+  "cases": [
+    {
+      "id": "copy-001",
+      "name": "copy requires source read permission",
+      "review": "校验来源读取/下载权限",
+      "channel": "api",
+      "perm": "none",
+      "expect": "copying from a source the user cannot read is rejected (403) and no copy is created"
+    },
+    {
+      "id": "copy-002",
+      "name": "copy requires target create permission",
+      "review": "校验目标目录新建权限",
+      "channel": "api",
+      "perm": "r",
+      "expect": "copying into a read-only target directory is rejected (403)"
+    },
+    {
+      "id": "copy-003",
+      "name": "copy enforces same-name conflict policy",
+      "review": "校验同名冲突",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "a name conflict resolves by skip / keep-both / overwrite, never a silent overwrite"
+    },
+    {
+      "id": "copy-004",
+      "name": "copy enforces single-file size limit",
+      "review": "校验大小",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "an over-limit file is reported in the failure list and not copied"
+    },
+    {
+      "id": "copy-005",
+      "name": "copy enforces folder depth limit",
+      "review": "校验层级",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "an over-depth folder is reported in the failure list and not copied"
+    },
+    {
+      "id": "copy-006",
+      "name": "copy enforces quota",
+      "review": "校验配额",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "an over-quota copy is rejected with a quota error"
+    },
+    {
+      "id": "copy-007",
+      "name": "copy runs precheck-async-report with idempotent task id",
+      "review": "预检查—确认—异步执行—结果报告；任务 ID 幂等",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "copy returns a task id and a duplicate submission does not create a second copy"
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "module": "history",
+  "title": "操作历史",
+  "review": "couldfile_review20260814.md 二、核心功能设计·操作历史 / 五、搜索、审计与验收",
+  "comment": "Executable form of the review checklist `couldfile_review20260814.md` for this module. channel: `api` = assertable over HTTP by tests/e2e/review_<module>_matrix.py; channel: `ui` = browser-only, reported as skipped by the API matrix and deferred to a future browser suite. perm is the CE permission level the principal exercises (r / rw / admin / none / n/a); the five-level role model is NOT adopted (see docs/roles-semantics.md), so role-level cases are absent by design.",
+  "cases": [
+    {
+      "id": "history-001",
+      "name": "file history lists revisions with source",
+      "review": "文件历史支持来源",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "a file's revisions are listed with their source (web/sync/webdav)"
+    },
+    {
+      "id": "history-002",
+      "name": "file history supports search",
+      "review": "文件历史支持搜索",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "history search by keyword returns matching revisions only"
+    },
+    {
+      "id": "history-003",
+      "name": "file history supports filter",
+      "review": "文件历史支持筛选",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "a history filter (source/operator) restricts results"
+    },
+    {
+      "id": "history-004",
+      "name": "file history supports pagination",
+      "review": "文件历史支持分页",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "paged history returns complete, non-overlapping pages"
+    },
+    {
+      "id": "history-005",
+      "name": "file history shows detail",
+      "review": "文件历史支持详情",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "a revision detail returns before/after and metadata"
+    },
+    {
+      "id": "history-006",
+      "name": "folder history defaults to current folder plus direct children",
+      "review": "文件夹历史默认只看直属下一级",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "folder history lists the folder and its direct children, not deeper levels"
+    },
+    {
+      "id": "history-007",
+      "name": "folder history current-folder-only filter does not recurse",
+      "review": "提供仅当前文件夹筛选，不递归更深层",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "the current-folder-only filter excludes direct children too"
+    }
+  ]
+}

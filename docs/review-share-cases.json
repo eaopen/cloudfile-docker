@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "module": "share",
+  "title": "外部分享",
+  "review": "couldfile_review20260814.md 二、核心功能设计·外部分享 / 五、验收重点",
+  "comment": "Executable form of the review checklist `couldfile_review20260814.md` for this module. channel: `api` = assertable over HTTP by tests/e2e/review_<module>_matrix.py; channel: `ui` = browser-only, reported as skipped by the API matrix and deferred to a future browser suite. perm is the CE permission level the principal exercises (r / rw / admin / none / n/a); the five-level role model is NOT adopted (see docs/roles-semantics.md), so role-level cases are absent by design.",
+  "cases": [
+    {
+      "id": "share-001",
+      "name": "share entry hidden in frontend",
+      "review": "前端隐藏分享入口",
+      "channel": "ui",
+      "perm": "n/a",
+      "expect": "the share entry is not rendered"
+    },
+    {
+      "id": "share-002",
+      "name": "share link creation disabled when flag off",
+      "review": "通过功能开关关闭",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "creating a share link is rejected while the share feature is disabled"
+    },
+    {
+      "id": "share-003",
+      "name": "existing share links and history are retained",
+      "review": "保留接口和历史数据",
+      "channel": "api",
+      "perm": "admin",
+      "expect": "pre-existing share links remain present after the flag is off"
+    },
+    {
+      "id": "share-004",
+      "name": "old share link cannot bypass the flag",
+      "review": "禁止通过旧链接绕过",
+      "channel": "api",
+      "perm": "n/a",
+      "expect": "an old share link returns access denied, not the shared content"
+    }
+  ]
+}

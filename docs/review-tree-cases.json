@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "module": "tree",
+  "title": "树结构",
+  "review": "couldfile_review20260814.md 二、核心功能设计·树结构",
+  "comment": "Executable form of the review checklist `couldfile_review20260814.md` for this module. channel: `api` = assertable over HTTP by tests/e2e/review_<module>_matrix.py; channel: `ui` = browser-only, reported as skipped by the API matrix and deferred to a future browser suite. perm is the CE permission level the principal exercises (r / rw / admin / none / n/a); the five-level role model is NOT adopted (see docs/roles-semantics.md), so role-level cases are absent by design.",
+  "cases": [
+    {
+      "id": "tree-001",
+      "name": "star is per-user and does not leak",
+      "review": "收藏属于个人数据，不影响其他用户",
+      "channel": "api",
+      "perm": "n/a",
+      "expect": "user B's /api2/starredfiles/ has no entry for an item starred by user A, and the dir listing carries no star marker for B"
+    },
+    {
+      "id": "tree-002",
+      "name": "hover shows favorite button",
+      "review": "节点悬停显示收藏按钮",
+      "channel": "ui",
+      "perm": "n/a",
+      "expect": "hovering a tree node reveals a favorite/star control"
+    },
+    {
+      "id": "tree-003",
+      "name": "hover shows more menu",
+      "review": "节点悬停显示更多",
+      "channel": "ui",
+      "perm": "n/a",
+      "expect": "hovering a tree node reveals a 'more' menu"
+    },
+    {
+      "id": "tree-004",
+      "name": "more menu offers copy",
+      "review": "更多中提供复制",
+      "channel": "ui",
+      "perm": "n/a",
+      "expect": "the 'more' menu contains a copy action"
+    }
+  ]
+}

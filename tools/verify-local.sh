@@ -147,6 +147,7 @@ CAPABILITIES=(
     "review-history||tests/e2e/review_history_matrix.py"
     "review-recycle||tests/e2e/review_recycle_matrix.py"
     "review-share||tests/e2e/review_share_matrix.py"
+    "favorites|CF_ENABLE_FAVORITES_ID|tests/e2e/favorites_matrix.py"
 )
 
 # 由 capability 阶段设置：要在 .env 里打开的开关。

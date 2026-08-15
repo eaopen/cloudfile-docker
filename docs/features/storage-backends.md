@@ -83,14 +83,29 @@ CloudFile 支持管理员通过 `RepoStorageId`/迁移工具为不同资料库�
 把“按库选择”扩大解释为已经提供用户自助选择、角色分配或按 Repo ID 自动均衡。后续应在
 CE 可用的独立分配层上补齐新建库入口和 E2E，不改变已验证的路由契约。
 
-**新建库自助分配的根因不在前端，而是 CE fork 缺 `create_repo(storage_id=…)` 这条链路**：
-`seahub/api2/views.py::Repos._create_repo` 与 `seahub/utils/repo.py::get_library_storages`
-都有 `is_pro_version()` 门控；即便解开门控，CloudFile 的 C `seafile_create_repo`
-（`common/rpc-service.c`）与 Python `rpcclient.seafile_create_repo` 签名都没有
-`storage_id`，`seaserv.api.create_repo(storage_id=…)` 的该参数当前被静默丢弃。因此自助
-分配需要四处一致改动：C RPC 签名 + `seaf_repo_manager_create_new_repo` 写 `RepoStorageId`
-+ Python rpcclient/seaserv 透传 + Seahub 解开门控/暴露列表 + 前端下拉，并配 MinIO 起栈
-验证。这是一项超出单轮预算的跨层 P2 改动，登记为剩余工作而非环境/上游阻塞。
+## 新建库自助分配：后端 + API 方案（不实现 UI）
+
+自助分配的根因不在前端，而是 CE fork 缺存储类 RPC。已按「后端优先、不实现 UI」落地：
+
+- **C 侧**（`cloudfile-server`，新文件 `common/cf-storage.{c,h}`）：
+  - `cf_get_storage_classes_json()` —— 读 `[storage] storage_classes_file`，返回
+    `[{"storage_id","storage_name","is_default"},…]` 的 JSON 字符串；
+  - `cf_create_repo_json()` —— 收 JSON 请求（`name`/`owner`/`desc`/`passwd`/
+    `enc_version`/`storage_id`），在 `seaf_repo_manager_create_new_repo` 里**先写
+    `RepoStorageId` 再写初始 commit**，保证新库的根 commit 落在所选后端（否则
+    「先建库后改映射」会让根 commit 留在默认类、按映射读不到）。
+- **RPC 名**：`cf_get_storage_classes`（`string→string` 返回 JSON）、`cf_create_repo`
+  （`string→string`，收 JSON 返回 repo_id）。searpc 无 8 参签名，故建库走 JSON 单参
+  而非给上游 `seafile_create_repo` 加第 9 参。
+- **Python 透传**：`rpcclient` + `seaserv.get_storage_classes()` / `create_repo_with_storage()`。
+- **Seahub API**（`cloudfile_ext/storage/`，`CF_ENABLE_S3_STORAGE` 门控）：
+  - `GET  /api/v2.1/cloudfile/storage-classes/` 列出存储类；
+  - `POST /api/v2.1/cloudfile/repos/` 建库并按 `storage_id` 固定存储类。
+- **不实现前端下拉**；`is_pro_version()` 门控的 `get_library_storages`/`_create_repo` 不解除，
+  自助分配走 CloudFile 独立端点，避免上游 patch。
+
+前端下拉、按角色/Repo ID 自动分配，以及配 MinIO 起栈的端到端复验仍待后续；本方案
+先闭合「列出存储类 + 按存储类建库」的后端与 API。
 
 ## 已有资料库迁移
 

@@ -1,7 +1,9 @@
 name: 搜索 review 验收矩阵
 
-# P2-02 契约门禁：把评审清单「搜索」的设计描述转成可计数的机器用例，先红后绿。
-# 名称匹配为 CE/SeaSearch 原生；类型/位置/标签/创建人/更新时间筛选与权限裁剪为待落地项（P2-03）。
+# P2-02 契约门禁 + P2-09 收口：名称匹配走 SeaSearch 原生路径；类型/位置/时间
+# 筛选用上游参数；标签/创建人筛选需要 CF_PROVIDER_SEARCH=meilisearch（结构化
+# 过滤器只有 CloudFile provider 能表达）——所以直接以 meilisearch provider 起
+# 栈并手动跑一轮 cf_worker --once 回填索引（同 search-e2e.yml phase 2 的做法）。
 on:
   push:
     branches: [dev]
@@ -61,9 +63,13 @@ jobs:
             echo "INIT_SS_ADMIN_PASSWORD=CloudFile-CI-Search-4417"
             echo "CF_SEASEARCH_TOKEN=Y2Ytc2VhcmNoLWFkbWluOkNsb3VkRmlsZS1DSS1TZWFyY2gtNDQxNw=="
             echo "CF_SEASEARCH_INTERVAL=10s"
+            echo "MEILI_MASTER_KEY=CloudFile-CI-Search-4417"
+            echo "CF_MEILISEARCH_API_KEY=CloudFile-CI-Search-4417"
+            echo "CF_SEARCH_INDEX_INTERVAL=15"
+            echo "CF_PROVIDER_SEARCH=meilisearch"
           } >> .env
           docker compose up -d
-          docker compose --profile search up -d --wait --wait-timeout 90 seasearch
+          docker compose --profile search up -d --wait --wait-timeout 90 seasearch meilisearch
           docker compose ps
 
       - name: 原生功能未被破坏
@@ -71,6 +77,12 @@ jobs:
           python3 cloudfile-docker/tests/e2e/smoke.py \
             --url https://127.0.0.1 --insecure \
             --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
+
+      - name: 手动跑一轮索引器（回填切换前已存在的提交与标签）
+        working-directory: cloudfile-docker/deploy/compose
+        run: |
+          docker compose exec -T cloudfile bash -c \
+            '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seahub.sh python-env python3 /opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seahub/manage.py cf_worker --once'
 
       - name: 搜索 review 验收矩阵
         run: |

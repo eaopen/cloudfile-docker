@@ -96,6 +96,14 @@ P2-08 补齐评审清单「审计」段的可验收点：查询/导出接口按�
 [features/audit.md](features/audit.md) 与 [`audit_matrix.py`](../tests/e2e/audit_matrix.py)。
 文件提交变更的协议级来源（Web/桌面/移动）仍以 `commit` 呈现，需 seafevents 改动才能细分。
 
+P2-09 已把搜索模块的 api 用例（search-001～search-007）做成绿：类型/位置/更新时间
+筛选由上游参数（`obj_type`/`search_path`/`time_from`）表达，标签/创建人筛选由
+`tags`/`creator_emails` 参数转结构化过滤器（需 `CF_PROVIDER_SEARCH=meilisearch`，
+矩阵门禁以该 provider 起栈并跑一轮 `cf_worker --once` 回填索引）；`matched_tags`
+信号已由 provider 返回。实现见 [features/search.md](features/search.md) 与
+[`review_search_matrix.py`](../tests/e2e/review_search_matrix.py)。标签命中徽标与
+文件夹「打开/定位到目录树」仍是浏览器用例（channel: `ui`）。
+
 P2-06 已把复制/移动模块的 api 用例（copy-001～copy-007、move-001～move-007）做成绿：
 开启 `CF_ENABLE_FILEOPS` 后 `fileops/copy` 与 `fileops/move` 被影子成统一预检查——权限
 否定（来源/目标）走目录 ACL 收紧、跨 owner 移动要求源库 admin、移动返回

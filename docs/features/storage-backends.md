@@ -83,6 +83,15 @@ CloudFile 支持管理员通过 `RepoStorageId`/迁移工具为不同资料库�
 把“按库选择”扩大解释为已经提供用户自助选择、角色分配或按 Repo ID 自动均衡。后续应在
 CE 可用的独立分配层上补齐新建库入口和 E2E，不改变已验证的路由契约。
 
+**新建库自助分配的根因不在前端，而是 CE fork 缺 `create_repo(storage_id=…)` 这条链路**：
+`seahub/api2/views.py::Repos._create_repo` 与 `seahub/utils/repo.py::get_library_storages`
+都有 `is_pro_version()` 门控；即便解开门控，CloudFile 的 C `seafile_create_repo`
+（`common/rpc-service.c`）与 Python `rpcclient.seafile_create_repo` 签名都没有
+`storage_id`，`seaserv.api.create_repo(storage_id=…)` 的该参数当前被静默丢弃。因此自助
+分配需要四处一致改动：C RPC 签名 + `seaf_repo_manager_create_new_repo` 写 `RepoStorageId`
++ Python rpcclient/seaserv 透传 + Seahub 解开门控/暴露列表 + 前端下拉，并配 MinIO 起栈
+验证。这是一项超出单轮预算的跨层 P2 改动，登记为剩余工作而非环境/上游阻塞。
+
 ## 已有资料库迁移
 
 迁移必须停止 `cloudfile` 服务后执行：

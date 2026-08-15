@@ -26,9 +26,10 @@ search-e2e.yml 编排，这份脚本本身不改配置、不重启容器）：
                "每次启动都执行"这个改动本身要证明的事：开关反复切换必须真的
                生效，而不是被 init_seafile_server() 提前返回吃掉。
 
-矩阵同时建立跨用户 rw 共享和 invisible 目录，用同一关键词的可见/隐藏
-文件做对照，分别在 SeaSearch 与 Meilisearch 路径断言目录 ACL 零泄漏。
-管理员必须先能搜到两个文件，避免“隐藏文件未被索引”的假阳性。
+矩阵同时建立跨用户 rw 共享，以及 invisible 和 none 两种目录 ACL，用
+同一关键词的可见/隐藏/无权文件做对照，分别在 SeaSearch 与 Meilisearch
+路径断言目录 ACL 零泄漏。管理员必须先能搜到全部对照文件，避免“隐藏
+文件未被索引”的假阳性。
 """
 
 import argparse
@@ -158,14 +159,17 @@ def resolve_identity(base, token, email, context):
     return None
 
 
-def check_acl_search(base, token, marker, visible_name, hidden_name, context,
+def check_acl_search(base, token, marker, visible_name, hidden_names, context,
                      backend):
     status, parsed, raw = search_until_found(base, token, marker, context,
                                               POLL_SECONDS)
     names = result_names(parsed)
+    if isinstance(hidden_names, str):
+        hidden_names = [hidden_names]
+    leaks = [n for n in hidden_names if n in names]
     return check(
-        '%s 检索遵守目录 ACL：可读命中、invisible 零泄漏' % backend,
-        status == 200 and visible_name in names and hidden_name not in names,
+        '%s 检索遵守目录 ACL：可读命中、invisible/none 零泄漏' % backend,
+        status == 200 and visible_name in names and not leaks,
         'status=%s names=%s body=%s' % (status, names, raw[:300]))
 
 
@@ -211,19 +215,23 @@ def phase1(base, admin, password, context, state_file):
     b_id = resolve_identity(base, token, B_EMAIL, context)
     if not b_id:
         return check('解析 ACL 验收用户身份', False)
-    for folder in ('visible', 'hidden'):
+    for folder in ('visible', 'hidden', 'noperm'):
         request(base + '/api2/repos/%s/dir/?p=/%s' % (repo_id, folder),
                 method='POST', token=token, form={'operation': 'mkdir'},
                 context=context)
     acl_marker = 'cfsearch-acl-' + tag
     visible_name = 'acl-visible-%s.txt' % tag
     hidden_name = 'acl-hidden-%s.txt' % tag
+    noperm_name = 'acl-noperm-%s.txt' % tag
     ok, detail = upload(base, token, repo_id, visible_name,
                         'shared marker %s\n' % acl_marker, context, '/visible')
     passed &= check('上传 ACL 可见文件', ok, detail)
     ok, detail = upload(base, token, repo_id, hidden_name,
                         'shared marker %s\n' % acl_marker, context, '/hidden')
     passed &= check('上传 ACL 隐藏文件', ok, detail)
+    ok, detail = upload(base, token, repo_id, noperm_name,
+                        'shared marker %s\n' % acl_marker, context, '/noperm')
+    passed &= check('上传 ACL 无权文件', ok, detail)
     status, body = request(
         base + '/api2/repos/%s/dir/shared_items/?p=/' % repo_id,
         method='PUT', token=token,
@@ -239,6 +247,14 @@ def phase1(base, admin, password, context, state_file):
               'subject': B_EMAIL, 'permission': 'invisible',
               'inherit': 'true'}, context=context)
     passed &= check('下发 invisible 目录 ACL', status == 200,
+                    'status=%s %s' % (status, body[:300]))
+    status, body = request(
+        base + '/api/v2.1/cloudfile/repos/%s/dir-acl/' % repo_id,
+        method='POST', token=token,
+        form={'path': '/noperm', 'subject_type': 'user',
+              'subject': B_EMAIL, 'permission': 'none',
+              'inherit': 'true'}, context=context)
+    passed &= check('下发 none 目录 ACL', status == 200,
                     'status=%s %s' % (status, body[:300]))
 
     status, parsed, raw = search_until_found(base, token, alpha_marker, context, POLL_SECONDS)
@@ -256,11 +272,12 @@ def phase1(base, admin, password, context, state_file):
     status, parsed, raw = search_until_found(base, token, acl_marker, context,
                                               POLL_SECONDS)
     names = result_names(parsed)
-    passed &= check('SeaSearch 索引中同时存在 ACL 两个对照文件',
-                    status == 200 and visible_name in names and hidden_name in names,
+    passed &= check('SeaSearch 索引中同时存在 ACL 三个对照文件',
+                    status == 200 and visible_name in names
+                    and hidden_name in names and noperm_name in names,
                     'status=%s names=%s body=%s' % (status, names, raw[:300]))
     passed &= check_acl_search(base, b_token, acl_marker, visible_name,
-                               hidden_name, context, 'SeaSearch')
+                               [hidden_name, noperm_name], context, 'SeaSearch')
 
     if passed:
         with open(state_file, 'w') as fh:
@@ -268,7 +285,8 @@ def phase1(base, admin, password, context, state_file):
                       'alpha_name': alpha_name, 'beta_marker': beta_marker,
                       'beta_name': beta_name, 'acl_marker': acl_marker,
                       'visible_name': visible_name,
-                      'hidden_name': hidden_name}, fh)
+                      'hidden_name': hidden_name,
+                      'noperm_name': noperm_name}, fh)
 
     print('\n════════ phase 1 %s ════════' % ('通过' if passed else '失败'))
     return passed
@@ -307,7 +325,8 @@ def phase2(base, admin, password, context, state_file):
     if b_token:
         passed &= check_acl_search(
             base, b_token, state['acl_marker'], state['visible_name'],
-            state['hidden_name'], context, 'Meilisearch')
+            [state['hidden_name'], state['noperm_name']], context,
+            'Meilisearch')
 
     print('\n════════ phase 2 %s ════════' % ('通过' if passed else '失败'))
     return passed

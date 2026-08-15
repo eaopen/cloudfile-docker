@@ -25,7 +25,7 @@
 | 3 | 写入生命周期与锁 MVP | 统一 Web、同步和 WebDAV 的写入/租约终判 | `cf-lock`、签入签出和冲突/恢复路径共享同一代际围栏，并有跨协议验收 |
 | 4 | 目录/文件操作日志完整性 | 依赖已确认的写入事件源，不建立平行审计流 | 创建、修改、删除、重命名、移动、恢复在 Web、WebDAV、同步客户端可查询为同一提交变更 |
 | 5 | 元数据与目录/文件标签闭环 | 复用 CE Metadata Server、`repo_metadata` 和标签 API；受 ACL 约束 | 固定可发布镜像，验证绑定、反查、移动、删除/恢复、权限和升级/备份/故障恢复 |
-| 6 | 搜索 ACL 一致性 | 依赖目录 ACL 终判；先处理 SeaSearch `invisible` 过滤边界 | 跨用户检索不可观察到无权内容，provider 故障不降级泄露，容器 E2E 通过 |
+| 6 | 搜索 ACL 一致性 | 依赖目录 ACL 终判；已在结果层统一裁剪 `invisible`/`none`（复用 acl resolver，fail closed） | 跨用户检索不可观察到无权内容，provider 故障不降级泄露，容器 E2E 通过 |
 | 7 | OnlyOffice 安全编辑 MVP | 依赖锁和写入生命周期；Docker 启动配置已验证 | JWT 回调认证、受信下载、重试幂等、锁协同和 Document Server 容器 E2E 均通过 |
 | 8 | 本地应用编辑 MVP | 复用现有 Local Agent 与 Chrome Extension；依赖短时会话和写入终判 | 下载—编辑—心跳—写回—冲突恢复 E2E；再分别产出 Windows/macOS/Linux 签名与升级方案 |
 | 9 | 既有外部服务的运行验收 | 外部资料源、Seafile AI、转换/导出和多存储自助分配均在既有架构内改进 | 每项分别完成 profile、故障、权限和运维恢复验证；S3 兼容性仍只声明 MinIO |

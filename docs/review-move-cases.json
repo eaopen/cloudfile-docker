@@ -68,6 +68,14 @@
       "channel": "api",
       "perm": "rw",
       "expect": "fileops/move with preview=true returns affected_members and leaves the source file in place"
+    },
+    {
+      "id": "move-009",
+      "name": "batch move preview evaluates the whole selection",
+      "review": "复制/移动 v2.1 批量入口：一次预检覆盖所选全部条目",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "fileops/move with src_dirents + preview=true reports item_count = number of entries and leaves every source item in place"
     }
   ]
 }

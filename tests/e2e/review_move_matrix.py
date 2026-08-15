@@ -40,6 +40,20 @@ def move_item(ctx, token, src_repo, src_parent, src_name, dst_repo, dst_parent,
                        payload)
 
 
+def move_batch(ctx, token, src_repo, src_parent, src_names, dst_repo, dst_parent,
+               dirent_type='file', preview=False):
+    """The v2.1 batch entry: one precheck over ``src_dirents`` (what the move
+    dialog now sends when several items are selected)."""
+    payload = {'src_repo_id': src_repo, 'src_parent_dir': src_parent,
+               'src_dirents': src_names, 'dst_repo_id': dst_repo,
+               'dst_parent_dir': dst_parent, 'operation': 'move',
+               'dirent_type': dirent_type}
+    if preview:
+        payload['preview'] = True
+    return H.post_json(ctx, token, f'/api2/repos/{src_repo}/fileops/move/',
+                       payload)
+
+
 def list_dir(ctx, token, repo_id, path):
     import urllib.parse
     status, body = ctx.api(
@@ -144,10 +158,25 @@ def build_executors(ctx, fix):
         return ok, (f'preview affected_members={hint!r} status={status} '
                     f'仍留在源目录={still_at_src} 未落到目标={not_in_dst}')
 
+    def move_009():
+        # Batch preview must count the whole selection and leave it untouched.
+        # m2.txt (move-002 got 403) and m3.txt (move-008 previewed) both stay.
+        names = ['m2.txt', 'm3.txt']
+        status, body = move_batch(ctx, b_token, repo_id, '/tree', names,
+                                  repo_id, '/dst', preview=True)
+        data = H.json_body(body) or {}
+        hint = data.get('affected_members')
+        item_count = data.get('item_count')
+        still = all(n in list_dir(ctx, b_token, repo_id, '/tree') for n in names)
+        ok = (status == 200 and isinstance(hint, int) and hint >= 1
+              and item_count == len(names) and still)
+        return ok, (f'batch preview item_count={item_count} '
+                    f'affected_members={hint!r} status={status} 全部留在源目录={still}')
+
     return {
         'move-001': move_001, 'move-002': move_002, 'move-003': move_003,
         'move-004': move_004, 'move-005': move_005, 'move-006': move_006,
-        'move-007': move_007, 'move-008': move_008,
+        'move-007': move_007, 'move-008': move_008, 'move-009': move_009,
     }
 
 

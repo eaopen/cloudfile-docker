@@ -57,13 +57,13 @@
 | 树结构 tree | 1 | 3 | 4 |
 | 图标视图 icon | 0 | 5 | 5 |
 | 复制 copy | 7 | 0 | 7 |
-| 移动 move | 8 | 0 | 8 |
+| 移动 move | 9 | 0 | 9 |
 | 标签 tags | 5 | 4 | 9 |
 | 搜索 search | 7 | 2 | 9 |
 | 操作历史 history | 7 | 0 | 7 |
 | 回收站 recycle | 2 | 0 | 2 |
 | 外部分享 share | 3 | 1 | 4 |
-| **合计** | **40** | **15** | **55** |
+| **合计** | **41** | **15** | **56** |
 
 ## 4. 验证与运行
 
@@ -104,14 +104,16 @@ P2-09 已把搜索模块的 api 用例（search-001～search-007）做成绿：�
 [`review_search_matrix.py`](../tests/e2e/review_search_matrix.py)。标签命中徽标与
 文件夹「打开/定位到目录树」仍是浏览器用例（channel: `ui`）。
 
-P2-06 已把复制/移动模块的 api 用例（copy-001～copy-007、move-001～move-007）做成绿：
+P2-06 已把复制/移动模块的 api 用例（copy-001～copy-007、move-001～move-009）做成绿：
 开启 `CF_ENABLE_FILEOPS` 后 `fileops/copy` 与 `fileops/move` 被影子成统一预检查——权限
 否定（来源/目标）走目录 ACL 收紧、跨 owner 移动要求源库 admin、移动返回
 `affected_members`、循环移动 400、同名冲突默认 rename、`cf_fileop_task` 幂等去重、大小/
 层级逐项进失败清单、配额 443。实现见 [features/fileops.md](features/fileops.md) 与
 [`review_copy_matrix.py`](../tests/e2e/review_copy_matrix.py)、
 [`review_move_matrix.py`](../tests/e2e/review_move_matrix.py)。移动确认框的 UI 提示
-与 v2.1 批量入口仍是后续工作。
+（`move-permission-confirm-dialog.js`，preview 不落库）与 v2.1 批量入口均已接上：批量
+移动时前端把整份选中项经 `fileops/move` 的 `src_dirents` 契约一次性预检（move-009），
+而不是只预检第一项；开关关闭时保持原生 CE 行为。
 
 P2-05 已把树结构/移动模块里「收藏跟随对象」这条做成绿：开启 `CF_ENABLE_FAVORITES_ID`
 后收藏身份改为 `(email, org_id, obj_id)`，移动/重命名不再靠 `repo_id + path` 改写去追，

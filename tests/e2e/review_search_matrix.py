@@ -104,6 +104,11 @@ def setup(ctx, admin_token):
             {'file_path': '/alpha.txt', 'repo_tag_id': tag_id})
     print(f'  预置标签 tag_id={tag_id} 绑定 status={status}', flush=True)
 
+    # seafevents writes Activity rows asynchronously (batch merging has its
+    # own window), so a single indexer pass can miss late rows. Run the
+    # indexer, let the events settle, then run it again.
+    run_indexer_once()
+    time.sleep(15)
     run_indexer_once()
 
     return {'repo_id': repo_id, 'b_token': b_token,
@@ -164,8 +169,9 @@ def build_executors(ctx, fix):
 
     def search_003():
         # search_path narrows to folder-alpha: nested.txt in, alpha.txt out.
+        # Query 'nested' so only the file inside the folder can match.
         def probe():
-            status, found = names(b_token, 'alpha', search_repo=repo_id,
+            status, found = names(b_token, 'nested', search_repo=repo_id,
                                   search_path='/folder-alpha')
             paths = [n for n in found]
             return ('nested' in ' '.join(paths) and

@@ -63,3 +63,18 @@
   14.0 的 `RepoMetadata` 模型无条件读 `summary_enabled` 列，但建表 SQL 缺该列，导致
   基线（开关全关）时前端目录视图（`/api/v2.1/repos/{id}/dir/`）500。现在每次启动
   无条件补齐该列（缺列时 ALTER，幂等），基线目录视图恢复 200。
+
+## 未完成与阻塞项（2026-08-15 复核）
+
+按特性清单逐项登记尚未闭环的条目，给出可复现现状与阻塞原因。已完成条目的验证见上文
+各能力行与 `docs/review-cases.md`。
+
+| 清单项 | 现状 | 阻塞/缺口原因 |
+|---|---|---|
+| OnlyOffice 浏览器内编辑会话（编辑-保存-重试去重） | 回调守卫已容器验证（`office_matrix.py`：路由挂载/convert 往返/无签名回调拒绝/status 6 重投递不 500）+ 纯规则单测（`cloudfile_ext/office` `dedupe_key`）；浏览器内真实编辑会话（打开编辑器、输入、保存、验证只落一个版本）仍待补 | 需真实 Document Server 8.2 镜像 + 浏览器自动化第三方编辑器 iframe；本机镜像曾被 `docker image prune` 释放，编辑器 iframe 自动化脆弱。CloudFile 侧交付物（回调校验 + 保存幂等）已覆盖，浏览器会话主要验证第三方编辑器自身保存流程 |
+| Authentik 登录/登出/故障恢复 E2E | OAuth/OIDC 配置翻译、TLS、RP 发起登出、首次用户策略已在启动阶段验证（`test-bootstrap-settings.py`） | 缺真实 Authentik 2026.5.6 服务做登录/登出/故障恢复容器 E2E（外部服务） |
+| 本地 Agent 三平台签名与升级 | 下载-领取-编辑-写回容器矩阵 14/14 通过 | 缺代码签名发布包与跨平台升级；需要签名密钥（未提供） |
+| 转换导出 / Seafile AI 完整 E2E | `ai`/`office` profile、`CF_AI_*`、转换导出 JWT 配置与 UI 接线存在 | 完整 E2E 需 SeaDoc 2.0 + 外部 LLM 端点；当前仓无容器 E2E 结果 |
+| S3 新建库自助分配 UI | 多存储后端 + 离线迁移 + 管理员按库分配已完成（`storage_matrix.py`） | 新建库自助选择/自动分配 UI 未接；上游 Seahub 该 UI 受 Pro 角色 `storage_ids()` 判断门控，CloudFile 未解除或替换（后端权限解除 + 前端下拉，P2 全栈改动） |
+| 审计 `client_ip`/`device`/`request_id` | 提交变更来源协议级（Web/桌面/移动）以 `commit` 呈现 | 细分来源需 seafevents 改动（上游） |
+| 外部资料联邦独立项目规划 | 规划文档已存在（`features/external-directory-mount.md`） | 按决策作为独立项目，当前仓无实现 |

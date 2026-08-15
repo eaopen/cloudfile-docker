@@ -7,12 +7,11 @@ re-importing the whole review_harness machinery.
 
 import argparse
 import os
-import ssl
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from review_harness import request
+import review_harness as H
 
 
 def main():
@@ -23,12 +22,11 @@ def main():
 
     # The stack serves a self-signed cert (CADDY_TLS=internal); the CLI is
     # only used against local stacks, so always trust it.
-    from review_harness import _SSL_CONTEXT
-    _SSL_CONTEXT = ssl._create_unverified_context()
+    H.allow_insecure()
 
     deadline = time.time() + args.timeout
     while time.time() < deadline:
-        status, body = request(args.url.rstrip('/') + '/api2/ping/')
+        status, body = H.request(args.url.rstrip('/') + '/api2/ping/')
         if status == 200 and 'pong' in body:
             print('就绪', flush=True)
             return 0

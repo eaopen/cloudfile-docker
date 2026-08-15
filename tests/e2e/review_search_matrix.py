@@ -53,7 +53,9 @@ def run_indexer_once():
     will then surface the absence with a clear reason.
     """
     import subprocess
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # tests/e2e/review_search_matrix.py -> cloudfile-docker (three levels).
+    repo_root = os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__))))
     compose_dir = os.path.join(repo_root, 'deploy', 'compose')
     cmd = ['docker', 'compose', 'exec', '-T', 'cloudfile', 'bash', '-c',
            '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seahub.sh '

@@ -10,11 +10,15 @@ convert 端点真的从 Document Server 拿回转换结果、回调影子端点�
 由 lock_matrix 覆盖；这里只测 OnlyOffice 自己的通路。
 """
 
+import http.cookiejar
 import json
 import os
+import re
 import sys
 import time
+import urllib.error
 import urllib.parse
+import urllib.request as urlreq
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import review_harness as H
@@ -27,6 +31,43 @@ JWT_SECRET = os.environ.get('ONLYOFFICE_JWT_SECRET', 'CloudFile-CI-Office-4417')
 def record(case, ok, detail=''):
     print(('  PASS ' if ok else '  FAIL ') + f'[{case}] {detail}', flush=True)
     return ok
+
+
+def web_session():
+    """Return an opener that keeps a session cookie jar and honours --insecure.
+
+    The file-view page is a session-authenticated Django view (not a DRF token
+    endpoint), so the API token used everywhere else does not apply here. This
+    opener carries the login cookie instead, so the matrix can assert that the
+    edit page HTML really carries the OnlyOffice config.
+    """
+    cj = http.cookiejar.CookieJar()
+    handlers = [urlreq.HTTPCookieProcessor(cj)]
+    if H._SSL_CONTEXT is not None:
+        handlers.append(urlreq.HTTPSHandler(context=H._SSL_CONTEXT))
+    return urlreq.build_opener(*handlers)
+
+
+def web_login(base, email, password):
+    """POST the web login form and return an authenticated opener."""
+    opener = web_session()
+    try:
+        page = opener.open(base + '/accounts/login/', timeout=60).read() \
+            .decode(errors='replace')
+    except urllib.error.HTTPError as exc:
+        page = exc.read().decode(errors='replace')
+    match = re.search(r'name="csrfmiddlewaretoken"\s+value="([^"]+)"', page)
+    csrf = match.group(1) if match else ''
+    form = urllib.parse.urlencode({
+        'login': email, 'password': password, 'csrfmiddlewaretoken': csrf,
+    }).encode()
+    req = urlreq.Request(base + '/accounts/login/', data=form, headers={
+        'Content-Type': 'application/x-www-form-urlencoded'})
+    try:
+        opener.open(req, timeout=60)
+    except urllib.error.HTTPError:
+        pass  # a 302 after login surfaces as HTTPError on the redirect target
+    return opener
 
 def convert(ctx, token, repo_id, path):
     return H.post_json(ctx, token, '/onlyoffice-api/convert/',
@@ -115,6 +156,26 @@ def main():
     passed &= record('convert 经 Document Server 返回结果',
                      status == 200 and converted,
                      f'status={status} body={str(body)[:160]}')
+
+    # 2.5 The edit page really renders the OnlyOffice editor config. The file
+    #     view is a session view, so this logs in via the web form (not the API
+    #     token) and checks the inline config carries the doc key, the callback
+    #     URL and the DocsAPI init — i.e. the "edit" entry is live, not just a
+    #     mounted route.
+    opener = web_login(ctx.base, args.admin, args.admin_password)
+    try:
+        edit_page = opener.open(f'{ctx.base}/lib/{repo_id}/file/report.docx',
+                                timeout=60).read().decode(errors='replace')
+        edit_status = 200
+    except urllib.error.HTTPError as exc:
+        edit_status = exc.code
+        edit_page = exc.read().decode(errors='replace')
+    has_config = ('callbackUrl' in edit_page
+                  and 'DocsAPI.DocEditor' in edit_page)
+    passed &= record('编辑页 HTML 带 OnlyOffice 配置',
+                     edit_status == 200 and has_config,
+                     f'status={edit_status} callbackUrl={"callbackUrl" in edit_page} '
+                     f'DocEditor={"DocsAPI.DocEditor" in edit_page}')
 
     # 3. The shadowed callback rejects an unsigned save callback outright.
     status, body = post_callback(ctx, admin_token,

@@ -62,8 +62,10 @@ def setup(ctx, admin_token):
                                {'name': 'contract', 'color': '#ff0000'})
     tag_id = None
     if status in (200, 201):
-        tag_id = (H.json_body(body) or {}).get('repo_tag_id') \
-            or (H.json_body(body) or {}).get('id')
+        tag_data = H.json_body(body) or {}
+        # P2-07 endpoint wraps the created tag in {"repo_tag": {...}}.
+        tag_id = (tag_data.get('repo_tag') or {}).get('repo_tag_id') \
+            or tag_data.get('repo_tag_id') or tag_data.get('id')
     if tag_id:
         status, body = H.post_json(
             ctx, admin_token, f'/api/v2.1/repos/{repo_id}/file-tags/',
@@ -103,9 +105,16 @@ def build_executors(ctx, fix):
         return False, last[1] if last else f'{what}: no result'
 
     def search_001():
-        status, found = names(b_token, 'alpha')
-        ok = any('alpha' in n for n in found)
-        return ok, f'search alpha status={status}, names={found}'
+        # The matrix creates its own fixtures after the orchestration's
+        # cf_worker --once pass; the periodic indexer
+        # (CF_SEARCH_INDEX_INTERVAL) picks them up, so poll like the other
+        # cases instead of asserting on the very first request.
+        def probe():
+            status, found = names(b_token, 'alpha')
+            return (any('alpha' in n for n in found),
+                    f'search alpha status={status}, names={found}')
+        ok, detail = wait_for(probe, 'alpha search')
+        return ok, detail
 
     def search_002():
         # obj_type: only files match the review's "type" filter; CE folders

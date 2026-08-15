@@ -91,7 +91,8 @@ def build_executors(ctx, fix):
     def tags_001():
         status, body = create_tag(ctx, repo_id, b_token, 'user-tag-1')
         _, tags = list_tags(ctx, repo_id, b_token)
-        found = any(t.get('name') == 'user-tag-1' for t in tags if isinstance(t, dict))
+        found = any((t.get('tag_name') or t.get('name')) == 'user-tag-1'
+                    for t in tags if isinstance(t, dict))
         return found, f'create status={status}, tags={tags}'
 
     def tags_002():
@@ -99,7 +100,7 @@ def build_executors(ctx, fix):
         _, tags = list_tags(ctx, repo_id, b_token)
         system_id = None
         for t in tags:
-            if isinstance(t, dict) and t.get('name') == SYSTEM_TAG:
+            if isinstance(t, dict) and (t.get('tag_name') or t.get('name')) == SYSTEM_TAG:
                 system_id = t.get('repo_tag_id') or t.get('id')
         if system_id is None:
             return False, f'预置系统标签 {SYSTEM_TAG} 未找到: {tags}'

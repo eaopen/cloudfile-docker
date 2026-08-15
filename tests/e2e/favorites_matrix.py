@@ -35,13 +35,21 @@ def build_executors(ctx, fix):
     admin_token = fix['admin_token']
 
     def star(path):
-        return ctx.api('/api2/starredfiles/', method='POST',
+        return ctx.api('/api/v2.1/starred-items/', method='POST',
                        form={'repo_id': repo_id, 'path': path},
                        token=admin_token)
 
     def starred():
-        status, body = ctx.api('/api2/starredfiles/', token=admin_token)
+        status, body = ctx.api('/api/v2.1/starred-items/', token=admin_token)
         return status, (H.json_body(body) or [])
+
+    def move_file(path, dst_dir):
+        return H.post_json(ctx, admin_token,
+                           f'/api2/repos/{repo_id}/fileops/move/',
+                           {'src_repo_id': repo_id, 'src_parent_dir': '/',
+                            'src_dirent_name': path.lstrip('/'),
+                            'dst_repo_id': repo_id, 'dst_parent_dir': dst_dir,
+                            'operation': 'move', 'dirent_type': 'file'})
 
     def fav_001():
         status, _ = star('/fav.txt')
@@ -53,12 +61,8 @@ def build_executors(ctx, fix):
 
     def fav_002():
         star('/fav.txt')
-        status, body = ctx.api(
-            f'/api2/repos/{repo_id}/file/?p=/fav.txt', method='POST',
-            form={'operation': 'move', 'dst_repo_id': repo_id,
-                  'dst_dir': '/dest'},
-            token=admin_token)
-        if status != 200:
+        status, body = move_file('/fav.txt', '/dest')
+        if status not in (200, 201):
             return False, f'移动失败 status={status} {body[:160]}'
         s2, items = starred()
         moved = any(it.get('repo_id') == repo_id and

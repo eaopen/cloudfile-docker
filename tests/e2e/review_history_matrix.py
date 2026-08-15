@@ -37,13 +37,13 @@ def setup(ctx, admin_token):
     b_id = H.resolve_identity(ctx, B_EMAIL)
     H.share_repo(ctx, admin_token, repo_id, b_id, 'rw')
     H.upload_file(ctx, admin_token, repo_id, '/', 'f.txt', b'v1')
-    H.upload_file(ctx, admin_token, repo_id, '/', 'f.txt', b'v2')
+    H.upload_file(ctx, admin_token, repo_id, '/', 'f.txt', b'v2', replace='1')
     H.mkdir(ctx, admin_token, repo_id, 'docs')
     H.upload_file(ctx, admin_token, repo_id, '/docs', 'a.txt', b'a')
     H.mkdir(ctx, admin_token, repo_id, 'docs/sub')
     H.upload_file(ctx, admin_token, repo_id, '/docs/sub', 'b.txt', b'b')
     # The rw user owns the newest f.txt revision.
-    H.upload_file(ctx, b_token, repo_id, '/', 'f.txt', b'v3')
+    H.upload_file(ctx, b_token, repo_id, '/', 'f.txt', b'v3', replace='1')
     return {'repo_id': repo_id, 'b_token': b_token}
 
 

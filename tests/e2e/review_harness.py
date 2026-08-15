@@ -206,8 +206,13 @@ def multipart(fields, filename, content):
     return body, f'multipart/form-data; boundary={boundary}'
 
 
-def upload_file(ctx, token, repo_id, parent_dir, name, content=b'x'):
-    """Upload a small file via the Go fileserver upload-link."""
+def upload_file(ctx, token, repo_id, parent_dir, name, content=b'x',
+                replace='0'):
+    """Upload a small file via the Go fileserver upload-link.
+
+    ``replace`` defaults to '0' (do not overwrite); pass '1' to create a new
+    revision of an existing file (needed by the history matrix).
+    """
     status, body = ctx.api(
         f'/api2/repos/{repo_id}/upload-link/?p={urllib.parse.quote(parent_dir)}',
         token=token)
@@ -215,7 +220,7 @@ def upload_file(ctx, token, repo_id, parent_dir, name, content=b'x'):
     if status != 200 or not url.startswith('http'):
         return 0, f'取上传链接失败 status={status} {body[:160]}'
     data, ctype = multipart(
-        {'parent_dir': parent_dir, 'replace': '0'}, name, content)
+        {'parent_dir': parent_dir, 'replace': replace}, name, content)
     return request(url, method='POST', data=data, token=token,
                    headers={'Content-Type': ctype})
 

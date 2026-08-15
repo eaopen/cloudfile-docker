@@ -38,7 +38,8 @@ def build_executors(ctx, fix):
     admin_token = fix['admin_token']
 
     def trash(token):
-        status, body = ctx.api(f'/api2/repos/{repo_id}/trash/?path=/', token=token)
+        status, body = ctx.api(
+            f'/api/v2.1/repos/{repo_id}/trash/?path=/', token=token)
         data = H.json_body(body) or {}
         return status, data
 
@@ -47,8 +48,9 @@ def build_executors(ctx, fix):
         entries = data.get('data') or data.get('items') or data or []
         leaked = any((e.get('obj_name') or e.get('name')) == 'gone.txt'
                      for e in entries if isinstance(e, dict))
-        # 评审要求普通用户不可见；CE 允许查看自己的回收站，故这里「无泄漏」才算绿
-        return (not leaked), f'普通用户 trash status={status}, entries={entries}'
+        # 评审要求普通用户不可见（403 或不可达）且不泄漏任何条目
+        return (status in (401, 403, 404) and not leaked), \
+            f'普通用户 trash status={status}, entries={entries}'
 
     def recycle_003():
         status, data = trash(admin_token)

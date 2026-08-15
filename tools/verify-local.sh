@@ -137,6 +137,16 @@ CAPABILITIES=(
     "fileop|CF_FILEOP_TEST_PROVIDER|tests/e2e/fileop_matrix.py"
     "lock|CF_ENABLE_FILE_LOCK CF_ENABLE_CHECKOUT|tests/e2e/lock_matrix.py"
     "local-edit|CF_ENABLE_FILE_LOCK CF_ENABLE_LOCAL_APP|tests/e2e/local_edit_matrix.py"
+    "office|CF_ENABLE_ONLYOFFICE|tests/e2e/office_matrix.py"
+    "review-tree||tests/e2e/review_tree_matrix.py"
+    "review-icon||tests/e2e/review_icon_matrix.py"
+    "review-copy|CF_ENABLE_DIR_ACL CF_ENABLE_FILEOPS|tests/e2e/review_copy_matrix.py"
+    "review-move|CF_ENABLE_DIR_ACL CF_ENABLE_FILEOPS|tests/e2e/review_move_matrix.py"
+    "review-tags|CF_ENABLE_METADATA CF_ENABLE_TAGS|tests/e2e/review_tags_matrix.py"
+    "review-search|CF_ENABLE_DIR_ACL CF_ENABLE_SEARCH|tests/e2e/review_search_matrix.py"
+    "review-history||tests/e2e/review_history_matrix.py"
+    "review-recycle||tests/e2e/review_recycle_matrix.py"
+    "review-share||tests/e2e/review_share_matrix.py"
 )
 
 # 由 capability 阶段设置：要在 .env 里打开的开关。

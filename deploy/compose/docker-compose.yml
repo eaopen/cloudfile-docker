@@ -175,6 +175,14 @@ services:
       CF_EXTERNAL_SCAN_INTERVAL: ${CF_EXTERNAL_SCAN_INTERVAL:-60}
       CF_EXTERNAL_SCAN_MAX_DIRS: ${CF_EXTERNAL_SCAN_MAX_DIRS:-20}
       CF_EXTERNAL_SCAN_MAX_FILES: ${CF_EXTERNAL_SCAN_MAX_FILES:-2000}
+      CF_ENABLE_FILEOPS: ${CF_ENABLE_FILEOPS:-false}
+      # Copy/move unified precheck ceilings; 0 = unlimited (fileops docs).
+      CF_FILEOP_MAX_FILE_SIZE: ${CF_FILEOP_MAX_FILE_SIZE:-0}
+      CF_FILEOP_MAX_FOLDER_DEPTH: ${CF_FILEOP_MAX_FOLDER_DEPTH:-0}
+      CF_FILEOP_MAX_ITEM_COUNT: ${CF_FILEOP_MAX_ITEM_COUNT:-0}
+      CF_FILEOP_MAX_BATCH_SIZE: ${CF_FILEOP_MAX_BATCH_SIZE:-0}
+      CF_ENABLE_FAVORITES_ID: ${CF_ENABLE_FAVORITES_ID:-false}
+      CF_ENABLE_SHARE_RESTRICT: ${CF_ENABLE_SHARE_RESTRICT:-false}
       # Upstream reads these at import time. They intentionally mirror the
       # CloudFile switch rather than relying on a local settings assignment.
       ENABLE_METADATA_MANAGEMENT: ${CF_ENABLE_METADATA:-false}

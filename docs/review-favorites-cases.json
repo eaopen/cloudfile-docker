@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "module": "favorites",
+  "title": "收藏对象 ID 化（P2-05）",
+  "review": "docs/features/favorites.md — 收藏身份 (email, org_id, obj_id)，移动/重命名跟随对象",
+  "comment": "channel=api，由 favorites_matrix.py 断言；开启 CF_ENABLE_FAVORITES_ID 时运行。关闭开关时的原生 CE 收藏行为由基线 smoke 覆盖。",
+  "cases": [
+    { "id": "favorites-001", "name": "star a file and list it back",
+      "review": "收藏后可列举且路径可解析", "channel": "api", "perm": "admin",
+      "expect": "starring /fav.txt succeeds and the starred list contains repo_id + /fav.txt" },
+    { "id": "favorites-002", "name": "starred item follows a move by object id",
+      "review": "移动/重命名跟随对象", "channel": "api", "perm": "admin",
+      "expect": "after moving /fav.txt to /dest/fav.txt the starred item shows /dest/fav.txt and the old path is gone" }
+  ]
+}

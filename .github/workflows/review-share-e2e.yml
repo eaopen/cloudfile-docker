@@ -53,8 +53,10 @@ jobs:
           sed -i "s|^INIT_SEAFILE_ADMIN_EMAIL=.*|INIT_SEAFILE_ADMIN_EMAIL=$ADMIN_EMAIL|" .env
           sed -i "s|^INIT_SEAFILE_ADMIN_PASSWORD=.*|INIT_SEAFILE_ADMIN_PASSWORD=$ADMIN_PASSWORD|" .env
           sed -i "s|^CADDY_TLS=.*|CADDY_TLS=internal|" .env
-          # 外部分享管控：开关开启后断言创建被拒与旧链接匿名绕过被禁
-          echo "CF_ENABLE_SHARE_RESTRICT=true" >> .env
+          # 外部分享管控：开关开启后断言创建被拒与旧链接匿名绕过被禁。
+          # 用 sed 原位替换而不是 >> 追加：compose 对重复键取第一个，
+          # 追加会在 .env.example 的 false 之后，永远不生效。
+          sed -i "s|^CF_ENABLE_SHARE_RESTRICT=.*|CF_ENABLE_SHARE_RESTRICT=true|" .env
           echo "CLOUDFILE_IMAGE=cloudfile/cloudfile:$CF_VERSION" >> .env
           docker compose up -d
           docker compose ps

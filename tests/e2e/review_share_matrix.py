@@ -41,8 +41,9 @@ def build_executors(ctx, fix):
             f'创建外链应被拒（开关开启时非管理员）status={status} {body[:120]}'
 
     def share_003():
-        status, body = ctx.api(f'/api2/repos/{repo_id}/file/shared-link/?path=/f.txt',
-                               token=admin_token)
+        # 列表/查询端点保留：管理员仍可列出外链（CE 原生 v2.1 列表端点）。
+        status, body = ctx.api(
+            f'/api/v2.1/share-links/?repo_id={repo_id}', token=admin_token)
         return status == 200, f'share-link 列表端点保留 status={status} {body[:120]}'
 
     def share_004():

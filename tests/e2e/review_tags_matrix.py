@@ -40,18 +40,12 @@ def setup(ctx, admin_token):
     H.upload_file(ctx, admin_token, repo_id, '/', 'a.txt', b'x')
 
     # An admin-created system tag is the fixture tags-002 asserts against.
-    # Retry briefly: a freshly started stack can transiently answer 404 for a
-    # repo the API just created (entrypoint still finishing), and a missing
-    # fixture would turn tags-002 into a false negative.
-    import time as _time
-    status, body = 0, ''
-    for _ in range(3):
-        status, body = create_tag(ctx, admin_token, repo_id, SYSTEM_TAG,
-                                  is_system=True)
-        if status in (200, 201):
-            break
-        _time.sleep(5)
-    print(f'  预置系统标签 status={status} {body[:160]}', flush=True)
+    # create_tag's signature is (ctx, repo_id, token, name) -- pass the repo
+    # id before the token or the URL ends up keyed by the token (40-hex),
+    # which made this fixture 404 against the SPA catch-all on every run.
+    status, body = create_tag(ctx, repo_id, admin_token, SYSTEM_TAG,
+                              is_system=True)
+    print(f'  预置系统标签 status={status} {body[:120]}', flush=True)
 
     return {'repo_id': repo_id, 'admin_token': admin_token,
             'b_token': b_token, 'c_token': c_token}

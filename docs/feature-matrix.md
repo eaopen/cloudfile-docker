@@ -51,8 +51,9 @@
   软删除与管理员恢复验收。
 - UI 用例实现状态（2026-08-15 代码核对）：图标视图多选 5 条、树悬停更多/复制、搜索
   匹配标签徽标与文件夹定位、分享入口隐藏均已在 `frontend/src` 实现（浏览器套件
-  `review_ui_matrix.py` 已就绪）；待补：树悬停收藏按钮确认、标签锁形图标与折叠
-  （`is_system` 贯通 metadata 标签数据）。详见 review-cases.md 4.5。
+  `review_ui_matrix.py` 已就绪，且已在真实栈上验证：网格视图渲染、ctrl 离散多选通过
+  （icon-002）；框选/shift/全选的测试坐标与选择器仍需精调。待补实现：树悬停收藏按钮
+  确认、标签锁形图标与折叠（`is_system` 贯通 metadata 标签数据）。详见 review-cases.md 4.5。
 - 基线修复（2026-08-15）：`apply_metadata_schema_compatibility` 取消开关门控——上游
   14.0 的 `RepoMetadata` 模型无条件读 `summary_enabled` 列，但建表 SQL 缺该列，导致
   基线（开关全关）时前端目录视图（`/api/v2.1/repos/{id}/dir/`）500。现在每次启动

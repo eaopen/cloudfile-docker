@@ -54,7 +54,11 @@
   `review_ui_matrix.py` 已在真实栈上跑通：网格渲染、框选（icon-001）、ctrl 离散多选
   （icon-002）、shift 连续多选（icon-003）、全选（icon-004，网格视图全选控件已加）、
   批量操作栏（icon-005）均通过；tree-002 悬停收藏按钮已验证；tags-008 折叠已实现。
-  待补：标签锁形图标与排序（`is_system` 贯通 metadata 标签数据）。详见 review-cases.md 4.5。
+  标签 ui 四条（tags-006 锁形图标 / tags-007 用户在前 / tags-008 折叠 / tags-009 点击
+  仅选中）均已实现：系统/用户标签只存在于 CE `repo_tags`，故锁形图标与排序落在消费
+  `repo-tags` 的「已用标签栏」，而非 metadata 标签树（上游无 `is_system`）。复制/移动
+  v2.1 批量入口已接（批量移动整份选中项经 `fileops/move` 的 `src_dirents` 一次性预检，
+  move-009 断言）。详见 review-cases.md 4.5。
 - 基线修复（2026-08-15）：`apply_metadata_schema_compatibility` 取消开关门控——上游
   14.0 的 `RepoMetadata` 模型无条件读 `summary_enabled` 列，但建表 SQL 缺该列，导致
   基线（开关全关）时前端目录视图（`/api/v2.1/repos/{id}/dir/`）500。现在每次启动

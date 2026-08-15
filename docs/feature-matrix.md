@@ -53,3 +53,7 @@
   匹配标签徽标与文件夹定位、分享入口隐藏均已在 `frontend/src` 实现（浏览器套件
   `review_ui_matrix.py` 已就绪）；待补：树悬停收藏按钮确认、标签锁形图标与折叠
   （`is_system` 贯通 metadata 标签数据）。详见 review-cases.md 4.5。
+- 基线修复（2026-08-15）：`apply_metadata_schema_compatibility` 取消开关门控——上游
+  14.0 的 `RepoMetadata` 模型无条件读 `summary_enabled` 列，但建表 SQL 缺该列，导致
+  基线（开关全关）时前端目录视图（`/api/v2.1/repos/{id}/dir/`）500。现在每次启动
+  无条件补齐该列（缺列时 ALTER，幂等），基线目录视图恢复 200。

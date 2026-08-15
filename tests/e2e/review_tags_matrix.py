@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""标签 review 门禁（P2-02）。
+"""标签 review 门禁（P2-02 / P2-07）。
 
-对照 docs/review-tags-cases.json。CE 的 repo-tags 已有「创建需 rw」的校验，所以
-tags-003/tags-004 应为绿；系统标签、批量上限、锁形图标、排序折叠、点击不弹列表是
-待落地项（P2-07），当前应为红。
+对照 docs/review-tags-cases.json。P2-07 在 CE repo-tags 上落地系统/用户标签：
+系统标签仅 admin 可写、用户标签 rw 及以上可编辑、批量加标签受单次上限约束。
+因此 tags-001/tags-002/tags-003/tags-004/tags-005 在开启 CF_ENABLE_TAGS 的
+能力门禁里应全部为绿；锁形图标、排序折叠、点击不弹列表仍是浏览器用例。
 """
 
+import json
 import os
 import sys
 
@@ -19,6 +21,12 @@ C_PASSWORD = 'ReviewTagsC9271'
 REPO_NAME = 'review-tags'
 CASE_FILE = os.path.join('docs', 'review-tags-cases.json')
 
+# Matches CF_TAG_BATCH_LIMIT's default (cloudfile-hub
+# cloudfile_ext/settings_defaults.py). The capability gate runs with default
+# configuration, so the over-limit probe is limit+1.
+BATCH_LIMIT = 100
+SYSTEM_TAG = 'system-tag-1'
+
 
 def setup(ctx, admin_token):
     print('\n准备场景…', flush=True)
@@ -30,44 +38,94 @@ def setup(ctx, admin_token):
     H.share_repo(ctx, admin_token, repo_id, b_id, 'rw')
     H.share_repo(ctx, admin_token, repo_id, c_id, 'r')
     H.upload_file(ctx, admin_token, repo_id, '/', 'a.txt', b'x')
-    return {'repo_id': repo_id, 'b_token': b_token, 'c_token': c_token}
+
+    # An admin-created system tag is the fixture tags-002 asserts against.
+    status, body = create_tag(ctx, admin_token, repo_id, SYSTEM_TAG, is_system=True)
+    print(f'  预置系统标签 status={status}', flush=True)
+
+    return {'repo_id': repo_id, 'admin_token': admin_token,
+            'b_token': b_token, 'c_token': c_token}
+
+
+def list_tags(ctx, repo_id, token):
+    status, body = ctx.api(f'/api/v2.1/repos/{repo_id}/repo-tags/', token=token)
+    data = H.json_body(body) or {}
+    tags = data.get('repo_tags') or data.get('tags') or data or []
+    return status, tags
+
+
+def create_tag(ctx, repo_id, token, name, is_system=False):
+    payload = {'name': name, 'color': '#ff0000'}
+    if is_system:
+        payload['is_system'] = True
+    return H.post_json(ctx, token, f'/api/v2.1/repos/{repo_id}/repo-tags/',
+                       payload)
+
+
+def rename_tag(ctx, repo_id, token, tag_id, name):
+    return ctx.api(f'/api/v2.1/repos/{repo_id}/repo-tags/{tag_id}/',
+                   method='PUT', token=token,
+                   data=json.dumps({'name': name, 'color': '#00ff00'}).encode(),
+                   headers={'Content-Type': 'application/json'})
+
+
+def delete_tag(ctx, repo_id, token, tag_id):
+    return ctx.api(f'/api/v2.1/repos/{repo_id}/repo-tags/{tag_id}/',
+                   method='DELETE', token=token)
+
+
+def bulk_add(ctx, repo_id, token, names):
+    tags = [{'name': name, 'color': '#0000ff'} for name in names]
+    return ctx.api(f'/api/v2.1/repos/{repo_id}/repo-tags/', method='PUT',
+                   token=token,
+                   data=json.dumps({'tags': tags}).encode(),
+                   headers={'Content-Type': 'application/json'})
 
 
 def build_executors(ctx, fix):
     repo_id = fix['repo_id']
+    admin_token = fix['admin_token']
     b_token = fix['b_token']
     c_token = fix['c_token']
 
-    def list_tags(token):
-        status, body = ctx.api(f'/api2/repos/{repo_id}/repo-tags/', token=token)
-        data = H.json_body(body) or {}
-        tags = data.get('repo_tags') or data.get('tags') or data or []
-        return status, tags
-
-    def create_tag(token, name):
-        return H.post_json(ctx, token, f'/api2/repos/{repo_id}/repo-tags/',
-                           {'name': name, 'color': '#ff0000'})
-
     def tags_001():
-        status, body = create_tag(b_token, 'user-tag-1')
-        _, tags = list_tags(b_token)
+        status, body = create_tag(ctx, repo_id, b_token, 'user-tag-1')
+        _, tags = list_tags(ctx, repo_id, b_token)
         found = any(t.get('name') == 'user-tag-1' for t in tags if isinstance(t, dict))
         return found, f'create status={status}, tags={tags}'
 
     def tags_002():
-        # CE 无系统标签概念：非 admin 修改「系统标签」的判定面不存在
-        return False, 'system-tag read-only seam 未实现'
+        # A non-admin (rw) must not create, rename or delete a system tag.
+        _, tags = list_tags(ctx, repo_id, b_token)
+        system_id = None
+        for t in tags:
+            if isinstance(t, dict) and t.get('name') == SYSTEM_TAG:
+                system_id = t.get('repo_tag_id') or t.get('id')
+        if system_id is None:
+            return False, f'预置系统标签 {SYSTEM_TAG} 未找到: {tags}'
+
+        create_status, _ = create_tag(ctx, repo_id, b_token, 'system-tag-x', is_system=True)
+        rename_status, _ = rename_tag(ctx, repo_id, b_token, system_id, 'system-tag-renamed')
+        delete_status, _ = delete_tag(ctx, repo_id, b_token, system_id)
+        denied = all(s in (400, 403) for s in (create_status, rename_status, delete_status))
+        return denied, (f'create={create_status} rename={rename_status} '
+                        f'delete={delete_status}')
 
     def tags_003():
-        status, body = create_tag(b_token, 'user-tag-3')
+        status, body = create_tag(ctx, repo_id, b_token, 'user-tag-3')
         return status in (200, 201), f'rw create status={status} {body[:120]}'
 
     def tags_004():
-        status, body = create_tag(c_token, 'user-tag-4')
+        status, body = create_tag(ctx, repo_id, c_token, 'user-tag-4')
         return status not in (200, 201), f'r create 应被拒 status={status} {body[:120]}'
 
     def tags_005():
-        return False, 'batch-tag object-limit seam 未实现'
+        over_names = [f'bulk-over-{i}' for i in range(BATCH_LIMIT + 1)]
+        over_status, over_body = bulk_add(ctx, repo_id, b_token, over_names)
+        under_status, under_body = bulk_add(ctx, repo_id, b_token, ['bulk-ok-1', 'bulk-ok-2'])
+        ok = over_status in (400, 403) and under_status in (200, 201)
+        return ok, (f'over({BATCH_LIMIT + 1})={over_status} '
+                    f'under(2)={under_status} over_body={over_body[:120]}')
 
     return {
         'tags-001': tags_001, 'tags-002': tags_002, 'tags-003': tags_003,

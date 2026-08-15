@@ -85,6 +85,11 @@ CE 已原生支持的部分应绿（如复制"来源可读+目标可写"、标�
 对评审新要求应红（如权限变化提示、回收站对普通用户拒绝、分享开关关闭）。这条红/绿
 边界就是 P2-03/P2-06/P2-07 的施工清单。
 
+P2-07 已把标签模块的 api 用例（tags-001～tags-005）做成绿：系统标签仅 `admin`
+可写、用户标签 `rw` 及以上可编辑、批量加标签受 `CF_TAG_BATCH_LIMIT` 上限，实现见
+[features/tags.md](features/tags.md) 与 [`review_tags_matrix.py`](../tests/e2e/review_tags_matrix.py)。
+标签模块的锁形图标、折叠展示与「点击不弹关联列表」仍为浏览器用例（channel: `ui`）。
+
 ## 5. 与既有能力的边界
 
 复制/移动与 `fileop`（写生命周期）、标签与 `metadata`、搜索与 `search`、

@@ -937,6 +937,62 @@ def apply_metadata_schema_compatibility():
         conn.close()
 
 
+def apply_tag_schema_compatibility():
+    """Add the CloudFile is_system column to the upstream repo_tags table.
+
+    P2-07 classifies repo tags as system (admin-managed, read-only) or user
+    (rw-editable). The marker lives on the upstream ``repo_tags_repotags`` table
+    in seahub-db, which is owned by Seahub's own SQL rather than by CloudFile, so
+    -- like ``apply_metadata_schema_compatibility`` -- this repairs the schema
+    here instead of editing the upstream SQL files.
+
+    Unlike the metadata compatibility shim this is NOT gated on the tags switch:
+    ``is_system`` is a field on the always-imported ``RepoTags`` model, so Django
+    SELECTs it on every native repo-tags query regardless of ``CF_ENABLE_TAGS``.
+    A missing column would therefore 500 the endpoint even with all switches off.
+    The column defaults to 0, which is exactly native CE behaviour (no system
+    tags), so adding it unconditionally changes no semantics. It must cover fresh
+    installs, upgrades and an existing CE deployment adopting CloudFile, so it
+    checks the actual schema first and is safe to run on every start.
+    """
+    import pymysql
+
+    conn = pymysql.connect(
+        host=get_conf('SEAFILE_MYSQL_DB_HOST', 'db'),
+        port=int(get_conf('SEAFILE_MYSQL_DB_PORT', '3306')),
+        user=get_conf('SEAFILE_MYSQL_DB_USER', 'seafile'),
+        password=get_conf('SEAFILE_MYSQL_DB_PASSWORD', ''),
+        database=get_conf('SEAFILE_MYSQL_DB_SEAHUB_DB_NAME', 'seahub_db'),
+        charset='utf8mb4',
+    )
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                'SELECT 1 FROM information_schema.TABLES '
+                'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+                ('repo_tags_repotags',))
+            if not cursor.fetchone():
+                logwarning('repo_tags_repotags is missing; cannot apply tag schema compatibility')
+                return
+
+            cursor.execute(
+                'SELECT 1 FROM information_schema.COLUMNS '
+                'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s '
+                'AND COLUMN_NAME = %s',
+                ('repo_tags_repotags', 'is_system'))
+            if not cursor.fetchone():
+                cursor.execute(
+                    'ALTER TABLE `repo_tags_repotags` '
+                    'ADD COLUMN `is_system` TINYINT(1) NOT NULL DEFAULT 0')
+                cursor.execute(
+                    'ALTER TABLE `repo_tags_repotags` '
+                    'ADD KEY `repo_tags_repotags_is_system` (`is_system`)')
+                loginfo('Added repo_tags_repotags.is_system compatibility column')
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _set_ini_value(lines, start, end, key, value):
     """Set `key = value` within lines[start:end], appending if absent.
 
@@ -1067,6 +1123,7 @@ def write_cloudfile_config():
     write_seafevents_audit_config()
     apply_cloudfile_schema()
     apply_metadata_schema_compatibility()
+    apply_tag_schema_compatibility()
 
 
 def init_seafile_server():

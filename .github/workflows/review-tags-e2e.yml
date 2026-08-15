@@ -1,7 +1,8 @@
 name: 标签 review 验收矩阵
 
 # P2-02 契约门禁：把评审清单「标签」的设计描述转成可计数的机器用例，先红后绿。
-# 创建需 rw 为 CE 原生；系统标签/批量上限/排序折叠/点击不弹列表为待落地项（P2-07）。
+# P2-07 已在 CE repo-tags 上落地系统/用户标签、批量上限与权限校验，api 用例应全绿；
+# 锁形图标、排序折叠、点击不弹列表仍是浏览器用例（channel: ui）。
 on:
   push:
     branches: [dev]
@@ -53,6 +54,7 @@ jobs:
           sed -i "s|^INIT_SEAFILE_ADMIN_EMAIL=.*|INIT_SEAFILE_ADMIN_EMAIL=$ADMIN_EMAIL|" .env
           sed -i "s|^INIT_SEAFILE_ADMIN_PASSWORD=.*|INIT_SEAFILE_ADMIN_PASSWORD=$ADMIN_PASSWORD|" .env
           sed -i "s|^CADDY_TLS=.*|CADDY_TLS=internal|" .env
+          sed -i "s|^CF_ENABLE_METADATA=.*|CF_ENABLE_METADATA=true|" .env
           sed -i "s|^CF_ENABLE_TAGS=.*|CF_ENABLE_TAGS=true|" .env
           echo "CLOUDFILE_IMAGE=cloudfile/cloudfile:$CF_VERSION" >> .env
           docker compose up -d

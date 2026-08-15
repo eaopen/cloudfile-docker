@@ -7,8 +7,25 @@
 ## 前提
 
 - Linux 主机与 Docker Compose v2；镜像架构必须与主机一致。
+- **双架构约定：生产 amd64，本地（Apple Silicon）测试 arm64。** 构建脚本按宿主
+  自动选架构（见下），生产 amd64 镜像在 CI（amd64 原生）出，本地 mac 只出 arm64。
 - 可解析的 `SEAFILE_SERVER_HOSTNAME`，以及持久化目录的备份策略。
 - 生产环境不得沿用 `.env.example` 中的示例密码、MinIO 凭据或 API key。
+
+## 架构自动检测
+
+`tools/build-platform.sh` 是三个构建脚本（base-build、build-in-docker、
+docker-build）共享的架构唯一来源。默认跟随宿主、原生优先：
+
+| 宿主 | 自动平台 | 说明 |
+|---|---|---|
+| macOS Apple Silicon | `linux/arm64` | 原生快；Rosetta 2 终端也正确判回 arm64 |
+| macOS Intel / Linux x86_64 | `linux/amd64` | 原生 |
+| Linux aarch64 | `linux/arm64` | 原生 |
+| Windows（Docker Desktop） | `linux/amd64` | Linux VM 是 amd64 |
+
+`CF_PLATFORM` 在任何脚本上覆盖自动检测（只收 `linux/amd64`/`linux/arm64`）。
+跨架构构建（mac 上出 amd64）走 QEMU 模拟，C 编译慢 5~10 倍，仅用于验证，不用于发布。
 
 ## 启动核心栈
 

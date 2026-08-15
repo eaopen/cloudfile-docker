@@ -4,7 +4,7 @@
 # package access. Daily application builds must use docker-build.sh instead.
 #
 #   ./base-build.sh
-#   CF_PLATFORM=linux/arm64 ./base-build.sh
+#   CF_PLATFORM=linux/arm64 ./base-build.sh   # override the auto-detected host arch
 #   CF_BASE_IMAGE=registry.internal/cloudfile/build-base:ce14-v2 ./base-build.sh
 
 set -e
@@ -17,7 +17,7 @@ source "$repo_root/tools/build-platform.sh"
 
 base_image=${CF_BASE_IMAGE:-$(python3 "$reader" "$manifest" build_base_image)}
 ubuntu_base=${CF_UBUNTU_BASE:-$(python3 "$reader" "$manifest" ubuntu_base_image)}
-platform=$(cf_normalize_platform "${CF_PLATFORM:-linux/amd64}") || exit 2
+platform=$(cf_normalize_platform "${CF_PLATFORM:-$(cf_host_platform)}") || exit 2
 
 if ! docker info >/dev/null 2>&1; then
     echo "Docker is unavailable." >&2

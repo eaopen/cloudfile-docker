@@ -60,6 +60,14 @@
       "channel": "api",
       "perm": "rw",
       "expect": "move returns a task id and a duplicate submission does not move the item twice"
+    },
+    {
+      "id": "move-008",
+      "name": "move preview reports affected members without moving",
+      "review": "移动权限影响确认框的后端预检（preview 不落库）",
+      "channel": "api",
+      "perm": "rw",
+      "expect": "fileops/move with preview=true returns affected_members and leaves the source file in place"
     }
   ]
 }

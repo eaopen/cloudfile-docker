@@ -29,12 +29,15 @@ def set_acl(ctx, admin_token, repo_id, path, subject, perm):
 
 
 def move_item(ctx, token, src_repo, src_parent, src_name, dst_repo, dst_parent,
-              dirent_type='file'):
+              dirent_type='file', preview=False):
+    payload = {'src_repo_id': src_repo, 'src_parent_dir': src_parent,
+               'src_dirent_name': src_name, 'dst_repo_id': dst_repo,
+               'dst_parent_dir': dst_parent, 'operation': 'move',
+               'dirent_type': dirent_type}
+    if preview:
+        payload['preview'] = True
     return H.post_json(ctx, token, f'/api2/repos/{src_repo}/fileops/move/',
-                       {'src_repo_id': src_repo, 'src_parent_dir': src_parent,
-                        'src_dirent_name': src_name, 'dst_repo_id': dst_repo,
-                        'dst_parent_dir': dst_parent, 'operation': 'move',
-                        'dirent_type': dirent_type})
+                       payload)
 
 
 def list_dir(ctx, token, repo_id, path):
@@ -128,10 +131,23 @@ def build_executors(ctx, fix):
         return ok, (f'idempotency status={status}/{status2} '
                     f'task_id={first}/{second} h.txt count={count}')
 
+    def move_008():
+        # Preview must report the permission-impact without moving the file.
+        # m3.txt is still in /tree at this point (move-003 got a 403).
+        status, body = move_item(ctx, b_token, repo_id, '/tree', 'm3.txt',
+                                 repo_id, '/dst', preview=True)
+        hint = (H.json_body(body) or {}).get('affected_members')
+        still_at_src = 'm3.txt' in list_dir(ctx, b_token, repo_id, '/tree')
+        not_in_dst = 'm3.txt' not in list_dir(ctx, b_token, repo_id, '/dst')
+        ok = (status == 200 and isinstance(hint, int) and hint >= 1
+              and still_at_src and not_in_dst)
+        return ok, (f'preview affected_members={hint!r} status={status} '
+                    f'仍留在源目录={still_at_src} 未落到目标={not_in_dst}')
+
     return {
         'move-001': move_001, 'move-002': move_002, 'move-003': move_003,
         'move-004': move_004, 'move-005': move_005, 'move-006': move_006,
-        'move-007': move_007,
+        'move-007': move_007, 'move-008': move_008,
     }
 
 

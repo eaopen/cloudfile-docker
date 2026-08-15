@@ -125,6 +125,7 @@ P2-10 已把操作历史模块的 5 条 api 用例做成绿（history-002/003/00
 （仅文件夹自身，排除直属子级）。实现见 [features/history.md](features/history.md)
 与 [`review_history_matrix.py`](../tests/e2e/review_history_matrix.py)；不传参数时
 与 CE 行为一致。history-001/005（修订列表含创建人、修订详情）为 CE 原生已绿。
+容器验收 7/7 通过（2026-08-15 本地栈复验）。
 
 P2-10 同时把回收站模块的 api 用例做成绿（recycle-002/003/004）：回收站改为
 管理员专用面——普通用户（`r`/`rw`）经 `/api/v2.1/repos/{id}/trash/` 列表、

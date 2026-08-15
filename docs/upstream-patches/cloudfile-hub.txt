@@ -1,6 +1,6 @@
 # cloudfile-hub 允许修改的上游文件。
 #
-# 当前登记 32 个。加新能力**通常不需要**再动上游：路由用 registry.register_urls()，
+# 当前登记 35 个。加新能力**通常不需要**再动上游：路由用 registry.register_urls()，
 # 权限用 register_permission_check()，检索后端用 register_search_provider()，
 # Django app 用 seahub_settings.py 的 EXTRA_INSTALLED_APPS。
 #
@@ -38,6 +38,8 @@ frontend/src/components/dirent-detail/dirent-details/file-details/index.js
 frontend/src/components/dirent-detail/index.js
 frontend/src/components/history-list-view/history-list-item.js
 frontend/src/components/history-list-view/history-list-view.js
+frontend/src/components/search/search-result-item.js
+frontend/src/components/search/search.js
 frontend/src/file-history-old.js
 frontend/src/hooks/file-operations/permission.js
 frontend/src/pages/file-history-old/history-item.js
@@ -54,6 +56,7 @@ scripts/seaf-gc.sh
 seahub/api2/endpoints/monitored_repos.py
 seahub/api2/endpoints/dir.py
 seahub/api2/endpoints/admin/__pycache__/users.cpython-38.pyc.275104027952
+seahub/api2/views.py
 seahub/search/utils.py
 seahub/templates/base_for_react.html
 seahub/templates/file_revisions_new.html

@@ -20,6 +20,13 @@ CloudFile 注册 provider，并由 `cf-worker` 增量构建索引。
 即 fail closed）。这补齐了上游 `is_invisible_path` 只覆盖原生 invisible 共享、不覆盖
 目录 ACL 的缺口，且不依赖上游修复。
 
+高级筛选（类型/位置/标签/创建人/时间/大小）走同一 `/api2/search/` 入口：类型、位置、
+时间、大小由上游参数（`obj_type`/`search_path`/`time_from`/`size_from`）直接表达；标签与
+创建人由 `tags`/`creator_emails` 参数转换为结构化过滤器（`cloudfile_ext.search_query`）交给
+provider。Meilisearch 索引同时写入 `tags` 与 `creator` 字段，`tags` 参与检索，于是"标签名
+命中"与"文件名命中"可区分：provider 请求 `attributesToHighlight=['tags']` 并把高亮命中
+还原成 `matched_tags` 返回，前端据此显示"匹配标签"徽标，避免把标签命中误报为名称命中。
+
 Meilisearch 文本提取只覆盖配置允许的纯文本和大小上限，不能替代 SeaSearch 的文档格式
 解析。外部资料源索引只在 Meilisearch provider 下运行，索引故障不应阻塞原生资料库访问。
 

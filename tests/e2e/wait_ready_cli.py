@@ -7,6 +7,7 @@ re-importing the whole review_harness machinery.
 
 import argparse
 import os
+import ssl
 import sys
 import time
 
@@ -19,6 +20,12 @@ def main():
     ap.add_argument('--url', required=True)
     ap.add_argument('--timeout', type=int, default=600)
     args = ap.parse_args()
+
+    # The stack serves a self-signed cert (CADDY_TLS=internal); the CLI is
+    # only used against local stacks, so always trust it.
+    from review_harness import _SSL_CONTEXT
+    _SSL_CONTEXT = ssl._create_unverified_context()
+
     deadline = time.time() + args.timeout
     while time.time() < deadline:
         status, body = request(args.url.rstrip('/') + '/api2/ping/')

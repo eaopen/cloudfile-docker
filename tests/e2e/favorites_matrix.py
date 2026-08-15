@@ -41,15 +41,20 @@ def build_executors(ctx, fix):
 
     def starred():
         status, body = ctx.api('/api/v2.1/starred-items/', token=admin_token)
-        return status, (H.json_body(body) or [])
+        data = H.json_body(body) or {}
+        # The v2.1 list wraps items in "starred_item_list".
+        items = data.get('starred_item_list') or data.get('data') or []
+        return status, items
 
     def move_file(path, dst_dir):
-        return H.post_json(ctx, admin_token,
-                           f'/api2/repos/{repo_id}/fileops/move/',
-                           {'src_repo_id': repo_id, 'src_parent_dir': '/',
-                            'src_dirent_name': path.lstrip('/'),
-                            'dst_repo_id': repo_id, 'dst_parent_dir': dst_dir,
-                            'operation': 'move', 'dirent_type': 'file'})
+        # The favorites stack does not enable CF_ENABLE_FILEOPS, so the
+        # fileops shadow is not registered; use the native batch-move form.
+        return ctx.api(f'/api2/repos/{repo_id}/fileops/move/?p=/',
+                       method='POST',
+                       form={'dst_repo': repo_id, 'dst_dir': dst_dir,
+                             'file_names': path.lstrip('/'),
+                             'operation': 'move'},
+                       token=admin_token)
 
     def fav_001():
         status, _ = star('/fav.txt')

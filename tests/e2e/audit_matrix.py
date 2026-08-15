@@ -106,6 +106,21 @@ def main():
 
     context = ssl._create_unverified_context() if args.insecure else None
     base = args.url.rstrip('/')
+
+    # The stack can answer /api2/ping/ before seahub finishes initializing;
+    # auth-token would then 502. Block on readiness first (review audit gate).
+    import time as _time
+    deadline = _time.time() + 600
+    ready = False
+    while _time.time() < deadline:
+        s, b = request(base + '/api2/ping/', context=context)
+        if s == 200 and 'pong' in b:
+            ready = True
+            break
+        _time.sleep(5)
+    if not check('服务就绪', ready):
+        return 1
+
     status, body = request(base + '/api2/auth-token/', method='POST',
                            form={'username': args.admin,
                                  'password': args.admin_password}, context=context)
@@ -293,14 +308,14 @@ def main():
                                token=token, context=context)
         tag_events = json_body(body).get('events') or []
         has_create = any(e.get('operation') == 'create' and
-                         (e.get('after') or {}).get('name') == tag_name
+                         (e.get('after') or {}).get('tag_name') == tag_name
                          for e in tag_events)
         has_update = any(e.get('operation') == 'update' and
-                         (e.get('before') or {}).get('name') == tag_name and
-                         (e.get('after') or {}).get('name') == renamed
+                         (e.get('before') or {}).get('tag_name') == tag_name and
+                         (e.get('after') or {}).get('tag_name') == renamed
                          for e in tag_events)
         has_delete = any(e.get('operation') == 'delete' and
-                         (e.get('before') or {}).get('name') == renamed and
+                         (e.get('before') or {}).get('tag_name') == renamed and
                          e.get('after') is None
                          for e in tag_events)
         if status == 200 and has_create and has_update and has_delete:

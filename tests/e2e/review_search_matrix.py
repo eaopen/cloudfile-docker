@@ -42,6 +42,36 @@ def search(ctx, token, query, **params):
                            token=token)
     return status, (H.json_body(body) or {})
 
+def run_indexer_once():
+    """Run `cf_worker --once` inside the stack so the setup's fresh fixtures
+    are indexed before the executors run.
+
+    The container has no periodic cf_worker scheduler, so files created after
+    the orchestration's indexer pass would otherwise never reach Meilisearch.
+    The matrix runs on the host next to the compose stack; if docker is
+    unavailable (e.g. an odd host), log and continue — the case-level polling
+    will then surface the absence with a clear reason.
+    """
+    import subprocess
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    compose_dir = os.path.join(repo_root, 'deploy', 'compose')
+    cmd = ['docker', 'compose', 'exec', '-T', 'cloudfile', 'bash', '-c',
+           '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seahub.sh '
+           'python-env python3 '
+           '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seahub/manage.py '
+           'cf_worker --once']
+    try:
+        proc = subprocess.run(cmd, cwd=compose_dir, capture_output=True,
+                              text=True, timeout=180)
+        ok = proc.returncode == 0
+        print(f'  cf_worker --once rc={proc.returncode} '
+              f'{(proc.stdout or proc.stderr)[-160:]}', flush=True)
+        return ok
+    except Exception as e:                     # docker missing / timeout
+        print(f'  cf_worker --once 不可用：{e}', flush=True)
+        return False
+
+
 def setup(ctx, admin_token):
     print('\n准备场景…', flush=True)
     b_token = H.create_user(ctx, B_EMAIL, B_PASSWORD)
@@ -71,6 +101,8 @@ def setup(ctx, admin_token):
             ctx, admin_token, f'/api/v2.1/repos/{repo_id}/file-tags/',
             {'file_path': '/alpha.txt', 'repo_tag_id': tag_id})
     print(f'  预置标签 tag_id={tag_id} 绑定 status={status}', flush=True)
+
+    run_indexer_once()
 
     return {'repo_id': repo_id, 'b_token': b_token,
             'admin_token': admin_token, 'tag_id': tag_id}

@@ -43,6 +43,25 @@ git merge upstream/master
 
 允许修改的上游文件以 [`docs/upstream-patches/`](docs/upstream-patches/) 三份清单为准。脚本报告新增文件时，先确认无法用新增文件或现有扩展点实现，再更新清单和本文件；不能直接补登记来绕过审查。
 
+### 上游改动登记（2026-08-15 追加）
+
+`cloudfile-server` 新增登记：
+
+- `fileserver/option/option.go`：为目录 ACL 的同步边界加 `cloudfile.dir_acl_enabled`
+  选项。fileserver 只从这里读配置，这是唯一入口，无法用新增文件替代。
+- `README.testing.md`、`tests/test_upload/readme.md`：上游测试说明被改写为
+  CloudFile 测试指南/工具说明。文档替换是为了保持"先读这个文件"的约定路径单一，
+  不制造第二份入口；同步成本为文档级，风险低。
+
+`cloudfile-docker` 新增登记：
+
+- `.dockerignore`：构建上下文排除的唯一入口，必须就地改（否则多 GB 的构建产物
+  会随上下文进镜像构建）。
+- `README.md`、`build/README.md`：改写为 CloudFile 仓库/构建文档，理由同上。
+
+`cloudfile-hub` 清单移除过期项 `frontend/webpack-stats.pro.json`：与上游已无差异
+（构建产物回退），保留只会让清单失真。
+
 ## 合并与发布
 
 能力合并前必须证明开关关闭时仍走原生 CE 路径，并在开关开启时通过专项门禁。跨 Hub/Server 的语义先更新共享规格和用例，再同步实现。

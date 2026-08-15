@@ -9,6 +9,7 @@
 # 注意：在已列出的文件里增加新的改动块（例如再注册一个 RPC）不需要改这份
 # 清单——成本已经付过了。这也是为什么"再加一个 RPC"远比"再动一个新文件"便宜。
 .gitignore
+README.testing.md
 common/rpc-service.c
 common/block-backend-fs.c
 common/block-backend.h
@@ -27,6 +28,7 @@ fileserver/go.mod
 fileserver/go.sum
 fileserver/objstore/objstore.go
 fileserver/objstore/objstore_test.go
+fileserver/option/option.go
 include/seafile-rpc.h
 fuse/Makefile.am
 python/seafile/rpcclient.py
@@ -44,3 +46,4 @@ server/gc/seafserv-gc.c
 server/repo-op.c
 server/seaf-server.c
 server/seafile-session.c
+tests/test_upload/readme.md

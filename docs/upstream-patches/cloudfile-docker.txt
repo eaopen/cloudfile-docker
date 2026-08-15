@@ -1,6 +1,12 @@
 # cloudfile-docker 允许修改的上游文件。
 #
 # 构建脚本、镜像、Compose 全部是新增文件，只有容器运行时脚本必须就地修改。
+# .dockerignore 是构建上下文排除的唯一入口，必须就地改；README.md 与
+# build/README.md 被改写为 CloudFile 文档（保持"先读这个文件"的约定路径单一，
+# 不用新文件制造第二份入口）。理由见 BRANCHING.md「上游改动登记」。
+.dockerignore
 .gitignore
+README.md
+build/README.md
 scripts/scripts_14.0/bootstrap.py
 scripts/scripts_14.0/start.py

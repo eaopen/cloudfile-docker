@@ -66,6 +66,7 @@ CF_FEATURE_SWITCHES = (
     'CF_ENABLE_FILE_PREVIEW',
     'CF_ENABLE_ONLYOFFICE',
     'CF_ENABLE_FILE_LOCK',
+    'CF_ENABLE_FAVORITES_ID',
     'CF_ENABLE_WATCH',
     'CF_ENABLE_CONVERT_EXPORT',
     'CF_ENABLE_CHECKOUT',
@@ -993,6 +994,59 @@ def apply_tag_schema_compatibility():
         conn.close()
 
 
+def apply_starred_obj_id_schema_compatibility():
+    """Add the object-id column to the upstream starred-files table.
+
+    P2-05 keys favorites by the object id (file obj_id / directory id) instead
+    of ``repo_id + path``, so a favorite survives move and rename. The id lives
+    on the always-imported ``UserStarredFiles`` model (``base_userstarredfiles``
+    in seahub-db); Django SELECTs it on every native starred query, so -- like
+    ``apply_tag_schema_compatibility`` -- the column must exist regardless of
+    ``CF_ENABLE_FAVORITES_ID``, or the endpoint would 500 with all switches off.
+
+    The column is NULL by default: with the switch off nothing writes or reads
+    it, so native CE behaviour is unchanged. Existing path-keyed rows are
+    backfilled by ``manage.py backfill_starred_obj_ids`` (lossless) rather than
+    by this schema shim, because resolving an id needs the Seafile RPC.
+    """
+    import pymysql
+
+    conn = pymysql.connect(
+        host=get_conf('SEAFILE_MYSQL_DB_HOST', 'db'),
+        port=int(get_conf('SEAFILE_MYSQL_DB_PORT', '3306')),
+        user=get_conf('SEAFILE_MYSQL_DB_USER', 'seafile'),
+        password=get_conf('SEAFILE_MYSQL_DB_PASSWORD', ''),
+        database=get_conf('SEAFILE_MYSQL_DB_SEAHUB_DB_NAME', 'seahub_db'),
+        charset='utf8mb4',
+    )
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                'SELECT 1 FROM information_schema.TABLES '
+                'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+                ('base_userstarredfiles',))
+            if not cursor.fetchone():
+                logwarning('base_userstarredfiles is missing; cannot apply starred obj_id schema compatibility')
+                return
+
+            cursor.execute(
+                'SELECT 1 FROM information_schema.COLUMNS '
+                'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s '
+                'AND COLUMN_NAME = %s',
+                ('base_userstarredfiles', 'obj_id'))
+            if not cursor.fetchone():
+                cursor.execute(
+                    'ALTER TABLE `base_userstarredfiles` '
+                    'ADD COLUMN `obj_id` VARCHAR(64) NULL')
+                cursor.execute(
+                    'ALTER TABLE `base_userstarredfiles` '
+                    'ADD KEY `base_userstarredfiles_obj_id` (`obj_id`)')
+                loginfo('Added base_userstarredfiles.obj_id compatibility column')
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def apply_audit_schema():
     """Create CloudFile's append-only audit sidecar when audit is enabled.
 
@@ -1183,6 +1237,7 @@ def write_cloudfile_config():
     apply_cloudfile_schema()
     apply_metadata_schema_compatibility()
     apply_tag_schema_compatibility()
+    apply_starred_obj_id_schema_compatibility()
     apply_audit_schema()
 
 

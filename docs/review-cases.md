@@ -95,6 +95,10 @@ P2-08 补齐评审清单「审计」段的可验收点：查询/导出接口按�
 [features/audit.md](features/audit.md) 与 [`audit_matrix.py`](../tests/e2e/audit_matrix.py)。
 文件提交变更的协议级来源（Web/桌面/移动）仍以 `commit` 呈现，需 seafevents 改动才能细分。
 
+P2-05 已把树结构/移动模块里「收藏跟随对象」这条做成绿：开启 `CF_ENABLE_FAVORITES_ID`
+后收藏身份改为 `(email, org_id, obj_id)`，移动/重命名不再靠 `repo_id + path` 改写去追，
+旧 path 记录经 `manage.py backfill_starred_obj_ids` 无损回填。实现见
+[features/favorites.md](features/favorites.md)；开关关闭时保持原生 CE 行为。
 
 ## 5. 与既有能力的边界
 

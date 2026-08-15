@@ -126,6 +126,22 @@ P2-10 已把操作历史模块的 5 条 api 用例做成绿（history-002/003/00
 与 [`review_history_matrix.py`](../tests/e2e/review_history_matrix.py)；不传参数时
 与 CE 行为一致。history-001/005（修订列表含创建人、修订详情）为 CE 原生已绿。
 
+P2-10 同时把回收站模块的 api 用例做成绿（recycle-002/003/004）：回收站改为
+管理员专用面——普通用户（`r`/`rw`）经 `/api/v2.1/repos/{id}/trash/` 列表、
+`repo/{id}/trash/` 页面与 `trash/files/` 旧路由一律 403/拒绝（recycle-002）；
+资料库管理员与系统管理员可列举/恢复/永久删除（recycle-003），软删除可恢复性
+（recycle-004）为 CE 原生。前端回收站入口对普通用户隐藏（recycle-001 属
+浏览器用例，随浏览器套件验收）。实现见 `seahub/api2/endpoints/repo_trash.py`、
+`seahub/views/__init__.py`、`seahub/views/file.py` 与
+[`review_recycle_matrix.py`](../tests/e2e/review_recycle_matrix.py)。
+
+P2-11 已把外部分享模块的 api 用例做成绿（share-002/003/004）：新增开关
+`CF_ENABLE_SHARE_RESTRICT`（默认 false = 原生 CE）。开启后非管理员创建外链
+被拒（403）、匿名访问旧外链按不存在处理（404）、列表/查询端点保留、管理员仍可
+创建与管理。实现见 [features/share-restrict.md](features/share-restrict.md) 与
+[`review_share_matrix.py`](../tests/e2e/review_share_matrix.py)；share-001
+（前端隐藏分享入口）属浏览器用例，随浏览器套件验收。
+
 ## 5. 与既有能力的边界
 
 复制/移动与 `fileop`（写生命周期）、标签与 `metadata`、搜索与 `search`、

@@ -34,10 +34,11 @@ def build_executors(ctx, fix):
     admin_token = fix['admin_token']
 
     def share_002():
-        status, body = H.post_json(ctx, b_token, '/api2/shared-links/',
-                                   {'repo_id': repo_id, 'path': '/f.txt',
-                                    'permissions': {'can_download': True}})
-        return status not in (200, 201), f'创建外链应被拒 status={status} {body[:120]}'
+        status, body = ctx.api('/api/v2.1/share-links/', method='POST',
+                               form={'repo_id': repo_id, 'path': '/f.txt'},
+                               token=b_token)
+        return status in (401, 403, 404), \
+            f'创建外链应被拒（开关开启时非管理员）status={status} {body[:120]}'
 
     def share_003():
         status, body = ctx.api(f'/api2/repos/{repo_id}/file/shared-link/?path=/f.txt',
@@ -45,8 +46,17 @@ def build_executors(ctx, fix):
         return status == 200, f'share-link 列表端点保留 status={status} {body[:120]}'
 
     def share_004():
-        # 旧链接绕过：开关关闭后匿名访问外链应被拒；当前无开关，判定面未实现
-        return False, 'old-link bypass flag 未实现'
+        # 管理员仍可创建（用于管理），但开关开启时匿名访问旧链接必须被拒。
+        status, body = ctx.api('/api/v2.1/share-links/', method='POST',
+                               form={'repo_id': repo_id, 'path': '/f.txt'},
+                               token=admin_token)
+        data = H.json_body(body) or {}
+        link = data.get('link') or ''
+        if status not in (200, 201) or not link:
+            return False, f'管理员建链失败 status={status} {body[:120]}'
+        anon_status, anon_body = H.request(link)
+        ok = anon_status in (401, 403, 404) and 'gone' not in anon_body
+        return ok, f'匿名访问旧链接 status={anon_status}（期望 403/404）'
 
     return {'share-002': share_002, 'share-003': share_003,
             'share-004': share_004}

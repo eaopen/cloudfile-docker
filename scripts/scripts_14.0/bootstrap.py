@@ -73,6 +73,7 @@ CF_FEATURE_SWITCHES = (
     'CF_ENABLE_LOCAL_APP',
     'CF_ENABLE_S3_STORAGE',
     'CF_ENABLE_EXTERNAL_SOURCES',
+    'CF_ENABLE_FILEOPS',
 )
 
 
@@ -165,6 +166,7 @@ def write_cloudfile_settings():
     body += _settings_block_search()
     body += _settings_block_external_sources()
     body += _settings_block_office()
+    body += _settings_block_fileops()
     body += _settings_block_upstream()
 
     _replace_block(join(topdir, 'conf', 'seahub_settings.py'),
@@ -512,6 +514,37 @@ def _settings_block_office():
         # declared or actual byte count exceeds this cap.
         'CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES = %r'
         % positive_int('CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES', 256 * 1024 * 1024),
+    ]
+    return '\n'.join(lines) + '\n'
+
+
+def _settings_block_fileops():
+    """Copy/move precheck limits, or nothing when CF_ENABLE_FILEOPS is off.
+
+    Every limit is "0 = unlimited" so the switch can be enabled without tuning
+    anything and still behave like native CE copy/move. The single-file and
+    folder-depth limits are per-item (an over-limit item goes in the failure
+    list); the item-count and batch-size limits reject the whole request. See
+    docs/features/fileops.md.
+    """
+    if not cf_enabled('CF_ENABLE_FILEOPS'):
+        return ''
+
+    def non_negative_int(name, default='0'):
+        raw = get_conf(name, default)
+        try:
+            value = int(raw)
+        except ValueError:
+            raise Exception('%s must be an integer' % name)
+        if value < 0:
+            raise Exception('%s must not be negative' % name)
+        return value
+
+    lines = [
+        'CF_FILEOP_MAX_FILE_SIZE = %r' % non_negative_int('CF_FILEOP_MAX_FILE_SIZE'),
+        'CF_FILEOP_MAX_FOLDER_DEPTH = %r' % non_negative_int('CF_FILEOP_MAX_FOLDER_DEPTH'),
+        'CF_FILEOP_MAX_ITEM_COUNT = %r' % non_negative_int('CF_FILEOP_MAX_ITEM_COUNT'),
+        'CF_FILEOP_MAX_BATCH_SIZE = %r' % non_negative_int('CF_FILEOP_MAX_BATCH_SIZE'),
     ]
     return '\n'.join(lines) + '\n'
 

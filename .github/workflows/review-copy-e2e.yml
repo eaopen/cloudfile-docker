@@ -1,7 +1,8 @@
 name: 复制 review 验收矩阵
 
 # P2-02 契约门禁：把评审清单「复制」的设计描述转成可计数的机器用例，先红后绿。
-# 权限否定场景用目录 ACL 收紧来源/目标；来源可读+目标可写为 CE 原生，冲突/大小/层级/配额/异步任务为待落地项。
+# P2-06 已在开启 CF_ENABLE_FILEOPS 时把 fileops/copy 影子成统一预检查（权限否定走
+# 目录 ACL 收紧；同名冲突默认 rename；大小/层级进失败清单；配额 443；task_id 幂等）。
 on:
   push:
     branches: [dev]
@@ -54,6 +55,9 @@ jobs:
           sed -i "s|^INIT_SEAFILE_ADMIN_PASSWORD=.*|INIT_SEAFILE_ADMIN_PASSWORD=$ADMIN_PASSWORD|" .env
           sed -i "s|^CADDY_TLS=.*|CADDY_TLS=internal|" .env
           sed -i "s|^CF_ENABLE_DIR_ACL=.*|CF_ENABLE_DIR_ACL=true|" .env
+          sed -i "s|^CF_ENABLE_FILEOPS=.*|CF_ENABLE_FILEOPS=true|" .env
+          echo "CF_FILEOP_MAX_FILE_SIZE=100" >> .env
+          echo "CF_FILEOP_MAX_FOLDER_DEPTH=1" >> .env
           echo "CLOUDFILE_IMAGE=cloudfile/cloudfile:$CF_VERSION" >> .env
           docker compose up -d
           docker compose ps

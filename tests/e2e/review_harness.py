@@ -181,6 +181,16 @@ def share_repo(ctx, admin_token, repo_id, user_id, perm):
     return True
 
 
+def set_user_quota(ctx, admin_token, email, quota_mb):
+    """Set a user's total quota in MB via the admin API (0 = unlimited)."""
+    status, body = ctx.api(f'/api/v2.1/admin/users/{urllib.parse.quote(email)}/',
+                           method='PUT',
+                           form={'quota_total': str(quota_mb)}, token=admin_token)
+    if status != 200:
+        sys.exit(f'设置 {email} 配额 {quota_mb}MB 失败: {status} {body}')
+    return True
+
+
 def multipart(fields, filename, content):
     """Hand-build multipart so uploads don't pull in the requests dependency."""
     import uuid

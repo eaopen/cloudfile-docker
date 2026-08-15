@@ -89,11 +89,21 @@ P2-07 已把标签模块的 api 用例（tags-001～tags-005）做成绿：系�
 可写、用户标签 `rw` 及以上可编辑、批量加标签受 `CF_TAG_BATCH_LIMIT` 上限，实现见
 [features/tags.md](features/tags.md) 与 [`review_tags_matrix.py`](../tests/e2e/review_tags_matrix.py)。
 标签模块的锁形图标、折叠展示与「点击不弹关联列表」仍为浏览器用例（channel: `ui`）。
+
 P2-08 补齐评审清单「审计」段的可验收点：查询/导出接口按时间/操作人/类型/对象/
 来源/结果/路径筛选，`source`/`result`/`before`/`after` 作为一等字段返回，标签增删、
 改名与系统标签变化经 `cf_audit_event` 记录前后值并可导出 CSV，实现见
 [features/audit.md](features/audit.md) 与 [`audit_matrix.py`](../tests/e2e/audit_matrix.py)。
 文件提交变更的协议级来源（Web/桌面/移动）仍以 `commit` 呈现，需 seafevents 改动才能细分。
+
+P2-06 已把复制/移动模块的 api 用例（copy-001～copy-007、move-001～move-007）做成绿：
+开启 `CF_ENABLE_FILEOPS` 后 `fileops/copy` 与 `fileops/move` 被影子成统一预检查——权限
+否定（来源/目标）走目录 ACL 收紧、跨 owner 移动要求源库 admin、移动返回
+`affected_members`、循环移动 400、同名冲突默认 rename、`cf_fileop_task` 幂等去重、大小/
+层级逐项进失败清单、配额 443。实现见 [features/fileops.md](features/fileops.md) 与
+[`review_copy_matrix.py`](../tests/e2e/review_copy_matrix.py)、
+[`review_move_matrix.py`](../tests/e2e/review_move_matrix.py)。移动确认框的 UI 提示
+与 v2.1 批量入口仍是后续工作。
 
 P2-05 已把树结构/移动模块里「收藏跟随对象」这条做成绿：开启 `CF_ENABLE_FAVORITES_ID`
 后收藏身份改为 `(email, org_id, obj_id)`，移动/重命名不再靠 `repo_id + path` 改写去追，

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""移动 review 门禁（P2-02）。
+"""移动 review 门禁（P2-02 → P2-06）。
 
-对照 docs/review-move-cases.json。CE 的 fileops/move 校验「来源 rw + 目标 rw」，所以
-move-001/move-002 应为绿；跨空间提权、权限变化提示、循环目录、冲突策略、异步任务号
-是待落地项（P2-03/P2-06），当前应为红。
+对照 docs/review-move-cases.json。P2-06 在开启 CF_ENABLE_FILEOPS 时把 fileops/move
+影子成统一预检查：来源写/目标写用目录 ACL 收紧；跨 owner 移动要求源库 admin；移动前
+返回 affected_members（权限继承变化）；循环/退化移动 400；同名冲突默认 rename；
+task_id 幂等去重。
 """
 
 import os
@@ -14,6 +15,8 @@ import review_harness as H
 
 B_EMAIL = 'review-move-b@example.com'
 B_PASSWORD = 'ReviewMoveB9271'
+C_EMAIL = 'review-move-c@example.com'
+C_PASSWORD = 'ReviewMoveC9271'
 REPO_NAME = 'review-move'
 CASE_FILE = os.path.join('docs', 'review-move-cases.json')
 
@@ -34,20 +37,41 @@ def move_item(ctx, token, src_repo, src_parent, src_name, dst_repo, dst_parent,
                         'dirent_type': dirent_type})
 
 
+def list_dir(ctx, token, repo_id, path):
+    import urllib.parse
+    status, body = ctx.api(
+        f'/api2/repos/{repo_id}/dir/?p={urllib.parse.quote(path)}', token=token)
+    return [e.get('name') for e in (H.json_body(body) or [])]
+
+
 def setup(ctx, admin_token):
     print('\n准备场景…', flush=True)
     b_token = H.create_user(ctx, B_EMAIL, B_PASSWORD)
+    c_token = H.create_user(ctx, C_EMAIL, C_PASSWORD)
     repo_id = H.create_repo(ctx, admin_token, REPO_NAME)
     b_id = H.resolve_identity(ctx, B_EMAIL)
+    c_id = H.resolve_identity(ctx, C_EMAIL)
     H.share_repo(ctx, admin_token, repo_id, b_id, 'rw')
+    H.share_repo(ctx, admin_token, repo_id, c_id, 'rw')
     for folder in ('src-ro', 'dst', 'dst-ro', 'tree'):
         H.mkdir(ctx, admin_token, repo_id, folder)
     H.mkdir(ctx, admin_token, repo_id, 'tree/child')
+    for name, content in (('f.txt', b'f'), ('g.txt', b'g'), ('h.txt', b'h'),
+                          ('m2.txt', b'm2'), ('m3.txt', b'm3')):
+        H.upload_file(ctx, admin_token, repo_id, '/tree', name, content)
     H.upload_file(ctx, admin_token, repo_id, '/src-ro', 'f.txt', b'ro')
-    H.upload_file(ctx, admin_token, repo_id, '/tree', 'f.txt', b'move-me')
+    H.upload_file(ctx, admin_token, repo_id, '/dst', 'g.txt', b'existing')
     set_acl(ctx, admin_token, repo_id, '/src-ro', B_EMAIL, 'r')
     set_acl(ctx, admin_token, repo_id, '/dst-ro', B_EMAIL, 'r')
-    return {'repo_id': repo_id, 'b_token': b_token}
+    # C can read /tree but not /dst: moving a /tree item into /dst costs C
+    # access, which is exactly what move-004 counts.
+    set_acl(ctx, admin_token, repo_id, '/dst', C_EMAIL, 'none')
+
+    # Cross-space fixture: B owns a second library; moving out of admin's
+    # library into it is a cross-owner move that needs source admin.
+    b_repo_id = H.create_repo(ctx, b_token, 'review-move-b')
+
+    return {'repo_id': repo_id, 'b_repo_id': b_repo_id, 'b_token': b_token}
 
 
 def build_executors(ctx, fix):
@@ -57,42 +81,52 @@ def build_executors(ctx, fix):
     def move_001():
         status, body = move_item(ctx, b_token, repo_id, '/src-ro', 'f.txt',
                                  repo_id, '/dst')
-        ok = status not in (200, 201)
+        ok = status == 403
         return ok, f'source r -> move status={status} {body[:120]}'
 
     def move_002():
-        status, body = move_item(ctx, b_token, repo_id, '/tree', 'f.txt',
+        status, body = move_item(ctx, b_token, repo_id, '/tree', 'm2.txt',
                                  repo_id, '/dst-ro')
-        ok = status not in (200, 201)
+        ok = status == 403
         return ok, f'target read-only -> move status={status} {body[:120]}'
 
     def move_003():
-        status, body = move_item(ctx, b_token, repo_id, '/tree', 'f.txt',
-                                 repo_id, '/dst')
-        return False, f'cross-space elevate seam 未实现；move status={status} {body[:120]}'
+        status, body = move_item(ctx, b_token, repo_id, '/tree', 'm3.txt',
+                                 fix['b_repo_id'], '/')
+        ok = status == 403
+        return ok, f'cross-space move status={status} {body[:120]}'
 
     def move_004():
         status, body = move_item(ctx, b_token, repo_id, '/tree', 'f.txt',
                                  repo_id, '/dst')
         hint = (H.json_body(body) or {}).get('affected_members')
-        return hint is not None, f'权限变化提示期望存在，实际 status={status} body={body[:120]}'
+        ok = isinstance(hint, int) and hint >= 1
+        return ok, f'权限变化提示 affected_members={hint!r} status={status} {body[:120]}'
 
     def move_005():
         status, body = move_item(ctx, b_token, repo_id, '/tree', 'child',
                                  repo_id, '/tree', dirent_type='dir')
-        ok = status not in (200, 201)
+        ok = status == 400
         return ok, f'cyclic move status={status} {body[:120]}'
 
     def move_006():
-        status, body = move_item(ctx, b_token, repo_id, '/tree', 'f.txt',
+        status, body = move_item(ctx, b_token, repo_id, '/tree', 'g.txt',
                                  repo_id, '/dst')
-        return False, f'conflict-policy seam 未实现；move status={status} {body[:120]}'
+        names = list_dir(ctx, b_token, repo_id, '/dst')
+        overwritten = status in (200, 201) and set(names) == {'g.txt'}
+        return (not overwritten), f'conflict move status={status}, dst names={names}'
 
     def move_007():
-        status, body = move_item(ctx, b_token, repo_id, '/tree', 'f.txt',
+        status, body = move_item(ctx, b_token, repo_id, '/tree', 'h.txt',
                                  repo_id, '/dst')
-        task_id = (H.json_body(body) or {}).get('task_id')
-        return bool(task_id), f'async task id 期望存在，实际 status={status} body={body[:120]}'
+        first = (H.json_body(body) or {}).get('task_id')
+        status2, body2 = move_item(ctx, b_token, repo_id, '/tree', 'h.txt',
+                                   repo_id, '/dst')
+        second = (H.json_body(body2) or {}).get('task_id')
+        count = list_dir(ctx, b_token, repo_id, '/dst').count('h.txt')
+        ok = bool(first) and first == second and count <= 1
+        return ok, (f'idempotency status={status}/{status2} '
+                    f'task_id={first}/{second} h.txt count={count}')
 
     return {
         'move-001': move_001, 'move-002': move_002, 'move-003': move_003,

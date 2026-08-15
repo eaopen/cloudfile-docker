@@ -1,7 +1,9 @@
 name: 移动 review 验收矩阵
 
 # P2-02 契约门禁：把评审清单「移动」的设计描述转成可计数的机器用例，先红后绿。
-# 权限否定场景用目录 ACL；跨空间提权/权限变化提示/循环目录/异步任务为待落地项（P2-03/P2-06）。
+# P2-06 已在开启 CF_ENABLE_FILEOPS 时把 fileops/move 影子成统一预检查（权限否定走
+# 目录 ACL；跨 owner 移动要求源库 admin；移动返回 affected_members；循环移动 400；
+# 同名冲突默认 rename；task_id 幂等）。
 on:
   push:
     branches: [dev]
@@ -54,6 +56,7 @@ jobs:
           sed -i "s|^INIT_SEAFILE_ADMIN_PASSWORD=.*|INIT_SEAFILE_ADMIN_PASSWORD=$ADMIN_PASSWORD|" .env
           sed -i "s|^CADDY_TLS=.*|CADDY_TLS=internal|" .env
           sed -i "s|^CF_ENABLE_DIR_ACL=.*|CF_ENABLE_DIR_ACL=true|" .env
+          sed -i "s|^CF_ENABLE_FILEOPS=.*|CF_ENABLE_FILEOPS=true|" .env
           echo "CLOUDFILE_IMAGE=cloudfile/cloudfile:$CF_VERSION" >> .env
           docker compose up -d
           docker compose ps

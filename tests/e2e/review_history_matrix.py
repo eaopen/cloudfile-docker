@@ -37,13 +37,13 @@ def setup(ctx, admin_token):
     b_id = H.resolve_identity(ctx, B_EMAIL)
     H.share_repo(ctx, admin_token, repo_id, b_id, 'rw')
     H.upload_file(ctx, admin_token, repo_id, '/', 'f.txt', b'v1')
-    H.upload_file(ctx, admin_token, repo_id, '/', 'f.txt', b'v2', replace='1')
+    H.update_file(ctx, admin_token, repo_id, '/f.txt', b'v2')
     H.mkdir(ctx, admin_token, repo_id, 'docs')
     H.upload_file(ctx, admin_token, repo_id, '/docs', 'a.txt', b'a')
     H.mkdir(ctx, admin_token, repo_id, 'docs/sub')
     H.upload_file(ctx, admin_token, repo_id, '/docs/sub', 'b.txt', b'b')
     # The rw user owns the newest f.txt revision.
-    H.upload_file(ctx, b_token, repo_id, '/', 'f.txt', b'v3', replace='1')
+    H.update_file(ctx, b_token, repo_id, '/f.txt', b'v3')
     return {'repo_id': repo_id, 'b_token': b_token}
 
 
@@ -82,13 +82,16 @@ def build_executors(ctx, fix):
         return ok, f'q=Added -> {len(added)} 条, q=Modified -> {len(modified)} 条（期望 1/2）'
 
     def history_003():
+        # Seafile 14 的身份是不透明串（<uuid>@auth.local），与登录邮箱不同，
+        # 提交的 creator_name 存的是身份；筛选参数按身份匹配。
+        b_id = H.resolve_identity(ctx, B_EMAIL)
         _, data = file_history(operator=ctx.admin_email)
         by_operator = commits_of(data)
-        _, data2 = file_history(source=B_EMAIL)
+        _, data2 = file_history(source=b_id)
         by_source = commits_of(data2)
         ok = len(by_operator) == 2 and len(by_source) == 1
         return ok, (f'operator=admin -> {len(by_operator)} 条（期望 2）, '
-                    f'source=b -> {len(by_source)} 条（期望 1）')
+                    f'source=b身份 -> {len(by_source)} 条（期望 1）')
 
     def history_004():
         _, p1 = file_history(page='1', per_page='2')

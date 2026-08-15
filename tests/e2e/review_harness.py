@@ -21,6 +21,7 @@ Design notes:
 import argparse
 import base64
 import json
+import os
 import ssl
 import sys
 import time
@@ -221,6 +222,24 @@ def upload_file(ctx, token, repo_id, parent_dir, name, content=b'x',
         return 0, f'取上传链接失败 status={status} {body[:160]}'
     data, ctype = multipart(
         {'parent_dir': parent_dir, 'replace': replace}, name, content)
+    return request(url, method='POST', data=data, token=token,
+                   headers={'Content-Type': ctype})
+
+
+def update_file(ctx, token, repo_id, path, content):
+    """Update an existing file via the Go fileserver update-link.
+
+    Unlike upload-link replace=1 (which keeps an 'Added' commit desc), this
+    produces a proper 'Modified' commit — needed by the history matrix to
+    assert keyword search and operator filtering.
+    """
+    status, body = ctx.api(
+        f'/api2/repos/{repo_id}/update-link/?p=/', token=token)
+    url = (body or '').strip('"')
+    if status != 200 or not url.startswith('http'):
+        return 0, f'取更新链接失败 status={status} {body[:160]}'
+    name = os.path.basename(path.rstrip('/'))
+    data, ctype = multipart({'target_file': path}, name, content)
     return request(url, method='POST', data=data, token=token,
                    headers={'Content-Type': ctype})
 

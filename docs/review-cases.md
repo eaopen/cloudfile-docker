@@ -163,9 +163,11 @@ channel=ui 的 15 条用例，逐个核对前端代码后判定：
 | tags-009 点击标签仅选中不弹列表 | 已实现（metadata 标签树本就走「选中过滤」） | `tag/tags-tree-view/index.js` `selectNode` → `selectTag`（不弹关联文件列表） |
 | recycle-001 | 已按决策移除（维持原生 CE） | — |
 
-浏览器套件入口 `tests/e2e/review_ui_matrix.py`（Playwright）已就绪并覆盖 icon-001..005；
-图标多选在真实栈上跑通前需先解决「DIR_ACL 开启时前端目录视图渲染『Folder does not
-exist』」这一独立前端问题（API 目录列举正常，仅前端渲染路径异常）。
+浏览器套件入口 `tests/e2e/review_ui_matrix.py`（Playwright）已在真实栈上跑通 icon-001..005
+与登录共 7/7 通过（网格渲染、框选、ctrl/shift 多选、全选控件、批量操作栏）；此前
+「DIR_ACL 开启时目录视图渲染『Folder does not exist』」的前端问题根因是上游 14.0 缺
+`repo_metadata.summary_enabled` 列，已由 `apply_metadata_schema_compatibility` 取消门控
+无条件补齐，基线目录视图恢复 200。
 
 ## 5. 与既有能力的边界
 

@@ -155,7 +155,7 @@ channel=ui 的 15 条用例，逐个核对前端代码后判定：
 | search-009 文件夹打开/定位 | 已实现 | 同文件 `item-folder-action`「Open folder · Locate」 |
 | share-001 分享入口隐藏 | 已实现 | `utils.js` `isHasPermissionToShare`（CF_ENABLE_SHARE_RESTRICT） |
 | tree-002 悬停收藏按钮 | 已实现且浏览器验证通过（文件行 hover 显示 Star） | `dirent-list-item.js`（tooltip Star/Unstar） |
-| tags-006 系统标签锁形图标 | 待实现 | metadata 标签数据未贯通 `is_system`（repo_tags 才有） |
+| tags-006 系统标签锁形图标 | 待实现（跨系统断层） | `is_system` 在 CE `repo_tags`（P2-07），而标签树/文件标签显示走 metadata-server `/metadata/tags/`（无该字段） |
 | tags-008 超过两枚折叠 | 已实现（b24ae487c） | `file-tags/index.js` 前两枚 + `…`（+n） |
 | recycle-001 | 已按决策移除（维持原生 CE） | — |
 

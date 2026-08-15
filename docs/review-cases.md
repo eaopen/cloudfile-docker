@@ -150,11 +150,11 @@ channel=ui 的 15 条用例，逐个核对前端代码后判定：
 | icon-003 shift 连续多选 | 已实现且浏览器验证通过 | 同上 shift 分支（lastSelectedIndex 区间） |
 | icon-004 全选当前页 | 列表视图已实现（头部复选），网格视图未提供 | `dirent-list-view.js` isAllSelected/onAllItemSelected |
 | icon-005 批量操作栏 | 已实现且浏览器验证通过 | `selected-dirents-toolbar`（多选后出现） |
-| tree-003/004 悬停更多含复制 | 已实现 | `tree-node-view.js` `calculateMenuList`（COPY/MOVE） |
+| tree-003/004 悬停更多含复制 | 已实现（浏览器可验） | `tree-node-view.js` `calculateMenuList`（COPY/MOVE） |
 | search-008 匹配标签徽标 | 已实现 | `search-result-item.js` `matched-tag-badge` |
 | search-009 文件夹打开/定位 | 已实现 | 同文件 `item-folder-action`「Open folder · Locate」 |
 | share-001 分享入口隐藏 | 已实现 | `utils.js` `isHasPermissionToShare`（CF_ENABLE_SHARE_RESTRICT） |
-| tree-002 悬停收藏按钮 | 待核对 | 树节点无 star 项，收藏入口在文件行 hover（待确认映射） |
+| tree-002 悬停收藏按钮 | 已实现且浏览器验证通过（文件行 hover 显示 Star） | `dirent-list-item.js`（tooltip Star/Unstar） |
 | tags-006 系统标签锁形图标 | 待实现 | metadata 标签数据未贯通 `is_system`（repo_tags 才有） |
 | tags-008 超过两枚折叠 | 待实现 | `file-tags` formatter 未做 2+省略 |
 | recycle-001 | 已按决策移除（维持原生 CE） | — |

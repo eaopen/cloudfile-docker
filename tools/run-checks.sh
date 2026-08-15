@@ -103,17 +103,18 @@ else
     run "Compose 配置" bash -c "
         cd '$docker_repo/deploy/compose'
         cf_compose_config=\$(mktemp)
-        trap 'rm -f .env \"\$cf_compose_config\"' EXIT
-        cp .env.example .env
-        docker compose config --quiet
+        trap 'rm -f \"\$cf_compose_config\"' EXIT
+        # 直接用 --env-file 读 .env.example，绝不 cp 到 .env 再删——那样会覆盖并
+        # 销毁开发者自己的 deploy/compose/.env（gitignored，无法从 git 恢复）。
+        docker compose --env-file .env.example config --quiet
         # 空标记是 FileOp 门禁的观察模式，不能被 Compose 的默认值吞掉；
         # SeaSearch 的短间隔则必须真的进入容器，CI 才不会等上游的 10 分钟默认值。
         CF_FILEOP_TEST_REFUSE_TOKEN='' CF_SEASEARCH_INTERVAL=10s \\
-            docker compose config > \"\$cf_compose_config\"
+            docker compose --env-file .env.example config > \"\$cf_compose_config\"
         grep -Fq 'CF_FILEOP_TEST_REFUSE_TOKEN: \"\"' \"\$cf_compose_config\"
         grep -Fq 'CF_SEASEARCH_INTERVAL: 10s' \"\$cf_compose_config\"
         for p in search office worker full; do
-            docker compose --profile \$p config --services >/dev/null
+            docker compose --env-file .env.example --profile \$p config --services >/dev/null
         done
     "
 fi

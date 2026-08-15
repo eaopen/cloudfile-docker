@@ -106,8 +106,12 @@ def main():
         record('icon-003 shift 连续多选', range_selected >= 2,
                f'连续选中={range_selected}')
 
-        # icon-004: select all on current page
-        select_all = page.locator('[aria-label="Select all"], .select-all, .dirent-checkbox-select-all').first
+        # icon-004: select all on current page (grid-view select-all checkbox).
+        # Deselect first (click empty grid space) so the checkbox starts
+        # unchecked, then clicking it selects every item.
+        page.mouse.click(1250, 500)
+        time.sleep(1)
+        select_all = page.locator('#grid-view-select-all-checkbox')
         if select_all.count() > 0:
             select_all.click()
             time.sleep(1)

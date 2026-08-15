@@ -52,10 +52,9 @@
 - UI 用例实现状态（2026-08-15 代码核对）：图标视图多选 5 条、树悬停更多/复制、搜索
   匹配标签徽标与文件夹定位、分享入口隐藏均已在 `frontend/src` 实现（浏览器套件
   `review_ui_matrix.py` 已在真实栈上跑通：网格渲染、框选（icon-001）、ctrl 离散多选
-  （icon-002）、shift 连续多选（icon-003）、批量操作栏（icon-005）均通过；icon-004
-  全选在列表视图有头部复选、网格视图未提供；tree-002 悬停收藏按钮已验证；tags-008
-  折叠已实现。待补：标签锁形图标与排序（`is_system` 贯通 metadata 标签数据）。详见
-  review-cases.md 4.5。
+  （icon-002）、shift 连续多选（icon-003）、全选（icon-004，网格视图全选控件已加）、
+  批量操作栏（icon-005）均通过；tree-002 悬停收藏按钮已验证；tags-008 折叠已实现。
+  待补：标签锁形图标与排序（`is_system` 贯通 metadata 标签数据）。详见 review-cases.md 4.5。
 - 基线修复（2026-08-15）：`apply_metadata_schema_compatibility` 取消开关门控——上游
   14.0 的 `RepoMetadata` 模型无条件读 `summary_enabled` 列，但建表 SQL 缺该列，导致
   基线（开关全关）时前端目录视图（`/api/v2.1/repos/{id}/dir/`）500。现在每次启动

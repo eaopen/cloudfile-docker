@@ -20,8 +20,8 @@ from review_harness import allow_insecure, Context, create_repo, upload_file, mk
 
 def login(page, base, email, password):
     page.goto(base + '/accounts/login/', wait_until='networkidle')
-    page.fill('#id_login', email)
-    page.fill('#id_password', password)
+    page.fill('input[name="login"]', email)
+    page.fill('input[name="password"]', password)
     page.click('input[type=submit], button[type=submit]')
     # Seafile 登录后跳到库列表；失败会留在登录页
     for _ in range(30):

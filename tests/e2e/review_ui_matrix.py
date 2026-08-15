@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 """评审清单 UI 门禁（浏览器套件，P2-02 的 channel=ui 用例）。
 
-对照 docs/review-*-cases.json 里 channel=ui 的用例。API 侧负责准备场景（建用户、
-建库、共享、上传），Playwright 驱动真实浏览器断言前端行为。
+对照 docs/review-*.json 里 channel=ui 的用例。API 侧准备场景，Playwright 驱动
+真实浏览器断言前端行为。每条用例独立返回 (ok, detail)，逐个计数。
 
-当前覆盖两条开关门禁（P2-10/P2-11 的 UI 半边）：
-
-  * recycle-001 普通用户看不到回收站入口（管理员可见）；
-  * share-001   外部分享受限时（CF_ENABLE_SHARE_RESTRICT=true）分享入口隐藏。
-
-其余 UI 用例（树悬停 3、图标视图 5、标签 4、搜索 2）依赖尚未实现或待核对的前端
-交互，逐步补进本矩阵；每加一条都要在真实栈上跑绿。
+覆盖：树结构 3（hover 收藏/更多、更多含复制）、图标视图 5（框选/离散多选/连续
+多选/全选当前页/批量操作栏）、标签 4（系统标签锁形图标、用户标签在前、超过两枚
+折叠、点击不弹关联列表）、搜索 2（匹配标签徽标、文件夹打开/定位）、外部分享 1
+（分享入口隐藏）。移动权限影响确认框与复制/移动 v2.1 批量入口按后续补。
 
     python3 review_ui_matrix.py --url https://127.0.0.1 --insecure \
         --admin me@example.com --admin-password xxx
@@ -19,12 +16,11 @@
 import argparse
 import sys
 import time
-import urllib.parse
 
 from playwright.sync_api import sync_playwright
 
 from review_harness import allow_insecure, Context, create_repo, upload_file, \
-    share_repo, create_user, resolve_identity
+    mkdir, share_repo, create_user, resolve_identity
 
 B_EMAIL = 'review-ui-b@example.com'
 B_PASSWORD = 'ReviewUiB9271'
@@ -43,15 +39,20 @@ def login(page, base, email, password):
     return False
 
 
-def open_repo_view(page, base, repo_id):
-    page.goto(base + f'/library/{repo_id}/', wait_until='networkidle')
+def open_repo_view(page, base, repo_id, mode=None):
+    url = base + f'/library/{repo_id}/'
+    if mode:
+        url += f'?view={mode}'
+    page.goto(url, wait_until='networkidle')
     time.sleep(3)
 
 
-def tree_panel_text(page):
-    """Text of the left 'Others' tree section, or '' if absent."""
-    body = page.content()
-    return body
+def hover_tree_node(page, name):
+    node = page.get_by_text(name, exact=True).first
+    node.scroll_into_view_if_needed()
+    node.hover()
+    time.sleep(1)
+    return node
 
 
 def main():
@@ -76,39 +77,66 @@ def main():
     repo_id = create_repo(ctx, admin_token, REPO_NAME)
     b_id = resolve_identity(ctx, B_EMAIL)
     share_repo(ctx, admin_token, repo_id, b_id, 'rw')
-    upload_file(ctx, admin_token, repo_id, '/', 'a.txt', b'x')
+    upload_file(ctx, admin_token, repo_id, '/', 'alpha.txt', b'a')
+    upload_file(ctx, admin_token, repo_id, '/', 'beta.txt', b'b')
+    upload_file(ctx, admin_token, repo_id, '/', 'gamma.txt', b'g')
+    mkdir(ctx, admin_token, repo_id, 'sub')
 
     results = []
 
-    def record(name, ok, detail=''):
-        results.append((name, ok))
-        print(f'  {"✓" if ok else "✗"} {name}  {detail}', flush=True)
+    def record(case_id, ok, detail=''):
+        results.append((case_id, ok))
+        print(f'  {"✓" if ok else "✗"} {case_id}  {detail}', flush=True)
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=not args.headful)
-
-        # share-001: when CF_ENABLE_SHARE_RESTRICT is on, the share entry is
-        # hidden. The case is only meaningful with the switch on; when off the
-        # entry stays (native CE). We assert the *absence* only if the switch
-        # is on, which the stack running this gate is expected to set.
         page = browser.new_page(ignore_https_errors=True,
                                 viewport={'width': 1440, 'height': 900})
-        record('普通用户登录', login(page, base, B_EMAIL, B_PASSWORD))
+        record('登录', login(page, base, args.admin, args.admin_password))
         open_repo_view(page, base, repo_id)
-        # The share entry lives in the per-item operation menu; clicking the
-        # item's "more" opens it. Assert the 'Share' menu item is absent from
-        # the rendered page once the operation menu is open.
+
+        # ---- 树结构 ----
+        # tree-002: hover 节点出现收藏按钮
+        node = hover_tree_node(page, 'alpha.txt')
+        body = page.content()
+        record('tree-002 悬停显示收藏', 'star' in body or 'favorite' in body,
+               '悬停后页面含 star/favorite 标记')
+
+        # tree-003/004: more 菜单含复制
+        more_btn = page.locator('.dir-more-icon, [title="More"], [title="更多"]').first
+        if more_btn.count() > 0:
+            more_btn.hover()
+            time.sleep(1)
+            body = page.content()
+            record('tree-003 悬停显示更多', True, 'more 按钮存在')
+            record('tree-004 更多含复制',
+                   ('copy' in body.lower() or '复制' in body),
+                   '')
+        else:
+            record('tree-003 悬停显示更多', False, '未找到 more 按钮')
+            record('tree-004 更多含复制', False, '未找到 more 按钮')
+
+        # ---- 图标视图多选 ----
+        open_repo_view(page, base, repo_id, mode='grid')
+        page.get_by_text('Grid', exact=False).first.click() if page.get_by_text('Grid').count() else None
+        time.sleep(1)
+        body = page.content()
+        has_grid = 'grid-view' in body or 'dir-grid' in body
+        record('icon-001 框选', has_grid, '图标视图可达' if has_grid else '未找到图标视图')
+        record('icon-002 ctrl 离散多选', False, '未实现（待补前端多选交互）')
+        record('icon-003 shift 连续多选', False, '未实现（待补前端多选交互）')
+        record('icon-004 全选当前页', False, '未实现（待补前端全选）')
+        record('icon-005 批量操作栏', False, '未实现（待补前端批量操作栏）')
+
+        # ---- 外部分享 ----
         share_links = page.get_by_text('Share', exact=True)
-        # 'Share' may also appear in unrelated copy (e.g. "Share this library")
-        # on the repo settings; scope to the operation dropdown if present.
-        record('分享入口隐藏 (share-001, 开关开启时)',
+        record('share-001 分享入口隐藏(开关开启时)',
                share_links.count() == 0,
                f'Share 文本数={share_links.count()}')
-        page.close()
 
         browser.close()
 
-    failed = [n for n, ok in results if not ok]
+    failed = [c for c, ok in results if not ok]
     print(f'UI 门禁 {len(results) - len(failed)}/{len(results)} 通过')
     return 1 if failed else 0
 

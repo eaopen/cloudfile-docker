@@ -2,14 +2,18 @@
 # Applies to: Seafile CE 14 / CloudFile 14.0.0-cf.0.
 # Status: template only; copy to the runtime central configuration directory.
 # Never commit a real model API key.
+#
+# Default endpoint: the local "9router" LLM gateway (an OpenAI-compatible
+# service reachable from the compose network). Override url/key/model when
+# pointing at a different provider.
 
 global:
   LLM_MODELS:
     - type: other
-      url: https://llm.example.com/v1
+      url: http://9router/v1
       key: replace-with-model-api-key
       model: replace-with-model-id
-      label: Private LLM
+      label: Local 9router LLM
       default: true
       tier: high
       hidden: false

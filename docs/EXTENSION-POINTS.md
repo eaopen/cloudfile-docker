@@ -162,8 +162,10 @@ Server 侧已按 P0.5 补上 `common/cf-fileop.{c,h}`：`PREPARE`（一票否决
   分支、以及 `SEAF_ERR_CONCURRENT_UPLOAD` 重试循环（重试不会让事实翻倍）。
 - **Go**：`fileserver/cf_fileop.go` 经 RPC 问 C，接进上传、更新、分块提交、
   裸块上传、逐级建目录和同步分支更新。**不做第二份判断。**
-- **WebDAV**：**不需要补丁**——seafdav 的写全部走 `seafile_api.*` → RPC →
+- **WebDAV**：**不重复校验**——seafdav 的写全部走 `seafile_api.*` → RPC →
   `repo-op.c`，C 的 seam 天然覆盖它。再写一份 Python 校验只会得到第二个真值。
+  只补 `patches/seafdav/0002` 的状态码翻译，把 C 的 `CF_ERR_FILE_LOCKED` 拒绝
+  从上游默认的 500 翻成 423 Locked。
 - **Hub**：`register_file_op_hook` 保持原状，只补 HTTP 上下文，不作事实主路径。
 
 代价：上游改动 33 → 35（`server/repo-op.c`、`fileserver/fileop.go`）。

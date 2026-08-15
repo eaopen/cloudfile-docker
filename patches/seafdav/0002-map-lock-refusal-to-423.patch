@@ -1,0 +1,97 @@
+--- a/wsgidav/seafile_dav_provider.py
++++ b/wsgidav/seafile_dav_provider.py
+@@ -1,5 +1,6 @@
+ from wsgidav.dav_error import DAVError, HTTP_BAD_REQUEST, HTTP_FORBIDDEN, \
+-    HTTP_NOT_FOUND, HTTP_INTERNAL_ERROR, HTTP_TOO_MANY_FILES_IN_LIBRARY
++    HTTP_NOT_FOUND, HTTP_INTERNAL_ERROR, HTTP_TOO_MANY_FILES_IN_LIBRARY, \
++    HTTP_LOCKED
+ 
+ from wsgidav.dav_provider import DAVProvider, DAVCollection, DAVNonCollection
+ from threading import Timer, Lock
+@@ -58,6 +59,23 @@
+                         repo_id, rel_path, e)
+         return False
+     return perm in CF_READABLE_PERMS
++
++
++#: CloudFile's write-lifecycle lock error, mirroring common/cf-fileop.h.
++CF_ERR_FILE_LOCKED = 600
++
++
++def cf_dav_error(error):
++    """Translate a SearpcError raised by a write into its DAV status.
++
++    CloudFile patch. seafdav turns every SearpcError into 500, so a lock
++    refusal (CF_ERR_FILE_LOCKED) surfaced as "the server is broken" instead of
++    "the file is locked". The fork's seafile.rpcclient keeps err_code on
++    SearpcError; map that to 423 Locked and fall back to 500 otherwise.
++    """
++    if getattr(error, 'code', None) == CF_ERR_FILE_LOCKED:
++        return DAVError(HTTP_LOCKED, error.msg)
++    return DAVError(HTTP_INTERNAL_ERROR, error.msg)
+ 
+ 
+ class BlockMap(object):
+@@ -281,7 +299,7 @@
+                                                       self.org_id, self.is_guest)
+                 self.obj = new_obj
+         except SearpcError as e:
+-            raise DAVError(HTTP_INTERNAL_ERROR, e.msg)
++            raise cf_dav_error(e)
+         finally:
+             if self.tmpfile_path:
+                 try:
+@@ -307,7 +325,7 @@
+             self.remove_all_properties(recursive=True)
+             self.remove_all_locks(recursive=True)
+         except SearpcError as e:
+-            raise DAVError(HTTP_INTERNAL_ERROR, e.msg)
++            raise cf_dav_error(e)
+ 
+         return True
+ 
+@@ -345,7 +363,7 @@
+                                   dest_repo.id, dest_dir, '[\"' + dest_file + '\"]',
+                                   1, self.username, NEED_PROGRESS, SYNCHRONOUS)
+         except SearpcError as e:
+-            raise DAVError(HTTP_INTERNAL_ERROR, e.msg)
++            raise cf_dav_error(e)
+ 
+         return True
+ 
+@@ -379,7 +397,7 @@
+                                   dest_repo.id, dest_dir, '[\"' + dest_file + '\"]',
+                                   self.username, NEED_PROGRESS, SYNCHRONOUS)
+         except SearpcError as e:
+-            raise DAVError(HTTP_INTERNAL_ERROR, e.msg)
++            raise cf_dav_error(e)
+ 
+         return True
+ 
+@@ -574,7 +592,7 @@
+             self.remove_all_properties(recursive=True)
+             self.remove_all_locks(recursive=True)
+         except SearpcError as e:
+-            raise DAVError(HTTP_INTERNAL_ERROR, e.msg)
++            raise cf_dav_error(e)
+ 
+         return True
+ 
+@@ -609,7 +627,7 @@
+                                   dest_repo.id, dest_dir, '[\"' + dest_file + '\"]',
+                                   0, self.username, NEED_PROGRESS, SYNCHRONOUS)
+         except SearpcError as e:
+-            raise DAVError(HTTP_INTERNAL_ERROR, e.msg)
++            raise cf_dav_error(e)
+ 
+         return True
+ 
+@@ -644,7 +662,7 @@
+                                   dest_repo.id, dest_dir, '[\"' + dest_file + '\"]',
+                                   self.username, NEED_PROGRESS, SYNCHRONOUS)
+         except SearpcError as e:
+-            raise DAVError(HTTP_INTERNAL_ERROR, e.msg)
++            raise cf_dav_error(e)
+ 
+         return True
+ 

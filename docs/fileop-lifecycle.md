@@ -232,7 +232,7 @@ Go fileserver ──→ fileserver/cf_fileop.go ──RPC──→ cf_fileop_* �
 | `server/repo-op.c` | **唯一权威产生点** | 所有 C 写入最终都经过这里 |
 | `common/rpc-service.c` | 只暴露 RPC，不产生事件 | 它只覆盖 Seahub/REST 进来的调用 |
 | `fileserver/cf_fileop.go` | 经 RPC 问 C，不做第二份判断 | 同 `cf_ext.go` 的先例 |
-| seafdav | **不需要补丁** | 写路径全部走 `seafile_api.*` → RPC → `repo-op.c` |
+| seafdav | 不重复实现校验（见下） | 写路径全部走 `seafile_api.*` → RPC → `repo-op.c`；只补拒绝状态码 423 翻译 |
 | Hub `register_file_op_hook` | 只补 IP / User-Agent / session | 不是文件事实的主路径 |
 
 ### 为什么 C 的 seam 放 `repo-op.c` 而不是 `rpc-service.c`
@@ -245,13 +245,18 @@ Go fileserver ──→ fileserver/cf_fileop.go ──RPC──→ cf_fileop_* �
 **终判点不能有绕行路。** 一个漏掉的入口不会报错、不会记日志，只会在某天变成
 "锁明明在，文件却被改了"。为此接受上游改动从 33 涨到 35。
 
-### 为什么 seafdav 不打补丁
+### 为什么 seafdav 不重复实现校验（只补状态码翻译）
 
 `patches/seafdav/0001` 的注释里已经写明："every write path in this file already
 goes through check_permission_by_path"——seafdav 的写全部是 `seafile_api.post_file`
 这类调用，落在 `repo-op.c` 上。再写一份 Python 校验会得到**第二个真值**，
 而它与 C 的差异只会在生产上暴露。WebDAV 的验收因此是**验证它继承了 C 的结论**，
 不是验证它自己实现对了。
+
+唯一需要补的是一层**状态码翻译**：上游 seafdav 把所有 `SearpcError` 都翻成
+500，于是 C 的锁拒绝到了 WebDAV 客户端会变成"服务坏了"。`patches/seafdav/0002`
+在 write 路径上把 `CF_ERR_FILE_LOCKED`(600) 映射成 423 Locked，其余仍回落到
+500——它**不判断该不该锁**，只把 C 的结论用正确的 HTTP 码说出来。
 
 ### Go 的成本与那个刻意不做的缓存
 
@@ -299,7 +304,11 @@ PREPARE 拒绝时 provider 填 `GError`。契约定义三个域内错误码，�
 两个新码定义在 `common/cf-fileop.h`，从 600 起，**不加进
 `include/seafile-error.h`**——那是一个我们至今没改过的上游文件，而每多改一个
 上游文件都要在每次同步时再付一次。上游停在 522，600 给它留足了空间。
-它们和上游的码进同一个 `SEAFILE_DOMAIN`，所以 searpc 和 Seahub 照常传递。
+它们和上游的码进同一个 `SEAFILE_DOMAIN`，C 的 searpc server 照常把它编进
+`err_code`。Python 侧上游 `pysearpc` 的 `_fret_*` 却只保留 `err_msg`、丢掉
+`err_code`——`cloudfile-server/python/seafile/rpcclient.py` 在导入期把它们包成
+`SearpcError(msg, code)`，让 600 能一路传到 Seahub/WebDAV 并映射成 423；这是
+本契约"跨协议拒绝统一"那条验收的一半。
 
 **错误消息会到达终端用户**，所以它必须能解释"为什么不行"（谁持有锁、还剩多久），
 不能只是 `Permission denied`。这是从 ACL 学到的：一个不解释原因的拒绝会变成

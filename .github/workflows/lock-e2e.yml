@@ -48,16 +48,19 @@ jobs:
                       /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
           df -h / | tail -1
 
+      - name: 设置 BuildKit builder
+        uses: docker/setup-buildx-action@v3
+
+      - name: 构建 CE 14 基础镜像
+        working-directory: cloudfile-docker/image/cloudfile_14.0
+        run: ./base-build.sh
+
       - name: 构建发行包
         working-directory: cloudfile-docker/build/cloudfile_14.0
         env:
           CF_SERVER_REF: ${{ inputs.server_ref }}
           CF_HUB_REF: ${{ inputs.hub_ref }}
-        run: sudo -E ./cloudfile-build.sh "$CF_VERSION"
-
-      - name: 构建 CE 14 基础镜像
-        working-directory: cloudfile-docker/image/cloudfile_14.0
-        run: ./base-build.sh
+        run: ./build-in-docker.sh "$CF_VERSION"
 
       - name: 构建镜像
         working-directory: cloudfile-docker/image/cloudfile_14.0

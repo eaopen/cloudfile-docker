@@ -127,7 +127,8 @@ def main():
         'CF_ENABLE_FILE_LOCK', 'CF_ENABLE_WATCH',
         'CF_ENABLE_CONVERT_EXPORT', 'CF_ENABLE_CHECKOUT',
         'CF_ENABLE_LOCAL_APP', 'CF_ENABLE_S3_STORAGE',
-        'CF_ENABLE_EXTERNAL_SOURCES',
+        'CF_ENABLE_EXTERNAL_SOURCES', 'CF_ENABLE_FAVORITES_ID',
+        'CF_ENABLE_FILEOPS', 'CF_ENABLE_SHARE_RESTRICT',
     }
     record('开关清单与约定一致', set(features) == expected,
            f'多出: {sorted(set(features) - expected)} 缺少: {sorted(expected - set(features))}')

@@ -3,7 +3,8 @@
 
 > **用途**：规定所有写入口共享的 PREPARE、COMMITTED、ABORTED 三相契约和错误语义。
 > **适用版本**：CloudFile `14.0.0-cf.0`，基于 Seafile CE 14 源码重构。
-> **状态**：已实现、待整机验收；单元与跨语言契约测试已覆盖，`fileop-e2e.yml` 已存在但文档记录尚无成功跑次。
+> **状态**：已实现、待整机验收；单元与跨语言契约测试已覆盖，本地执行
+> `./tools/verify-local.sh cap fileop`。
 > **边界**：CE 写路径保留为生产者；CloudFile 新增统一 veto/事实扩展点；外部 provider 不得绕过同步终判或建立第二事实源。
 
 CloudFile 的**写入扩展点**规格。本文件是**规范**：C、Go 两处实现和后续每一个
@@ -392,8 +393,8 @@ journal 一行一个事件，字段固定顺序、空值写 `-`：
 
 ## 八、验收
 
-门禁：`.github/workflows/fileop-e2e.yml`、`tools/verify-local.sh cap fileop`、
-矩阵 `tests/e2e/fileop_matrix.py`（两阶段）。
+门禁：`tools/verify-local.sh cap fileop` 与矩阵
+`tests/e2e/fileop_matrix.py`（两阶段）。
 
 ### 8.1 全入口统一 veto
 

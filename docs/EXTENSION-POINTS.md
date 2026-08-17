@@ -171,7 +171,7 @@ Server 侧已按 P0.5 补上 `common/cf-fileop.{c,h}`：`PREPARE`（一票否决
 代价：上游改动 33 → 35（`server/repo-op.c`、`fileserver/fileop.go`）。
 为什么不放在已经登记过的 `rpc-service.c`——见 fileop-lifecycle.md 第五节。
 
-**整机门禁已补齐但还没跑过**：`fileop-e2e.yml`、`verify-local.sh cap fileop`、
+**整机门禁已补齐但还没跑过**：`verify-local.sh cap fileop`、
 两阶段矩阵 `tests/e2e/fileop_matrix.py`，以及它们要的假 provider
 `common/cf-fileop-test.c`（默认关闭，刻意不进 `CF_ENABLE_*` 清单）。
 单元级证据是 159 项 C 用例、6 项 Go 契约测试、50 个调用点的类型检查、

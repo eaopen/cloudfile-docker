@@ -34,4 +34,4 @@ CloudFile 不执行 `mount -t cifs/nfs`，不保存协议凭据，也不实现 S
 
 证据：`cloudfile-hub/cloudfile_ext/external_sources/`、
 `cloudfile-server/scripts/sql/*/cloudfile.sql`、`tests/e2e/external_sources_matrix.py` 和
-`.github/workflows/external_sources-e2e.yml`。
+`./tools/verify-local.sh cap external_sources`。

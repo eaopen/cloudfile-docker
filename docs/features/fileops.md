@@ -5,7 +5,8 @@
 > 落到 CloudFile 的 Hub API 层，并说明与 CE 原生复制/移动的边界。
 > **适用版本**：CloudFile `14.0.0-cf.0`，基于 Seafile CE 14 源码重构。
 > **状态**：已实现、待整机验收；纯策略单测本地可跑，容器 E2E 由
-> `review-copy-e2e.yml` / `review-move-e2e.yml` 在开启 `CF_ENABLE_FILEOPS` 时执行。
+> `./tools/verify-local.sh cap review-copy` / `./tools/verify-local.sh cap review-move`
+> 在开启 `CF_ENABLE_FILEOPS` 时执行。
 > **边界**：只改 Hub API（影子端点）；写入本身仍走 `seafile_api.copy_file` / `move_file`
 > → repo-op.c，权限终判仍是 CE perm（`r`/`rw`/`admin`），见
 > [roles-semantics.md](../roles-semantics.md)。
@@ -88,7 +89,7 @@ task_id、不再调用 `seafile_api`**——重复点击不会产生第二份副
 
 - **单元**：`cloudfile-hub/cloudfile_ext/fileops/tests/test_policy.py`（纯策略，本地可跑）。
 - **容器 E2E**：`review_copy_matrix.py` / `review_move_matrix.py`（开启
-  `CF_ENABLE_FILEOPS`），由 `review-copy-e2e.yml` / `review-move-e2e.yml` 执行。
+  `CF_ENABLE_FILEOPS`），由本地能力门禁执行。
 - **未覆盖**：浏览器里的移动确认框（权限变化提示的 UI）仍待前端套件；现代前端
   批量入口 `v2.1/repos/{sync,async}-batch-{copy,move}-item/` 未接本契约——本能力只
   让评审契约指向的入口转绿，把同一预检查接到批量入口是后续工作，复用同一

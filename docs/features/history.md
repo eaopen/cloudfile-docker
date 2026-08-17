@@ -4,9 +4,9 @@
 > 的 history-002/003/004/006/007）。实现是**加性参数**：不传任何新参数时，
 > `file/history` 与 `repo/history` 的行为与 Seafile CE 完全一致，不需要开关。
 > **适用版本**：CloudFile `dev`，Seafile CE 14 参考基线。
-> **状态**：验证中；容器 E2E 门禁见
-> [`.github/workflows/review-history-e2e.yml`](../../.github/workflows/review-history-e2e.yml)
-> 与 [`review_history_matrix.py`](../../tests/e2e/review_history_matrix.py)。
+> **状态**：验证中；容器 E2E 由
+> `./tools/verify-local.sh cap review-history` 运行
+> [`review_history_matrix.py`](../../tests/e2e/review_history_matrix.py)。
 
 ## 范围
 

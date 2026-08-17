@@ -317,10 +317,10 @@ def check_extension_points_documented(repo, workspace):
         ok(f'{len(declared)} 个扩展点均已登记')
 
 
-def check_capability_gates(repo):
-    """本地能力表与 CI workflow 必须包含同一组能力。
+def check_local_capabilities(repo):
+    """本地能力表必须指向存在的矩阵脚本。
 
-    MVP 只比较两个集合；不引入结果分类器或阶段状态机。
+    能力验收只在开发者本机运行，不在 GitHub Actions 中重复构建整套镜像。
     """
     script = read(os.path.join(repo, 'tools', 'verify-local.sh'))
     if not script:
@@ -332,20 +332,35 @@ def check_capability_gates(repo):
         bad('verify-local.sh 里找不到 CAPABILITIES 表')
         return
 
-    local = set(re.findall(r'"([\w-]+)\|', block.group(1)))
-
-    wf_dir = os.path.join(repo, '.github', 'workflows')
-    names = os.listdir(wf_dir) if os.path.isdir(wf_dir) else []
-    ci = {n[:-len('-e2e.yml')] for n in names if n.endswith('-e2e.yml')}
-    # 基线门禁不是能力门禁：它测的正是"一个能力都没启用"。
-    ci.discard('build-and')
-
-    if local != ci:
-        bad(f'能力门禁两边不一致：本地 {sorted(local)} / CI {sorted(ci)}',
-            '一个能力要么两边都有，要么两边都没有；\n'
-            '只有一边时，本地跑绿了并不代表 CI 在验同一件事')
+    entries = re.findall(r'"([\w-]+)\|[^|]*\|([^"|]+)"', block.group(1))
+    missing = sorted(test for _, test in entries
+                     if not os.path.isfile(os.path.join(repo, test)))
+    if missing:
+        bad(f'本地能力门禁缺少矩阵脚本：{missing}')
     else:
-        ok(f'{len(local)} 个能力门禁本地与 CI 成对（{", ".join(sorted(local))}）')
+        ok(f'{len(entries)} 个能力门禁均可本地运行')
+
+
+def check_workflow_layout(repo):
+    """GitHub Actions 只保留 dev 快速检查和 prod 构建。"""
+    wf_dir = os.path.join(repo, '.github', 'workflows')
+    names = {n for n in os.listdir(wf_dir) if n.endswith(('.yml', '.yaml'))} \
+        if os.path.isdir(wf_dir) else set()
+    expected = {'dev.yml', 'prod.yml'}
+    if names != expected:
+        bad(f'GitHub Actions 应仅保留 {sorted(expected)}，当前为 {sorted(names)}')
+        return
+
+    dev = read(os.path.join(wf_dir, 'dev.yml'))
+    prod = read(os.path.join(wf_dir, 'prod.yml'))
+    if 'branches: [dev]' not in dev or 'pull_request:' in dev or 'docker compose' in dev:
+        bad('dev.yml 必须仅在 dev 推送时运行快速检查，且不得运行容器 E2E')
+    else:
+        ok('dev.yml 仅运行开发快速检查')
+    if 'branches: [prod]' not in prod or 'tests/e2e/' in prod or 'docker compose' in prod:
+        bad('prod.yml 必须仅在 prod 推送时构建产物，且不得运行验收矩阵')
+    else:
+        ok('prod.yml 仅构建生产镜像')
 
 
 def check_feature_matrix_freshness(repo):
@@ -402,25 +417,6 @@ def check_feature_matrix_freshness(repo):
         ok('feature-matrix.md 不落后于代码')
 
 
-def stack_workflows(repo):
-    """起栈跑 E2E 的 workflow，按文件名排序。
-
-    刻意不写死 build-and-e2e.yml：每加一条能力门禁（acl-e2e.yml 及其后继），
-    它都要重新踩一遍同样的集成边界——TLS、主机名、脚本路径。第一版只查基线那
-    一条，于是 acl-e2e.yml 少了 --insecure 这个错误是人工发现的，而这恰好是
-    本文件存在的理由。凡是 `docker compose up` 的 workflow 都要过同一套检查。
-    """
-    wf_dir = os.path.join(repo, '.github', 'workflows')
-    found = []
-    for name in sorted(os.listdir(wf_dir)) if os.path.isdir(wf_dir) else []:
-        if not name.endswith(('.yml', '.yaml')):
-            continue
-        text = read(os.path.join(wf_dir, name))
-        if text and 'docker compose up' in text:
-            found.append((name, text))
-    return found
-
-
 def main():
     if len(sys.argv) != 3:
         sys.stderr.write(__doc__)
@@ -428,24 +424,14 @@ def main():
 
     repo, workspace = sys.argv[1], sys.argv[2]
 
-    workflows = stack_workflows(repo)
-    if not workflows:
-        bad('找不到任何起栈的 workflow')
-        return 1
-
-    for name, wf in workflows:
-        print(f'  ── {name}')
-        check_workflow_references(repo, wf)
-        check_tls_target(wf)
-        check_hostname(wf, workspace)
-
+    check_workflow_layout(repo)
     check_node_pin(repo, workspace)
     check_branch_ref_is_remote(repo)
     check_offline_image_build(repo)
     check_seahub_settings_block(repo)
     check_switch_lists(repo, workspace)
     check_extension_points_documented(repo, workspace)
-    check_capability_gates(repo)
+    check_local_capabilities(repo)
     check_feature_matrix_freshness(repo)
 
     return 1 if failures else 0

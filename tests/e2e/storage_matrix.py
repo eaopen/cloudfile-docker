@@ -4,7 +4,7 @@
 这条门禁只覆盖 REST 可达的部分（上传/下载走的是同一条 HTTP 路径，backend 选
 FS 还是 S3 对客户端透明）。GC/FSCK 的完整遍历、修复模式的停服校验，以及
 seaf-storage-migrate.sh 本身，都是宿主机侧的 CLI 行为，不经过这条 HTTP 通道
-——它们由 verify-local.sh 的 cap_storage_run 或 storage-e2e.yml 用
+——它们由 verify-local.sh 的 cap_storage_run 用
 `docker compose exec`/`docker compose run` 直接驱动，跟这份脚本配合，但不在
 这份脚本里。
 

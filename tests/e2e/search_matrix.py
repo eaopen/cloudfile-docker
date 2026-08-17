@@ -3,7 +3,7 @@
 开关后恢复原生行为。
 
 三阶段，跨两次配置变更（由 verify-local.sh 的 cap_search_run 或
-search-e2e.yml 编排，这份脚本本身不改配置、不重启容器）：
+verify-local.sh cap search 编排，这份脚本本身不改配置、不重启容器）：
 
     phase 1 —— CF_ENABLE_SEARCH=true、CF_PROVIDER_SEARCH 留空（默认，走
                upstream 自己的 SeaSearch 分支，seahub.api2.views.Search.get()

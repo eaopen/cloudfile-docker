@@ -4,9 +4,9 @@
 > share-002/003/004）。新增开关 `CF_ENABLE_SHARE_RESTRICT`，默认关闭；关闭时
 > 外部分享为原生 CE 行为，开启后由 CloudFile 管控。
 > **适用版本**：CloudFile `dev`，Seafile CE 14 参考基线。
-> **状态**：验证中；容器 E2E 门禁见
-> [`.github/workflows/review-share-e2e.yml`](../../.github/workflows/review-share-e2e.yml)
-> 与 [`review_share_matrix.py`](../../tests/e2e/review_share_matrix.py)。
+> **状态**：验证中；容器 E2E 由
+> `./tools/verify-local.sh cap review-share` 运行
+> [`review_share_matrix.py`](../../tests/e2e/review_share_matrix.py)。
 
 ## 开关与语义
 

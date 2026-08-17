@@ -11,13 +11,13 @@
 
 ## 1. 三元组
 
-每个模块一套，照搬目录 ACL 的 cases.json + matrix.py + e2e.yml 结构：
+每个模块一套，包含 cases.json、matrix.py 与本地能力门禁：
 
 | 层 | 文件 | 作用 |
 |---|---|---|
 | 用例集 | `docs/review-<模块>-cases.json` | 机器可读、可计数的用例契约（本目录 9 份） |
 | 矩阵 | `tests/e2e/review_<模块>_matrix.py` | 起栈后按 HTTP 断言 api 通道用例 |
-| 门禁 | `.github/workflows/review-<模块>-e2e.yml` | 构建镜像 + 跑矩阵的 CI job |
+| 门禁 | `tools/verify-local.sh cap review-<模块>` | 本地构建镜像并运行矩阵 |
 
 公共的 HTTP 装配（请求/token/建用户/建库/共享/上传/用例装载与计数）抽在
 `tests/e2e/review_harness.py`，九个矩阵共享，避免九份重复样板。
@@ -80,7 +80,7 @@ python3 tests/e2e/review_copy_matrix.py --url https://127.0.0.1 --insecure \
     --admin me@example.com --admin-password xxx
 ```
 
-CI 门禁在 `.github/workflows/review-<模块>-e2e.yml`。当前为契约期，矩阵对
+本地门禁使用 `./tools/verify-local.sh cap review-<模块>`。当前为契约期，矩阵对
 CE 已原生支持的部分应绿（如复制"来源可读+目标可写"、标签"创建需 rw"、文件修订历史），
 对评审新要求应红（如权限变化提示、分享开关关闭）。这条红/绿
 边界就是 P2-03/P2-06/P2-07 的施工清单。

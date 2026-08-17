@@ -133,7 +133,7 @@ CE 可用的独立分配层上补齐新建库入口和 E2E，不改变已验证�
 
 ## 验证范围
 
-`storage-e2e.yml` 和 `storage_matrix.py` 覆盖 local + MinIO、跨 block 文件、GC、FSCK、
+`verify-local.sh cap storage` 和 `storage_matrix.py` 覆盖 local + MinIO、跨 block 文件、GC、FSCK、
 离线迁移和迁移后读写。C/Go 单测覆盖配置、路由和 S3 对象操作。AWS S3、Ceph RGW、
 公有云 S3 兼容服务均不在当前兼容性承诺内；多架构压力、故障注入和大规模迁移也尚无
 统一验证结论。公开文档只应写“支持 S3 兼容接口，当前验证对象为 MinIO”。

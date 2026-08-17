@@ -1,0 +1,78 @@
+name: CloudFile production build
+
+on:
+  push:
+    branches: [prod]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Build version
+        default: '14.0.0-cf.0'
+
+concurrency:
+  group: prod-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CF_VERSION: ${{ inputs.version || '14.0.0-cf.0' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: cloudfile-docker
+
+      - name: Free disk space
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+          df -h / | tail -1
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Restore build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: cloudfile-docker/build/cloudfile_14.0/.cache
+          key: cf-prod-build-${{ hashFiles('cloudfile-docker/image/cloudfile_14.0/Dockerfile.base', 'cloudfile-docker/build/cloudfile_14.0/cloudfile-build.sh', 'cloudfile-docker/build/cloudfile_14.0/build-in-docker.sh') }}
+          restore-keys: |
+            cf-prod-build-
+
+      - name: Build CE 14 base image
+        working-directory: cloudfile-docker/image/cloudfile_14.0
+        run: ./base-build.sh
+
+      - name: Build release package
+        working-directory: cloudfile-docker/build/cloudfile_14.0
+        run: ./build-in-docker.sh "$CF_VERSION"
+
+      - name: Save build cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: cloudfile-docker/build/cloudfile_14.0/.cache
+          key: cf-prod-build-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Build production image
+        working-directory: cloudfile-docker/image/cloudfile_14.0
+        run: ./docker-build.sh "$CF_VERSION"
+
+      - name: Record build sources
+        run: |
+          cat "cloudfile-docker/build/cloudfile_14.0/seafile-server-$CF_VERSION/cloudfile-build-info.txt" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Export image
+        run: |
+          docker save "cloudfile/cloudfile:$CF_VERSION" | gzip -1 > "cloudfile-$CF_VERSION.tar.gz"
+          ls -lh "cloudfile-$CF_VERSION.tar.gz"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloudfile-production-image-${{ env.CF_VERSION }}
+          path: cloudfile-*.tar.gz
+          retention-days: 14

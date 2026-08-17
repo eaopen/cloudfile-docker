@@ -9,7 +9,7 @@
 seahub.api2.views.Search 里明确注释的行为，不是缺实现。
 
 编排层负责起 Meilisearch、把 CF_PROVIDER_SEARCH 切到 meilisearch 并跑过一轮
-cf_worker --once（同 search-e2e.yml 的做法）；矩阵本身不改配置、不重启容器。
+cf_worker --once（由 verify-local.sh cap review-search 编排）；矩阵本身不改配置、不重启容器。
 """
 
 import json

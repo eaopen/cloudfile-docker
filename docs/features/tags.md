@@ -37,7 +37,7 @@ CE 14 中同时保留两类标签数据通路：
 
 可执行验收是 [`review-tags-cases.json`](review-tags-cases.json) 与
 [`review_tags_matrix.py`](../tests/e2e/review_tags_matrix.py)（api 用例 tags-001～tags-005），
-由 [`review-tags-e2e.yml`](../.github/workflows/review-tags-e2e.yml) 在开启 `CF_ENABLE_TAGS` 的
+由 `./tools/verify-local.sh cap review-tags` 在开启 `CF_ENABLE_TAGS` 的
 容器门禁中执行。锁形图标、折叠展示与「点击不弹关联列表」仍是浏览器用例（channel: `ui`），留待浏览器套件。
 
 ## 数据与故障边界

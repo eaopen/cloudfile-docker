@@ -1,25 +1,20 @@
-name: CloudFile checks
-
-# 快速门禁：不构建镜像，几分钟出结果。
-#
-# 三个仓库共用 tools/run-checks.sh，逻辑只有一份。cloudfile-server 与
-# cloudfile-hub 的同名 workflow 会把自己那一份换成被测 ref，其余两个取 dev。
+name: CloudFile development checks
 
 on:
   push:
     branches: [dev]
-  pull_request:
-  workflow_dispatch:
+
+concurrency:
+  group: dev-checks-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   checks:
     runs-on: ubuntu-24.04
     steps:
-      # 三仓并排 checkout —— 脚本按 workspace/<repo> 的相对位置互相查找。
       - uses: actions/checkout@v4
         with:
           path: cloudfile-docker
-          # 上游改动登记检查要能算出与基线的 diff，需要完整历史。
           fetch-depth: 0
 
       - uses: actions/checkout@v4
@@ -45,13 +40,13 @@ jobs:
           go-version-file: cloudfile-server/fileserver/go.mod
           cache-dependency-path: cloudfile-server/fileserver/go.sum
 
-      - name: 安装 C 侧测试依赖
+      - name: Install C test dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libglib2.0-dev pkg-config
 
-      - name: pytest
+      - name: Install pytest
         run: pip install --quiet pytest
 
-      - name: 运行检查
+      - name: Run development checks
         run: ./cloudfile-docker/tools/run-checks.sh

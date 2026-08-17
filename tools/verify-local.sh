@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# 在本机跑一遍与 CI 完全相同的基线门禁。
+# 在本机运行完整的构建与验收门禁。
 #
 # 存在的理由很直接：CI 一轮 20 分钟，而前六次失败全是集成边界上的问题——qu
 # PATH、依赖链、系统库、版本号格式、TLS——没有一个是 `bash -n` 或单元测试能
@@ -17,7 +17,8 @@
 # 基线门禁与能力门禁问的是不同的问题，所以是两条命令：前者问"开关全关时是否
 # 等同原生 CE"，后者问"开着开关时，每个入口是否真的执行了规则"。
 #
-# 与 CI 的差异（有意为之，且只有这些）：
+# GitHub Actions 仅执行 dev 快速检查与 prod 构建；所有容器 E2E 均在本机执行。
+# 本地环境与 GitHub runner 的差异：
 #   - 构建在 ubuntu 容器里跑（CI 的 runner 本身就是 ubuntu）
 #   - 端口默认 80/443（与 CI 一致，绝对 URL 才对得上）；被占用时可用
 #     CF_LOCAL_HTTP_PORT / CF_LOCAL_HTTPS_PORT 覆盖
@@ -124,8 +125,7 @@ build_image() {
 
 # ── 起栈 + E2E ──────────────────────────────────────────────────────────
 #
-# 能力门禁登记表：<名字>|<开关>|<E2E 脚本>。preflight 会将这里的名字
-# 与 .github/workflows/*-e2e.yml 比较，避免本地与 CI 漂移。
+# 能力门禁登记表：<名字>|<开关>|<E2E 脚本>。这是本地验收的唯一登记处。
 CAPABILITIES=(
     "acl|CF_ENABLE_DIR_ACL|tests/e2e/acl_matrix.py"
     "sso|CF_ENABLE_SSO|tests/e2e/sso_matrix.py"
@@ -164,8 +164,7 @@ CAP_NAME=${CAP_NAME:-}
 #   cap_<名>_env   往 .env 追加的行（每行 KEY=VALUE）
 #   cap_<名>_run   自定义跑法；不定义则跑一遍 <能力>_matrix.py
 #
-# 必须与 .github/workflows/<能力>-e2e.yml 保持一致——本地门禁存在的全部理由就是
-# 不要再手抄那份 workflow。
+# 编排与矩阵放在同一脚本内，避免维护第二份 GitHub workflow。
 
 cap_sso_env() {
     cat <<EOF
@@ -326,7 +325,7 @@ cap_fileop_run() {
         --state-file "$STAGE_DIR/fileop-matrix-state.json" || return 1
 }
 
-# 锁门禁与 CI（lock-e2e.yml）同序：先开锁/签入签出跑跨协议矩阵，再关开关证原生透传。
+# 锁门禁先开锁/签入签出跑跨协议矩阵，再关开关证原生透传。
 # 矩阵自己只发 HTTP，配置切换与重启在这里做。
 cap_lock_run() {
     local base=$1
@@ -490,7 +489,7 @@ e2e() {
 # 能力门禁：开着自己的开关起栈，先证明没把原生功能弄坏，再跑能力自己的用例。
 #
 # 顺序是有意的：冒烟先挂的话，能力矩阵的失败信息会指向一堆下游症状，
-# 排查时分不清"规则拦错了"还是"服务压根没起来"。与 <能力>-e2e.yml 同序。
+# 排查时分不清"规则拦错了"还是"服务压根没起来"，因此先跑原生冒烟。
 capability_e2e() {
     local name=$1 switch test_rel entry
     for entry in "${CAPABILITIES[@]}"; do

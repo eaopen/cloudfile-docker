@@ -31,4 +31,4 @@ Meilisearch 文本提取只覆盖配置允许的纯文本和大小上限，不�
 解析。外部资料源索引只在 Meilisearch provider 下运行，索引故障不应阻塞原生资料库访问。
 
 证据：`cloudfile-hub/cloudfile_ext/search/`、`cloudfile-docker/tests/e2e/search_matrix.py`、
-`.github/workflows/search-e2e.yml`。旧的方案比较和排期已移入[历史索引](../history/README.md)。
+`./tools/verify-local.sh cap search`。旧的方案比较和排期已移入[历史索引](../history/README.md)。

@@ -5,7 +5,7 @@
 影子成统一预检查：权限否定用目录 ACL 收紧来源/目标；同名冲突默认 rename（绝不静默
 覆盖）；单文件大小/文件夹层级逐项进失败清单；配额 443；task_id 幂等去重。门禁需要
 在 .env 里设置 CF_FILEOP_MAX_FILE_SIZE 与 CF_FILEOP_MAX_FOLDER_DEPTH 供大小/层级
-用例使用（见 review-copy-e2e.yml）。
+用例使用（由 verify-local.sh cap review-copy 编排）。
 """
 
 import os

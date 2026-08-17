@@ -186,7 +186,10 @@ def phase1(base, admin, password, context, state_file):
         return False
 
     tag = uuid.uuid4().hex[:12]
-    alpha_marker, beta_marker = 'cfsearch-alpha-' + tag, 'cfsearch-beta-' + tag
+    # SeaSearch tokenizes punctuation-separated terms and applies OR matching.
+    # Keep each discriminator as one opaque token so the shared random suffix
+    # cannot make both fixtures match an alpha/beta-specific query.
+    alpha_marker, beta_marker = 'cfsearchalpha' + tag, 'cfsearchbeta' + tag
     alpha_name, beta_name = 'search-matrix-alpha-%s.txt' % tag, 'search-matrix-beta-%s.txt' % tag
 
     passed = check('未登录请求需要认证',

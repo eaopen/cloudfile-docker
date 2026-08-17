@@ -339,8 +339,8 @@ def phase_one(admin, base, journal, state_path):
                   method='POST', form={'operation': 'create'})
     mark = since()
     status, body = admin.api(
-        f'/api/v2.1/repos/{repo_id}/batch-delete-item/', method='DELETE',
-        data=json.dumps({'parent_dir': '/box',
+        '/api/v2.1/repos/batch-delete-item/', method='DELETE',
+        data=json.dumps({'repo_id': repo_id, 'parent_dir': '/box',
                          'dirents': ['d1.txt', 'd2.txt']}),
         headers={'Content-Type': 'application/json'})
     record('REST', '批量删除成功', status == 200, f'status={status} {body[:160]}')
@@ -462,8 +462,9 @@ def phase_two(admin, base, journal, state_path):
     # -- REST 删除
     mark = journal.count()
     status, body = admin.api(
-        f'/api/v2.1/repos/{repo_id}/batch-delete-item/', method='DELETE',
-        data=json.dumps({'parent_dir': '/box', 'dirents': [TOKEN]}),
+        '/api/v2.1/repos/batch-delete-item/', method='DELETE',
+        data=json.dumps({'repo_id': repo_id, 'parent_dir': '/box',
+                         'dirents': [TOKEN]}),
         headers={'Content-Type': 'application/json'})
     # 批量端点失败时返回 200，逐项结果在 failed 里——这一轮被这个套路坑过三次。
     data = jbody(body) or {}

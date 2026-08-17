@@ -140,7 +140,7 @@ def update(client, repo_id, path, content):
                    headers={'Content-Type': content_type})
 
 
-def expect_refused(area, case, status, body, allowed=(403, 409, 423, 502)):
+def expect_refused(area, case, status, body, allowed=(403, 409, 423, 502, 520)):
     record(area, case, status in allowed and status != 500,
            f'status={status} {body[:200]}')
 

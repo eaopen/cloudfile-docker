@@ -317,7 +317,10 @@ def phase2(base, admin, password, context, state_file):
                     status == 200 and result_names(parsed) == [state['beta_name']],
                     'status=%s names=%s body=%s' % (status, result_names(parsed), raw[:200]))
 
-    status, parsed, raw = search(base, token, 'cfsearch-nonexistent-' + uuid.uuid4().hex, context)
+    # One opaque token: punctuation would let Meilisearch match the shared
+    # ``cfsearch`` fragment under its normal typo-tolerant OR semantics.
+    missing_marker = 'zznonexistent' + uuid.uuid4().hex
+    status, parsed, raw = search(base, token, missing_marker, context)
     passed &= check('不存在的关键词不返回任何结果（无假阳性）',
                     status == 200 and not parsed.get('results'),
                     'status=%s body=%s' % (status, raw[:200]))

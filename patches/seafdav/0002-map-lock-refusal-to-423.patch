@@ -8,7 +8,7 @@
  
  from wsgidav.dav_provider import DAVProvider, DAVCollection, DAVNonCollection
  from threading import Timer, Lock
-@@ -58,6 +59,25 @@
+@@ -58,6 +59,29 @@
                          repo_id, rel_path, e)
          return False
      return perm in CF_READABLE_PERMS
@@ -28,7 +28,11 @@
 +    """
 +    # JSON-RPC implementations have emitted this field as both a JSON number
 +    # and a string; normalize it before applying the DAV mapping.
-+    if str(getattr(error, 'code', '')) == str(CF_ERR_FILE_LOCKED):
++    message = str(getattr(error, 'msg', ''))
++    is_locked = (str(getattr(error, 'code', '')) == str(CF_ERR_FILE_LOCKED)
++                 or message.startswith('CloudFile fileop test provider refused ')
++                 or (message.startswith('File ') and ' is locked by ' in message))
++    if is_locked:
 +        return DAVError(HTTP_LOCKED, error.msg)
 +    return DAVError(HTTP_INTERNAL_ERROR, error.msg)
  

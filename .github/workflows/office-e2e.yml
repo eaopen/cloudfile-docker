@@ -62,6 +62,7 @@ jobs:
           {
             echo "CLOUDFILE_IMAGE=cloudfile/cloudfile:$CF_VERSION"
             echo "ONLYOFFICE_JWT_SECRET=CloudFile-CI-Office-4417"
+            echo "ONLYOFFICE_FILE_SERVER_ROOT=http://cloudfile/seafhttp"
           } >> .env
           grep '^CF_ENABLE_ONLYOFFICE=true$' .env   # 开关确实开着
           docker compose up -d

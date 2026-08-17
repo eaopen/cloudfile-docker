@@ -476,6 +476,15 @@ def _settings_block_office():
     if not parsed.hostname:
         raise Exception(
             'ONLYOFFICE_APIJS_URL must include a hostname, got %r' % apijs_url)
+
+    file_server_root = get_conf('ONLYOFFICE_FILE_SERVER_ROOT', '').strip()
+    if file_server_root:
+        file_server_parsed = urlsplit(file_server_root)
+        if (file_server_parsed.scheme not in ('http', 'https') or
+                not file_server_parsed.hostname):
+            raise Exception(
+                'ONLYOFFICE_FILE_SERVER_ROOT must be an http(s) absolute URL, '
+                'got %r' % file_server_root)
     # Normalized origin used by the callback download as its sole trust
     # boundary: scheme + hostname + effective port (omit the default port for
     # the scheme). userinfo/fragment/path never enter this value.
@@ -507,6 +516,9 @@ def _settings_block_office():
         # Renderer + converter endpoint. Upstream derives ONLYOFFICE_CONVERTER_URL
         # from this in seahub/onlyoffice/settings.py.
         'ONLYOFFICE_APIJS_URL = %r' % apijs_url,
+        # Optional internal route used only for source-file URLs handed to
+        # Document Server. Public browser/download URLs remain unchanged.
+        'ONLYOFFICE_FILE_SERVER_ROOT = %r' % file_server_root,
         # Trusted Document Server origin for the callback download. The
         # callback download refuses any URL whose scheme+host+port differs.
         'CF_ONLYOFFICE_TRUSTED_ORIGIN = %r' % trusted_origin,

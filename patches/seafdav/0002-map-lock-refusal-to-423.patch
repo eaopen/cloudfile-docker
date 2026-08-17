@@ -8,7 +8,7 @@
  
  from wsgidav.dav_provider import DAVProvider, DAVCollection, DAVNonCollection
  from threading import Timer, Lock
-@@ -58,6 +59,23 @@
+@@ -58,6 +59,25 @@
                          repo_id, rel_path, e)
          return False
      return perm in CF_READABLE_PERMS
@@ -26,7 +26,9 @@
 +    "the file is locked". The fork's seafile.rpcclient keeps err_code on
 +    SearpcError; map that to 423 Locked and fall back to 500 otherwise.
 +    """
-+    if getattr(error, 'code', None) == CF_ERR_FILE_LOCKED:
++    # JSON-RPC implementations have emitted this field as both a JSON number
++    # and a string; normalize it before applying the DAV mapping.
++    if str(getattr(error, 'code', '')) == str(CF_ERR_FILE_LOCKED):
 +        return DAVError(HTTP_LOCKED, error.msg)
 +    return DAVError(HTTP_INTERNAL_ERROR, error.msg)
  

@@ -115,6 +115,12 @@ jobs:
           grep '^CF_ENABLE_DIR_ACL=true$' .env
           docker compose up -d
           docker compose --profile search up -d --wait --wait-timeout 90 seasearch meilisearch
+          # seafevents probes SeaSearch only during startup. The first
+          # cloudfile boot necessarily precedes the profile service because
+          # SeaSearch shares its initialized volume, so restart after the
+          # dependency is healthy and let the index updater initialize.
+          docker compose restart cloudfile
+          docker compose up -d --wait --wait-timeout 120 cloudfile
           docker compose ps
 
       - name: 原生功能未被破坏

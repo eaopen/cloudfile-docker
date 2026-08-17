@@ -145,7 +145,7 @@ openssl rand -hex 32
 docker compose --profile convert up -d
 ```
 
-OnlyOffice 另需 `ONLYOFFICE_JWT_SECRET`、`CF_ENABLE_ONLYOFFICE=true` 与 `office` profile。完整锁与写回限制见 [`../../docs/features/file-collaboration.md`](../../docs/features/file-collaboration.md)。
+OnlyOffice 另需 `ONLYOFFICE_JWT_SECRET`、`CF_ENABLE_ONLYOFFICE=true` 与 `office` profile。如 Document Server 无法访问公网文件地址，可用 `ONLYOFFICE_FILE_SERVER_ROOT` 指定它可达的内部 fileserver 根地址（例如 `http://cloudfile/seafhttp`）。完整锁与写回限制见 [`../../docs/features/file-collaboration.md`](../../docs/features/file-collaboration.md)。
 
 ## TLS
 

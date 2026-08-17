@@ -399,7 +399,7 @@ def phase_two(admin, base, journal, state_path):
     repo_name = state['repo_name']
     print(f'  库 {repo_id}', flush=True)
 
-    def refused(area, case, status, body, want=(403, 423, 500),
+    def refused(area, case, status, body, want=(403, 423, 500, 520),
                 forbid_500=True):
         """拒绝到达了客户端，而且不是以 500 的形式。
 

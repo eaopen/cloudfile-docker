@@ -37,6 +37,7 @@
 |---|---|
 | [上游贡献建议](upstream-contribution.md) | 可提交、拆分后提交和内部保留的改动 |
 | [路线图](roadmap.md) | 仅保留未完成项，不承诺日期 |
+| [权限表与权限模型](permission-tables.md) | 权限相关表清单、字段语义、口径决策与收敛路线 |
 | [分支与上游跟随](BRANCHES.md) | 当前分支、合并门槛和同步步骤 |
 | [扩展点清单](EXTENSION-POINTS.md) | Hub/Server 扩展点及消费者技术参考 |
 | [历史版本](history/README.md) | 被替代方案、旧规划和决策过程索引 |

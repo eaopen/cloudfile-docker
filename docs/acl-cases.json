@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "comment": "Executable form of docs/acl-semantics.md. Loaded by the Python, C and Go test suites; all three MUST agree on every check. 'expect': null means no access (None / NULL / \"\").",
+  "version": 2,
+  "comment": "Executable form of docs/acl-semantics.md. Loaded by the Python, C and Go test suites; all three MUST agree on every check. 'expect': null means no access (None / NULL / \"\"). v2 (2026-08-17): same-subject-type merge takes the highest grant (deny still vetoes); file rules override directory rules.",
   "repo_id": "11111111-2222-3333-4444-555555555555",
   "cases": [
     {
@@ -82,14 +82,28 @@
       ]
     },
     {
-      "name": "same subject type at same level takes the strictest",
+      "name": "same subject type at same level takes the highest grant",
       "subjects": { "user": "b@example.com", "groups": ["1", "2"], "depts": [] },
       "rules": [
         { "path": "/a", "subject_type": "group", "subject": "1", "permission": "rw", "inherit": 1 },
         { "path": "/a", "subject_type": "group", "subject": "2", "permission": "r", "inherit": 1 }
       ],
       "checks": [
-        { "path": "/a", "native": "rw", "expect": "r" }
+        { "path": "/a", "native": "rw", "expect": "rw" }
+      ]
+    },
+    {
+      "name": "deny vetoes a higher grant at the same level",
+      "subjects": { "user": "b@example.com", "groups": ["1", "2"], "depts": [] },
+      "rules": [
+        { "path": "/a", "subject_type": "group", "subject": "1", "permission": "rw", "inherit": 1 },
+        { "path": "/a", "subject_type": "group", "subject": "2", "permission": "none", "inherit": 1 },
+        { "path": "/b", "subject_type": "group", "subject": "1", "permission": "r", "inherit": 1 },
+        { "path": "/b", "subject_type": "group", "subject": "2", "permission": "invisible", "inherit": 1 }
+      ],
+      "checks": [
+        { "path": "/a", "native": "rw", "expect": null },
+        { "path": "/b", "native": "rw", "expect": null }
       ]
     },
     {
@@ -237,6 +251,19 @@
       ],
       "checks": [
         { "path": "/restricted/report.docx", "native": "rw", "expect": "r" }
+      ]
+    },
+    {
+      "name": "file rule overrides the parent directory rule",
+      "subjects": { "user": "b@example.com", "groups": [], "depts": [] },
+      "rules": [
+        { "path": "/a", "subject_type": "user", "subject": "b@example.com", "permission": "r", "inherit": 1 },
+        { "path": "/a/report.docx", "subject_type": "user", "subject": "b@example.com", "permission": "rw", "inherit": 1 }
+      ],
+      "checks": [
+        { "path": "/a/report.docx", "native": "rw", "expect": "rw" },
+        { "path": "/a/other.docx", "native": "rw", "expect": "r" },
+        { "path": "/a/sub/report.docx", "native": "rw", "expect": "r" }
       ]
     },
     {

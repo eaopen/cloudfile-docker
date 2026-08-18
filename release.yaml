@@ -43,6 +43,9 @@ upstream:
   libevhtp: 291aedae9dda722976cf0dcece66105c93758729
 
 # Bump when cf_* tables change shape; the upgrade path keys off this.
-database_schema: 1
+# 1 -> 2 (2026-08-17): added cf_dir_admin (directory-level delegated manage).
+# Additive, IF NOT EXISTS, auto-applied by the bootstrap on every start -- no
+# manual migration step.
+database_schema: 2
 # Bump when cloudfile_ext.registry hook signatures change.
 extension_api: 1

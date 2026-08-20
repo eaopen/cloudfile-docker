@@ -33,6 +33,20 @@ seaf-server / WebDAV / 同步客户端
 - 筛选：`repo_id`、`user`（操作人）、`op_type`、`obj_type`、`source`、`result`、
   `path`、`start`/`end`（时间，epoch 秒或 ISO-8601）；每页最多 200 条，按时间倒序。
 
+Seafile 原生日志入口只到存储库级（库的历史/活动列表）。目录/文件级操作日志不另建
+API，就是同一查询接口的 `path` 筛选（子串匹配，命中 `path` 与 `old_path`）：
+
+```bash
+# 某目录及其子目录发生过什么（目录级操作日志）
+GET /api/v2.1/cloudfile/audit/?repo_id=<id>&path=/docs
+# 某文件发生过什么，含移动/改名后的新路径（文件级操作日志）
+GET /api/v2.1/cloudfile/audit/?repo_id=<id>&path=/docs/a.txt&obj_type=file
+# 再叠加操作人/操作类型/时间窗
+GET /api/v2.1/cloudfile/audit/?repo_id=<id>&path=/docs&user=a@x.c&op_type=delete&start=1750000000
+```
+
+CSV 导出接受同一组筛选参数。容器门禁含「按目录/文件路径筛选」两项断言（2026-08-20 起）。
+
 `Activity` 是 seafevents 的持久化权威表，位于 seahub-db，仍是目录/文件提交变更的
 唯一事实来源，因此本能力不为文件操作另建平行日志（否则 WebDAV/同步客户端产生的那
 部分变更会漏记）。但**标签变更没有 seafevents 生产者**——标签只通过 Seahub 的

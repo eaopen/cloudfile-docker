@@ -241,6 +241,32 @@ def main():
                     'status=%s operations=%s events=%s %s' %
                     (status, sorted(operations), len(events), body[:500]))
 
+    # 目录/文件级视图：Seafile 原生日志只有库级列表，这里的 path 筛选就是
+    # 「这一个目录/文件发生过什么」的入口——子串匹配，子目录事件一并命中。
+    status, body = request(base + '/api/v2.1/cloudfile/audit/?' +
+                           urllib.parse.urlencode({'repo_id': repo_id,
+                                                   'path': 'audit-dir'}),
+                           token=token, context=context)
+    path_events = json_body(body).get('events') or []
+    path_ok = (status == 200 and path_events and
+               all('audit-dir' in (event.get('path') or '') or
+                   'audit-dir' in (event.get('old_path') or '')
+                   for event in path_events))
+    passed &= check('按目录路径筛选（目录级操作日志）', path_ok,
+                    'status=%s events=%s %s' %
+                    (status, len(path_events), body[:500]))
+
+    status, body = request(base + '/api/v2.1/cloudfile/audit/?' +
+                           urllib.parse.urlencode({'repo_id': repo_id,
+                                                   'path': moved_path}),
+                           token=token, context=context)
+    file_events = json_body(body).get('events') or []
+    file_ok = (status == 200 and file_events and
+               any(event.get('operation') == 'move' for event in file_events))
+    passed &= check('按文件路径筛选（文件级操作日志，含移动后路径）', file_ok,
+                    'status=%s events=%s %s' %
+                    (status, len(file_events), body[:500]))
+
     status, body = request(base + '/api/v2.1/cloudfile/audit/?' +
                            urllib.parse.urlencode({'repo_id': repo_id, 'obj_type': 'file'}),
                            token=token, context=context)

@@ -134,6 +134,7 @@ CAPABILITIES=(
     "storage|CF_ENABLE_S3_STORAGE|tests/e2e/storage_matrix.py"
     "search|CF_ENABLE_SEARCH CF_ENABLE_DIR_ACL|tests/e2e/search_matrix.py"
     "external_sources|CF_ENABLE_EXTERNAL_SOURCES|tests/e2e/external_sources_matrix.py"
+    "external_sources_real|CF_ENABLE_EXTERNAL_SOURCES|tests/e2e/external_sources_matrix.py"
     "fileop|CF_FILEOP_TEST_PROVIDER|tests/e2e/fileop_matrix.py"
     "lock|CF_ENABLE_FILE_LOCK CF_ENABLE_CHECKOUT|tests/e2e/lock_matrix.py"
     "local-edit|CF_ENABLE_FILE_LOCK CF_ENABLE_LOCAL_APP|tests/e2e/local_edit_matrix.py"
@@ -461,6 +462,47 @@ cap_external_sources_run() {
 
     python3 "$repo/tests/e2e/external_sources_matrix.py" --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
+}
+
+# 真实 SMB 验收（T5，2026-08-20）：fs-backed local-path 只证明路径语义，这里
+# 起真实 Samba 服务器、cloudfile 容器以 privileged + cifs-utils 真实挂载
+# CIFS v3 到 /shared/external/e2e 再跑同一矩阵。NFS 侧：OrbStack 内核无 nfs
+# 客户端模块（/proc/filesystems 只有 nfsd），挂不上——记为环境限制，非产品缺口。
+cap_external_sources_real_run() {
+    local base=$1 net=t5-external-real
+
+    say "起 Samba 服务器（dockur/samba，share=Data）"
+    docker network create "$net" >/dev/null 2>&1 || true
+    docker rm -f t5-samba >/dev/null 2>&1 || true
+    docker run -d --name t5-samba --network "$net" \
+        -e USER=t5user -e PASS=t5pass --cap-add SYS_ADMIN \
+        ghcr.io/dockur/samba:latest >/dev/null || return 1
+    sleep 25
+    docker exec t5-samba sh -c \
+        "mkdir -p /storage/nested && printf 'CloudFile external source fixture\\n' > /storage/readme.txt && printf 'nested fixture\\n' > /storage/nested/inside.txt" || return 1
+
+    say "以 privileged 重建 cloudfile 并挂载 CIFS v3"
+    cat > "$STAGE_DIR/docker-compose.override.yml" <<'OVR'
+services:
+  cloudfile:
+    privileged: true
+OVR
+    compose up -d --force-recreate cloudfile || return 1
+    docker network connect "$net" cloudfile 2>/dev/null || true
+    compose exec -T cloudfile bash -c '
+        apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq cifs-utils >/dev/null 2>&1
+        mkdir -p /shared/external/e2e
+        mount -t cifs -o vers=3,user=t5user,pass=t5pass //t5-samba/Data /shared/external/e2e
+        ls /shared/external/e2e/readme.txt' || return 1
+
+    python3 "$repo/tests/e2e/external_sources_matrix.py" --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
+
+    local rc=$?
+    compose exec -T cloudfile umount /shared/external/e2e >/dev/null 2>&1 || true
+    docker rm -f t5-samba >/dev/null 2>&1 || true
+    docker network rm "$net" >/dev/null 2>&1 || true
+    return $rc
 }
 
 # 三阶段对应三次配置变更；search_matrix.py 本身只发 HTTP 请求，不碰 .env 或

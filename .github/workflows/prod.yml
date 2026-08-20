@@ -34,48 +34,17 @@ jobs:
   # for cache-independent verification, upstream upgrades and release audits.
   full:
     if: inputs.mode == 'full'
+    needs: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
       CF_FORCE_REBUILD: '1'
-      # Pin to the same SHAs the incremental plan resolves, so a full and an
-      # incremental run from the same inputs produce equivalent images even
-      # if the upstream branches have moved between dispatches.
-      CF_SERVER_REF: ${{ steps.refs.outputs.server_ref }}
-      CF_HUB_REF: ${{ steps.refs.outputs.hub_ref }}
+      CF_SERVER_REF: ${{ needs.plan.outputs.server_sha }}
+      CF_HUB_REF: ${{ needs.plan.outputs.hub_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
           path: cloudfile-docker
-          fetch-depth: 1
-
-      - name: Read release refs
-        id: refs
-        working-directory: cloudfile-docker
-        run: |
-          server_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml server_commit || true)
-          hub_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml hub_commit || true)
-          if [[ -z $server_ref ]]; then
-            server_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_server.ref)
-          fi
-          if [[ -z $hub_ref ]]; then
-            hub_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_hub.ref)
-          fi
-          echo "server_ref=$server_ref" >> "$GITHUB_OUTPUT"
-          echo "hub_ref=$hub_ref" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/checkout@v4
-        with:
-          repository: eaopen/cloudfile-server
-          ref: ${{ steps.refs.outputs.server_ref }}
-          path: cloudfile-server
-          fetch-depth: 1
-
-      - uses: actions/checkout@v4
-        with:
-          repository: eaopen/cloudfile-hub
-          ref: ${{ steps.refs.outputs.hub_ref }}
-          path: cloudfile-hub
           fetch-depth: 1
 
       - name: Free disk space
@@ -88,11 +57,11 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - name: Restore full build cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache@v4
         with:
           path: cloudfile-docker/build/cloudfile_14.0/.cache
-          key: cf-prod-build-${{ hashFiles('cloudfile-docker/image/cloudfile_14.0/Dockerfile.base', 'cloudfile-docker/build/cloudfile_14.0/cloudfile-build.sh', 'cloudfile-docker/build/cloudfile_14.0/build-in-docker.sh') }}
-          restore-keys: cf-prod-build-
+          key: cf-full-tools-v2-${{ needs.plan.outputs.backend_key }}-${{ needs.plan.outputs.frontend_key }}-${{ needs.plan.outputs.package_key }}
+          restore-keys: cf-full-tools-v2-
 
       - name: Build CE 14 base image
         working-directory: cloudfile-docker/image/cloudfile_14.0
@@ -102,15 +71,10 @@ jobs:
         working-directory: cloudfile-docker/build/cloudfile_14.0
         run: ./build-in-docker.sh "$CF_VERSION"
 
-      - name: Save full build cache
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: cloudfile-docker/build/cloudfile_14.0/.cache
-          # Match the restore key exactly so the next run finds it.
-          # The previous run_id/run_attempt suffix meant every restore
-          # missed and the cache was effectively write-only.
-          key: cf-prod-build-${{ hashFiles('cloudfile-docker/image/cloudfile_14.0/Dockerfile.base', 'cloudfile-docker/build/cloudfile_14.0/cloudfile-build.sh', 'cloudfile-docker/build/cloudfile_14.0/build-in-docker.sh') }}
+      - name: Verify release artifact
+        run: |
+          cloudfile-docker/tools/verify-release-artifact.sh \
+            "cloudfile-docker/build/cloudfile_14.0/seafile-server-$CF_VERSION"
 
       - name: Build production image
         working-directory: cloudfile-docker/image/cloudfile_14.0
@@ -133,11 +97,11 @@ jobs:
           retention-days: 14
 
   plan:
-    if: inputs.mode == 'incremental'
     runs-on: ubuntu-24.04
     outputs:
       server_sha: ${{ steps.plan.outputs.server_sha }}
       hub_sha: ${{ steps.plan.outputs.hub_sha }}
+      docker_sha: ${{ steps.plan.outputs.docker_sha }}
       backend_key: ${{ steps.plan.outputs.backend_key }}
       frontend_key: ${{ steps.plan.outputs.frontend_key }}
       package_key: ${{ steps.plan.outputs.package_key }}
@@ -362,6 +326,11 @@ jobs:
       - name: Assemble release package
         working-directory: cloudfile-docker/build/cloudfile_14.0
         run: ./build-in-docker.sh "$CF_VERSION"
+
+      - name: Verify release artifact
+        run: |
+          cloudfile-docker/tools/verify-release-artifact.sh \
+            "cloudfile-docker/build/cloudfile_14.0/seafile-server-$CF_VERSION"
 
       - name: Build production image
         working-directory: cloudfile-docker/image/cloudfile_14.0

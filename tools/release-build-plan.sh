@@ -24,9 +24,12 @@ reader=$repo_root/build/cloudfile_14.0/read-manifest.py
 
 server_sha=$(git -C "$server_dir" rev-parse 'HEAD^{commit}')
 hub_sha=$(git -C "$hub_dir" rev-parse 'HEAD^{commit}')
+docker_sha=$(git -C "$repo_root" rev-parse 'HEAD^{commit}')
 server_python_tree=$(git -C "$server_dir" rev-parse 'HEAD:python')
 libsearpc_ref=$(python3 "$reader" "$manifest" upstream.libsearpc)
 libevhtp_ref=$(python3 "$reader" "$manifest" upstream.libevhtp)
+seafdav_ref=$(python3 "$reader" "$manifest" upstream.seafdav)
+seafevents_ref=$(python3 "$reader" "$manifest" upstream.seafevents)
 build_base_image=$(python3 "$reader" "$manifest" build_base_image)
 ubuntu_base_image=$(python3 "$reader" "$manifest" ubuntu_base_image)
 
@@ -111,17 +114,26 @@ frontend_key=$({
     echo "platform=linux-amd64"
     echo "hub-inputs=$frontend_input_tree"
     echo "server-python=$server_python_tree"
+    echo "libsearpc=$libsearpc_ref"
     echo "build-base=$build_base_image"
     echo "ubuntu-base=$ubuntu_base_image"
     echo "recipe=$(recipe_fingerprint "$repo_root" "${frontend_recipe_files[@]}")"
 } | hash_stream)
 
-# Package-stage cache key: feeds into cf-package-tools-. Backend/frontend
-# jobs already gate their own caches; package only re-runs when the recipe
-# that drives dist assembly or the production image build changes.
+# Package-stage dependency cache key. install_python_dependencies consumes
+# requirements from Hub, seafdav and seafevents, so all three inputs belong in
+# the key; otherwise a cache hit is immutable and every later package run has
+# to reinstall the changed dependency tree without being able to save it.
+hub_requirements_tree=$(git -C "$hub_dir" ls-files -s -- 'requirements*.txt' \
+    | hash_stream)
 package_key=$({
-    echo "package-v1"
+    echo "package-v2"
     echo "platform=linux-amd64"
+    echo "hub-requirements=$hub_requirements_tree"
+    echo "seafdav=$seafdav_ref"
+    echo "seafevents=$seafevents_ref"
+    echo "build-base=$build_base_image"
+    echo "ubuntu-base=$ubuntu_base_image"
     echo "recipe=$(recipe_fingerprint "$repo_root" "${package_recipe_files[@]}")"
 } | hash_stream)
 
@@ -129,6 +141,7 @@ package_key=$({
 # building another branch head. Empty values remain valid for development.
 declared_server=$(python3 "$reader" "$manifest" server_commit || true)
 declared_hub=$(python3 "$reader" "$manifest" hub_commit || true)
+declared_docker=$(python3 "$reader" "$manifest" docker_commit || true)
 if [[ -n $declared_server && $declared_server != "$server_sha" ]]; then
     echo "server_commit does not match resolved server ref" >&2
     exit 1
@@ -137,10 +150,15 @@ if [[ -n $declared_hub && $declared_hub != "$hub_sha" ]]; then
     echo "hub_commit does not match resolved hub ref" >&2
     exit 1
 fi
+if [[ -n $declared_docker && $declared_docker != "$docker_sha" ]]; then
+    echo "docker_commit does not match workflow commit" >&2
+    exit 1
+fi
 
 cat <<EOF
 server_sha=$server_sha
 hub_sha=$hub_sha
+docker_sha=$docker_sha
 backend_key=$backend_key
 frontend_key=$frontend_key
 package_key=$package_key

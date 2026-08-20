@@ -21,18 +21,31 @@ fi
 require_text "$workflow" 'workflow_dispatch:'
 require_text "$workflow" 'cancel-in-progress: true'
 require_text "$workflow" "if: inputs.mode == 'full'"
+require_text "$workflow" 'needs: plan'
 require_text "$workflow" 'Build full release package'
+require_text "$workflow" 'CF_SERVER_REF: ${{ needs.plan.outputs.server_sha }}'
+require_text "$workflow" 'CF_HUB_REF: ${{ needs.plan.outputs.hub_sha }}'
 require_text "$workflow" 'CF_BUILD_TARGET: backend'
 require_text "$workflow" 'CF_BUILD_TARGET: frontend'
 require_text "$workflow" 'CF_BUILD_TARGET: package'
 require_text "$workflow" 'cf-backend-${{ needs.plan.outputs.backend_key }}'
 require_text "$workflow" 'cf-frontend-${{ needs.plan.outputs.frontend_key }}'
 require_text "$workflow" 'cf-package-tools-${{ needs.plan.outputs.package_key }}'
+require_text "$workflow" 'tools/verify-release-artifact.sh'
 require_text "$planner" 'server_sha='
+require_text "$planner" 'docker_sha='
 require_text "$planner" 'package_key='
+require_text "$planner" 'hub-requirements='
 require_text "$planner" 'server-inputs='
 require_text "$planner" 'hub-inputs='
 require_text "$planner" "':(glob)**/static/**'"
+require_text "$repo_root/build/cloudfile_14.0/cloudfile-build.sh" \
+    'git clean -xfd -e frontend/node_modules/'
+if grep -Eq 'git clean -fd[[:space:]]*$' \
+    "$repo_root/build/cloudfile_14.0/cloudfile-build.sh"; then
+    echo 'incremental checkout must not preserve stale ignored build stamps' >&2
+    exit 1
+fi
 
 # Exercise the content boundaries with two tiny repositories. API/SQL-only
 # edits must not compile either component; frontend and C edits invalidate only
@@ -66,17 +79,20 @@ plan_value() {
 
 backend_0=$(plan_value backend_key)
 frontend_0=$(plan_value frontend_key)
+package_0=$(plan_value package_key)
 
 printf 'api two-line edit\n' >> "$hub/cloudfile_ext/api.py"
 git -C "$hub" commit -qam api-only
 [[ $(plan_value backend_key) == "$backend_0" ]]
 [[ $(plan_value frontend_key) == "$frontend_0" ]]
+[[ $(plan_value package_key) == "$package_0" ]]
 
 printf 'frontend two-line edit\n' >> "$hub/frontend/app.js"
 git -C "$hub" commit -qam frontend-only
 frontend_1=$(plan_value frontend_key)
 [[ $frontend_1 != "$frontend_0" ]]
 [[ $(plan_value backend_key) == "$backend_0" ]]
+[[ $(plan_value package_key) == "$package_0" ]]
 
 printf 'ALTER TABLE baseline;\n' >> "$server/scripts/sql/schema.sql"
 git -C "$server" commit -qam sql-only
@@ -87,3 +103,10 @@ printf 'int changed;\n' >> "$server/common/module.c"
 git -C "$server" commit -qam c-only
 [[ $(plan_value backend_key) != "$backend_0" ]]
 [[ $(plan_value frontend_key) == "$frontend_1" ]]
+
+backend_1=$(plan_value backend_key)
+printf 'requests==2.32.4\n' >> "$hub/requirements.txt"
+git -C "$hub" commit -qam requirements-only
+[[ $(plan_value backend_key) == "$backend_1" ]]
+[[ $(plan_value frontend_key) != "$frontend_1" ]]
+[[ $(plan_value package_key) != "$package_0" ]]

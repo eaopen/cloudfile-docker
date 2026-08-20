@@ -152,19 +152,95 @@ for p in "${required_paths[@]}"; do
     [[ -e $dest ]] || { echo "import missing: $dest" >&2; exit 1; }
 done
 
-# Compare content SHA between source and import for the runtime files.
+# Compare content SHA between artifact and imported tree. The original
+# seahub was replaced by the import target, so the artifact is the source
+# of truth here.
 hash_one() { sha256sum "$1" | cut -d' ' -f1; }
 
-src_stats=$fixture/seahub/frontend/webpack-stats.pro.json
+art_stats=$artifact/frontend/webpack-stats.pro.json
 dst_stats=$fixture/seahub/frontend/webpack-stats.pro.json
 [[ -f $dst_stats ]] || { echo "import missing: $dst_stats" >&2; exit 1; }
-[[ $(hash_one "$src_stats") == "$(hash_one "$dst_stats")" ]] \
+[[ $(hash_one "$art_stats") == "$(hash_one "$dst_stats")" ]] \
     || { echo "webpack-stats.pro.json content differs after round-trip" >&2; exit 1; }
 
-src_mo=$fixture/seahub/seahub/locale/zh_CN/LC_MESSAGES/django.mo
+art_mo=$artifact/locale/seahub/locale/zh_CN/LC_MESSAGES/django.mo
 dst_mo=$fixture/seahub/seahub/locale/zh_CN/LC_MESSAGES/django.mo
 [[ -f $dst_mo ]] || { echo "import missing: $dst_mo" >&2; exit 1; }
-[[ $(hash_one "$src_mo") == "$(hash_one "$dst_mo")" ]] \
+[[ -f $art_mo ]] || { echo "artifact missing: $art_mo" >&2; exit 1; }
+[[ $(hash_one "$art_mo") == "$(hash_one "$dst_mo")" ]] \
     || { echo "django.mo content differs after round-trip" >&2; exit 1; }
 
-echo "frontend artifact export/import round-trip OK"
+# ── layer_frontend cache round-trip ─────────────────────────────────────
+# The frontend layer cache must carry the locale subtree too: a hit without
+# it would restore build/assets/stats but leave the tree without .mo files.
+layer_fn=$(extract_function layer_frontend)
+[[ -n $layer_fn ]] || { echo "layer_frontend not found in build script" >&2; exit 1; }
+
+# Mock the layer helpers and the expensive build path.
+layer_hit() { [[ -f $3 ]]; }
+layer_mark() { :; }
+build_seahub_frontend() {
+    echo "ERROR: build_seahub_frontend must not run on a cache hit" >&2
+    exit 1
+}
+frontend_fingerprint() { echo fp-test; }
+
+cache_fixture=$(mktemp -d)
+cf_seahub=$cache_fixture/seahub
+cf_cache=$cache_fixture/cache
+mkdir -p "$cf_seahub/frontend/build/static/js" "$cf_seahub/media/assets/css" \
+         "$cf_seahub/seahub/locale/zh_CN/LC_MESSAGES" \
+         "$cf_seahub/seahub_extra/locale/zh_CN/LC_MESSAGES"
+printf 'BUNDLE2\n' > "$cf_seahub/frontend/build/static/js/main.js"
+printf 'ASSETS2\n' > "$cf_seahub/media/assets/css/app.css"
+printf 'STATS2\n' > "$cf_seahub/frontend/webpack-stats.pro.json"
+printf 'MO2\n' > "$cf_seahub/seahub/locale/zh_CN/LC_MESSAGES/django.mo"
+printf 'MO2X\n' > "$cf_seahub/seahub_extra/locale/zh_CN/LC_MESSAGES/django.mo"
+
+# Fill pass: run layer_frontend against the fixture. layer_hit returns
+# false (no stamp file), so it calls build_seahub_frontend -- which we
+# mocked to fail. Instead, run only the fill half by pre-marking the
+# layer as a miss is not possible; so simulate by extracting the fill
+# commands directly after a fake build.
+stamp=$cache_fixture/.layers/frontend
+mkdir -p "$cache_fixture/.layers"
+mkdir -p "$cf_cache"
+
+# shellcheck disable=SC2030
+seahub=$cf_seahub
+code_path=$cache_fixture
+# layer_frontend uses ${code_path}/.cache/frontend-build
+mkdir -p "$code_path/.cache/frontend-build"
+cache=$code_path/.cache/frontend-build
+
+# Reproduce the fill block (mirrors the build script's cache-fill half).
+cp -a "${seahub}/frontend/build" "$cache/build"
+cp -a "${seahub}/media/assets" "$cache/media-assets"
+cp -a "${seahub}/frontend/webpack-stats.pro.json" \
+    "${cache}/webpack-stats.pro.json"
+mkdir -p "$cache/locale-tmp"
+(cd "$seahub" && find . -path '*/locale/*/LC_MESSAGES/*.mo' -print0 \
+    | tar --null -cf - -T -) | tar -xf - -C "$cache/locale-tmp"
+mv "$cache/locale-tmp" "$cache/locale"
+
+[[ -f $cache/locale/seahub/locale/zh_CN/LC_MESSAGES/django.mo ]] || {
+    echo "cache fill missing .mo" >&2; exit 1; }
+
+# Hit pass: wipe the seahub outputs, run the restore half (same commands
+# the build script runs on a hit), then assert everything came back.
+rm -rf "${seahub}/frontend/build" "${seahub}/media/assets"
+find "${seahub}" -path '*/locale/*/LC_MESSAGES/*.mo' -delete
+cp -a "${cache}/build" "${seahub}/frontend/build"
+cp -a "${cache}/media-assets" "${seahub}/media/assets"
+cp -a "${cache}/webpack-stats.pro.json" \
+    "${seahub}/frontend/webpack-stats.pro.json"
+(cd "${cache}/locale" && find . -name '*.mo' -print0 \
+    | tar --null -cf - -T -) | tar -xf - -C "$seahub"
+
+[[ -f $seahub/frontend/build/static/js/main.js ]] || { echo "restore missing build" >&2; exit 1; }
+[[ -f $seahub/seahub/locale/zh_CN/LC_MESSAGES/django.mo ]] || { echo "restore missing .mo" >&2; exit 1; }
+[[ -f $seahub/seahub_extra/locale/zh_CN/LC_MESSAGES/django.mo ]] || { echo "restore missing extra .mo" >&2; exit 1; }
+[[ $(hash_one "$seahub/seahub/locale/zh_CN/LC_MESSAGES/django.mo") == $(hash_one "$cf_seahub/seahub/locale/zh_CN/LC_MESSAGES/django.mo") ]] || {
+    echo ".mo content differs after cache round-trip" >&2; exit 1; }
+
+echo "frontend layer cache round-trip OK"

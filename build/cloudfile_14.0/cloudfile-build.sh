@@ -675,6 +675,7 @@ function layer_frontend() {
     cp -a "${seahub}/media/assets" "$cache/media-assets"
     cp -a "${seahub}/frontend/webpack-stats.pro.json" \
         "${cache}/webpack-stats.pro.json"
+    mkdir -p "$cache/locale-tmp"
     (cd "$seahub" && find . -path '*/locale/*/LC_MESSAGES/*.mo' -print0 \
         | tar --null -cf - -T -) | tar -xf - -C "$cache/locale-tmp"
     mv "$cache/locale-tmp" "$cache/locale"
@@ -894,7 +895,8 @@ layer_start 3 deps-compile "Python 依赖 / npm / C-Go 编译（并行）"
 if [[ ${CF_FORCE_REBUILD} != 1 && ${CF_FORCE_FRONTEND_REBUILD} != 1 ]] \
     && layer_hit frontend "$(frontend_fingerprint)" \
     && [[ -d ${code_path}/.cache/frontend-build/build \
-        && -d ${code_path}/.cache/frontend-build/media-assets ]]; then
+        && -d ${code_path}/.cache/frontend-build/media-assets \
+        && -d ${code_path}/.cache/frontend-build/locale ]]; then
     need_npm=0
 else
     need_npm=1

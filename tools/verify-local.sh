@@ -359,6 +359,19 @@ CF_MEILISEARCH_API_KEY=CloudFile-Local-Search-4417
 EOF
 }
 
+# share-001（前端隐藏分享入口）是 channel=ui 用例，API 矩阵报 skipped；
+# 浏览器套件在 API 用例之后跑同一栈（开关已开）。
+cap_review-share_run() {
+    local base=$1
+
+    python3 "$repo/tests/e2e/review_share_matrix.py" --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
+
+    say "浏览器套件：share-001 前端隐藏分享入口"
+    python3 "$repo/tests/e2e/review_ui_share.py" --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
+}
+
 cap_review-search_run() {
     local base=$1
 

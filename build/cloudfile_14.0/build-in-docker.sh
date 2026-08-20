@@ -47,6 +47,15 @@ if [[ -n ${CF_BUILD_JOBS:-} && ! $CF_BUILD_JOBS =~ ^[1-9][0-9]*$ ]]; then
     exit 2
 fi
 
+CF_BUILD_TARGET=${CF_BUILD_TARGET:-all}
+case "$CF_BUILD_TARGET" in
+    all|backend|frontend|package) ;;
+    *)
+        echo "CF_BUILD_TARGET 必须是 all、backend、frontend 或 package，当前值：${CF_BUILD_TARGET}" >&2
+        exit 2
+        ;;
+esac
+
 if ! docker info >/dev/null 2>&1; then
     echo "Docker 不可用。请先启动 Docker Desktop / OrbStack / colima。" >&2
     exit 2
@@ -82,7 +91,8 @@ env_args=()
 for v in CF_SERVER_REF CF_HUB_REF CF_SERVER_URL CF_HUB_URL \
          CF_SEAFOBJ_REF CF_SEAFDAV_REF CF_SEAFEVENTS_REF \
          CF_LIBSEARPC_REF CF_LIBEVHTP_REF CF_FORCE_REBUILD \
-         CF_FORCE_FRONTEND_REBUILD CF_FORCE_DIST_REBUILD CF_BUILD_JOBS; do
+         CF_FORCE_FRONTEND_REBUILD CF_FORCE_DIST_REBUILD CF_BUILD_JOBS \
+         CF_BUILD_TARGET NODE_OPTIONS; do
     [[ -n ${!v:-} ]] && env_args+=(-e "$v=${!v}")
 done
 
@@ -141,6 +151,7 @@ cache_args=(
     -e "npm_config_cache=/cache/npm"
     -e "PIP_CACHE_DIR=/cache/pip"
     -e "CF_FRONTEND_TOOL_CACHE_DIR=/cache/frontend-tools"
+    -e "CF_PYTHON_THIRDPART_CACHE_DIR=/cache/python-thirdpart"
 )
 
 # 挂载整个仓库：构建脚本要读 release.yaml，产物也要写回 build/cloudfile_14.0/。

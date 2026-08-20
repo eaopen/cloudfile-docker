@@ -1,25 +1,43 @@
 name: CloudFile production build
 
+# Expensive production builds are release operations. Development pushes run
+# checks only; an explicit dispatch starts this workflow. Keeping releases on
+# one branch also lets GitHub reuse content-addressed caches across versions.
 on:
-  push:
-    branches: [prod]
   workflow_dispatch:
     inputs:
       version:
         description: Build version
         default: '14.0.0-cf.0'
+        required: true
+      mode:
+        description: Build mode
+        type: choice
+        options:
+          - incremental
+          - full
+        default: incremental
+        required: true
 
 concurrency:
-  group: prod-build-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ inputs.version || github.ref }}
   cancel-in-progress: true
 
+env:
+  CF_VERSION: ${{ inputs.version || '14.0.0-cf.0' }}
+
+permissions:
+  contents: read
+
 jobs:
-  build:
+  # CE-compatible reference path: keep the original full build intact. Use it
+  # for cache-independent verification, upstream upgrades and release audits.
+  full:
+    if: inputs.mode == 'full'
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      CF_VERSION: ${{ inputs.version || '14.0.0-cf.0' }}
-
+      CF_FORCE_REBUILD: '1'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,28 +52,277 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Restore build cache
+      - name: Restore full build cache
         uses: actions/cache/restore@v4
         with:
           path: cloudfile-docker/build/cloudfile_14.0/.cache
           key: cf-prod-build-${{ hashFiles('cloudfile-docker/image/cloudfile_14.0/Dockerfile.base', 'cloudfile-docker/build/cloudfile_14.0/cloudfile-build.sh', 'cloudfile-docker/build/cloudfile_14.0/build-in-docker.sh') }}
-          restore-keys: |
-            cf-prod-build-
+          restore-keys: cf-prod-build-
 
       - name: Build CE 14 base image
         working-directory: cloudfile-docker/image/cloudfile_14.0
         run: ./base-build.sh
 
-      - name: Build release package
+      - name: Build full release package
         working-directory: cloudfile-docker/build/cloudfile_14.0
         run: ./build-in-docker.sh "$CF_VERSION"
 
-      - name: Save build cache
+      - name: Save full build cache
         if: always()
         uses: actions/cache/save@v4
         with:
           path: cloudfile-docker/build/cloudfile_14.0/.cache
           key: cf-prod-build-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Build production image
+        working-directory: cloudfile-docker/image/cloudfile_14.0
+        run: ./docker-build.sh "$CF_VERSION"
+
+      - name: Record build sources
+        run: |
+          cat "cloudfile-docker/build/cloudfile_14.0/seafile-server-$CF_VERSION/cloudfile-build-info.txt" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Export image
+        run: |
+          docker save "cloudfile/cloudfile:$CF_VERSION" | gzip -1 > "cloudfile-$CF_VERSION.tar.gz"
+          ls -lh "cloudfile-$CF_VERSION.tar.gz"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloudfile-production-full-image-${{ env.CF_VERSION }}
+          path: cloudfile-*.tar.gz
+          retention-days: 14
+
+  plan:
+    if: inputs.mode == 'incremental'
+    runs-on: ubuntu-24.04
+    outputs:
+      server_sha: ${{ steps.plan.outputs.server_sha }}
+      hub_sha: ${{ steps.plan.outputs.hub_sha }}
+      backend_key: ${{ steps.plan.outputs.backend_key }}
+      frontend_key: ${{ steps.plan.outputs.frontend_key }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: cloudfile-docker
+          fetch-depth: 1
+
+      - name: Read release refs
+        id: refs
+        working-directory: cloudfile-docker
+        run: |
+          server_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml server_commit || true)
+          hub_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml hub_commit || true)
+          if [[ -z $server_ref ]]; then
+            server_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_server.ref)
+          fi
+          if [[ -z $hub_ref ]]; then
+            hub_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_hub.ref)
+          fi
+          echo "server_ref=$server_ref" >> "$GITHUB_OUTPUT"
+          echo "hub_ref=$hub_ref" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: eaopen/cloudfile-server
+          ref: ${{ steps.refs.outputs.server_ref }}
+          path: cloudfile-server
+          fetch-depth: 1
+
+      - uses: actions/checkout@v4
+        with:
+          repository: eaopen/cloudfile-hub
+          ref: ${{ steps.refs.outputs.hub_ref }}
+          path: cloudfile-hub
+          fetch-depth: 1
+
+      - name: Resolve immutable sources and component keys
+        id: plan
+        run: |
+          ./cloudfile-docker/tools/release-build-plan.sh \
+            "$CF_VERSION" cloudfile-server cloudfile-hub | tee -a "$GITHUB_OUTPUT"
+
+  backend:
+    if: inputs.mode == 'incremental'
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      CF_SERVER_REF: ${{ needs.plan.outputs.server_sha }}
+      CF_HUB_REF: ${{ needs.plan.outputs.hub_sha }}
+      CF_BUILD_TARGET: backend
+      CF_BUILD_JOBS: '2'
+      CF_CACHE_DIR: ${{ github.workspace }}/cloudfile-docker/build/cloudfile_14.0/.cache/backend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: cloudfile-docker
+
+      - name: Restore compiled backend
+        id: backend-artifact
+        uses: actions/cache@v4
+        with:
+          path: cloudfile-backend.tar.gz
+          key: cf-backend-${{ needs.plan.outputs.backend_key }}
+
+      - name: Free disk space
+        if: steps.backend-artifact.outputs.cache-hit != 'true'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.backend-artifact.outputs.cache-hit != 'true'
+
+      - name: Restore backend tool caches
+        if: steps.backend-artifact.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: cloudfile-docker/build/cloudfile_14.0/.cache/backend
+          key: cf-backend-tools-${{ needs.plan.outputs.backend_key }}
+          restore-keys: cf-backend-tools-
+
+      - name: Build CE 14 base image
+        if: steps.backend-artifact.outputs.cache-hit != 'true'
+        working-directory: cloudfile-docker/image/cloudfile_14.0
+        run: ./base-build.sh
+
+      - name: Compile backend
+        if: steps.backend-artifact.outputs.cache-hit != 'true'
+        working-directory: cloudfile-docker/build/cloudfile_14.0
+        run: ./build-in-docker.sh "$CF_VERSION"
+
+      - name: Pack backend artifact
+        if: steps.backend-artifact.outputs.cache-hit != 'true'
+        working-directory: cloudfile-docker/build/cloudfile_14.0
+        run: |
+          tar -czf "$GITHUB_WORKSPACE/cloudfile-backend.tar.gz" \
+            cloudfile-backend
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-${{ needs.plan.outputs.backend_key }}
+          path: cloudfile-backend.tar.gz
+          retention-days: 1
+
+  frontend:
+    if: inputs.mode == 'incremental'
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CF_SERVER_REF: ${{ needs.plan.outputs.server_sha }}
+      CF_HUB_REF: ${{ needs.plan.outputs.hub_sha }}
+      CF_BUILD_TARGET: frontend
+      CF_BUILD_JOBS: '2'
+      CF_CACHE_DIR: ${{ github.workspace }}/cloudfile-docker/build/cloudfile_14.0/.cache/frontend
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: cloudfile-docker
+
+      - name: Restore compiled frontend
+        id: frontend-artifact
+        uses: actions/cache@v4
+        with:
+          path: cloudfile-frontend.tar.gz
+          key: cf-frontend-${{ needs.plan.outputs.frontend_key }}
+
+      - name: Free disk space
+        if: steps.frontend-artifact.outputs.cache-hit != 'true'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.frontend-artifact.outputs.cache-hit != 'true'
+
+      - name: Restore frontend tool caches
+        if: steps.frontend-artifact.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: cloudfile-docker/build/cloudfile_14.0/.cache/frontend
+          key: cf-frontend-tools-${{ needs.plan.outputs.frontend_key }}
+          restore-keys: cf-frontend-tools-
+
+      - name: Build CE 14 base image
+        if: steps.frontend-artifact.outputs.cache-hit != 'true'
+        working-directory: cloudfile-docker/image/cloudfile_14.0
+        run: ./base-build.sh
+
+      - name: Compile frontend
+        if: steps.frontend-artifact.outputs.cache-hit != 'true'
+        working-directory: cloudfile-docker/build/cloudfile_14.0
+        run: ./build-in-docker.sh "$CF_VERSION"
+
+      - name: Pack frontend artifact
+        if: steps.frontend-artifact.outputs.cache-hit != 'true'
+        working-directory: cloudfile-docker/build/cloudfile_14.0
+        run: |
+          tar -czf "$GITHUB_WORKSPACE/cloudfile-frontend.tar.gz" \
+            cloudfile-frontend
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-${{ needs.plan.outputs.frontend_key }}
+          path: cloudfile-frontend.tar.gz
+          retention-days: 1
+
+  package:
+    if: inputs.mode == 'incremental'
+    needs: [plan, backend, frontend]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CF_SERVER_REF: ${{ needs.plan.outputs.server_sha }}
+      CF_HUB_REF: ${{ needs.plan.outputs.hub_sha }}
+      CF_BUILD_TARGET: package
+      CF_BUILD_JOBS: '2'
+      CF_CACHE_DIR: ${{ github.workspace }}/cloudfile-docker/build/cloudfile_14.0/.cache/package
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: cloudfile-docker
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY" || true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: backend-${{ needs.plan.outputs.backend_key }}
+          path: cloudfile-docker/build/cloudfile_14.0
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: frontend-${{ needs.plan.outputs.frontend_key }}
+          path: cloudfile-docker/build/cloudfile_14.0
+
+      - name: Restore component artifacts
+        working-directory: cloudfile-docker/build/cloudfile_14.0
+        run: |
+          tar -xzf cloudfile-backend.tar.gz
+          tar -xzf cloudfile-frontend.tar.gz
+
+      - name: Restore package dependency cache
+        uses: actions/cache@v4
+        with:
+          path: cloudfile-docker/build/cloudfile_14.0/.cache/package
+          key: cf-package-tools-${{ needs.plan.outputs.hub_sha }}
+          restore-keys: cf-package-tools-
+
+      - name: Build CE 14 base image
+        working-directory: cloudfile-docker/image/cloudfile_14.0
+        run: ./base-build.sh
+
+      - name: Assemble release package
+        working-directory: cloudfile-docker/build/cloudfile_14.0
+        run: ./build-in-docker.sh "$CF_VERSION"
 
       - name: Build production image
         working-directory: cloudfile-docker/image/cloudfile_14.0

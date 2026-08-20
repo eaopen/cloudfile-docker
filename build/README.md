@@ -75,6 +75,27 @@ CF_BUILD_JOBS=8 ./build/cloudfile_14.0/build-in-docker.sh 14.0.0-cf.0
 只重编一个目标文件，Go/npm 依赖也不再重复下载。CI 用 `actions/cache` 复用同一目录。
 可用 `CF_CACHE_DIR` 把缓存根目录改到别处。
 
+生产发布在 GitHub Actions 中拆成 `backend`、`frontend`、`package` 三类 target，
+前后端位于不同 runner，不叠加 npm/webpack 与 C/Go 的内存峰值。构建计划先把移动
+分支解析成固定 SHA：Server 编译输入、Hub 前端/静态输入各自生成内容 key；key 未变
+就直接复用压缩产物。Hub 的 Python/API 小改只运行轻量打包，前端小改不编译 Server，
+Server 小改也不运行 webpack。版本号不进入前后端 key，同一份源码换发布版本不会重编译。
+
+本地完整构建仍使用默认的 `all` target，保留原有 CE 发行包构建顺序与并行策略；
+增量 target 不改变这条兼容基准。排查或复现增量 CI 时可单独运行：
+
+```bash
+CF_BUILD_TARGET=backend  ./build/cloudfile_14.0/build-in-docker.sh 14.0.0-cf.0
+CF_BUILD_TARGET=frontend ./build/cloudfile_14.0/build-in-docker.sh 14.0.0-cf.0
+# package 需要前两项导出的 cloudfile-backend/cloudfile-frontend 产物
+CF_BUILD_TARGET=package  ./build/cloudfile_14.0/build-in-docker.sh 14.0.0-cf.0
+```
+
+生产工作流只允许手动触发，普通提交不会启动昂贵构建。发布时在 Actions 中选择固定的
+`prod` 分支、填写版本并选择模式：`incremental` 用于日常小改发布，`full` 保留原有
+CE 全量路径用于正式复核、上游升级和缓存无关的对照。同模式、同版本的重复触发会取消
+旧任务，且同一分支能跨版本复用缓存。
+
 前端依赖树按 package/lockfile、Node/npm ABI 和平台生成指纹。输入不变时保留
 `node_modules`，避免重复执行 `npm ci`；CI 只保存约 60 MiB 的 Babel/ESLint
 loader 缓存，不上传约 1 GiB 的完整依赖树。frontend 层指纹只包含 Seahub 及构建期

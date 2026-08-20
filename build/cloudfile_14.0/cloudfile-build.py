@@ -742,6 +742,11 @@ def main():
         seahub.build()
 
     if not conf['compile_only']:
+        # A package-only run may execute on a fresh runner after the compiled
+        # backend has been restored from an artifact. Keep the release version
+        # deterministic without requiring the compile phase to run first.
+        if conf['package_only']:
+            seahub.write_version_to_settings_py()
         copy_scripts_and_libs()
         strip_and_rename()
 

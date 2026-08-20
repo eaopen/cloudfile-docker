@@ -52,10 +52,16 @@ function manifest_get() {
     echo "$value"
 }
 
+function manifest_get_optional() {
+    python3 "${current_dir}/read-manifest.py" "$manifest" "$1" 2>/dev/null || true
+}
+
 cloudfile_server_url=${CF_SERVER_URL:-$(manifest_get 'forks.cloudfile_server.url')}
 cloudfile_hub_url=${CF_HUB_URL:-$(manifest_get 'forks.cloudfile_hub.url')}
-cloudfile_server_ref=${CF_SERVER_REF:-$(manifest_get 'forks.cloudfile_server.ref')}
-cloudfile_hub_ref=${CF_HUB_REF:-$(manifest_get 'forks.cloudfile_hub.ref')}
+manifest_server_commit=$(manifest_get_optional 'server_commit')
+manifest_hub_commit=$(manifest_get_optional 'hub_commit')
+cloudfile_server_ref=${CF_SERVER_REF:-${manifest_server_commit:-$(manifest_get 'forks.cloudfile_server.ref')}}
+cloudfile_hub_ref=${CF_HUB_REF:-${manifest_hub_commit:-$(manifest_get 'forks.cloudfile_hub.ref')}}
 
 seafobj_ref=${CF_SEAFOBJ_REF:-$(manifest_get 'upstream.seafobj')}
 seafdav_ref=${CF_SEAFDAV_REF:-$(manifest_get 'upstream.seafdav')}
@@ -83,6 +89,7 @@ libevhtp_ref=${CF_LIBEVHTP_REF:-$(manifest_get 'upstream.libevhtp')}
 CF_FORCE_REBUILD=${CF_FORCE_REBUILD:-0}
 CF_FORCE_FRONTEND_REBUILD=${CF_FORCE_FRONTEND_REBUILD:-0}
 CF_FORCE_DIST_REBUILD=${CF_FORCE_DIST_REBUILD:-0}
+CF_BUILD_TARGET=${CF_BUILD_TARGET:-all}
 CF_BUILD_JOBS=${CF_BUILD_JOBS:-$(nproc)}
 if [[ ! $CF_BUILD_JOBS =~ ^[1-9][0-9]*$ ]]; then
     echo "CF_BUILD_JOBS must be a positive integer, got: ${CF_BUILD_JOBS}" >&2
@@ -94,6 +101,13 @@ for flag in CF_FORCE_REBUILD CF_FORCE_FRONTEND_REBUILD CF_FORCE_DIST_REBUILD; do
         exit 2
     fi
 done
+case "$CF_BUILD_TARGET" in
+    all|backend|frontend|package) ;;
+    *)
+        echo "CF_BUILD_TARGET must be all, backend, frontend or package; got: ${CF_BUILD_TARGET}" >&2
+        exit 2
+        ;;
+esac
 
 layer_state_dir=${code_path}/.cf-layers
 mkdir -p "$layer_state_dir"
@@ -271,28 +285,35 @@ function install_python_dependencies() {
     # pymysql for scripts
     sed -i '$a\pymysql' requirements-thirdpart.txt
 
-    local cache_dir=${code_path}/.cache
     local target=${code_path}/thirdpartdir
-    local stamp=${cache_dir}/requirements-thirdpart.sha256
+    local cache_target=${CF_PYTHON_THIRDPART_CACHE_DIR:-$target}
+    local stamp=${cache_target}.sha256
     local digest
-    mkdir -p "$cache_dir"
+    mkdir -p "$(dirname "$cache_target")"
     # Include the Python ABI as well as the CPU architecture: thirdpartdir
     # contains compiled extensions, so neither an amd64 cache nor a cache from
     # another Python minor version is safe to reuse.
     digest=$(python_requirements_digest requirements-thirdpart.txt)
-    if [[ -d $target && -f $stamp && $(<"$stamp") == "$digest" ]]; then
+    if [[ -d $cache_target && -f $stamp && $(<"$stamp") == "$digest" ]]; then
         echo "Using cached Python runtime dependencies"
+        if [[ $cache_target != "$target" ]]; then
+            rm -rf "$target"
+            ln -s "$cache_target" "$target"
+        fi
         return
     fi
 
     # Remove the old stamp first. If pip is interrupted after creating target,
     # the next run must not accept that partial directory as a cache hit.
     rm -f "$stamp"
-    rm -rf "$target"
-    mkdir -p "$target"
-    pip3 install -r requirements-thirdpart.txt -t "$target"
+    rm -rf "$cache_target" "$target"
+    mkdir -p "$cache_target"
+    pip3 install -r requirements-thirdpart.txt -t "$cache_target"
     printf '%s\n' "$digest" > "${stamp}.tmp"
     mv "${stamp}.tmp" "$stamp"
+    if [[ $cache_target != "$target" ]]; then
+        ln -s "$cache_target" "$target"
+    fi
 }
 
 function python_requirements_digest() {
@@ -327,7 +348,18 @@ function checkout_ref() {
     echo "Checking out ${dir} at ${ref}"
     cd "${code_path}/${dir}"
     git reset --hard
-    if [[ $dir == seahub ]]; then
+    if [[ $CF_BUILD_TARGET == package ]]; then
+        # The package job consumes only exported runtime artifacts. A local
+        # run may reuse the frontend job's checkout, so remove its 1 GiB
+        # node_modules tree just as a fresh GitHub package runner naturally
+        # would; it must never become part of the release image.
+        git clean -xfd
+    elif [[ $CF_BUILD_TARGET != all ]]; then
+        # Incremental targets keep ignored compiler/webpack workspaces. Tracked
+        # files are still reset and ordinary untracked files are removed, so a
+        # checkout cannot leak source edits into the artifact.
+        git clean -fd
+    elif [[ $dir == seahub ]]; then
         # node_modules is a 1 GiB derived tree. Its own lock/ABI stamp below
         # decides whether it is reusable; deleting it here guarantees every
         # build pays npm ci even when package inputs are byte-for-byte equal.
@@ -690,21 +722,122 @@ function layer_dist() {
     layer_mark dist "$fp"
 }
 
+# Cross-job artifacts are intentionally small and content-addressed by the
+# workflow. The backend artifact contains only installed C/Go output and the
+# two Go executables needed by the package phase; the frontend artifact contains
+# only runtime assets. Source trees and node_modules never cross job boundaries.
+function export_backend_artifact() {
+    local out=${current_dir}/cloudfile-backend
+    rm -rf "$out"
+    mkdir -p "$out/seafile-server" "$out/fileserver" "$out/notification-server"
+    cp -a "${current_dir}/seafile-server/." "$out/seafile-server/"
+    cp "${code_path}/seafile-server/fileserver/fileserver" "$out/fileserver/"
+    cp "${code_path}/seafile-server/notification-server/notification-server" \
+        "$out/notification-server/"
+    {
+        echo "server: $(git -C "${code_path}/seafile-server" rev-parse HEAD)"
+        echo "libsearpc: $(git -C "${code_path}/libsearpc" rev-parse HEAD)"
+        echo "libevhtp: $(git -C "${code_path}/libevhtp" rev-parse HEAD)"
+    } > "$out/build-info.txt"
+}
+
+function import_backend_artifact() {
+    local artifact=${current_dir}/cloudfile-backend
+    [[ -d ${artifact}/seafile-server ]] || {
+        echo "backend artifact not found: ${artifact}" >&2
+        exit 1
+    }
+    rm -rf "${current_dir}/seafile-server" "${current_dir}/seafile-server-${version}"
+    mkdir -p "${current_dir}/seafile-server" \
+        "${code_path}/seafile-server/fileserver" \
+        "${code_path}/seafile-server/notification-server"
+    cp -a "${artifact}/seafile-server/." "${current_dir}/seafile-server/"
+    cp "${artifact}/fileserver/fileserver" \
+        "${code_path}/seafile-server/fileserver/fileserver"
+    cp "${artifact}/notification-server/notification-server" \
+        "${code_path}/seafile-server/notification-server/notification-server"
+}
+
+function export_frontend_artifact() {
+    local seahub=${code_path}/seahub
+    local out=${current_dir}/cloudfile-frontend
+    rm -rf "$out"
+    mkdir -p "$out/frontend" "$out/media"
+    cp -a "${seahub}/frontend/build" "$out/frontend/build"
+    cp -a "${seahub}/media/assets" "$out/media/assets"
+    {
+        echo "hub: $(git -C "$seahub" rev-parse HEAD)"
+        echo "server-python: $(git -C "${code_path}/seafile-server" rev-parse HEAD:python)"
+    } > "$out/build-info.txt"
+}
+
+function import_frontend_artifact() {
+    local artifact=${current_dir}/cloudfile-frontend
+    local seahub=${code_path}/seahub
+    [[ -d ${artifact}/frontend/build && -d ${artifact}/media/assets ]] || {
+        echo "frontend artifact not found: ${artifact}" >&2
+        exit 1
+    }
+    rm -rf "${seahub}/frontend/build" "${seahub}/media/assets"
+    mkdir -p "${seahub}/frontend" "${seahub}/media"
+    cp -a "${artifact}/frontend/build" "${seahub}/frontend/build"
+    cp -a "${artifact}/media/assets" "${seahub}/media/assets"
+}
+
 echo ''
 echo "Info: CloudFile version [ ${version} ]"
 echo "      cloudfile-server ${cloudfile_server_url} @ ${cloudfile_server_ref}"
 echo "      cloudfile-hub    ${cloudfile_hub_url} @ ${cloudfile_hub_ref}"
+echo "      build target     ${CF_BUILD_TARGET}"
 echo ''
 
 layer_start 1 deps "系统依赖与 Node 工具链"
 install_dependencies
-install_nodejs
+if [[ $CF_BUILD_TARGET == all || $CF_BUILD_TARGET == frontend ]]; then
+    install_nodejs
+fi
 layer_done deps
 
 layer_start 2 source "克隆并检出七个组件（commit 锁定）"
 clone_code
 fetch
 layer_done source
+
+if [[ $CF_BUILD_TARGET == backend ]]; then
+    layer_start 3 backend "C/Go 编译（独立进程，不与前端构建争抢内存）"
+    build_compile
+    export_backend_artifact
+    layer_done backend
+    echo "Info: Successfully built cloudfile-backend"
+    exit 0
+fi
+
+if [[ $CF_BUILD_TARGET == frontend ]]; then
+    layer_start 3 frontend-deps "Python/npm 前端依赖（顺序安装，限制内存峰值）"
+    install_python_dependencies
+    install_frontend_dependencies "${code_path}/seahub"
+    layer_done frontend-deps
+    layer_start 4 frontend "Seahub 前端与静态资源"
+    layer_frontend
+    export_frontend_artifact
+    layer_done frontend
+    echo "Info: Successfully built cloudfile-frontend"
+    exit 0
+fi
+
+if [[ $CF_BUILD_TARGET == package ]]; then
+    layer_start 3 package-deps "发行包 Python 依赖"
+    install_python_dependencies
+    layer_done package-deps
+    layer_start 4 package "合并已验证的前后端产物并组装发行包"
+    import_backend_artifact
+    import_frontend_artifact
+    build_package
+    write_build_info
+    layer_done package
+    echo "Info: Successfully packaged cloudfile-server-${version}"
+    exit 0
+fi
 
 layer_start 3 deps-compile "Python 依赖 / npm / C-Go 编译（并行）"
 

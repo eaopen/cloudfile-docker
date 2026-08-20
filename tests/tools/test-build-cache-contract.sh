@@ -16,6 +16,7 @@ require_text() {
 }
 
 require_text "$build_script" 'git clean -xfd -e frontend/node_modules/'
+require_text "$build_script" 'CF_BUILD_TARGET != all'
 require_text "$build_script" 'frontend-node-modules.sha256'
 require_text "$build_script" 'node-modules-abi='
 require_text "$build_script" 'HEAD:python'
@@ -23,7 +24,13 @@ require_text "$build_script" 'HEAD:pysearpc'
 require_text "$build_script" 'CF_FORCE_FRONTEND_REBUILD'
 require_text "$build_script" 'CF_FORCE_DIST_REBUILD'
 require_text "$container_script" 'CF_FRONTEND_TOOL_CACHE_DIR=/cache/frontend-tools'
+require_text "$container_script" 'CF_PYTHON_THIRDPART_CACHE_DIR=/cache/python-thirdpart'
 require_text "$container_script" 'CF_FORCE_FRONTEND_REBUILD CF_FORCE_DIST_REBUILD'
+require_text "$container_script" 'all|backend|frontend|package'
+require_text "$build_script" 'function export_backend_artifact()'
+require_text "$build_script" 'function export_frontend_artifact()'
+require_text "$build_script" 'CF_BUILD_TARGET == package'
+require_text "$build_script" "manifest_get_optional 'server_commit'"
 
 fingerprint_body=$(sed -n \
     '/^function frontend_fingerprint()/,/^}/p' "$build_script")

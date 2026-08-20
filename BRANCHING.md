@@ -66,6 +66,10 @@ git merge upstream/master
 
 能力合并前必须证明开关关闭时仍走原生 CE 路径，并在开关开启时通过专项门禁。跨 Hub/Server 的语义先更新共享规格和用例，再同步实现。
 
-发布时将三个仓库的最终提交写入 `release.yaml` 的 `server_commit`、`hub_commit`、`docker_commit`，再使用同一版本 tag。未填写提交的开发清单不能当作可追溯发布记录。
+发布时将三个仓库的最终提交写入 `release.yaml` 的 `server_commit`、`hub_commit`、`docker_commit`，
+然后在 GitHub Actions 中从 `prod` 分支手动运行 `CloudFile production build`，填写版本并
+选择 `incremental` 或 `full`。日常小改用增量路径，正式复核、上游升级或缓存对照用保留的
+CE 全量路径；通过后再使用同一版本 tag。普通 push 不触发生产编译；增量构建计划会校验
+声明的 Server/Hub 提交与实际解析结果一致。未填写提交的开发清单不能当作可追溯发布记录。
 
 历史分支事故、旧排期和过期文件清单保留在 [`docs/history/`](docs/history/)，不作为当前操作依据。

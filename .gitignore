@@ -21,6 +21,8 @@ build/seafile-server-*
 build/*/src
 build/*/seafile-server-*
 build/*/seafile-server/
+build/*/cloudfile-backend/
+build/*/cloudfile-frontend/
 build/*/.cache
 
 # Deployment secrets and data. .env holds database and admin passwords, and

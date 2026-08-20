@@ -414,6 +414,7 @@ function fetch() {
     checkout_ref seahub         "$cloudfile_hub_ref"
 
     apply_patches seafdav
+    apply_patches seafevents
 }
 
 # apply_patches <component>

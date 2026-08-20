@@ -146,7 +146,7 @@ CAPABILITIES=(
     "review-search|CF_ENABLE_DIR_ACL CF_ENABLE_SEARCH|tests/e2e/review_search_matrix.py"
     "review-history||tests/e2e/review_history_matrix.py"
     "review-recycle||tests/e2e/review_recycle_matrix.py"
-    "review-share||tests/e2e/review_share_matrix.py"
+    "review-share|CF_ENABLE_SHARE_RESTRICT|tests/e2e/review_share_matrix.py"
     "favorites|CF_ENABLE_FAVORITES_ID|tests/e2e/favorites_matrix.py"
 )
 
@@ -349,6 +349,33 @@ cap_lock_run() {
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
 }
 
+# review-search 的标签/创建人筛选只在 Meilisearch provider 下可断言（矩阵
+# 头部契约：起 Meili、切 provider、跑一轮 cf_worker --once 均由这里编排）。
+# 原 CI workflow 有这套编排，CI 清理时丢了。
+cap_review-search_env() {
+    cat <<EOF
+MEILI_MASTER_KEY=CloudFile-Local-Search-4417
+CF_MEILISEARCH_API_KEY=CloudFile-Local-Search-4417
+EOF
+}
+
+cap_review-search_run() {
+    local base=$1
+
+    say "启动 Meilisearch、切换 provider 并起 worker"
+    compose --profile search up -d --wait --wait-timeout 90 meilisearch || return 1
+    echo 'CF_PROVIDER_SEARCH=meilisearch' >> "$STAGE_DIR/.env"
+    compose --profile worker up -d --wait --wait-timeout 180 cf-worker cloudfile || return 1
+
+    say "手动跑一轮索引器回填"
+    compose exec -T cloudfile bash -c \
+        '/opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seahub.sh python-env python3 /opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seahub/manage.py cf_worker --once' \
+        || return 1
+
+    python3 "$repo/tests/e2e/review_search_matrix.py" --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
+}
+
 cap_search_env() {
     cat <<EOF
 INIT_SS_ADMIN_USER=cf-search-admin
@@ -361,6 +388,54 @@ CF_SEARCH_INDEX_INTERVAL=15
 EOF
 }
 
+# review-copy 的大小/层级用例（copy-004/005）需要非零限制才有"超限"可测；
+# 矩阵的契约是 100 字节 / 1 层（见 review_copy_matrix.py 头部注释）。
+cap_review-copy_env() {
+    cat <<EOF
+CF_FILEOP_MAX_FILE_SIZE=100
+CF_FILEOP_MAX_FOLDER_DEPTH=1
+EOF
+}
+
+# bootstrap 对 CF_ENABLE_ONLYOFFICE=true 有 fail-fast：JWT secret 为空直接拒启
+# （无签名回调漏过正是该门禁要移除的风险）。DS 8.2 镜像本机拉取曾中断，
+# 浏览器内编辑会话与 convert 依赖它——先满足无 DS 也能跑的 6 项断言。
+cap_office_env() {
+    cat <<EOF
+ONLYOFFICE_JWT_SECRET=CloudFile-Local-Office-4417
+ONLYOFFICE_APIJS_URL=http://onlyoffice:80/web-apps/apps/api/documents/api.js
+ONLYOFFICE_FILE_SERVER_ROOT=http://cloudfile:8082
+EOF
+}
+
+# convert 往返需要真实 Document Server（office profile）。此前只有 CI 起 DS，
+# CI 清理后本机门禁从未起过——convert 一直靠"此前容器门禁通过"背书。
+cap_office_run() {
+    local base=$1
+
+    say "启动 Document Server 8.2（JWT 开）"
+    if ! compose --profile office up -d --wait --wait-timeout 300 onlyoffice; then
+        echo "⚠ Document Server 未能在 300s 内就绪（镜像拉取大）——convert 用例记为技术负债，其余断言继续" >&2
+    fi
+
+    python3 "$repo/tests/e2e/office_matrix.py" --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
+}
+
+# 原 CI workflow（63e27bb）有"准备挂载目录 fixture"步骤，CI 清理时丢了：
+# 矩阵登记 /shared/external/e2e 后要读 readme.txt/nested/inside.txt，但这些
+# 文件必须先写进宿主机 bind mount（./data/seafile = 容器 /shared）。
+cap_external_sources_run() {
+    local base=$1
+
+    say "准备挂载目录 fixture"
+    compose exec -T cloudfile bash -c \
+        "mkdir -p /shared/external/e2e/nested && printf 'CloudFile external source fixture\\n' > /shared/external/e2e/readme.txt && printf 'nested fixture\\n' > /shared/external/e2e/nested/inside.txt" || return 1
+
+    python3 "$repo/tests/e2e/external_sources_matrix.py" --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
+}
+
 # 三阶段对应三次配置变更；search_matrix.py 本身只发 HTTP 请求，不碰 .env 或
 # 容器——配置切换与重启统一在这里做，与 sso 的目录变小+重启是同一个理由：
 # 把"改配置会不会真的生效"和"规则算得对不对"分开验证。
@@ -369,6 +444,23 @@ cap_search_run() {
 
     say "启动 SeaSearch 与 Meilisearch（缩短 SeaSearch 索引间隔到 10s）"
     compose --profile search up -d --wait --wait-timeout 90 seasearch meilisearch || return 1
+
+    # seasearch 容器没有 healthcheck，--wait 只等 running；而 seafevents 在
+    # SeaSearch 未就绪时 init index object 失败后 _enabled=False 且永不重试
+    # （上游竞态）。等 /healthz 真正 200 后重启 cloudfile，让 seafevents 重新
+    # 初始化索引对象。
+    say "等待 SeaSearch /healthz 并重启 cloudfile 重试索引初始化"
+    local i ok_health=0
+    for i in $(seq 1 30); do
+        if compose exec -T cloudfile bash -c \
+            'curl -sf -m 3 http://seasearch:4080/healthz >/dev/null' 2>/dev/null; then
+            ok_health=1; break
+        fi
+        sleep 2
+    done
+    [[ $ok_health -eq 1 ]] || { echo "✗ SeaSearch /healthz 60s 内未就绪" >&2; return 1; }
+    compose restart cloudfile || return 1
+    compose up -d --wait --wait-timeout 180 cloudfile || return 1
 
     say "阶段 1 —— 默认路径：CF_PROVIDER_SEARCH 留空，走 SeaSearch"
     python3 "$repo/tests/e2e/search_matrix.py" --phase 1 --url "$base" --insecure \

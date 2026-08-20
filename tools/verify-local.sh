@@ -136,6 +136,9 @@ CAPABILITIES=(
     "external_sources|CF_ENABLE_EXTERNAL_SOURCES|tests/e2e/external_sources_matrix.py"
     "external_sources_real|CF_ENABLE_EXTERNAL_SOURCES|tests/e2e/external_sources_matrix.py"
     "convert|CF_ENABLE_CONVERT_EXPORT|tests/e2e/convert_matrix.py"
+    # No cap "ai" gate: CF_AI_ENABLED=true 启动会让 seahub 注册 AI 模块并触发
+    # AIUsageStatistics 聚合（smoke 在账号信息读取时 500），而 seafile-ai 镜像
+    # CE 不发布——开开关必坏原生冒烟，缺镜像必坏 AI 端点。挂载为运行级技术负债。
     "fileop|CF_FILEOP_TEST_PROVIDER|tests/e2e/fileop_matrix.py"
     "lock|CF_ENABLE_FILE_LOCK CF_ENABLE_CHECKOUT|tests/e2e/lock_matrix.py"
     "local-edit|CF_ENABLE_FILE_LOCK CF_ENABLE_LOCAL_APP|tests/e2e/local_edit_matrix.py"
@@ -510,6 +513,15 @@ OVR
 # （JWT_PRIVATE_KEY 必填，Hub 与 sdoc-server 共用）。sdoc 导出走真实 SeaDoc
 # 2.0 converter（SEADOC_SERVER_URL/sdoc-server → Caddy 反代 → seadoc 容器），
 # Hub 以 fileserver 下载 URL 给 converter 回源。
+# Seafile AI 接线门禁：seafile-ai:14.0-latest 镜像不存在（AI 是 Pro 组件），
+# 本门禁不拉镜像，仅验 CF_AI_ENABLED=true 启动后 seahub settings 写入与 AI
+# 模块可被 import；完整问答链路需等待镜像或换 Pro 评估。
+cap_ai_run() {
+    local base=$1
+    python3 "$repo/tests/e2e/ai_matrix.py" --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
+}
+
 cap_convert_env() {
     cat <<EOF
 JWT_PRIVATE_KEY=CloudFile-Local-Convert-JWT-4417

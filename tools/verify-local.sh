@@ -135,6 +135,7 @@ CAPABILITIES=(
     "search|CF_ENABLE_SEARCH CF_ENABLE_DIR_ACL|tests/e2e/search_matrix.py"
     "external_sources|CF_ENABLE_EXTERNAL_SOURCES|tests/e2e/external_sources_matrix.py"
     "external_sources_real|CF_ENABLE_EXTERNAL_SOURCES|tests/e2e/external_sources_matrix.py"
+    "convert|CF_ENABLE_CONVERT_EXPORT|tests/e2e/convert_matrix.py"
     "fileop|CF_FILEOP_TEST_PROVIDER|tests/e2e/fileop_matrix.py"
     "lock|CF_ENABLE_FILE_LOCK CF_ENABLE_CHECKOUT|tests/e2e/lock_matrix.py"
     "local-edit|CF_ENABLE_FILE_LOCK CF_ENABLE_LOCAL_APP|tests/e2e/local_edit_matrix.py"
@@ -503,6 +504,26 @@ OVR
     docker rm -f t5-samba >/dev/null 2>&1 || true
     docker network rm "$net" >/dev/null 2>&1 || true
     return $rc
+}
+
+# 转换/导出门禁：bootstrap 对 CF_ENABLE_CONVERT_EXPORT=true 有 fail-fast
+# （JWT_PRIVATE_KEY 必填，Hub 与 sdoc-server 共用）。sdoc 导出走真实 SeaDoc
+# 2.0 converter（SEADOC_SERVER_URL/sdoc-server → Caddy 反代 → seadoc 容器），
+# Hub 以 fileserver 下载 URL 给 converter 回源。
+cap_convert_env() {
+    cat <<EOF
+JWT_PRIVATE_KEY=CloudFile-Local-Convert-JWT-4417
+EOF
+}
+
+cap_convert_run() {
+    local base=$1
+
+    say "启动 SeaDoc 2.0（convert profile）"
+    compose --profile convert up -d --wait --wait-timeout 240 seadoc || return 1
+
+    python3 "$repo/tests/e2e/convert_matrix.py" --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
 }
 
 # 三阶段对应三次配置变更；search_matrix.py 本身只发 HTTP 请求，不碰 .env 或

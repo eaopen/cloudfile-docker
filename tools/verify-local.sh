@@ -129,6 +129,7 @@ build_image() {
 CAPABILITIES=(
     "acl|CF_ENABLE_DIR_ACL|tests/e2e/acl_matrix.py"
     "sso|CF_ENABLE_SSO|tests/e2e/sso_matrix.py"
+    "sso-login|CF_ENABLE_SSO|tests/e2e/sso_login_matrix.py"
     "metadata|CF_ENABLE_METADATA CF_ENABLE_TAGS|tests/e2e/metadata_matrix.py"
     "audit|CF_ENABLE_AUDIT|tests/e2e/audit_matrix.py"
     "storage|CF_ENABLE_S3_STORAGE|tests/e2e/storage_matrix.py"
@@ -410,6 +411,23 @@ cap_review-search_run() {
     say "浏览器套件：search-008/009 检索结果 UI（matched-tag、folder-action）"
     python3 "$repo/tests/e2e/review_ui_search.py" --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
+}
+
+# SSO（OAuth/OIDC 登录）配置翻译门禁：Authentik 2026.5.6 镜像 GB 级不拉，
+# 本门禁验证 CF_SSO_* 翻译为 seahub_settings.py 的 OAUTH_* 字段及 oauth/login
+# 路由挂载，完整 OAuth 跳（Authentik → callback → 落库）记技术债务。
+cap_sso-login_env() {
+    cat <<EOF
+CF_ENABLE_SSO=true
+CF_SSO_OAUTH_CLIENT_ID=cloudfile-sso-login
+CF_SSO_OAUTH_CLIENT_SECRET=CloudFile-Local-SSO-Login-4417
+CF_SSO_OAUTH_PROVIDER=authentik
+CF_SSO_OAUTH_AUTHORIZATION_URL=http://127.0.0.1:9000/application/o/authorize/
+CF_SSO_OAUTH_TOKEN_URL=http://127.0.0.1:9000/application/o/token/
+CF_SSO_OAUTH_USER_INFO_URL=http://127.0.0.1:9000/application/o/userinfo/
+CF_SSO_OAUTH_LOGOUT_URL=http://127.0.0.1:9000/application/o/cloudfile/logout/
+CF_SSO_OAUTH_INSECURE=true
+EOF
 }
 
 cap_search_env() {

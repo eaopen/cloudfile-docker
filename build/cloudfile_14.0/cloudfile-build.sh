@@ -649,7 +649,8 @@ function layer_frontend() {
     if [[ ${CF_FORCE_REBUILD} != 1 && ${CF_FORCE_FRONTEND_REBUILD} != 1 ]] \
         && layer_hit frontend "$fp" \
         && [[ -d ${cache}/build && -d ${cache}/media-assets \
-              && -f ${cache}/webpack-stats.pro.json ]]; then
+              && -f ${cache}/webpack-stats.pro.json \
+              && -d ${cache}/locale ]]; then
         echo "[cache] 前端产物命中，跳过 npm build / collectstatic，从缓存恢复"
         rm -rf "${seahub}/frontend/build" "${seahub}/media/assets"
         mkdir -p "${seahub}/frontend" "${seahub}/media"
@@ -657,6 +658,11 @@ function layer_frontend() {
         cp -a "${cache}/media-assets" "${seahub}/media/assets"
         cp -a "${cache}/webpack-stats.pro.json" \
             "${seahub}/frontend/webpack-stats.pro.json"
+        # Restore compiled .mo files. .mo is not tracked by git, but stale
+        # copies from a prior build would shadow this restore.
+        find "${seahub}" -path '*/locale/*/LC_MESSAGES/*.mo' -delete
+        (cd "${cache}/locale" && find . -name '*.mo' -print0 \
+            | tar --null -cf - -T -) | tar -xf - -C "$seahub"
         layer_mark frontend "$fp"
         return
     fi
@@ -669,6 +675,9 @@ function layer_frontend() {
     cp -a "${seahub}/media/assets" "$cache/media-assets"
     cp -a "${seahub}/frontend/webpack-stats.pro.json" \
         "${cache}/webpack-stats.pro.json"
+    (cd "$seahub" && find . -path '*/locale/*/LC_MESSAGES/*.mo' -print0 \
+        | tar --null -cf - -T -) | tar -xf - -C "$cache/locale-tmp"
+    mv "$cache/locale-tmp" "$cache/locale"
     layer_mark frontend "$fp"
 }
 
@@ -770,12 +779,27 @@ function import_backend_artifact() {
 }
 
 function export_frontend_artifact() {
+    # frontend/build + media/assets are the runtime-visible assets.
+    # webpack-stats.pro.json and the compiled .mo files are also required:
+    #   * the stats JSON drives the Django webpack loader and must match the
+    #     current build/manifest or seahub pages 500
+    #   * compilemessages writes .mo next to each app's locale/ tree; without
+    #     those the shipped package has no first-party translations
     local seahub=${code_path}/seahub
     local out=${current_dir}/cloudfile-frontend
     rm -rf "$out"
-    mkdir -p "$out/frontend" "$out/media"
+    mkdir -p "$out/frontend" "$out/media" "$out/locale"
     cp -a "${seahub}/frontend/build" "$out/frontend/build"
     cp -a "${seahub}/media/assets" "$out/media/assets"
+    if [[ -f ${seahub}/frontend/webpack-stats.pro.json ]]; then
+        cp -a "${seahub}/frontend/webpack-stats.pro.json" \
+            "$out/frontend/webpack-stats.pro.json"
+    fi
+    # .mo files live in every app's locale/<lang>/LC_MESSAGES. Mirror the
+    # subtree rather than enumerating apps so newly added Django apps are
+    # picked up automatically.
+    (cd "$seahub" && find . -path '*/locale/*/LC_MESSAGES/*.mo' -print0 \
+        | tar --null -cf - -T -) | tar -xf - -C "$out/locale"
     {
         echo "hub: $(git -C "$seahub" rev-parse HEAD)"
         echo "server-python: $(git -C "${code_path}/seafile-server" rev-parse HEAD:python)"
@@ -793,6 +817,16 @@ function import_frontend_artifact() {
     mkdir -p "${seahub}/frontend" "${seahub}/media"
     cp -a "${artifact}/frontend/build" "${seahub}/frontend/build"
     cp -a "${artifact}/media/assets" "${seahub}/media/assets"
+    if [[ -f ${artifact}/frontend/webpack-stats.pro.json ]]; then
+        mkdir -p "${seahub}/frontend"
+        cp -a "${artifact}/frontend/webpack-stats.pro.json" \
+            "${seahub}/frontend/webpack-stats.pro.json"
+    fi
+    if [[ -d ${artifact}/locale ]]; then
+        # Mirror .mo files back into each app's locale/<lang>/LC_MESSAGES.
+        (cd "${artifact}/locale" && find . -name '*.mo' -print0 \
+            | tar --null -cf - -T -) | tar -xf - -C "$seahub"
+    fi
 }
 
 echo ''

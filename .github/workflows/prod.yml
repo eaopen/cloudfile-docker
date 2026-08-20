@@ -38,10 +38,45 @@ jobs:
     timeout-minutes: 120
     env:
       CF_FORCE_REBUILD: '1'
+      # Pin to the same SHAs the incremental plan resolves, so a full and an
+      # incremental run from the same inputs produce equivalent images even
+      # if the upstream branches have moved between dispatches.
+      CF_SERVER_REF: ${{ steps.refs.outputs.server_ref }}
+      CF_HUB_REF: ${{ steps.refs.outputs.hub_ref }}
     steps:
       - uses: actions/checkout@v4
         with:
           path: cloudfile-docker
+          fetch-depth: 1
+
+      - name: Read release refs
+        id: refs
+        working-directory: cloudfile-docker
+        run: |
+          server_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml server_commit || true)
+          hub_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml hub_commit || true)
+          if [[ -z $server_ref ]]; then
+            server_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_server.ref)
+          fi
+          if [[ -z $hub_ref ]]; then
+            hub_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_hub.ref)
+          fi
+          echo "server_ref=$server_ref" >> "$GITHUB_OUTPUT"
+          echo "hub_ref=$hub_ref" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          repository: eaopen/cloudfile-server
+          ref: ${{ steps.refs.outputs.server_ref }}
+          path: cloudfile-server
+          fetch-depth: 1
+
+      - uses: actions/checkout@v4
+        with:
+          repository: eaopen/cloudfile-hub
+          ref: ${{ steps.refs.outputs.hub_ref }}
+          path: cloudfile-hub
+          fetch-depth: 1
 
       - name: Free disk space
         run: |
@@ -72,7 +107,10 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: cloudfile-docker/build/cloudfile_14.0/.cache
-          key: cf-prod-build-${{ github.run_id }}-${{ github.run_attempt }}
+          # Match the restore key exactly so the next run finds it.
+          # The previous run_id/run_attempt suffix meant every restore
+          # missed and the cache was effectively write-only.
+          key: cf-prod-build-${{ hashFiles('cloudfile-docker/image/cloudfile_14.0/Dockerfile.base', 'cloudfile-docker/build/cloudfile_14.0/cloudfile-build.sh', 'cloudfile-docker/build/cloudfile_14.0/build-in-docker.sh') }}
 
       - name: Build production image
         working-directory: cloudfile-docker/image/cloudfile_14.0
@@ -102,6 +140,7 @@ jobs:
       hub_sha: ${{ steps.plan.outputs.hub_sha }}
       backend_key: ${{ steps.plan.outputs.backend_key }}
       frontend_key: ${{ steps.plan.outputs.frontend_key }}
+      package_key: ${{ steps.plan.outputs.package_key }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -313,7 +352,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: cloudfile-docker/build/cloudfile_14.0/.cache/package
-          key: cf-package-tools-${{ needs.plan.outputs.hub_sha }}
+          key: cf-package-tools-${{ needs.plan.outputs.package_key }}
           restore-keys: cf-package-tools-
 
       - name: Build CE 14 base image

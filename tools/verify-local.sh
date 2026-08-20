@@ -405,6 +405,10 @@ cap_review-search_run() {
         || return 1
 
     python3 "$repo/tests/e2e/review_search_matrix.py" --url "$base" --insecure \
+        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
+
+    say "浏览器套件：search-008/009 检索结果 UI（matched-tag、folder-action）"
+    python3 "$repo/tests/e2e/review_ui_search.py" --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
 }
 

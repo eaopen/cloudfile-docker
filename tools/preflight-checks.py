@@ -357,8 +357,11 @@ def check_workflow_layout(repo):
         bad('dev.yml 必须仅在 dev 推送时运行快速检查，且不得运行容器 E2E')
     else:
         ok('dev.yml 仅运行开发快速检查')
-    if 'branches: [prod]' not in prod or 'tests/e2e/' in prod or 'docker compose' in prod:
-        bad('prod.yml 必须仅在 prod 推送时构建产物，且不得运行验收矩阵')
+    # b2b2b84 起改为 workflow_dispatch（incremental/full 两种模式），不再挂
+    # push 触发；本检查的意图是「prod 不跑容器验收」，不是限定触发方式。
+    trigger_ok = 'branches: [prod]' in prod or 'workflow_dispatch:' in prod
+    if not trigger_ok or 'tests/e2e/' in prod or 'docker compose' in prod:
+        bad('prod.yml 必须仅构建生产镜像（push[prod] 或 dispatch 触发），且不得运行验收矩阵')
     else:
         ok('prod.yml 仅构建生产镜像')
 

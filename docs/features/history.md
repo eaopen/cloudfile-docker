@@ -6,7 +6,8 @@
 > **适用版本**：CloudFile `dev`，Seafile CE 14 参考基线。
 > **状态**：验证中；容器 E2E 由
 > `./tools/verify-local.sh cap review-history` 运行
-> [`review_history_matrix.py`](../../tests/e2e/review_history_matrix.py)。
+> [`review_history_matrix.py`](../../tests/e2e/review_history_matrix.py)，
+> 2026-08-20 于 dev 全量镜像复验 api 7/7 通过（history-001～007）。
 
 ## 范围
 

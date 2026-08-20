@@ -48,6 +48,7 @@ run "构建平台规范化" "$docker_repo/tests/tools/test-build-platform.sh"
 run "构建缓存契约" "$docker_repo/tests/tools/test-build-cache-contract.sh"
 run "增量发布工作流契约" "$docker_repo/tests/tools/test-production-workflow.sh"
 run "前端产物完整性契约" "$docker_repo/tests/tools/test-production-artifact.sh"
+run "最终发布包完整性契约" "$docker_repo/tests/tools/test-release-artifact.sh"
 
 # 2. Hub 侧扩展测试（能力分支上还包括与 C 端共用用例集的求解器测试）
 if [[ -d $hub ]]; then

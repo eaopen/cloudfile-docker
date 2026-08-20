@@ -354,11 +354,16 @@ function checkout_ref() {
         # node_modules tree just as a fresh GitHub package runner naturally
         # would; it must never become part of the release image.
         git clean -xfd
+    elif [[ $CF_BUILD_TARGET == frontend && $dir == seahub ]]; then
+        # npm ci is the only ignored source workspace worth preserving in an
+        # incremental component job. Its lock/ABI stamp validates reuse.
+        git clean -xfd -e frontend/node_modules/
     elif [[ $CF_BUILD_TARGET != all ]]; then
-        # Incremental targets keep ignored compiler/webpack workspaces. Tracked
-        # files are still reset and ordinary untracked files are removed, so a
-        # checkout cannot leak source edits into the artifact.
-        git clean -fd
+        # A backend rebuild already means its immutable artifact key changed.
+        # Clean generated sources and their stamps together; preserving one
+        # without the other makes Automake skip Vala/RPC generation. ccache
+        # and Go caches retain the useful work outside the source checkout.
+        git clean -xfd
     elif [[ $dir == seahub ]]; then
         # node_modules is a 1 GiB derived tree. Its own lock/ABI stamp below
         # decides whether it is reusable; deleting it here guarantees every
@@ -459,6 +464,7 @@ function write_build_info() {
         echo "product: ${version}"
         echo "architecture: $(uname -m)"
         echo "jobs: ${CF_BUILD_JOBS}"
+        echo "cloudfile-docker: $(git -C "$repo_root" rev-parse HEAD)"
         for d in seafile-server seahub seafobj seafdav seafevents libsearpc libevhtp; do
             echo "${d}: $(git -C "${code_path}/${d}" rev-parse HEAD)"
         done
@@ -756,18 +762,37 @@ function export_backend_artifact() {
     cp "${code_path}/seafile-server/notification-server/notification-server" \
         "$out/notification-server/"
     {
-        echo "server: $(git -C "${code_path}/seafile-server" rev-parse HEAD)"
+        echo "seafile-server: $(git -C "${code_path}/seafile-server" rev-parse HEAD)"
         echo "libsearpc: $(git -C "${code_path}/libsearpc" rev-parse HEAD)"
         echo "libevhtp: $(git -C "${code_path}/libevhtp" rev-parse HEAD)"
     } > "$out/build-info.txt"
+    (cd "$out" && find seafile-server fileserver notification-server \
+        build-info.txt -type f -print0 | sort -z \
+        | xargs -0 sha256sum > manifest.sha256)
 }
 
 function import_backend_artifact() {
     local artifact=${current_dir}/cloudfile-backend
-    [[ -d ${artifact}/seafile-server ]] || {
+    [[ -d ${artifact}/seafile-server \
+        && -x ${artifact}/fileserver/fileserver \
+        && -x ${artifact}/notification-server/notification-server \
+        && -f ${artifact}/build-info.txt \
+        && -s ${artifact}/manifest.sha256 ]] || {
         echo "backend artifact not found: ${artifact}" >&2
         exit 1
     }
+    (cd "$artifact" && sha256sum -c manifest.sha256 >/dev/null) || {
+        echo "backend artifact checksum verification failed" >&2
+        exit 1
+    }
+    for component in seafile-server libsearpc libevhtp; do
+        grep -Fqx \
+            "${component}: $(git -C "${code_path}/${component}" rev-parse HEAD)" \
+            "$artifact/build-info.txt" || {
+            echo "backend artifact ${component} commit does not match package sources" >&2
+            exit 1
+        }
+    done
     rm -rf "${current_dir}/seafile-server" "${current_dir}/seafile-server-${version}"
     mkdir -p "${current_dir}/seafile-server" \
         "${code_path}/seafile-server/fileserver" \
@@ -788,14 +813,25 @@ function export_frontend_artifact() {
     #     those the shipped package has no first-party translations
     local seahub=${code_path}/seahub
     local out=${current_dir}/cloudfile-frontend
+    [[ -d ${seahub}/frontend/build && -d ${seahub}/media/assets ]] || {
+        echo "frontend runtime assets are incomplete" >&2
+        exit 1
+    }
+    [[ -f ${seahub}/frontend/webpack-stats.pro.json ]] || {
+        echo "frontend webpack stats are missing" >&2
+        exit 1
+    }
+    if ! find "$seahub" -path "$seahub/thirdpart" -prune -o \
+        -path '*/locale/*/LC_MESSAGES/*.mo' -print -quit | grep -q .; then
+        echo "compiled first-party translations are missing" >&2
+        exit 1
+    fi
     rm -rf "$out"
     mkdir -p "$out/frontend" "$out/media" "$out/locale"
     cp -a "${seahub}/frontend/build" "$out/frontend/build"
     cp -a "${seahub}/media/assets" "$out/media/assets"
-    if [[ -f ${seahub}/frontend/webpack-stats.pro.json ]]; then
-        cp -a "${seahub}/frontend/webpack-stats.pro.json" \
-            "$out/frontend/webpack-stats.pro.json"
-    fi
+    cp -a "${seahub}/frontend/webpack-stats.pro.json" \
+        "$out/frontend/webpack-stats.pro.json"
     # .mo files live in every app's locale/<lang>/LC_MESSAGES. Mirror the
     # subtree rather than enumerating apps so newly added Django apps are
     # picked up automatically.
@@ -805,29 +841,48 @@ function export_frontend_artifact() {
         echo "hub: $(git -C "$seahub" rev-parse HEAD)"
         echo "server-python: $(git -C "${code_path}/seafile-server" rev-parse HEAD:python)"
     } > "$out/build-info.txt"
+    (cd "$out" && find frontend media locale build-info.txt -type f -print0 \
+        | sort -z | xargs -0 sha256sum > manifest.sha256)
 }
 
 function import_frontend_artifact() {
     local artifact=${current_dir}/cloudfile-frontend
     local seahub=${code_path}/seahub
-    [[ -d ${artifact}/frontend/build && -d ${artifact}/media/assets ]] || {
+    [[ -d ${artifact}/frontend/build && -d ${artifact}/media/assets \
+        && -f ${artifact}/frontend/webpack-stats.pro.json \
+        && -d ${artifact}/locale && -f ${artifact}/build-info.txt \
+        && -s ${artifact}/manifest.sha256 ]] || {
         echo "frontend artifact not found: ${artifact}" >&2
+        exit 1
+    }
+    (cd "$artifact" && sha256sum -c manifest.sha256 >/dev/null) || {
+        echo "frontend artifact checksum verification failed" >&2
+        exit 1
+    }
+    grep -Fqx "hub: $(git -C "$seahub" rev-parse HEAD)" \
+        "$artifact/build-info.txt" || {
+        echo "frontend artifact Hub commit does not match package sources" >&2
+        exit 1
+    }
+    grep -Fqx \
+        "server-python: $(git -C "${code_path}/seafile-server" rev-parse HEAD:python)" \
+        "$artifact/build-info.txt" || {
+        echo "frontend artifact Server Python tree does not match package sources" >&2
         exit 1
     }
     rm -rf "${seahub}/frontend/build" "${seahub}/media/assets"
     mkdir -p "${seahub}/frontend" "${seahub}/media"
     cp -a "${artifact}/frontend/build" "${seahub}/frontend/build"
     cp -a "${artifact}/media/assets" "${seahub}/media/assets"
-    if [[ -f ${artifact}/frontend/webpack-stats.pro.json ]]; then
-        mkdir -p "${seahub}/frontend"
-        cp -a "${artifact}/frontend/webpack-stats.pro.json" \
-            "${seahub}/frontend/webpack-stats.pro.json"
-    fi
-    if [[ -d ${artifact}/locale ]]; then
-        # Mirror .mo files back into each app's locale/<lang>/LC_MESSAGES.
-        (cd "${artifact}/locale" && find . -name '*.mo' -print0 \
-            | tar --null -cf - -T -) | tar -xf - -C "$seahub"
-    fi
+    cp -a "${artifact}/frontend/webpack-stats.pro.json" \
+        "${seahub}/frontend/webpack-stats.pro.json"
+    # Third-party translations come from the source checkout and are not part
+    # of this artifact. Preserve them while replacing first-party outputs.
+    find "$seahub" -path '*/locale/*/LC_MESSAGES/*.mo' \
+        ! -path "$seahub/thirdpart/*" -delete
+    # Mirror .mo files back into each app's locale/<lang>/LC_MESSAGES.
+    (cd "${artifact}/locale" && find . -name '*.mo' -print0 \
+        | tar --null -cf - -T -) | tar -xf - -C "$seahub"
 }
 
 echo ''

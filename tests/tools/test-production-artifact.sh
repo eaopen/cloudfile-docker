@@ -53,6 +53,7 @@ required_paths=(
     frontend/webpack-stats.pro.json
     media/assets
     build-info.txt
+    manifest.sha256
 )
 # Compiled translations must exist for every language that Django writes
 # during compilemessages. We seed zh_CN as the smoke case; the function
@@ -125,13 +126,15 @@ for p in "${required_mo[@]}"; do
 done
 [[ $missing -eq 0 ]] || { echo "frontend export contract broken" >&2; exit 1; }
 
-# Round-trip: re-import into a fresh seahub root. The import function pins
-# `seahub = ${code_path}/seahub`, so we swap the original seahub directory
-# out and place the import target where the function looks for it.
-import_seahub=$fixture/import-seahub
-mkdir -p "$import_seahub"
-rm -rf "$fixture/seahub"
-mv "$import_seahub" "$fixture/seahub"
+# Round-trip: remove only generated outputs while preserving the checked-out
+# Hub repository. Import validates build-info against that immutable checkout,
+# exactly as the package job does on its fresh runner.
+rm -rf "$seahub/frontend/build" "$seahub/media/assets"
+rm -f "$seahub/frontend/webpack-stats.pro.json"
+find "$seahub" -path '*/locale/*/LC_MESSAGES/*.mo' -delete
+mkdir -p "$seahub/thirdpart/example/locale/zh_CN/LC_MESSAGES"
+printf 'THIRDPARTY\n' \
+    > "$seahub/thirdpart/example/locale/zh_CN/LC_MESSAGES/django.mo"
 code_path=$fixture
 current_dir=$builddir
 seahub=$fixture/seahub
@@ -139,14 +142,17 @@ seahub=$fixture/seahub
 # shellcheck disable=SC1090
 eval "$import_fn"
 import_frontend_artifact
+grep -Fqx THIRDPARTY \
+    "$seahub/thirdpart/example/locale/zh_CN/LC_MESSAGES/django.mo" || {
+    echo "frontend import removed third-party translations" >&2; exit 1; }
 
 for p in "${required_paths[@]}"; do
     case $p in
         frontend/*) dest=$fixture/seahub/frontend/${p#frontend/} ;;
         media/*)    dest=$fixture/seahub/media/${p#media/} ;;
-        build-info.txt)
-            # build-info.txt only lives inside the artifact; import does
-            # not need to restore it into seahub.
+        build-info.txt|manifest.sha256)
+            # Artifact metadata is validated during import but does not need
+            # to be copied into the seahub source tree.
             continue ;;
     esac
     [[ -e $dest ]] || { echo "import missing: $dest" >&2; exit 1; }
@@ -170,24 +176,93 @@ dst_mo=$fixture/seahub/seahub/locale/zh_CN/LC_MESSAGES/django.mo
 [[ $(hash_one "$art_mo") == "$(hash_one "$dst_mo")" ]] \
     || { echo "django.mo content differs after round-trip" >&2; exit 1; }
 
+# A changed byte must be rejected before import. Restore it afterwards so the
+# remaining tests continue with the valid artifact.
+cp "$art_stats" "$art_stats.valid"
+printf 'tampered\n' >> "$art_stats"
+if ( import_frontend_artifact ) >/dev/null 2>&1; then
+    echo "tampered frontend artifact passed checksum verification" >&2
+    exit 1
+fi
+mv "$art_stats.valid" "$art_stats"
+
+# ── backend artifact round-trip ──────────────────────────────────────────
+export_backend_fn=$(extract_function export_backend_artifact)
+import_backend_fn=$(extract_function import_backend_artifact)
+[[ -n $export_backend_fn && -n $import_backend_fn ]] || {
+    echo "backend artifact functions not found in build script" >&2; exit 1; }
+
+backend_fixture=$(mktemp -d)
+backend_src=$backend_fixture/src
+backend_build=$backend_fixture/build
+mkdir -p "$backend_src" "$backend_build/seafile-server/seafile/bin" \
+    "$backend_src/seafile-server/fileserver" \
+    "$backend_src/seafile-server/notification-server"
+for component in seafile-server libsearpc libevhtp; do
+    repo=$backend_src/$component
+    mkdir -p "$repo"
+    printf '%s source\n' "$component" > "$repo/source.txt"
+    git -C "$repo" init -q
+    git -C "$repo" config user.name CloudFile-Test
+    git -C "$repo" config user.email cloudfile-test@example.invalid
+    git -C "$repo" add -A
+    git -C "$repo" commit -qm fixture
+done
+printf 'server binary\n' > "$backend_build/seafile-server/seafile/bin/seaf-server"
+printf 'fileserver binary\n' > "$backend_src/seafile-server/fileserver/fileserver"
+printf 'notification binary\n' \
+    > "$backend_src/seafile-server/notification-server/notification-server"
+chmod +x "$backend_build/seafile-server/seafile/bin/seaf-server" \
+    "$backend_src/seafile-server/fileserver/fileserver" \
+    "$backend_src/seafile-server/notification-server/notification-server"
+
+code_path=$backend_src
+current_dir=$backend_build
+version=artifact-test
+eval "$export_backend_fn"
+eval "$import_backend_fn"
+export_backend_artifact
+
+backend_artifact=$backend_build/cloudfile-backend
+[[ -s $backend_artifact/manifest.sha256 ]] || {
+    echo "backend manifest missing" >&2; exit 1; }
+rm -rf "$backend_build/seafile-server"
+rm -f "$backend_src/seafile-server/fileserver/fileserver" \
+    "$backend_src/seafile-server/notification-server/notification-server"
+import_backend_artifact
+[[ -x $backend_build/seafile-server/seafile/bin/seaf-server ]] || {
+    echo "backend import missing seaf-server" >&2; exit 1; }
+[[ -x $backend_src/seafile-server/fileserver/fileserver ]] || {
+    echo "backend import missing fileserver" >&2; exit 1; }
+
+printf 'tampered\n' >> "$backend_artifact/fileserver/fileserver"
+if ( import_backend_artifact ) >/dev/null 2>&1; then
+    echo "tampered backend artifact passed checksum verification" >&2
+    exit 1
+fi
+
 # ── layer_frontend cache round-trip ─────────────────────────────────────
 # The frontend layer cache must carry the locale subtree too: a hit without
 # it would restore build/assets/stats but leave the tree without .mo files.
 layer_fn=$(extract_function layer_frontend)
 [[ -n $layer_fn ]] || { echo "layer_frontend not found in build script" >&2; exit 1; }
 
-# Mock the layer helpers and the expensive build path.
-layer_hit() { [[ -f $3 ]]; }
+# Mock only external helpers; execute the real layer_frontend body for both
+# the fill and hit passes so the test cannot drift from production commands.
+cache_hit_mode=0
+layer_hit() { [[ $cache_hit_mode == 1 ]]; }
 layer_mark() { :; }
 build_seahub_frontend() {
-    echo "ERROR: build_seahub_frontend must not run on a cache hit" >&2
-    exit 1
+    [[ $cache_hit_mode == 0 ]] || {
+        echo "ERROR: build_seahub_frontend ran on a cache hit" >&2
+        exit 1
+    }
 }
 frontend_fingerprint() { echo fp-test; }
+eval "$layer_fn"
 
 cache_fixture=$(mktemp -d)
 cf_seahub=$cache_fixture/seahub
-cf_cache=$cache_fixture/cache
 mkdir -p "$cf_seahub/frontend/build/static/js" "$cf_seahub/media/assets/css" \
          "$cf_seahub/seahub/locale/zh_CN/LC_MESSAGES" \
          "$cf_seahub/seahub_extra/locale/zh_CN/LC_MESSAGES"
@@ -196,51 +271,33 @@ printf 'ASSETS2\n' > "$cf_seahub/media/assets/css/app.css"
 printf 'STATS2\n' > "$cf_seahub/frontend/webpack-stats.pro.json"
 printf 'MO2\n' > "$cf_seahub/seahub/locale/zh_CN/LC_MESSAGES/django.mo"
 printf 'MO2X\n' > "$cf_seahub/seahub_extra/locale/zh_CN/LC_MESSAGES/django.mo"
+expected_bundle=$(hash_one "$cf_seahub/frontend/build/static/js/main.js")
+expected_mo=$(hash_one "$cf_seahub/seahub/locale/zh_CN/LC_MESSAGES/django.mo")
 
-# Fill pass: run layer_frontend against the fixture. layer_hit returns
-# false (no stamp file), so it calls build_seahub_frontend -- which we
-# mocked to fail. Instead, run only the fill half by pre-marking the
-# layer as a miss is not possible; so simulate by extracting the fill
-# commands directly after a fake build.
-stamp=$cache_fixture/.layers/frontend
-mkdir -p "$cache_fixture/.layers"
-mkdir -p "$cf_cache"
-
-# shellcheck disable=SC2030
-seahub=$cf_seahub
 code_path=$cache_fixture
-# layer_frontend uses ${code_path}/.cache/frontend-build
-mkdir -p "$code_path/.cache/frontend-build"
 cache=$code_path/.cache/frontend-build
+CF_FORCE_REBUILD=0
+CF_FORCE_FRONTEND_REBUILD=0
 
-# Reproduce the fill block (mirrors the build script's cache-fill half).
-cp -a "${seahub}/frontend/build" "$cache/build"
-cp -a "${seahub}/media/assets" "$cache/media-assets"
-cp -a "${seahub}/frontend/webpack-stats.pro.json" \
-    "${cache}/webpack-stats.pro.json"
-mkdir -p "$cache/locale-tmp"
-(cd "$seahub" && find . -path '*/locale/*/LC_MESSAGES/*.mo' -print0 \
-    | tar --null -cf - -T -) | tar -xf - -C "$cache/locale-tmp"
-mv "$cache/locale-tmp" "$cache/locale"
+layer_frontend
 
 [[ -f $cache/locale/seahub/locale/zh_CN/LC_MESSAGES/django.mo ]] || {
     echo "cache fill missing .mo" >&2; exit 1; }
 
-# Hit pass: wipe the seahub outputs, run the restore half (same commands
-# the build script runs on a hit), then assert everything came back.
-rm -rf "${seahub}/frontend/build" "${seahub}/media/assets"
-find "${seahub}" -path '*/locale/*/LC_MESSAGES/*.mo' -delete
-cp -a "${cache}/build" "${seahub}/frontend/build"
-cp -a "${cache}/media-assets" "${seahub}/media/assets"
-cp -a "${cache}/webpack-stats.pro.json" \
-    "${seahub}/frontend/webpack-stats.pro.json"
-(cd "${cache}/locale" && find . -name '*.mo' -print0 \
-    | tar --null -cf - -T -) | tar -xf - -C "$seahub"
+# Hit pass: wipe outputs, seed a stale translation, then invoke the real cache
+# restore. The stale file must be removed and replaced with cached content.
+rm -rf "$cf_seahub/frontend/build" "$cf_seahub/media/assets"
+find "$cf_seahub" -path '*/locale/*/LC_MESSAGES/*.mo' -delete
+mkdir -p "$cf_seahub/seahub/locale/zh_CN/LC_MESSAGES"
+printf 'STALE\n' > "$cf_seahub/seahub/locale/zh_CN/LC_MESSAGES/django.mo"
+cache_hit_mode=1
+layer_frontend
 
-[[ -f $seahub/frontend/build/static/js/main.js ]] || { echo "restore missing build" >&2; exit 1; }
-[[ -f $seahub/seahub/locale/zh_CN/LC_MESSAGES/django.mo ]] || { echo "restore missing .mo" >&2; exit 1; }
-[[ -f $seahub/seahub_extra/locale/zh_CN/LC_MESSAGES/django.mo ]] || { echo "restore missing extra .mo" >&2; exit 1; }
-[[ $(hash_one "$seahub/seahub/locale/zh_CN/LC_MESSAGES/django.mo") == $(hash_one "$cf_seahub/seahub/locale/zh_CN/LC_MESSAGES/django.mo") ]] || {
+[[ $(hash_one "$cf_seahub/frontend/build/static/js/main.js") == "$expected_bundle" ]] || {
+    echo "restored bundle content differs" >&2; exit 1; }
+[[ -f $cf_seahub/seahub_extra/locale/zh_CN/LC_MESSAGES/django.mo ]] || {
+    echo "restore missing extra .mo" >&2; exit 1; }
+[[ $(hash_one "$cf_seahub/seahub/locale/zh_CN/LC_MESSAGES/django.mo") == "$expected_mo" ]] || {
     echo ".mo content differs after cache round-trip" >&2; exit 1; }
 
 echo "frontend layer cache round-trip OK"

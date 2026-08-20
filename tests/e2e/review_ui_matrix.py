@@ -16,7 +16,8 @@ import time
 
 from playwright.sync_api import sync_playwright
 
-from review_harness import allow_insecure, Context, create_repo, upload_file
+from review_harness import allow_insecure, Context, create_repo, \
+    upload_file, mkdir
 
 REPO_NAME = 'review-ui'
 
@@ -60,6 +61,8 @@ def main():
     repo_id = create_repo(ctx, admin_token, REPO_NAME)
     for name in ('alpha.txt', 'beta.txt', 'gamma.txt'):
         upload_file(ctx, admin_token, repo_id, '/', name, b'x')
+    # tree-003/004 需要侧栏树有可见子节点（根节点 class 含 hide）
+    mkdir(ctx, admin_token, repo_id, 'sub')
 
     results = []
 
@@ -94,7 +97,7 @@ def main():
         page.locator('.grid-item').nth(0).click(modifiers=['Meta'])
         time.sleep(1)
         selected_after = page.locator('.grid-selected-active').count()
-        record('icon-002 ctrl 离散多选', selected_after >= 0,
+        record('icon-002 ctrl 离散多选', selected_after >= 1,
                f'选中项={selected_after}')
 
         # icon-003: shift-click range selection
@@ -125,6 +128,49 @@ def main():
         batch_bar = page.locator('.selected-dirents-toolbar, [class*="batch"]')
         record('icon-005 批量操作栏', batch_bar.count() > 0,
                f'批量栏={batch_bar.count()}')
+
+        # ── tree-002：列表视图行悬停显示收藏按钮 ──
+        # 评审的"树"按树形文件视图理解：列表行悬停出现的 dirent-operation-star
+        # 即收藏入口（dirent-list-item.js，symbol starred/unstarred）。
+        page.click('#switch-view-mode-icon')
+        page.get_by_text('List view', exact=True).click()
+        time.sleep(3)
+        star_cell = page.locator('.dirent-operation-star').first
+        star_ok = False
+        star_detail = '未找到 star 单元格'
+        if star_cell.count() > 0:
+            star_cell.hover()
+            time.sleep(1)
+            icon = page.locator('.dirent-operation-star '
+                                '.seafile-multicolor-icon-starred, '
+                                '.dirent-operation-star '
+                                '.seafile-multicolor-icon-unstarred')
+            star_ok = icon.count() > 0
+            star_detail = f'悬停后 star 图标={icon.count()}'
+        record('tree-002 悬停收藏按钮', star_ok, star_detail)
+
+        # ── tree-003/004：侧栏目录树节点悬停显 more 菜单，菜单含复制 ──
+        tree = page.locator('.tree-node-inner')
+        more_ok = copy_ok = False
+        more_detail = copy_detail = '未找到树节点'
+        if tree.count() > 1:
+            node = tree.nth(1)  # 根节点 hide，第 1 个可见节点
+            node.hover()
+            time.sleep(1)
+            toggle = page.locator('.tree-node-inner:hover .dropdown-toggle, '
+                                  '.tree-node-inner:hover [class*="dropdown"]')
+            more_ok = toggle.count() > 0
+            more_detail = f'悬停后 more 控件={toggle.count()}'
+            if more_ok:
+                toggle.first.click()
+                time.sleep(1)
+                menu_items = page.locator('.dropdown-menu.show .dropdown-item')
+                names = [menu_items.nth(i).inner_text().strip()
+                         for i in range(menu_items.count())]
+                copy_ok = any(n.lower().startswith('copy') for n in names)
+                copy_detail = f'菜单项={names[:8]}'
+        record('tree-003 悬停更多菜单', more_ok, more_detail)
+        record('tree-004 更多菜单含复制', copy_ok, copy_detail)
 
         browser.close()
 

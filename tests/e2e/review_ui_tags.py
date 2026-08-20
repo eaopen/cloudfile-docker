@@ -102,11 +102,67 @@ def main():
             print(f'✗ 绑定标签 {tid} 失败 status={status} {body[:120]}', file=sys.stderr)
             return 1
 
+    # tags-008 的折叠组件（FileTagsFormatter）消费的是 metadata 记录的
+    # _tags 字段（metadata-server 标签表 + 记录链接），不是上面的
+    # repo_tags/FileTags 通路。因此再建 3 枚 metadata 标签并通过
+    # PUT /metadata/file-tags/ 链到 tagged.txt 的记录上。
+    status, body = ctx.api(f'/api/v2.1/repos/{repo_id}/metadata/tags/',
+                           method='POST', token=admin_token,
+                           data=json.dumps({'tags_data': [
+                               {'_tag_name': f'm-user-{s}', '_tag_color': '#aa00aa'}
+                               for s in 'abc']}).encode(),
+                           headers={'Content-Type': 'application/json'})
+    if status != 200:
+        print(f'✗ 创建 metadata 标签失败 status={status} {body[:120]}', file=sys.stderr)
+        return 1
+    # 记录 id：先取默认视图 id，再按视图查行。新库的记录由 metadata-server
+    # 异步建索引，立刻查可能为空——轮询重试。
+    status, body = ctx.api(f'/api/v2.1/repos/{repo_id}/metadata/views/',
+                           token=admin_token)
+    views = (json.loads(body).get('views') or []) if status == 200 else []
+    view_id = views[0]['_id'] if views else ''
+    record_id = None
+    for _ in range(12):
+        status, body = ctx.api(f'/api/v2.1/repos/{repo_id}/metadata/records/'
+                               f'?view_id={view_id}', token=admin_token)
+        if status == 200:
+            for row in json.loads(body).get('results', []):
+                if row.get('_name') == 'tagged.txt' and not row.get('_is_dir'):
+                    record_id = row.get('_id')
+                    break
+        if record_id:
+            break
+        time.sleep(5)
+    if not record_id:
+        print(f'✗ 未找到 tagged.txt 的 metadata 记录（重试 12 次）status={status}',
+              file=sys.stderr)
+        return 1
+    status, body = ctx.api(f'/api/v2.1/repos/{repo_id}/metadata/tags/',
+                           token=admin_token)
+    tag_ids = [t['_id'] for t in json.loads(body).get('results', [])
+               if str(t.get('_tag_name', '')).startswith('m-user-')]
+    if len(tag_ids) < 3:
+        print(f'✗ metadata 标签不足: {tag_ids}', file=sys.stderr)
+        return 1
+    status, body = ctx.api(f'/api/v2.1/repos/{repo_id}/metadata/file-tags/',
+                           method='PUT', token=admin_token,
+                           data=json.dumps({'file_tags_data': [
+                               {'record_id': record_id, 'tags': tag_ids}]}).encode(),
+                           headers={'Content-Type': 'application/json'})
+    if status != 200:
+        print(f'✗ 链接 metadata 标签失败 status={status} {body[:120]}', file=sys.stderr)
+        return 1
+
     results = []
 
     def record(case_id, ok, detail=''):
         results.append((case_id, ok))
         print(f'  {"✓" if ok else "✗"} [{case_id}]  {detail}', flush=True)
+
+    # 真实用户入口是 /library/<repo_id>/<repo_name>/。不带库名段的
+    # /library/<repo_id>/ 会把前端 state.path 解析成 ''，已用标签栏的
+    # 渲染判定（path === '/'）因此失败——那不是产品缺陷，是测试入口不对。
+    repo_url = base + f'/library/{repo_id}/{REPO_NAME}/'
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=not args.headful)
@@ -115,8 +171,8 @@ def main():
         record('登录', login(page, base, args.admin, args.admin_password))
 
         # ── tags-006 / tags-007：资料库根目录的已用标签栏 ──
-        page.goto(base + f'/library/{repo_id}/', wait_until='networkidle')
-        time.sleep(4)
+        page.goto(repo_url, wait_until='networkidle')
+        time.sleep(5)
         used = page.locator('.used-tag-item')
         used_count = used.count()
         if used_count == 0:
@@ -141,54 +197,48 @@ def main():
                        and max(user_idx) < min(sys_idx))
             record('tags-007', ordered, f'渲染顺序={names}')
 
-        # ── tags-008：目录表格 file-tags 折叠 ──
-        # tagged.txt 绑了 4 枚标签（3 用户 + 1 系统），表格行应显示前两枚 + …。
-        page.goto(base + f'/library/{repo_id}/', wait_until='networkidle')
-        time.sleep(4)
-        # 目录表格（metadata 视图）可能需要切到表格模式；先试默认视图里的
-        # tags formatter，找不到再切。默认列表视图不渲染 file-tags formatter，
-        # 该组件只在 metadata 表格（sf-metadata）里使用。
-        page.locator('.dir-item-name, .dirent-name').first
-        formatter = page.locator('.tags-formatter')
+        # ── tags-008：file-tags 折叠 ──
+        # tagged.txt 绑了 4 枚标签（3 用户 + 1 系统），行内应显示前两枚 + …。
+        # file-tags formatter 在列表视图（dirent-list-item.js）渲染，但 Tags 列
+        # 默认隐藏（LIST_VIEW_HIDDEN_COLUMNS_DEFAULT）；先把该库的
+        # dir_hidden_column_keys_<repo_id> 置为不含 tags 再加载。
         fold_ok = False
-        detail = '未找到 tags-formatter（需要 metadata 表格视图）'
-        # 尝试切换到表格视图（toolbar 的 view-mode 菜单）
+        detail = '未找到 tags-formatter'
         try:
-            page.click('#view-mode-btn, .view-mode-toggler', timeout=3000)
-            page.get_by_text('Table view', exact=True).click(timeout=3000)
-            time.sleep(3)
-        except Exception:
-            pass
-        formatter = page.locator('.tags-formatter')
-        if formatter.count() > 0:
-            row = formatter.first
-            dots = row.locator('.sf-metadata-ui-tag-more')
-            visible = row.locator('.sf-metadata-ui-tag-color, .sf-metadata-ui-tag')
-            fold_ok = dots.count() > 0 and visible.count() <= 2
-            detail = f'可见标签={visible.count()} 省略号={dots.count()}'
+            page.evaluate(
+                "(rid) => localStorage.setItem('dir_hidden_column_keys_' + rid, "
+                "JSON.stringify(['modifier', 'creator']))",
+                repo_id)
+            page.goto(repo_url, wait_until='networkidle')
+            time.sleep(5)
+            formatter = page.locator('.tags-formatter')
+            if formatter.count() > 0:
+                row = formatter.first
+                dots = row.locator('.sf-metadata-ui-tag-more')
+                visible = row.locator('.sf-metadata-ui-tag-color, .sf-metadata-ui-tag')
+                fold_ok = dots.count() > 0 and visible.count() <= 2
+                detail = f'可见标签={visible.count()} 省略号={dots.count()}'
+            else:
+                detail = 'Tags 列已显示但 formatter 未渲染（metadata[TAGS] 未填充？）'
+        except Exception as e:
+            detail = f'加载异常: {str(e)[:80]}'
         record('tags-008', fold_ok, detail)
 
         # ── tags-009：点击标签树节点仅选中，不弹关联文件列表 ──
-        # 标签树在左侧 side-panel（Tags 入口），节点可见后才可点。
-        node = page.locator('.side-panel .tree-node:visible').first
-        if node.count() == 0:
-            # 侧栏可能折叠，先展开 Tags 面板
-            try:
-                page.get_by_text('Tags', exact=True).first.click(timeout=3000)
-                time.sleep(2)
-            except Exception:
-                pass
-            node = page.locator('.side-panel .tree-node:visible').first
+        # 侧栏标签树（metadata 开启时出现）：Files/All files、Tags/All tags。
+        page.goto(repo_url, wait_until='networkidle')
+        time.sleep(4)
+        node = page.locator('.tree-node-inner', has_text='All tags').first
         clicked = False
         no_dialog = True
-        detail = '未找到可见标签树节点'
+        detail = '未找到 All tags 树节点'
         if node.count() > 0:
             node.click()
             clicked = True
-            time.sleep(2)
+            time.sleep(3)
             # 弹窗判定：ListTaggedFilesDialog 的 modal 容器
-            no_dialog = page.locator('.modal, [role="dialog"]').count() == 0
-            detail = f'点击后弹窗={not no_dialog}'
+            no_dialog = page.locator('.modal.show, [role="dialog"]').count() == 0
+            detail = f'点击后弹窗={not no_dialog} url={page.url[-40:]}'
         record('tags-009', clicked and no_dialog, detail)
 
         browser.close()

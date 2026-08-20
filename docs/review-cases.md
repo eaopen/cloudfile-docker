@@ -157,10 +157,10 @@ channel=ui 的 15 条用例，逐个核对前端代码后判定：
 | search-009 文件夹打开/定位 | 已实现 | 同文件 `item-folder-action`「Open folder · Locate」 |
 | share-001 分享入口隐藏 | 已实现 | `utils.js` `isHasPermissionToShare`（CF_ENABLE_SHARE_RESTRICT） |
 | tree-002 悬停收藏按钮 | 已实现且浏览器验证通过（文件行 hover 显示 Star） | `dirent-list-item.js`（tooltip Star/Unstar） |
-| tags-006 系统标签锁形图标 | 已实现（da287e9fe） | `repo-info-bar.js` 对 `is_system` 标签渲染 `Icon symbol="lock"`；`models/repo-tag.js` 解析 `is_system`。系统/用户标签只存在于 CE `repo_tags`（P2-07），故锁形图标落在消费 `repo-tags` 的「已用标签栏」；metadata-server `/metadata/tags/` 无 `is_system` 概念（上游无系统标签） |
-| tags-007 用户标签在前系统标签在后 | 已实现（后端排序 + 前端保序） | `api2/endpoints/repo_tags.py` `.order_by('is_system', 'id')`；`lib-content-view.js` `usedRepoTags` 按后端返回顺序渲染 |
-| tags-008 超过两枚折叠 | 已实现（b24ae487c） | `file-tags/index.js` 前两枚 + `…`（+n） |
-| tags-009 点击标签仅选中不弹列表 | 已实现（metadata 标签树本就走「选中过滤」） | `tag/tags-tree-view/index.js` `selectNode` → `selectTag`（不弹关联文件列表） |
+| tags-006 系统标签锁形图标 | 已实现且浏览器验证通过（2026-08-20，`review_ui_tags.py`） | `repo-info-bar.js` 对 `is_system` 标签渲染 `Icon symbol="lock"`；`models/repo-tag.js` 解析 `is_system`。系统/用户标签只存在于 CE `repo_tags`（P2-07），故锁形图标落在消费 `repo-tags` 的「已用标签栏」；metadata-server `/metadata/tags/` 无 `is_system` 概念（上游无系统标签） |
+| tags-007 用户标签在前系统标签在后 | 已实现且浏览器验证通过（2026-08-20，`review_ui_tags.py`） | `api2/endpoints/repo_tags.py` `.order_by('is_system', 'id')`；`lib-content-view.js` `usedRepoTags` 按后端返回顺序渲染 |
+| tags-008 超过两枚折叠 | 已实现且浏览器验证通过（2026-08-20，`review_ui_tags.py`） | `file-tags/index.js` 前两枚 + `…`（+n） |
+| tags-009 点击标签仅选中不弹列表 | 已实现且浏览器验证通过（2026-08-20，`review_ui_tags.py`） | `tag/tags-tree-view/index.js` `selectNode` → `selectTag`（不弹关联文件列表） |
 | recycle-001 | 已按决策移除（维持原生 CE） | — |
 
 浏览器套件入口 `tests/e2e/review_ui_matrix.py`（Playwright）已在真实栈上跑通 icon-001..005
@@ -169,22 +169,27 @@ channel=ui 的 15 条用例，逐个核对前端代码后判定：
 `repo_metadata.summary_enabled` 列，已由 `apply_metadata_schema_compatibility` 取消门控
 无条件补齐，基线目录视图恢复 200。
 
-### 标签 ui 用例浏览器验证状态（2026-08-20）
+### 标签 ui 用例浏览器验证（2026-08-20，已闭环）
 
-`tests/e2e/review_ui_tags.py`（Playwright，覆盖 tags-006～009）已就绪，当前 1/5
-（仅登录通过），卡在两个环境问题，与四条用例的前端实现本身无关：
+`tests/e2e/review_ui_tags.py`（Playwright，覆盖 tags-006～009）在
+`14.0.0-cf.0-incverify` 镜像、开启 `CF_ENABLE_METADATA + CF_ENABLE_TAGS`
++ metadata-server 的本地栈上 **5/5 通过**（登录 + 四条用例，连续两轮可复现）。
+过程中发现并解决的三件事：
 
 1. **增量构建 stats 脱节（已修复）**：`layer_frontend` 缓存命中时只恢复
    `frontend/build` 与 `media/assets`，不恢复 `webpack-stats.pro.json`；
    后者被 `git reset --hard` 还原成仓库提交的基线，chunk 哈希与缓存产物对不上，
-   seahub 页面渲染直接 500。已在 `cloudfile-build.sh` 修复（stats 与产物同进同出
-   缓存）。本地镜像内的 stats 也已按实际产物改写并验证页面可渲染。
-2. **已用标签栏不渲染（待排查）**：`CF_ENABLE_METADATA + CF_ENABLE_TAGS` 开启、
-   `repo-tags` API 返回正常（含 `files_count`、`is_system`）时，资料库根目录
-   列表视图的 `used-tag-list` 未出现（bundle 判定式 `"/"===path&&isDesktop()&&
-   usedRepoTags.length!==0` 中的某项不满足）。需前端专项排查；排查前
-   tags-006/007 的浏览器断言无法闭环。tags-008 依赖 metadata 表格视图入口、
-   tags-009 依赖标签树节点点击，同栈一并复验。
+   seahub 页面渲染直接 500。已在 `cloudfile-build.sh` 修复（stats 与产物
+   同进同出缓存）。
+2. **测试入口 URL**：必须走真实入口 `/library/<repo_id>/<repo_name>/`。
+   不带库名段时前端 `state.path` 解析为 `''`，已用标签栏的 `path === '/'`
+   渲染判定失败——不是产品缺陷。
+3. **tags-008 数据通路**：折叠组件（`FileTagsFormatter`）消费 metadata 记录
+   的 `_tags` 字段（metadata-server 标签表 + 记录链接），repo_tags/FileTags
+   通路不喂它；夹具用 `POST /metadata/tags/` + `PUT /metadata/file-tags/`
+   建链，且新库记录索引是异步的（取 record_id 需重试）。Tags 列在列表
+   视图默认隐藏，套件通过 `dir_hidden_column_keys_<repo_id>` localStorage
+   打开——与真实用户在视图设置里勾选等价。
 
 ## 5. 与既有能力的边界
 

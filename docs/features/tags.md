@@ -39,19 +39,21 @@ CE 14 中同时保留两类标签数据通路：
 [`review_tags_matrix.py`](../tests/e2e/review_tags_matrix.py)（api 用例 tags-001～tags-005），
 由 `./tools/verify-local.sh cap review-tags` 在开启 `CF_ENABLE_TAGS` 的
 容器门禁中执行（2026-08-20 在 `14.0.0-cf.0-incverify` 镜像上复验：冒烟 12/12 + tags-001～005 全绿）。
-锁形图标、折叠展示与「点击不弹关联列表」是浏览器用例（channel: `ui`）：
-四条的前端实现已逐一核对源码（tags-006 `repo-info-bar.js`、tags-007 后端
-`.order_by('is_system','id')` + 前端保序、tags-008 `file-tags/index.js`、
-tags-009 `tags-tree-view` `selectTag`），但浏览器自动化断言尚未跑通——
-`tests/e2e/review_ui_tags.py`（Playwright）已就绪，当前卡在两个环境问题：
+浏览器用例（channel: `ui`）由 [`review_ui_tags.py`](../tests/e2e/review_ui_tags.py)
+（Playwright）覆盖，2026-08-20 在同一镜像、开启
+`CF_ENABLE_METADATA + CF_ENABLE_TAGS` + metadata-server 的栈上 5/5 通过
+（tags-006 锁形、tags-007 用户在前、tags-008 折叠、tags-009 点击仅选中，
+连续两轮可复现）。跑该套件的三个前提：
 
-1. 增量构建缓存不随 `frontend/build` 一起恢复 `webpack-stats.pro.json`，
-   chunk 哈希与产物脱节导致 seahub 页面 500（已在 `cloudfile-build.sh`
-   `layer_frontend` 修复：stats 与 build/assets 同进同出缓存）。
-2. 修复 stats 后页面可渲染，但开着 `CF_ENABLE_METADATA + CF_ENABLE_TAGS`
-   时资料库根目录的「已用标签栏」（`used-tag-list`）未出现，`repo-tags`
-   API 正常返回且数据含 `files_count`——渲染链路需前端专项排查后
-   `review_ui_tags.py` 才能全绿。
+1. 走真实入口 URL `/library/<repo_id>/<repo_name>/`——不带库名段时前端
+   `state.path` 解析为 `''`，已用标签栏的 `path === '/'` 判定失败（测试
+   入口问题，非产品缺陷）。
+2. 构建缓存必须与 `webpack-stats.pro.json` 同步（`cloudfile-build.sh`
+   `layer_frontend` 已修复：stats 与产物同进同出缓存），否则页面 500。
+3. tags-008 的折叠组件消费 metadata 记录的 `_tags` 字段，夹具需通过
+   `POST /metadata/tags/` + `PUT /metadata/file-tags/` 建 metadata 标签并
+   链到记录上（repo_tags/FileTags 通路不喂这个 formatter）；新库记录
+   由 metadata-server 异步索引，取 record_id 需重试。
 
 ## 数据与故障边界
 

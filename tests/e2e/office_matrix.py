@@ -206,6 +206,11 @@ def main():
         passed &= record(f'status 6 重投递(#{attempt})不 500', status == 200,
                          f'status={status} body={str(body)[:160]}')
 
+    # NOTE: T3 (browser DS edit session) 仅覆盖到「编辑页 HTML 带 OnlyOffice
+    # config」这一层；Playwright 真实点击 DS iframe 工具栏、保存回调触发与
+    # 文件内容回写，受限于 Document Server 镜像（GB 级，仅在 CI 跑）而
+    # 留作技术债务。office_matrix 的 6 项断言（路由、convert、编辑页、
+    # 签名、无签名、重投递）已足够锁住后端契约。
     print(('\n════════ ' + ('通过' if passed else '失败') + ' ════════'), flush=True)
     return 0 if passed else 1
 

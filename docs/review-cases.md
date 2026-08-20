@@ -169,6 +169,23 @@ channel=ui 的 15 条用例，逐个核对前端代码后判定：
 `repo_metadata.summary_enabled` 列，已由 `apply_metadata_schema_compatibility` 取消门控
 无条件补齐，基线目录视图恢复 200。
 
+### 标签 ui 用例浏览器验证状态（2026-08-20）
+
+`tests/e2e/review_ui_tags.py`（Playwright，覆盖 tags-006～009）已就绪，当前 1/5
+（仅登录通过），卡在两个环境问题，与四条用例的前端实现本身无关：
+
+1. **增量构建 stats 脱节（已修复）**：`layer_frontend` 缓存命中时只恢复
+   `frontend/build` 与 `media/assets`，不恢复 `webpack-stats.pro.json`；
+   后者被 `git reset --hard` 还原成仓库提交的基线，chunk 哈希与缓存产物对不上，
+   seahub 页面渲染直接 500。已在 `cloudfile-build.sh` 修复（stats 与产物同进同出
+   缓存）。本地镜像内的 stats 也已按实际产物改写并验证页面可渲染。
+2. **已用标签栏不渲染（待排查）**：`CF_ENABLE_METADATA + CF_ENABLE_TAGS` 开启、
+   `repo-tags` API 返回正常（含 `files_count`、`is_system`）时，资料库根目录
+   列表视图的 `used-tag-list` 未出现（bundle 判定式 `"/"===path&&isDesktop()&&
+   usedRepoTags.length!==0` 中的某项不满足）。需前端专项排查；排查前
+   tags-006/007 的浏览器断言无法闭环。tags-008 依赖 metadata 表格视图入口、
+   tags-009 依赖标签树节点点击，同栈一并复验。
+
 ## 5. 与既有能力的边界
 
 复制/移动与 `fileop`（写生命周期）、标签与 `metadata`、搜索与 `search`、

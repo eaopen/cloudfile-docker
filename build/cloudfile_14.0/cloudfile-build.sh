@@ -630,10 +630,15 @@ function frontend_fingerprint() {
     } | sha256sum | cut -d' ' -f1
 }
 
-# 前端产物（frontend/build、media/assets）落在 seahub 源码树内，会被 fetch
-# 的 `git clean -xfd` 清掉。所以命中时从缓存目录恢复产物，而不是跳过整层
-# —— 否则下一轮 fetch 之后产物就没了。恢复只花复制时间，远快于
+# 前端产物（frontend/build、media/assets、webpack-stats.pro.json）落在 seahub
+# 源码树内，会被 fetch 的 `git clean -xfd` 清掉。所以命中时从缓存目录恢复产物，
+# 而不是跳过整层——否则下一轮 fetch 之后产物就没了。恢复只花复制时间，远快于
 # npm ci + build + compilemessages + collectstatic 一整趟。
+#
+# webpack-stats.pro.json 是被 git 跟踪的文件：reset --hard 会把它还原成仓库里
+# 提交的基线，而缓存恢复的 build/assets 是当次构建的产物。若不同步恢复 stats，
+# chunk 哈希对不上，collectstatic 的 staticfiles manifest 会缺条目，seahub 页面
+# 渲染直接 500（增量构建踩过）。因此 stats 与 build/assets 一起进缓存、一起恢复。
 function layer_frontend() {
     local seahub=${code_path}/seahub
     local cache=${code_path}/.cache/frontend-build
@@ -642,12 +647,15 @@ function layer_frontend() {
 
     if [[ ${CF_FORCE_REBUILD} != 1 && ${CF_FORCE_FRONTEND_REBUILD} != 1 ]] \
         && layer_hit frontend "$fp" \
-        && [[ -d ${cache}/build && -d ${cache}/media-assets ]]; then
+        && [[ -d ${cache}/build && -d ${cache}/media-assets \
+              && -f ${cache}/webpack-stats.pro.json ]]; then
         echo "[cache] 前端产物命中，跳过 npm build / collectstatic，从缓存恢复"
         rm -rf "${seahub}/frontend/build" "${seahub}/media/assets"
         mkdir -p "${seahub}/frontend" "${seahub}/media"
         cp -a "${cache}/build" "${seahub}/frontend/build"
         cp -a "${cache}/media-assets" "${seahub}/media/assets"
+        cp -a "${cache}/webpack-stats.pro.json" \
+            "${seahub}/frontend/webpack-stats.pro.json"
         layer_mark frontend "$fp"
         return
     fi
@@ -658,6 +666,8 @@ function layer_frontend() {
     mkdir -p "$cache"
     cp -a "${seahub}/frontend/build" "$cache/build"
     cp -a "${seahub}/media/assets" "$cache/media-assets"
+    cp -a "${seahub}/frontend/webpack-stats.pro.json" \
+        "${cache}/webpack-stats.pro.json"
     layer_mark frontend "$fp"
 }
 

@@ -38,7 +38,20 @@ CE 14 中同时保留两类标签数据通路：
 可执行验收是 [`review-tags-cases.json`](review-tags-cases.json) 与
 [`review_tags_matrix.py`](../tests/e2e/review_tags_matrix.py)（api 用例 tags-001～tags-005），
 由 `./tools/verify-local.sh cap review-tags` 在开启 `CF_ENABLE_TAGS` 的
-容器门禁中执行。锁形图标、折叠展示与「点击不弹关联列表」仍是浏览器用例（channel: `ui`），留待浏览器套件。
+容器门禁中执行（2026-08-20 在 `14.0.0-cf.0-incverify` 镜像上复验：冒烟 12/12 + tags-001～005 全绿）。
+锁形图标、折叠展示与「点击不弹关联列表」是浏览器用例（channel: `ui`）：
+四条的前端实现已逐一核对源码（tags-006 `repo-info-bar.js`、tags-007 后端
+`.order_by('is_system','id')` + 前端保序、tags-008 `file-tags/index.js`、
+tags-009 `tags-tree-view` `selectTag`），但浏览器自动化断言尚未跑通——
+`tests/e2e/review_ui_tags.py`（Playwright）已就绪，当前卡在两个环境问题：
+
+1. 增量构建缓存不随 `frontend/build` 一起恢复 `webpack-stats.pro.json`，
+   chunk 哈希与产物脱节导致 seahub 页面 500（已在 `cloudfile-build.sh`
+   `layer_frontend` 修复：stats 与 build/assets 同进同出缓存）。
+2. 修复 stats 后页面可渲染，但开着 `CF_ENABLE_METADATA + CF_ENABLE_TAGS`
+   时资料库根目录的「已用标签栏」（`used-tag-list`）未出现，`repo-tags`
+   API 正常返回且数据含 `files_count`——渲染链路需前端专项排查后
+   `review_ui_tags.py` 才能全绿。
 
 ## 数据与故障边界
 

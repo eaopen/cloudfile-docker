@@ -115,7 +115,7 @@ services:
       # -- CloudFile switches --
       # Read on every start, so flipping one and restarting takes effect.
       CF_ENABLE_SSO: ${CF_ENABLE_SSO:-false}
-      CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-false}
+      CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-true}
       CF_ENABLE_AUDIT: ${CF_ENABLE_AUDIT:-false}
       # Write lifecycle gate instrument. Not a capability -- see
       # cloudfile-server/common/cf-fileop-test.h.
@@ -349,7 +349,7 @@ services:
       # Keep the worker's task registry in sync with the application. New
       # periodic extension tasks can therefore be enabled with the same .env.
       CF_ENABLE_SSO: ${CF_ENABLE_SSO:-false}
-      CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-false}
+      CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-true}
       CF_ENABLE_AUDIT: ${CF_ENABLE_AUDIT:-false}
       # Write lifecycle gate instrument. Not a capability -- see
       # cloudfile-server/common/cf-fileop-test.h.

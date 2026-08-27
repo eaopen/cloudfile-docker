@@ -236,12 +236,23 @@ def _settings_block_sso():
 
         proto = get_proto()
         host = get_conf('SEAFILE_SERVER_HOSTNAME', 'seafile.example.com')
+        site_root = get_conf('SITE_ROOT', '/').strip()
 
         # Derived rather than configured. A redirect URL that disagrees with
         # the deployment's own hostname fails at the identity provider, which
         # reports it as a generic "invalid redirect_uri" -- a long way from the
         # typo that caused it, and in a place the operator cannot see logs.
-        redirect_url = '%s://%s/oauth/callback/' % (proto, host)
+        #
+        # When SITE_ROOT is a non-root sub-path (e.g. /seafile/), Seahub's
+        # rooturl.py prefixes every route with SITE_ROOT, so the OAuth
+        # callback actually lives under /seafile/oauth/callback/. The redirect
+        # URI must carry the same prefix or the IdP rejects it with a generic
+        # "invalid redirect_uri".
+        site_root = site_root.strip('/')
+        base = '%s://%s' % (proto, host)
+        if site_root:
+            base += '/' + site_root
+        redirect_url = base + '/oauth/callback/'
 
         client_secret = get_conf('CF_SSO_OAUTH_CLIENT_SECRET', '').strip()
         if not client_secret:

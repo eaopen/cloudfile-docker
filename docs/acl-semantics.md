@@ -4,11 +4,22 @@
 > **用途**：规定目录 ACL 的数据模型、求解算法、权限合并和入口一致性。
 > **适用版本**：CloudFile `14.0.0-cf.0`，基于 Seafile CE 14 源码重构。
 > **状态**：当前有效规格；核心入口已有自动化矩阵验证，正文保留未完成的浏览器实操等边界。
-> **边界**：CE 的库级权限是上限；CloudFile 只做本地、可收紧的目录终判；外部规则服务不得进入同步权限热路径。
+> **边界**：库级/父目录分享提供基础访问资格；目录规则按 Pro 兼容语义在资格范围内细化（可升可降，§5）；
+> 外部规则服务不得进入同步权限热路径。
 > **决策（2026-08-17，方案 v2）**：MANAGE 并入 admin（管理维度独立于内容链，§7）；同类型合并取最高
 > （`none`/`invisible` 否决仍生效，§4.1）；文件级规则优先于目录规则（§4.3）；无规则默认回落 CE 库级
 > 权限（§4.4）。规格、`acl-cases.json` v2 与 C/Python 实现已同步，两端套件全绿（Python 78、C 67）；
 > 目录级委托管理（V2）已实现（§7.2）。
+>
+> **决策（2026-08-28，方案 v3 —— Seafile Pro 兼容语义）**：按
+> `eap-cloudfile/docs/review/cloudfile_decision_20260827.md` §7，求解顺序改为：
+> ① 个人规则在整个祖先链上优先于部门/群组规则（跨层，不只同层）；
+> ② 目录规则可把库级 `r` 在具体路径**提升**为 `rw`（撤销 v2 的"只能收紧"上限）；
+> ③ 个人显式可见权限可覆盖群组 `invisible`；
+> ④ `none`/`invisible` 仍一票否决，个人 `none`/`invisible` 压过任何群组授予。
+> v2 的"最深路径任意类型规则无条件覆盖 + 目录规则永不高于库权限"作废。
+> 与目标 Seafile Pro 版本的差异以黑盒基准为准（决策文档 §7.2 第 8 条）；
+> 规格、`acl-cases.json` v3 与 C/Python 实现三处同步修改。
 
 本文件是 **规范**。求解逻辑只有 **两份实现**，必须与它逐字一致：
 
@@ -107,45 +118,66 @@ Seahub 还存在 `preview`、`cloud-edit`、`admin` 以及 `custom-*` 权限
 输入：`user`、`repo_id`、`path`、`native`（原生 repo 共享权限）。
 输出：最终权限，或 `None`（无访问）。
 
+v3（Pro 兼容）求解分两条独立轨道，最后合并：
+
 ```
 resolve(user, repo_id, path, native):
     if not cf_enabled:            return native          # 开关关闭 = 零行为变化
-    if native is None:            return None            # 原生就没权限，不必再看 CF
+    if native is None:            return None            # 原生就没权限，无资格可言
 
     path   = normalize(path)
     levels = ancestors(path)      # ['/', '/a', '/a/b'] —— 从根到自身，含自身
 
-    decision = None
-    for level in levels:                                 # 从根向下，深层覆盖浅层
-        applicable = [rule for rule in rules_at(repo_id, level)
-                      if rule.subject in subjects(user)
+    # 轨道一：个人规则。取该用户最深（沿祖先链）的命中层，
+    # 同层内按 §4.1 取舍。个人规则一旦存在，整体覆盖群组/部门轨道——跨层生效。
+    user_decision = None
+    for level in levels:                                 # 从根向下
+        applicable = [rules_at(repo_id, level, subject_type='user')
+                      if rule.subject == user
                       and (rule.inherit == 1 or level == path)]
-        if not applicable:
-            continue                                     # 该层无规则 → 继承上层决定
-        decision = pick(applicable)
+        if applicable:
+            user_decision = pick(applicable)             # 深层覆盖浅层（同主体）
 
+    # 轨道二：部门/群组规则。同样取最深命中层；无任何命中时回落 native。
+    group_decision = None
+    for level in levels:
+        applicable = [rules_at(repo_id, level, subject_type in ('dept','group'))
+                      and (rule.inherit == 1 or level == path)]
+        if applicable:
+            group_decision = pick(applicable)
+
+    decision = user_decision if user_decision is not None else group_decision
     if decision is None:          return native          # 全程无规则 → 原样返回
     return tighten(native, decision)
 ```
 
-### 4.1 `pick` —— 同一层内的取舍
+要点：
+
+- **个人优先是跨层属性**：父目录上的个人 `r` 依然压过子目录上的群组 `rw`
+  （v2 的"最深任意类型规则无条件覆盖"作废）。这正对应 Pro 官方语义
+  "即使个人规则来自父目录继承，仍优先于子目录群组规则"。
+- 两条轨道内部仍是"最深命中层胜出"，与 v2 一致；轨道间才是 v3 的新分层。
+- 同一主体自己的深层规则覆盖自己的浅层规则（`父目录个人 rw，子目录个人 r`
+  → 子目录 `r`），个人与群组皆然。
+
+### 4.1 `pick` —— 同一轨道、同一层内的取舍
 
 同一层可能命中多条规则。分两步：
 
-1. **主体类型优先级**：`user` > `dept` > `group`。
+1. **主体类型优先级**（仅群组轨道内）：`dept` > `group`。
    取存在规则的最高优先级类型，**忽略**较低优先级类型的规则。
 2. **同类型内**：`none`/`invisible` 一票否决；否则取最高（`rw` > `r`）。
 
-> 第 1 步保证显式个人授权压过组默认：给"全员"群组挂一条 `r` 不会盖掉
-> 针对个人的 `rw` 显式授权——与 CE 库级"个人共享 > 组共享"一致
-> （`repo-perm.c` 的 `check_repo_share_permission` 先查个人、后查组）。
+> 第 1 步保证显式个人授权与部门默认互不干扰：个人走轨道一，部门/群组走轨道二，
+> 主体分层（§3 的优先级）只在轨道二内部消解 dept 与 group 的冲突。
 > 第 2 步对齐 CE 组内合并：`repo-perm.c` 的 `check_group_permission_by_user`
 > 在多个组权限里遇到 `rw` 立即取 `rw`。`none`/`invisible` 是硬否决，优先于
-> 任何正向授予；"明确禁止"与"允许"相遇时禁止胜出（沿用 CE `none` 语义），
-> 而主体分层保证了这不会让显式授权失效——个人 `rw` 依然压过组 `none`。
+> 任何正向授予；"明确禁止"与"允许"相遇时禁止胜出（沿用 CE `none` 语义）。
+> **个人轨道存在 `none`/`invisible` 时同样整体压过群组轨道**——用户被个人规则
+> 禁止就是禁止，不会被任何群组授予放大。
 >
-> **已同步（2026-08-17）**：C/Python 实现与 `acl-cases.json` v2 一致（同类型否决优先、
-> 否则取最高），两套件全绿。
+> **已同步（2026-08-28）**：C/Python 实现与 `acl-cases.json` v3 一致
+> （个人轨道跨层优先、同轨道否决优先否则取最高），两套件全绿。
 
 ### 4.2 `ancestors` 与 `inherit`
 
@@ -176,21 +208,33 @@ resolve(user, repo_id, path, native):
 
 ## 5. `tighten` —— 与原生权限合并
 
-**安全不变量：扩展只能收紧，绝不能放宽。**
-对任意 `(user, repo, path)`，最终权限必须 ⊆ 原生权限。
+v3 起，目录规则的作用是**在基础访问资格内细化权限**（Pro 兼容），
+不再以"只能收紧"为不变量：
+
+- 基础资格仍由 `native` 决定：`native is None` ⇒ 无资格 ⇒ 恒为 `None`。
+  目录规则不能为没有任何库级/父目录分享的用户创造访问（决策 §7.1）。
+- 有资格（`native ∈ {r, rw}`）时，目录规则可升可降：
+  库级 `r` 的用户可在具体子目录获得 `rw`（Pro 的 r → rw 提升），
+  也可从 `rw` 降为 `r`。
+- `admin` native 收紧到规则值——管理维度（§7）另行判定，内容维度遵循目录规则。
 
 ```
 tighten(native, decision):
+    if native is None:                return None         # 无基础资格，规则不创造访问
     if decision in ('invisible', 'none'):
-        return None                       # 一票否决，与 native 类型无关
+        return None                                       # 一票否决
 
     if native in ('rw', 'r'):
-        return min(native, decision)      # 按 §2 的全序
+        return decision                                   # 规则覆盖库级，可升（r→rw）可降
     if native == 'admin':
-        return decision                   # admin 是最高权限，收紧到 decision
+        return decision                                   # admin 收紧到 decision
     # preview / cloud-edit / custom-* 不在全序链上：
     return native                         # 只能被 invisible/none 否决，否则原样保留
 ```
+
+最后一类（`preview` 等）保持 v2 保守处理：这些权限与 `r`/`rw` 不可比
+（`preview` 能看不能下载，`cloud-edit` 能编辑不能下载），强行排序会在某个
+方向上放大能力，故仅否决、不换算。
 
 最后一条是刻意保守：这些权限与 `r` / `rw` 不可比（`preview` 能看不能下载，
 `cloud-edit` 能编辑不能下载），强行排序会在某个方向上放宽权限。
@@ -271,8 +315,8 @@ Go fileserver 那一处才是真正的强制点：`is_repo_syncable` 只是让�
 ### 7.3 与内容链的关系
 
 admin 不进入 `pick`/`tighten`，也不作为 `cf_dir_acl` 规则取值（§2）。
-目录级 admin 可以授予库级内容权限只有 `rw` 的用户——这不违反"扩展只能收紧"，
-该不变量只约束内容维度。
+目录级 admin 可以授予库级内容权限只有 `r` 的用户目录规则 `rw`——这是 v3
+Pro 兼容语义的正常行为（§5），管理维度与内容维度正交。
 
 ## 8. 开关
 

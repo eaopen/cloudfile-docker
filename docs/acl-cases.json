@@ -1,283 +1,1086 @@
 {
-  "version": 2,
-  "comment": "Executable form of docs/acl-semantics.md. Loaded by the Python, C and Go test suites; all three MUST agree on every check. 'expect': null means no access (None / NULL / \"\"). v2 (2026-08-17): same-subject-type merge takes the highest grant (deny still vetoes); file rules override directory rules.",
+  "version": 3,
+  "comment": "Executable form of docs/acl-semantics.md. Loaded by the Python and C test suites; both MUST agree on every check. 'expect': null means no access (None / NULL). v3 (2026-08-28, Pro-compatible): personal rules take precedence over dept/group rules across the whole ancestor chain; directory rules may promote library-level r to rw and demote rw to r within base eligibility; a personal none/invisible still vetoes everything; rules never create access where native is none.",
   "repo_id": "11111111-2222-3333-4444-555555555555",
   "cases": [
     {
       "name": "no rules falls through to native",
-      "subjects": { "user": "b@example.com", "groups": ["1"], "depts": ["10"] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [
+          "1"
+        ],
+        "depts": [
+          "10"
+        ]
+      },
       "rules": [],
       "checks": [
-        { "path": "/", "native": "rw", "expect": "rw" },
-        { "path": "/anything/deep", "native": "r", "expect": "r" }
+        {
+          "path": "/",
+          "native": "rw",
+          "expect": "rw"
+        },
+        {
+          "path": "/anything/deep",
+          "native": "r",
+          "expect": "r"
+        }
       ]
     },
     {
       "name": "native none is never widened",
-      "subjects": { "user": "b@example.com", "groups": ["1"], "depts": [] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [
+          "1"
+        ],
+        "depts": []
+      },
       "rules": [
-        { "path": "/open", "subject_type": "user", "subject": "b@example.com", "permission": "rw", "inherit": 1 }
+        {
+          "path": "/open",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "rw",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/open", "native": null, "expect": null },
-        { "path": "/open/sub", "native": null, "expect": null }
+        {
+          "path": "/open",
+          "native": null,
+          "expect": null
+        },
+        {
+          "path": "/open/sub",
+          "native": null,
+          "expect": null
+        }
       ]
     },
     {
       "name": "root rule applies to whole repo",
-      "subjects": { "user": "b@example.com", "groups": [], "depts": [] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [],
+        "depts": []
+      },
       "rules": [
-        { "path": "/", "subject_type": "user", "subject": "b@example.com", "permission": "r", "inherit": 1 }
+        {
+          "path": "/",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "r",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/", "native": "rw", "expect": "r" },
-        { "path": "/a", "native": "rw", "expect": "r" },
-        { "path": "/a/b/c", "native": "rw", "expect": "r" }
+        {
+          "path": "/",
+          "native": "rw",
+          "expect": "r"
+        },
+        {
+          "path": "/a",
+          "native": "rw",
+          "expect": "r"
+        },
+        {
+          "path": "/a/b/c",
+          "native": "rw",
+          "expect": "r"
+        }
       ]
     },
     {
       "name": "deeper level overrides shallower",
-      "subjects": { "user": "b@example.com", "groups": [], "depts": [] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [],
+        "depts": []
+      },
       "rules": [
-        { "path": "/", "subject_type": "user", "subject": "b@example.com", "permission": "r", "inherit": 1 },
-        { "path": "/a/b", "subject_type": "user", "subject": "b@example.com", "permission": "rw", "inherit": 1 }
+        {
+          "path": "/",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "r",
+          "inherit": 1
+        },
+        {
+          "path": "/a/b",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "rw",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/a", "native": "rw", "expect": "r" },
-        { "path": "/a/b", "native": "rw", "expect": "rw" },
-        { "path": "/a/b/c", "native": "rw", "expect": "rw" }
+        {
+          "path": "/a",
+          "native": "rw",
+          "expect": "r"
+        },
+        {
+          "path": "/a/b",
+          "native": "rw",
+          "expect": "rw"
+        },
+        {
+          "path": "/a/b/c",
+          "native": "rw",
+          "expect": "rw"
+        }
       ]
     },
     {
       "name": "intermediate level without rules inherits the nearest ancestor decision",
-      "subjects": { "user": "b@example.com", "groups": [], "depts": [] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [],
+        "depts": []
+      },
       "rules": [
-        { "path": "/a", "subject_type": "user", "subject": "b@example.com", "permission": "r", "inherit": 1 }
+        {
+          "path": "/a",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "r",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/a/b/c/d", "native": "rw", "expect": "r" }
+        {
+          "path": "/a/b/c/d",
+          "native": "rw",
+          "expect": "r"
+        }
       ]
     },
     {
       "name": "inherit=0 applies only at the exact path",
-      "subjects": { "user": "b@example.com", "groups": [], "depts": [] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [],
+        "depts": []
+      },
       "rules": [
-        { "path": "/a", "subject_type": "user", "subject": "b@example.com", "permission": "r", "inherit": 0 }
+        {
+          "path": "/a",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "r",
+          "inherit": 0
+        }
       ],
       "checks": [
-        { "path": "/a", "native": "rw", "expect": "r" },
-        { "path": "/a/b", "native": "rw", "expect": "rw" }
+        {
+          "path": "/a",
+          "native": "rw",
+          "expect": "r"
+        },
+        {
+          "path": "/a/b",
+          "native": "rw",
+          "expect": "rw"
+        }
       ]
     },
     {
       "name": "inherit=0 at a deep level does not shadow an inherited ancestor rule for children",
-      "subjects": { "user": "b@example.com", "groups": [], "depts": [] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [],
+        "depts": []
+      },
       "rules": [
-        { "path": "/", "subject_type": "user", "subject": "b@example.com", "permission": "r", "inherit": 1 },
-        { "path": "/a", "subject_type": "user", "subject": "b@example.com", "permission": "rw", "inherit": 0 }
+        {
+          "path": "/",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "r",
+          "inherit": 1
+        },
+        {
+          "path": "/a",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "rw",
+          "inherit": 0
+        }
       ],
       "checks": [
-        { "path": "/a", "native": "rw", "expect": "rw" },
-        { "path": "/a/b", "native": "rw", "expect": "r" }
+        {
+          "path": "/a",
+          "native": "rw",
+          "expect": "rw"
+        },
+        {
+          "path": "/a/b",
+          "native": "rw",
+          "expect": "r"
+        }
       ]
     },
     {
       "name": "same subject type at same level takes the highest grant",
-      "subjects": { "user": "b@example.com", "groups": ["1", "2"], "depts": [] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [
+          "1",
+          "2"
+        ],
+        "depts": []
+      },
       "rules": [
-        { "path": "/a", "subject_type": "group", "subject": "1", "permission": "rw", "inherit": 1 },
-        { "path": "/a", "subject_type": "group", "subject": "2", "permission": "r", "inherit": 1 }
+        {
+          "path": "/a",
+          "subject_type": "group",
+          "subject": "1",
+          "permission": "rw",
+          "inherit": 1
+        },
+        {
+          "path": "/a",
+          "subject_type": "group",
+          "subject": "2",
+          "permission": "r",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/a", "native": "rw", "expect": "rw" }
+        {
+          "path": "/a",
+          "native": "rw",
+          "expect": "rw"
+        }
       ]
     },
     {
       "name": "deny vetoes a higher grant at the same level",
-      "subjects": { "user": "b@example.com", "groups": ["1", "2"], "depts": [] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [
+          "1",
+          "2"
+        ],
+        "depts": []
+      },
       "rules": [
-        { "path": "/a", "subject_type": "group", "subject": "1", "permission": "rw", "inherit": 1 },
-        { "path": "/a", "subject_type": "group", "subject": "2", "permission": "none", "inherit": 1 },
-        { "path": "/b", "subject_type": "group", "subject": "1", "permission": "r", "inherit": 1 },
-        { "path": "/b", "subject_type": "group", "subject": "2", "permission": "invisible", "inherit": 1 }
+        {
+          "path": "/a",
+          "subject_type": "group",
+          "subject": "1",
+          "permission": "rw",
+          "inherit": 1
+        },
+        {
+          "path": "/a",
+          "subject_type": "group",
+          "subject": "2",
+          "permission": "none",
+          "inherit": 1
+        },
+        {
+          "path": "/b",
+          "subject_type": "group",
+          "subject": "1",
+          "permission": "r",
+          "inherit": 1
+        },
+        {
+          "path": "/b",
+          "subject_type": "group",
+          "subject": "2",
+          "permission": "invisible",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/a", "native": "rw", "expect": null },
-        { "path": "/b", "native": "rw", "expect": null }
+        {
+          "path": "/a",
+          "native": "rw",
+          "expect": null
+        },
+        {
+          "path": "/b",
+          "native": "rw",
+          "expect": null
+        }
       ]
     },
     {
       "name": "explicit user rule beats a broader group rule at the same level",
-      "subjects": { "user": "b@example.com", "groups": ["1"], "depts": [] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [
+          "1"
+        ],
+        "depts": []
+      },
       "rules": [
-        { "path": "/a", "subject_type": "group", "subject": "1", "permission": "r", "inherit": 1 },
-        { "path": "/a", "subject_type": "user", "subject": "b@example.com", "permission": "rw", "inherit": 1 }
+        {
+          "path": "/a",
+          "subject_type": "group",
+          "subject": "1",
+          "permission": "r",
+          "inherit": 1
+        },
+        {
+          "path": "/a",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "rw",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/a", "native": "rw", "expect": "rw" }
+        {
+          "path": "/a",
+          "native": "rw",
+          "expect": "rw"
+        }
       ]
     },
     {
       "name": "dept beats group, user beats dept",
-      "subjects": { "user": "b@example.com", "groups": ["1"], "depts": ["10"] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [
+          "1"
+        ],
+        "depts": [
+          "10"
+        ]
+      },
       "rules": [
-        { "path": "/a", "subject_type": "group", "subject": "1", "permission": "none", "inherit": 1 },
-        { "path": "/a", "subject_type": "dept", "subject": "10", "permission": "r", "inherit": 1 },
-        { "path": "/b", "subject_type": "group", "subject": "1", "permission": "none", "inherit": 1 },
-        { "path": "/b", "subject_type": "dept", "subject": "10", "permission": "r", "inherit": 1 },
-        { "path": "/b", "subject_type": "user", "subject": "b@example.com", "permission": "rw", "inherit": 1 }
+        {
+          "path": "/a",
+          "subject_type": "group",
+          "subject": "1",
+          "permission": "none",
+          "inherit": 1
+        },
+        {
+          "path": "/a",
+          "subject_type": "dept",
+          "subject": "10",
+          "permission": "r",
+          "inherit": 1
+        },
+        {
+          "path": "/b",
+          "subject_type": "group",
+          "subject": "1",
+          "permission": "none",
+          "inherit": 1
+        },
+        {
+          "path": "/b",
+          "subject_type": "dept",
+          "subject": "10",
+          "permission": "r",
+          "inherit": 1
+        },
+        {
+          "path": "/b",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "rw",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/a", "native": "rw", "expect": "r" },
-        { "path": "/b", "native": "rw", "expect": "rw" }
+        {
+          "path": "/a",
+          "native": "rw",
+          "expect": "r"
+        },
+        {
+          "path": "/b",
+          "native": "rw",
+          "expect": "rw"
+        }
       ]
     },
     {
       "name": "ancestor department rules apply to child department members",
-      "subjects": { "user": "b@example.com", "groups": [], "depts": ["10", "11"] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [],
+        "depts": [
+          "10",
+          "11"
+        ]
+      },
       "rules": [
-        { "path": "/a", "subject_type": "dept", "subject": "10", "permission": "r", "inherit": 1 }
+        {
+          "path": "/a",
+          "subject_type": "dept",
+          "subject": "10",
+          "permission": "r",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/a/b", "native": "rw", "expect": "r" }
+        {
+          "path": "/a/b",
+          "native": "rw",
+          "expect": "r"
+        }
       ]
     },
     {
       "name": "rules for subjects the user does not belong to are ignored",
-      "subjects": { "user": "b@example.com", "groups": ["1"], "depts": [] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [
+          "1"
+        ],
+        "depts": []
+      },
       "rules": [
-        { "path": "/a", "subject_type": "user", "subject": "other@example.com", "permission": "none", "inherit": 1 },
-        { "path": "/a", "subject_type": "group", "subject": "99", "permission": "invisible", "inherit": 1 }
+        {
+          "path": "/a",
+          "subject_type": "user",
+          "subject": "other@example.com",
+          "permission": "none",
+          "inherit": 1
+        },
+        {
+          "path": "/a",
+          "subject_type": "group",
+          "subject": "99",
+          "permission": "invisible",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/a", "native": "rw", "expect": "rw" }
+        {
+          "path": "/a",
+          "native": "rw",
+          "expect": "rw"
+        }
       ]
     },
     {
       "name": "sibling paths are unaffected and prefix collisions do not leak",
-      "subjects": { "user": "b@example.com", "groups": [], "depts": [] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [],
+        "depts": []
+      },
       "rules": [
-        { "path": "/ab", "subject_type": "user", "subject": "b@example.com", "permission": "r", "inherit": 1 }
+        {
+          "path": "/ab",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "r",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/ab", "native": "rw", "expect": "r" },
-        { "path": "/ab/c", "native": "rw", "expect": "r" },
-        { "path": "/abc", "native": "rw", "expect": "rw" },
-        { "path": "/a", "native": "rw", "expect": "rw" }
+        {
+          "path": "/ab",
+          "native": "rw",
+          "expect": "r"
+        },
+        {
+          "path": "/ab/c",
+          "native": "rw",
+          "expect": "r"
+        },
+        {
+          "path": "/abc",
+          "native": "rw",
+          "expect": "rw"
+        },
+        {
+          "path": "/a",
+          "native": "rw",
+          "expect": "rw"
+        }
       ]
     },
     {
       "name": "none denies access outright",
-      "subjects": { "user": "b@example.com", "groups": [], "depts": [] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [],
+        "depts": []
+      },
       "rules": [
-        { "path": "/secret", "subject_type": "user", "subject": "b@example.com", "permission": "none", "inherit": 1 }
+        {
+          "path": "/secret",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "none",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/secret", "native": "rw", "expect": null },
-        { "path": "/secret/deep/file.txt", "native": "rw", "expect": null }
+        {
+          "path": "/secret",
+          "native": "rw",
+          "expect": null
+        },
+        {
+          "path": "/secret/deep/file.txt",
+          "native": "rw",
+          "expect": null
+        }
       ]
     },
     {
       "name": "invisible denies and propagates to descendants",
-      "subjects": { "user": "b@example.com", "groups": [], "depts": [] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [],
+        "depts": []
+      },
       "rules": [
-        { "path": "/confidential", "subject_type": "user", "subject": "b@example.com", "permission": "invisible", "inherit": 1 }
+        {
+          "path": "/confidential",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "invisible",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/confidential", "native": "rw", "expect": null },
-        { "path": "/confidential/x", "native": "rw", "expect": null }
+        {
+          "path": "/confidential",
+          "native": "rw",
+          "expect": null
+        },
+        {
+          "path": "/confidential/x",
+          "native": "rw",
+          "expect": null
+        }
       ]
     },
     {
-      "name": "a rule can never widen the native permission",
-      "subjects": { "user": "b@example.com", "groups": [], "depts": [] },
+      "name": "a directory rule overrides the library-level permission within eligibility",
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [],
+        "depts": []
+      },
       "rules": [
-        { "path": "/a", "subject_type": "user", "subject": "b@example.com", "permission": "rw", "inherit": 1 }
+        {
+          "path": "/a",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "rw",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/a", "native": "r", "expect": "r" }
+        {
+          "path": "/a",
+          "native": "r",
+          "expect": "rw"
+        }
       ]
     },
     {
       "name": "admin native is tightened to the rule",
-      "subjects": { "user": "b@example.com", "groups": [], "depts": [] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [],
+        "depts": []
+      },
       "rules": [
-        { "path": "/a", "subject_type": "user", "subject": "b@example.com", "permission": "r", "inherit": 1 },
-        { "path": "/b", "subject_type": "user", "subject": "b@example.com", "permission": "invisible", "inherit": 1 }
+        {
+          "path": "/a",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "r",
+          "inherit": 1
+        },
+        {
+          "path": "/b",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "invisible",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/a", "native": "admin", "expect": "r" },
-        { "path": "/b", "native": "admin", "expect": null },
-        { "path": "/c", "native": "admin", "expect": "admin" }
+        {
+          "path": "/a",
+          "native": "admin",
+          "expect": "r"
+        },
+        {
+          "path": "/b",
+          "native": "admin",
+          "expect": null
+        },
+        {
+          "path": "/c",
+          "native": "admin",
+          "expect": "admin"
+        }
       ]
     },
     {
       "name": "permissions outside the lattice are only ever vetoed, never reordered",
-      "subjects": { "user": "b@example.com", "groups": [], "depts": [] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [],
+        "depts": []
+      },
       "rules": [
-        { "path": "/a", "subject_type": "user", "subject": "b@example.com", "permission": "r", "inherit": 1 },
-        { "path": "/b", "subject_type": "user", "subject": "b@example.com", "permission": "rw", "inherit": 1 },
-        { "path": "/c", "subject_type": "user", "subject": "b@example.com", "permission": "none", "inherit": 1 },
-        { "path": "/d", "subject_type": "user", "subject": "b@example.com", "permission": "invisible", "inherit": 1 }
+        {
+          "path": "/a",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "r",
+          "inherit": 1
+        },
+        {
+          "path": "/b",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "rw",
+          "inherit": 1
+        },
+        {
+          "path": "/c",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "none",
+          "inherit": 1
+        },
+        {
+          "path": "/d",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "invisible",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/a", "native": "preview", "expect": "preview" },
-        { "path": "/b", "native": "cloud-edit", "expect": "cloud-edit" },
-        { "path": "/c", "native": "preview", "expect": null },
-        { "path": "/d", "native": "cloud-edit", "expect": null },
-        { "path": "/a", "native": "custom-reviewer", "expect": "custom-reviewer" },
-        { "path": "/c", "native": "custom-reviewer", "expect": null }
+        {
+          "path": "/a",
+          "native": "preview",
+          "expect": "preview"
+        },
+        {
+          "path": "/b",
+          "native": "cloud-edit",
+          "expect": "cloud-edit"
+        },
+        {
+          "path": "/c",
+          "native": "preview",
+          "expect": null
+        },
+        {
+          "path": "/d",
+          "native": "cloud-edit",
+          "expect": null
+        },
+        {
+          "path": "/a",
+          "native": "custom-reviewer",
+          "expect": "custom-reviewer"
+        },
+        {
+          "path": "/c",
+          "native": "custom-reviewer",
+          "expect": null
+        }
       ]
     },
     {
       "name": "path normalization makes equivalent spellings resolve identically",
-      "subjects": { "user": "b@example.com", "groups": [], "depts": [] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [],
+        "depts": []
+      },
       "rules": [
-        { "path": "/a/b", "subject_type": "user", "subject": "b@example.com", "permission": "r", "inherit": 1 }
+        {
+          "path": "/a/b",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "r",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/a/b", "native": "rw", "expect": "r" },
-        { "path": "/a/b/", "native": "rw", "expect": "r" },
-        { "path": "//a//b", "native": "rw", "expect": "r" },
-        { "path": "a/b", "native": "rw", "expect": "r" },
-        { "path": "", "native": "rw", "expect": "rw" }
+        {
+          "path": "/a/b",
+          "native": "rw",
+          "expect": "r"
+        },
+        {
+          "path": "/a/b/",
+          "native": "rw",
+          "expect": "r"
+        },
+        {
+          "path": "//a//b",
+          "native": "rw",
+          "expect": "r"
+        },
+        {
+          "path": "a/b",
+          "native": "rw",
+          "expect": "r"
+        },
+        {
+          "path": "",
+          "native": "rw",
+          "expect": "rw"
+        }
       ]
     },
     {
       "name": "file paths inherit their parent directory rule",
-      "subjects": { "user": "b@example.com", "groups": [], "depts": [] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [],
+        "depts": []
+      },
       "rules": [
-        { "path": "/restricted", "subject_type": "user", "subject": "b@example.com", "permission": "r", "inherit": 1 }
+        {
+          "path": "/restricted",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "r",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/restricted/report.docx", "native": "rw", "expect": "r" }
+        {
+          "path": "/restricted/report.docx",
+          "native": "rw",
+          "expect": "r"
+        }
       ]
     },
     {
       "name": "file rule overrides the parent directory rule",
-      "subjects": { "user": "b@example.com", "groups": [], "depts": [] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [],
+        "depts": []
+      },
       "rules": [
-        { "path": "/a", "subject_type": "user", "subject": "b@example.com", "permission": "r", "inherit": 1 },
-        { "path": "/a/report.docx", "subject_type": "user", "subject": "b@example.com", "permission": "rw", "inherit": 1 }
+        {
+          "path": "/a",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "r",
+          "inherit": 1
+        },
+        {
+          "path": "/a/report.docx",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "rw",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/a/report.docx", "native": "rw", "expect": "rw" },
-        { "path": "/a/other.docx", "native": "rw", "expect": "r" },
-        { "path": "/a/sub/report.docx", "native": "rw", "expect": "r" }
+        {
+          "path": "/a/report.docx",
+          "native": "rw",
+          "expect": "rw"
+        },
+        {
+          "path": "/a/other.docx",
+          "native": "rw",
+          "expect": "r"
+        },
+        {
+          "path": "/a/sub/report.docx",
+          "native": "rw",
+          "expect": "r"
+        }
       ]
     },
     {
       "name": "non-ascii paths are handled byte-exactly",
-      "subjects": { "user": "b@example.com", "groups": [], "depts": [] },
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [],
+        "depts": []
+      },
       "rules": [
-        { "path": "/受限", "subject_type": "user", "subject": "b@example.com", "permission": "r", "inherit": 1 },
-        { "path": "/机密", "subject_type": "user", "subject": "b@example.com", "permission": "invisible", "inherit": 1 }
+        {
+          "path": "/受限",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "r",
+          "inherit": 1
+        },
+        {
+          "path": "/机密",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "invisible",
+          "inherit": 1
+        }
       ],
       "checks": [
-        { "path": "/受限", "native": "rw", "expect": "r" },
-        { "path": "/受限/设计图.dwg", "native": "rw", "expect": "r" },
-        { "path": "/机密", "native": "rw", "expect": null },
-        { "path": "/公开", "native": "rw", "expect": "rw" }
+        {
+          "path": "/受限",
+          "native": "rw",
+          "expect": "r"
+        },
+        {
+          "path": "/受限/设计图.dwg",
+          "native": "rw",
+          "expect": "r"
+        },
+        {
+          "path": "/机密",
+          "native": "rw",
+          "expect": null
+        },
+        {
+          "path": "/公开",
+          "native": "rw",
+          "expect": "rw"
+        }
+      ]
+    },
+    {
+      "name": "personal rule at parent beats deeper group rule (Pro cross-layer precedence)",
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [
+          "1"
+        ],
+        "depts": []
+      },
+      "rules": [
+        {
+          "path": "/",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "r",
+          "inherit": 1
+        },
+        {
+          "path": "/a/b",
+          "subject_type": "group",
+          "subject": "1",
+          "permission": "rw",
+          "inherit": 1
+        }
+      ],
+      "checks": [
+        {
+          "path": "/a/b",
+          "native": "rw",
+          "expect": "r"
+        },
+        {
+          "path": "/a/b/c",
+          "native": "rw",
+          "expect": "r"
+        }
+      ]
+    },
+    {
+      "name": "personal rw at parent overrides group invisible at child",
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [
+          "1"
+        ],
+        "depts": []
+      },
+      "rules": [
+        {
+          "path": "/proj",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "rw",
+          "inherit": 1
+        },
+        {
+          "path": "/proj/vault",
+          "subject_type": "group",
+          "subject": "1",
+          "permission": "invisible",
+          "inherit": 1
+        }
+      ],
+      "checks": [
+        {
+          "path": "/proj/vault",
+          "native": "rw",
+          "expect": "rw"
+        },
+        {
+          "path": "/proj/vault/plan.doc",
+          "native": "rw",
+          "expect": "rw"
+        },
+        {
+          "path": "/proj/other",
+          "native": "rw",
+          "expect": "rw"
+        }
+      ]
+    },
+    {
+      "name": "library-level r is promoted to rw by a directory rule",
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [],
+        "depts": []
+      },
+      "rules": [
+        {
+          "path": "/合同",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "rw",
+          "inherit": 1
+        }
+      ],
+      "checks": [
+        {
+          "path": "/",
+          "native": "r",
+          "expect": "r"
+        },
+        {
+          "path": "/合同",
+          "native": "r",
+          "expect": "rw"
+        },
+        {
+          "path": "/合同/2026",
+          "native": "r",
+          "expect": "rw"
+        },
+        {
+          "path": "/其他",
+          "native": "r",
+          "expect": "r"
+        }
+      ]
+    },
+    {
+      "name": "personal deny outranks group grant across levels",
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [
+          "1"
+        ],
+        "depts": []
+      },
+      "rules": [
+        {
+          "path": "/",
+          "subject_type": "group",
+          "subject": "1",
+          "permission": "rw",
+          "inherit": 1
+        },
+        {
+          "path": "/hr",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "none",
+          "inherit": 1
+        }
+      ],
+      "checks": [
+        {
+          "path": "/hr",
+          "native": "rw",
+          "expect": null
+        },
+        {
+          "path": "/hr/salary",
+          "native": "rw",
+          "expect": null
+        },
+        {
+          "path": "/other",
+          "native": "rw",
+          "expect": "rw"
+        }
+      ]
+    },
+    {
+      "name": "directory rule cannot create access without base eligibility",
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [],
+        "depts": []
+      },
+      "rules": [
+        {
+          "path": "/open",
+          "subject_type": "user",
+          "subject": "b@example.com",
+          "permission": "rw",
+          "inherit": 1
+        }
+      ],
+      "checks": [
+        {
+          "path": "/open",
+          "native": null,
+          "expect": null
+        },
+        {
+          "path": "/open/sub",
+          "native": null,
+          "expect": null
+        }
+      ]
+    },
+    {
+      "name": "dept rule overrides group rule; deeper user rule still wins for that user",
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [
+          "1"
+        ],
+        "depts": [
+          "10"
+        ]
+      },
+      "rules": [
+        {
+          "path": "/",
+          "subject_type": "group",
+          "subject": "1",
+          "permission": "r",
+          "inherit": 1
+        },
+        {
+          "path": "/a",
+          "subject_type": "dept",
+          "subject": "10",
+          "permission": "rw",
+          "inherit": 1
+        }
+      ],
+      "checks": [
+        {
+          "path": "/a",
+          "native": "rw",
+          "expect": "rw"
+        },
+        {
+          "path": "/b",
+          "native": "rw",
+          "expect": "r"
+        }
       ]
     }
   ]

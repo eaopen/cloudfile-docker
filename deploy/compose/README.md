@@ -11,6 +11,22 @@
 - **CloudFile 新增**：统一环境变量写入、目录 ACL、组织映射、审计、可替换检索、多存储、外部资料源、文件操作生命周期和相应门禁；所有 `CF_ENABLE_*` 默认关闭。
 - **外部组件**：MariaDB、Redis、Caddy、SeaSearch、Meilisearch、Metadata Server、seafile-ai、OnlyOffice、SeaDoc 和 MinIO 均为独立容器，不由 CloudFile 业务代码实现；其许可证、容量与升级策略需单独评估。
 
+## WebDAV 与目录 ACL（上线门禁，必读）
+
+seafdav 的目录列举（PROPFIND/GET）不经过 `check_permission_by_path`，因此
+`invisible` 等 ACL 语义在 **WebDAV 读路径上不生效**（写路径生效）。在 WebDAV 读
+闭环补齐之前（决策 `eap-cloudfile/docs/review/cloudfile_decision_20260827.md`
+上线门禁第 7 条）：
+
+1. 本 compose 栈默认**不部署 seafdav**（`docker-compose.yml` 无该服务）。如需
+   WebDAV，必须自行添加 seafdav 服务，并确认**没有任何库启用目录 ACL**；
+2. 只要 `CF_ENABLE_DIR_ACL=true`，就不得对任何入口暴露 WebDAV——不能只在前端
+   UI 隐藏入口（改过的客户端可以直接连 seafdav 端口）；
+3. 桌面同步/SeaDrive 不受此缺口影响：`is_repo_syncable` / `is_dir_downloadable`
+   RPC 桩在 Server 侧对同步与打包下载做了 fail-closed 检查；
+4. WebDAV 读闭环的工程位置：seafdav 目录列举/GET 接 `check_permission_by_path`
+   RPC（见 `docs/acl-semantics.md` §6「已知缺口」）。
+
 ## 快速开始
 
 1. 复制配置并修改主机名、管理员密码和两个数据库密码：

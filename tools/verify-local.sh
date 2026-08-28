@@ -129,6 +129,9 @@ build_image() {
 CAPABILITIES=(
     "acl|CF_ENABLE_DIR_ACL|tests/e2e/acl_matrix.py"
     "sso|CF_ENABLE_SSO|tests/e2e/sso_matrix.py"
+    # sso-dept：层级目录契约（decision 20260827 §3）容器门禁——dept 真树落地
+    # （parent_group_id -1/>0）+ revision 幂等 + ACL 部门祖先继承端到端。
+    "sso-dept|CF_ENABLE_SSO CF_ENABLE_DIR_ACL|tests/e2e/sso_dept_matrix.py"
     "sso-login|CF_ENABLE_SSO|tests/e2e/sso_login_matrix.py"
     "metadata|CF_ENABLE_METADATA CF_ENABLE_TAGS|tests/e2e/metadata_matrix.py"
     "audit|CF_ENABLE_AUDIT|tests/e2e/audit_matrix.py"
@@ -178,6 +181,18 @@ CF_PROVIDER_SSO_DIRECTORY=static
 CF_SSO_GROUP_OWNER=$ADMIN_EMAIL
 CF_SERVICE_SSO_DIRECTORY_SECRET=CloudFile-Local-Sso-Webhook-4417
 CF_SSO_DIRECTORY_STATIC=[{"external_id":"eng","name":"SSO Engineering","members":["sso-matrix-a@example.com","sso-matrix-b@example.com"]},{"external_id":"sales","name":"SSO Sales","members":["sso-matrix-b@example.com"]}]
+EOF
+}
+
+# sso-dept：层级快照（decision 20260827 §3 契约形状）。static 与 external-service
+# 走同一 validate/normalize 通路，此处形状即 Adapter 输出形状。
+# dept-root 顶级（parent_group_id=-1）、dept-rd 子部门、role-rev 平群组。
+# member 只有 A：dept-rd=[A]；ACL 祖先继承断言用 A（子部门成员被父部门规则收紧）。
+cap_sso-dept_env() {
+    cat <<EOF
+CF_PROVIDER_SSO_DIRECTORY=static
+CF_SSO_GROUP_OWNER=$ADMIN_EMAIL
+CF_SSO_DIRECTORY_STATIC={"revision":"dept-matrix-1","groups":[{"external_id":"dept-root","name":"部门矩阵-总部","subject_type":"dept","parent_external_id":null,"members":[]},{"external_id":"dept-rd","name":"部门矩阵-研发部","subject_type":"dept","parent_external_id":"dept-root","members":["dept-matrix-a@example.com"]},{"external_id":"role-rev","name":"部门矩阵-评审员","subject_type":"group","members":[]}]}
 EOF
 }
 

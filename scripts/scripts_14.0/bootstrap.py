@@ -1291,10 +1291,67 @@ def write_cloudfile_config():
     write_seafevents_search_config()
     write_seafevents_audit_config()
     apply_cloudfile_schema()
+    apply_sso_hierarchy_schema_compatibility()
     apply_metadata_schema_compatibility()
     apply_tag_schema_compatibility()
     apply_starred_obj_id_schema_compatibility()
     apply_audit_schema()
+
+
+def apply_sso_hierarchy_schema_compatibility():
+    """Add the hierarchy columns to cf_sso_group_map in seafile-db.
+
+    The hierarchical directory contract (eap-cloudfile decision 2026-08-27
+    §3) stores ``subject_type`` ('dept'/'group') and ``parent_external_id``
+    on the mapping table. ``apply_cloudfile_schema`` only runs CREATE TABLE
+    IF NOT EXISTS, so a deployment whose cf_sso_group_map predates this
+    upgrade never receives the columns -- and the Hub's
+    ``SSOGroupMap.objects.add`` would then fail on every create. Same
+    probe-then-ALTER shape as the other compatibility shims here: checks
+    information_schema first, safe on every restart, no-ops on fresh
+    installs (the CREATE TABLE already carries them).
+
+    Both columns are NULL by default: pre-upgrade rows read as plain groups,
+    which is exactly what they were, so switches-off behaviour is unchanged.
+    """
+    import pymysql
+
+    conn = pymysql.connect(
+        host=get_conf('SEAFILE_MYSQL_DB_HOST', 'db'),
+        port=int(get_conf('SEAFILE_MYSQL_DB_PORT', '3306')),
+        user=get_conf('SEAFILE_MYSQL_DB_USER', 'seafile'),
+        password=get_conf('SEAFILE_MYSQL_DB_PASSWORD', ''),
+        database=get_conf('SEAFILE_MYSQL_DB_SEAFILE_DB_NAME', 'seafile_db'),
+        charset='utf8mb4',
+    )
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                'SELECT 1 FROM information_schema.TABLES '
+                'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+                ('cf_sso_group_map',))
+            if not cursor.fetchone():
+                # apply_cloudfile_schema creates it right before this call and
+                # carries the columns; missing here means the schema file was
+                # absent entirely, which that function already warned about.
+                return
+
+            cursor.execute(
+                'SELECT 1 FROM information_schema.COLUMNS '
+                'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s '
+                'AND COLUMN_NAME = %s',
+                ('cf_sso_group_map', 'subject_type'))
+            if not cursor.fetchone():
+                cursor.execute(
+                    'ALTER TABLE `cf_sso_group_map` '
+                    'ADD COLUMN `subject_type` VARCHAR(16) NULL')
+                cursor.execute(
+                    'ALTER TABLE `cf_sso_group_map` '
+                    'ADD COLUMN `parent_external_id` VARCHAR(255) NULL')
+                loginfo('Added cf_sso_group_map hierarchy columns')
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def init_seafile_server():

@@ -35,6 +35,7 @@
 
 | 文档 | 内容 |
 |---|---|
+| [版本差异说明](edition-differences.md) | CE/Pro/CloudFile 特性与 API 差异的判定模型、"行为不符预期"排查流程与案例登记 |
 | [上游贡献建议](upstream-contribution.md) | 可提交、拆分后提交和内部保留的改动 |
 | [路线图](roadmap.md) | 仅保留未完成项，不承诺日期 |
 | [权限表与权限模型](permission-tables.md) | 权限相关表清单、字段语义、口径决策与收敛路线 |

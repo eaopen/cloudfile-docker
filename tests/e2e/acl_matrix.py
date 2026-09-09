@@ -300,9 +300,12 @@ def check_webdav(base, repo_id):
 
     # ── 读侧 ────────────────────────────────────────────────────────────
     #
-    # 这几条对应 patches/seafdav/0001。写侧一直是好的（上面三条），读侧却完全
-    # 没有校验：`invisible` 的目录照样被列出、照样能 GET。**一个只在部分入口
-    # 生效的"不可见"不是不可见**，所以这是 ACL 的发布阻塞项，不是待办。
+    # 对应 patches/seafdav/0001-enforce-dir-acl-on-read-paths.patch（已合入）：
+    # 读路径（PROPFIND 列举/递归/资源解析）按 check_permission_by_path 的
+    # per-path 结果过滤，invisible/none → 条目隐藏、直接列举 404（与"不存在"
+    # 无法区分），restricted 只读目录仍可列举。下面这些断言是该补丁的回归
+    # 验证：全部通过 = 补丁随 seafdav 镜像生效；若 /secret 相关断言失败，
+    # 先检查部署镜像是否应用了该补丁，而不是放宽本矩阵预期。
     propfind = {'Depth': '1', 'Content-Type': 'application/xml'}
 
     status, body = request(f'{root}/{REPO_NAME}/', method='PROPFIND',

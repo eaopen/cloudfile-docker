@@ -13,19 +13,20 @@
 
 ## WebDAV 与目录 ACL（上线门禁，必读）
 
-seafdav 的目录列举（PROPFIND/GET）不经过 `check_permission_by_path`，因此
-`invisible` 等 ACL 语义在 **WebDAV 读路径上不生效**（写路径生效）。在 WebDAV 读
-闭环补齐之前（决策 `eap-cloudfile/docs/review/cloudfile_decision_20260827.md`
-上线门禁第 7 条）：
+WebDAV 读路径（PROPFIND 列举/GET/资源解析）已由
+[`patches/seafdav/0001-enforce-dir-acl-on-read-paths.patch`](../../patches/seafdav/)
+接入 `check_permission_by_path`：invisible/none 子树不列出、直接访问 404。
+**前提是部署的 seafdav 必须应用该补丁**（本仓打包流程会应用 `patches/seafdav/*`）：
 
 1. 本 compose 栈默认**不部署 seafdav**（`docker-compose.yml` 无该服务）。如需
-   WebDAV，必须自行添加 seafdav 服务，并确认**没有任何库启用目录 ACL**；
-2. 只要 `CF_ENABLE_DIR_ACL=true`，就不得对任何入口暴露 WebDAV——不能只在前端
-   UI 隐藏入口（改过的客户端可以直接连 seafdav 端口）；
-3. 桌面同步/SeaDrive 不受此缺口影响：`is_repo_syncable` / `is_dir_downloadable`
-   RPC 桩在 Server 侧对同步与打包下载做了 fail-closed 检查；
-4. WebDAV 读闭环的工程位置：seafdav 目录列举/GET 接 `check_permission_by_path`
-   RPC（见 `docs/acl-semantics.md` §6「已知缺口」）。
+   WebDAV，必须自行添加 seafdav 服务，并**使用应用了上述补丁的构建**——
+   未带补丁的裸 upstream seafdav 读路径不受 ACL 约束；
+2. 只要 `CF_ENABLE_DIR_ACL=true`，就不得对任何入口暴露**未打补丁**的 WebDAV——
+   不能只在前端 UI 隐藏入口（改过的客户端可以直接连 seafdav 端口）；
+3. 桌面同步/SeaDrive 不受此影响：`is_repo_syncable` / `is_dir_downloadable`
+   RPC 桩在 Server 侧对同步与打包下载做 fail-closed 整库/整树预检；
+4. WebDAV 读侧回归断言见 `tests/e2e/acl_matrix.py`（check_webdav 读侧区块），
+   全部通过 = 补丁随镜像生效。
 
 ## 快速开始
 

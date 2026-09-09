@@ -277,9 +277,12 @@ Go fileserver 那一处才是真正的强制点：`is_repo_syncable` 只是让�
 在 `cloudfile-server/python/seaserv/api.py` 中被替换为透传 RPC。RPC 调用失败时
 （上游 CE 构建，或开关关闭）一律按"无限制"处理，保证原生行为不变。
 
-已知缺口：seafdav 的目录列举与 GET 不经过 `check_permission_by_path`，
-因此 `invisible` 在 **WebDAV 读路径上不生效**（写路径生效）。见
-[BRANCHING.md](../BRANCHING.md) 与 compose README 的限制说明。
+WebDAV 读侧：seafdav 的目录列举与 GET 原生不经过 `check_permission_by_path`，
+本项目的构建补丁 `patches/seafdav/0001-enforce-dir-acl-on-read-paths.patch` 已把
+读路径接入该 RPC（invisible/none → 条目不列出、直接访问 404，fail-closed）；
+**部署约束：未应用该补丁的裸 upstream seafdav 读侧仍不受 ACL 约束**，故 compose
+栈默认不部署 seafdav（见 deploy/compose/README.md「WebDAV 与目录 ACL」）。读侧回归
+断言见 `tests/e2e/acl_matrix.py` check_webdav。
 
 ---
 

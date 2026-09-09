@@ -275,6 +275,7 @@ def _settings_block_sso():
         uid_claim = get_conf('CF_SSO_OAUTH_UID_CLAIM', 'sub').strip()
         email_claim = get_conf('CF_SSO_OAUTH_EMAIL_CLAIM', 'email').strip()
         name_claim = get_conf('CF_SSO_OAUTH_NAME_CLAIM', 'name').strip()
+        login_id_claim = get_conf('CF_SSO_OAUTH_LOGIN_ID_CLAIM', 'login_id').strip()
         if not uid_claim or not email_claim:
             raise Exception('CF_SSO_OAUTH_UID_CLAIM and '
                             'CF_SSO_OAUTH_EMAIL_CLAIM must not be empty')
@@ -293,6 +294,9 @@ def _settings_block_sso():
         if uid_claim == email_claim:
             attribute_map = {email_claim: (True, 'email'),
                              name_claim: (False, 'name')}
+
+        if login_id_claim and login_id_claim not in attribute_map:
+            attribute_map[login_id_claim] = (False, 'login_id')
 
         lines += [
             'ENABLE_OAUTH = True',

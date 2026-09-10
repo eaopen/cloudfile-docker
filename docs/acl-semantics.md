@@ -359,3 +359,24 @@ deny 则不受影响：`invisible`/`none` 在所有入口都是否决，读路�
   需要预置规则时可显式传 `allow_ineffective=true` 绕过；
 * 列表接口带 `path_kind` / `eligible` / `guidance` 注解（admin 列表需 `annotate_eligibility=true`，
   逐条资格探针是 RPC，默认关闭），使"配置了但永远不生效"的规则在管理面可见。
+
+
+## 规则随对象改名/移动（2026-09-12）
+
+`cf_dir_acl` / `cf_dir_admin` 以 **path** 定位目标，而 Seafile 的改名/移动（无论来自门户、
+WebDAV 还是桌面客户端）不会自动搬运规则——**目录改名后规则会留在旧路径上静默失配**：
+管理界面仍显示"已配置"，实际不再生效。这是继"文件级授权""主体无库级资格"之后第三类静默失效。
+
+处置：cf-worker 周期任务 `acl-path-migration`（间隔 `CF_ACL_MIGRATION_INTERVAL`，默认 60s，
+运行时最小 15s）消费 seafevents 的 `Activity`（`rename`/`move`，detail 带 `old_path`），
+把受影响规则重写到新路径：
+
+* **精确匹配**（对象自身，如文件/目录改名）与**前缀匹配**（被移动目录下的规则）一并迁移；
+* `DirACL` / `DirAdmin` 两张表都迁移，保存走模型以保证 `path` 与 `path_hash` 同步；
+* 迁移后按库失效 ACL 缓存（否则 `CF_ACL_CACHE_TTL` 内仍返回迁移前的判定）；
+* 水位复用 `cf_search_index_state`（通用 `(name, cursor)` 行，独立 name），**不新增表**；
+* 失败不推进水位、标记 `error`，下一轮重试；与搜索索引同一 best-effort 语义（滞后一个周期）。
+
+边界：事件源是"已提交的提交历史"，因此迁移**滞后一个周期**；极端情况下（改名后立刻访问）
+可能在窗口内看到失效判定。若后续需要即时迁移，可在 hub 的上传/改名入口补同步挂钩
+（当前未做，避免侵入上游端点）。

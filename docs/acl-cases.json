@@ -1082,6 +1082,60 @@
           "expect": "r"
         }
       ]
+    },
+    {
+      "name": "ancestor invisible is overridden by a deeper allow for the same subject",
+      "comment": "部门目录隔离（白名单）依赖：库根 invisible 屏蔽整库，更深层的目录 rw 覆盖它。2026-09-12 补充：此前共享用例缺该组合，而它是 '根目录不可见' 开关/P4 配方的语义基础。",
+      "subjects": {
+        "user": "b@example.com",
+        "groups": [
+          "1"
+        ],
+        "depts": []
+      },
+      "rules": [
+        {
+          "path": "/",
+          "subject_type": "group",
+          "subject": "1",
+          "permission": "invisible",
+          "inherit": 1
+        },
+        {
+          "path": "/dept-a",
+          "subject_type": "group",
+          "subject": "1",
+          "permission": "rw",
+          "inherit": 1
+        }
+      ],
+      "checks": [
+        {
+          "path": "/",
+          "native": "r",
+          "expect": null
+        },
+        {
+          "path": "/dept-a",
+          "native": "r",
+          "expect": "rw"
+        },
+        {
+          "path": "/dept-a/drawing.dwg",
+          "native": "r",
+          "expect": "rw"
+        },
+        {
+          "path": "/dept-b",
+          "native": "r",
+          "expect": null
+        },
+        {
+          "path": "/dept-b/notes.txt",
+          "native": "r",
+          "expect": null
+        }
+      ]
     }
   ]
 }

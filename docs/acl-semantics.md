@@ -329,3 +329,33 @@ Pro 兼容语义的正常行为（§5），管理维度与内容维度正交。
 
 两者都关闭时，三层都必须走原生代码路径，行为与同 SHA 的原生 CE 完全一致。
 这是 P0 的核心验收项。
+
+
+## 授权粒度（2026-09-12 产品确认）
+
+**授权粒度=目录；文件级只保留 deny。**
+
+| 规则路径 | r / rw（授权） | none / invisible（隐藏） |
+|---|---|---|
+| 库根 `/` | ✅ | ✅ |
+| 目录 | ✅ | ✅ |
+| **文件** | ❌ **拒绝**（并给出引导） | ✅（隐藏单个文件） |
+
+理由：**授权粒度不能超过强制点能稳定兑现的范围**。写内容类操作（上传新版本、在线编辑保存）
+在上游按**父目录**判定（`seahub/api2/endpoints/file.py` 用 `parent_dir`），因此文件级 `rw`
+会在管理界面"配置成功"却在写路径静默失效——已排查过的多起"授权成功但提示没有权限"都源于此。
+deny 则不受影响：`invisible`/`none` 在所有入口都是否决，读路径本来就按对象判定，
+所以"隐藏个别文件"既有效又一致。
+
+**单文件个人授权**：把文件移入**专属目录**后授权该目录（推荐），或对**外部人员**使用分享链接。
+前端分享入口当前仍关闭，后续按业务需要决定是否重启（`CF_ENABLE_SHARE_RESTRICT` 控制外部分享收紧）。
+
+**写入端校验**（`DirACLView.post` / `AdminDirACLView.post`，eap `/acl/set` 同步前置拦截）：
+
+* 文件路径 + `r`/`rw` → **400**，文案指明"专属目录 or 分享链接"两条出路；
+* 主体**没有库级资格**（`probes.subject_eligible`：user 用 `check_permission_by_path(repo,'/',user)`；
+  group/dept 查 `RepoGroup`/`OrgGroupRepo`，并按**部门祖先链**判定）→ **400**，
+  因为路径规则只能在库级权限内细化，不能凭空造权限（`resolver.resolve` 在 native 为 None 时恒 null）；
+  需要预置规则时可显式传 `allow_ineffective=true` 绕过；
+* 列表接口带 `path_kind` / `eligible` / `guidance` 注解（admin 列表需 `annotate_eligibility=true`，
+  逐条资格探针是 RPC，默认关闭），使"配置了但永远不生效"的规则在管理面可见。

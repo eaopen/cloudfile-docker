@@ -32,3 +32,24 @@ Meilisearch 文本提取只覆盖配置允许的纯文本和大小上限，不�
 
 证据：`cloudfile-hub/cloudfile_ext/search/`、`cloudfile-docker/tests/e2e/search_matrix.py`、
 `./tools/verify-local.sh cap search`。旧的方案比较和排期已移入[历史索引](../history/README.md)。
+
+
+## 无外部索引时的降级：内置 db-tags 后端（2026-09-12）
+
+外网/内网部署不一定有 Elasticsearch 或 Meilisearch，但"按标签找文件"不应因此不可用：
+标签到路径的映射本来就在 Seahub 自己的表里（v2 `file_tags_filetags` / legacy `tags_filetag`
+→ `tags_fileuuidmap`），是一个 join，而不是一次全文检索。
+
+因此 `cloudfile_ext/search/backends/dbtags.py` 注册为内置 provider `db-tags`：
+
+| 场景 | 行为 |
+|---|---|
+| `CF_PROVIDER_SEARCH=meilisearch` | 走 Meilisearch（含全文）；`db-tags` 不被使用 |
+| `CF_PROVIDER_SEARCH=''` + `CF_SEARCH_DB_FALLBACK=True`（默认） | 纯全文请求 → 501（提示需索引 provider）；带 `tags=`/`creator_emails=` → **内置后端作答** |
+| `CF_PROVIDER_SEARCH=''` + `CF_SEARCH_DB_FALLBACK=False` | 结构化过滤显式拒绝（不静默丢条件） |
+| `CF_PROVIDER_SEARCH=db-tags` | 显式选中内置后端（等价于上一行的可查询路径） |
+| 已配置 Elasticsearch/SeaSearch | 原生分支优先，降级不劫持 |
+
+能力边界（写进文档是为了避免误解）：`keyword` 在标签命中集合内按名称/路径子串匹配；
+`size_range`/`time_range` 需要 dirent，内置后端仅在候选数可控时逐条解析（超过 500 条显式拒绝）；
+内容（正文）检索仍只有索引 provider 能做。两类标签都覆盖：v2 系统标签与 legacy 用户标签（后者含目录）。

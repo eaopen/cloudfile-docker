@@ -21,6 +21,7 @@ RUN mkdir -p /etc/ldap/ && echo "TLS_REQCERT     allow" >> /etc/ldap/ldap.conf &
     rm -f /etc/nginx/sites-enabled/* /etc/nginx/conf.d/* && \
     mv /services/nginx.conf /etc/nginx/nginx.conf && \
     mv /services/nginx.sh /etc/service/nginx/run && \
+    chmod +x /etc/service/nginx/run && \
     mv /services/seafile.nginx.conf /etc/nginx/sites-enabled/seafile.nginx.conf
 ENV MARIADB_TLS_DISABLE_PEER_VERIFICATION=1
 

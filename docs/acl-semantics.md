@@ -353,12 +353,35 @@ deny 则不受影响：`invisible`/`none` 在所有入口都是否决，读路�
 **写入端校验**（`DirACLView.post` / `AdminDirACLView.post`，eap `/acl/set` 同步前置拦截）：
 
 * 文件路径 + `r`/`rw` → **400**，文案指明"专属目录 or 分享链接"两条出路；
-* 主体**没有库级资格**（`probes.subject_eligible`：user 用 `check_permission_by_path(repo,'/',user)`；
-  group/dept 查 `RepoGroup`/`OrgGroupRepo`，并按**部门祖先链**判定）→ **400**，
+* 主体**没有库级资格**（`probes.subject_eligible`）→ **400**，
   因为路径规则只能在库级权限内细化，不能凭空造权限（`resolver.resolve` 在 native 为 None 时恒 null）；
   需要预置规则时可显式传 `allow_ineffective=true` 绕过；
 * 列表接口带 `path_kind` / `eligible` / `guidance` 注解（admin 列表需 `annotate_eligibility=true`，
   逐条资格探针是 RPC，默认关闭），使"配置了但永远不生效"的规则在管理面可见。
+
+### 资格判定口径（2026-09-17 修订：主体按类型分治）
+
+`eligible` 只有 `true`/`false`/`null`，而 `false` 会被前端当成**确定失效**并纳入
+"一键删除失效规则"——所以 `false` 必须是能站住的结论，不能靠猜：
+
+* **user**：`seafile_api.check_permission_by_path(repo, '/', user)` 非空即 true；
+* **dept（部门，`parent_group_id != 0`）**：查 `RepoGroup` / `OrgGroupRepo`，
+  并沿 `parent_group_id` **部门祖先链**上溯（部门分享对子部门成员生效）；
+  链上都没命中 → **false**（部门链就是它的成员轴，链上没分享即真的没人进得来）；
+* **group（角色 / 普通组，`parent_group_id == 0`）**：**不能只看它自己被没被分享**。
+  角色不是一条独立的访问轴——它的成员是各自**所在部门**的库级分享（或个人的用户分享）
+  拿到 native 权限的，这两种轴按"主体"探针都看不见。因此角色未被直接分享时要
+  **逐成员核实**（`probes._member_reaches_library`：取该组成员，逐个用与 user 主体
+  **同一个调用** `check_permission_by_path(repo,'/',member)` 判定，命中即 true）。
+  成员数超过 `MEMBER_SCAN_LIMIT`（200）→ **null**（无法判定）：部分扫描证明不了
+  "没人被覆盖"，此时答 `false` 会重新制造误报。
+  > 修订原因：实测库 `3a000c19-…` 上 `group 1245`（`role:418515230237130753`）的
+  > `/技术部/技术管理处 → rw` 规则被判 `eligible:false`——其成员经"技术部"已有库级分享、
+  > 规则实际生效，却被标成"永不生效"并进入一键删除候选。
+
+* 三种主体类型都遵守：探针**判不出来**一律 `null`，绝不 `false`；
+  主体类型（角色 vs 部门）本身读不到时同样是 `null`（分类见 `cf-acl.c` 的
+  `build_subject_set`，必须与 `acl.service._load_subjects`、`probes.parent_group_id_of` 三处一致）。
 
 
 ## 规则随对象改名/移动（2026-09-12）

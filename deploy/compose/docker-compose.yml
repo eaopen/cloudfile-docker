@@ -444,7 +444,7 @@ services:
     restart: unless-stopped
 
   meilisearch:
-    image: getmeili/meilisearch:v1.10
+    image: getmeili/meilisearch:v1.53.2
     container_name: cloudfile-meilisearch
     profiles: ["search", "full"]
     environment:

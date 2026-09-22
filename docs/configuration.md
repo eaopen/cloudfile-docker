@@ -42,7 +42,7 @@ WATCH、FILEOPS、SHARE_RESTRICT）；依赖第三方服务、宿主机挂载或
 | `CF_ENABLE_ONLYOFFICE` | `false` | 依赖第三方 Document Server |
 | `CF_ENABLE_CONVERT_EXPORT` | `false` | 依赖 SeaDoc 容器 + `JWT_PRIVATE_KEY` |
 | `CF_ENABLE_S3_STORAGE` | `false` | 依赖第三方 S3/MinIO 端点 |
-| `CF_ENABLE_EXTERNAL_SOURCES` | `false` | 依赖宿主机 SMB/NFS 挂载 |
+| `CF_ENABLE_EXTERNAL_SOURCES` | `false` | 依赖宿主机挂载的本地目录（v1 只读；协议转换归运维）|
 | `CF_ENABLE_LOCAL_APP` | `false` | 依赖用户机 Chrome 扩展 + Local Agent |
 
 > 修改说明（2026-09-22）：原表只列了 15 个开关（漏 `FAVORITES_ID`/`FILEOPS`/`SHARE_RESTRICT`）
@@ -97,8 +97,10 @@ secret、三个 OAuth 端点和 provider 均为启动必填项；默认仅接受
 ## 外部资料源配置
 
 `CF_ENABLE_EXTERNAL_SOURCES` 启用当前 `local-path` 外部资料源入口，
-`CF_EXTERNAL_SOURCES_ROOTS` 限制容器可登记的根目录。宿主机负责挂载 SMB/NFS，再以
-bind mount 暴露给容器。CloudFile 外部资料联邦与 OpenList/rclone 虚拟目录挂载尚无可用变量，见
+`CF_EXTERNAL_SOURCES_ROOTS` 限制容器可登记的根目录。**v1 只支持只读挂载本地目录**
+（2026-09-22 明确）：SMB/NFS、OpenList、rclone 等一切外部形态都由运维在宿主机转换成本地
+目录，再以只读 bind mount 暴露给容器；CloudFile **不做直接 SMB**（原 `smb` provider 已取消）、
+不做直接 NFS、不做 OpenList/rclone 适配器。CloudFile 外部资料联邦尚无可用变量，见
 [规划说明](features/external-directory-mount.md)。
 
 ## 密钥与证书

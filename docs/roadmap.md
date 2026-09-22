@@ -29,7 +29,7 @@
 | 7 | OnlyOffice 安全编辑 MVP | 依赖锁和写入生命周期；Docker 启动配置已验证 | JWT 回调认证、受信下载、重试幂等、锁协同和 Document Server 容器 E2E 均通过 |
 | 8 | 本地应用编辑 MVP | 复用现有 Local Agent 与 Chrome Extension；依赖短时会话和写入终判 | 下载—编辑—心跳—写回—冲突恢复 E2E；再分别产出 Windows/macOS/Linux 签名与升级方案 |
 | 9 | 既有外部服务的运行验收 | 外部资料源、Seafile AI、转换/导出和多存储自助分配均在既有架构内改进 | 每项分别完成 profile、故障、权限和运维恢复验证；S3 兼容性仍只声明 MinIO |
-| 10 | 外部资料联邦独立项目 | 新建 CloudFile 外部资料联邦模块，适配 OpenList/rclone | 先交付统一只读资料接口、安全边界与契约测试，再分别服务 AI 资料库和 CloudFile 虚拟目录 |
+| 10 | 外部资料联邦独立项目（不属于虚拟目录 v1） | 新建 CloudFile 外部资料联邦模块，适配 OpenList/rclone | 先交付统一只读资料接口、安全边界与契约测试，再分别服务 AI 资料库和 CloudFile 虚拟目录 |
 
 第 10 项不是当前 CloudFile 仓库的功能实现；在前九项稳定前不启动其消费端接入。
 已放弃或被替代的过程性材料保存在[历史版本](history/README.md)，不作为交付依据。

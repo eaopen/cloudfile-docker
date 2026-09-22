@@ -507,10 +507,13 @@ cap_external_sources_run() {
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD"
 }
 
-# 真实 SMB 验收（T5，2026-08-20）：fs-backed local-path 只证明路径语义，这里
+# 宿主挂载形态验收（T5，2026-08-20）：fs-backed local-path 只证明路径语义，这里
 # 起真实 Samba 服务器、cloudfile 容器以 privileged + cifs-utils 真实挂载
-# CIFS v3 到 /shared/external/e2e 再跑同一矩阵。NFS 侧：OrbStack 内核无 nfs
-# 客户端模块（/proc/filesystems 只有 nfsd），挂不上——记为环境限制，非产品缺口。
+# CIFS v3 到 /shared/external/e2e 再跑同一矩阵。它证明的是"经宿主机挂载后的共享与
+# 本地目录行为一致"——即 v1"只读本地目录"边界成立，**不是 SMB 支持**：SMB 在这里只是
+# 宿主挂载的一个样本，CloudFile 侧没有任何协议代码，挂载由本脚本建立并在结束时卸载。
+# NFS 侧：OrbStack 内核无 nfs 客户端模块（/proc/filesystems 只有 nfsd），挂不上——
+# 记为环境限制，非产品缺口。
 cap_external_sources_real_run() {
     local base=$1 net=t5-external-real
 

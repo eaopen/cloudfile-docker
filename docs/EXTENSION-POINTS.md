@@ -117,7 +117,7 @@ seasearch、Elasticsearch、企业自有检索服务都可以是同一个 kind �
 | **F** | 文件锁基础 | `FILE_LOCK`（规划新增） | ● | ● | ● | | | ● | | ● | | ● 自有锁真值 | ● C/Go/WebDAV 终判 |
 | **F** | 签入签出 | `CHECKOUT` | ● | ● | ● | | | ● | | ● | | ● | ● |
 | **F** | iTeam 流程接口 | `CHECKOUT` | ● | | | | | | | ● | ○ | ● | |
-| **G** | SMB/NFS 外部源 | `EXTERNAL_SOURCES` | ● | ● | ● | ○ | ○ | | ● | ● | ● 源类型 | ● | |
+| **G** | 外部源（v1 只读本地目录） | `EXTERNAL_SOURCES` | ● | ● | ● | ○ | ○ | | ● | ● | ● 源类型 | ● | |
 | **G** | 外部源增量扫描 | `EXTERNAL_SOURCES` | | | | | ● | | ● | ● | | ● | |
 | **G** | 虚拟目录挂载 | `EXTERNAL_SOURCES` | ● | ● | ● | | | | ● | | | ● | ○ |
 | **G×D** | Overlay 标签属性 | `EXTERNAL_SOURCES` | ● | | | | ● | | ● | | | ● | |
@@ -203,7 +203,7 @@ shadow a native endpoint when it has to」。第 40 项已经用这个机制覆�
 门控端点（`cloudfile_ext/search/views.py` 的影子子类），**零上游改动**。
 
 所以真实取舍不是「两套界面 vs 改上游」，而是「两套界面 vs **影子约 8 个只读
-端点**」——当前能力边界见 [SMB/NFS 外部资料源](features/external-sources.md)。
+端点**」——当前能力边界见 [外部资料源与虚拟目录挂载（v1 只读本地目录）](features/external-sources.md)。
 
 **但真正的硬边界不是库列表，是数据面**，而它原先根本没被计价：
 

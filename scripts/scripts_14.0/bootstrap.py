@@ -417,9 +417,12 @@ def _settings_block_external_sources():
     """Where an external source's root may live, or nothing when the switch is off.
 
     Only one setting, and it is the capability's security boundary: an external
-    source is an SMB/NFS share the operator mounted on the host and bind-mounted
-    into the container, so this list separates "a share ops chose to expose"
-    from "any path in the container".
+    source is a local directory the operator mounted on the host and bind-mounted
+    into the container. v1 supports that form only -- SMB/NFS, OpenList, rclone
+    and third-party drives are normalized to a local directory on the host, and
+    CloudFile implements no protocol access of its own (direct SMB is cancelled).
+    So this list separates "a directory ops chose to expose" from "any path in
+    the container".
 
     An empty value is refused rather than passed through. Empty would reach
     cloudfile_ext as "no prefixes configured", and the one reading that must
@@ -427,7 +430,7 @@ def _settings_block_external_sources():
     an external source. Failing here means a bad .env stops the deployment while
     somebody is looking at it, instead of at the first request.
 
-    See docs/external-sources.md section three.
+    See docs/features/external-sources.md "v1 支持范围".
     """
     if not cf_enabled('CF_ENABLE_EXTERNAL_SOURCES'):
         return ''

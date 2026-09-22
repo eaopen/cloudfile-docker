@@ -20,7 +20,7 @@
 |---|---|
 | [Authentik 与企业认证](features/sso-authentik.md) | 部分完成；通用 OIDC 与组织映射已有，Authentik 端到端待验证 |
 | [多存储与 S3 兼容存储](features/storage-backends.md) | 已完成；优先验证 MinIO |
-| [外部资料联邦与虚拟目录挂载](features/external-directory-mount.md) | 规划；拟拆分为独立项目，为 AI 和 CloudFile 提供不同消费接口 |
+| [外部资料联邦与虚拟目录挂载](features/external-directory-mount.md) | 规划；拟拆分为独立项目，为 AI 和 CloudFile 提供不同消费接口；**不属于虚拟目录 v1** |
 | [Seafile AI 与外接 LLM](features/seafile-ai.md) | 验证中；复用官方 Seafile AI，外接配置模型 |
 | [目录 ACL 语义](acl-semantics.md) | 验证中；active-authority 故障与修订契约尚待跨层实现 |
 | [写入生命周期](fileop-lifecycle.md) | 验证中 |
@@ -29,7 +29,7 @@
 | [收藏对象 ID 化](features/favorites.md) | 验证中；收藏按对象 ID 跟随移动/重命名，旧记录无损回填，容器 E2E 待补 |
 | [检索](features/search.md) | 部分完成 |
 | [文件协作与本地应用](features/file-collaboration.md) | 部分完成 |
-| [外部资料源](features/external-sources.md) | 部分完成 |
+| [外部资料源与虚拟目录挂载（v1 只读本地目录）](features/external-sources.md) | 部分完成 |
 
 ## 研发与决策
 

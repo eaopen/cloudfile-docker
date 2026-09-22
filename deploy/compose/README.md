@@ -157,7 +157,7 @@ MinIO 的示例凭据只能用于本地测试。对象布局、迁移、GC/FSCK 
 
 ### 外部资料源
 
-CloudFile 不负责挂载 SMB/NFS。运维先在宿主机挂载，再只读 bind mount 到 `CF_EXTERNAL_SOURCES_ROOTS` 允许的容器路径；CloudFile 负责登记、授权、浏览与下载。具体边界见 [`../../docs/features/external-sources.md`](../../docs/features/external-sources.md)。
+CloudFile 不负责挂载任何外部存储。**v1 只支持只读挂载本地目录**：SMB/NFS、OpenList、rclone 等一律由运维先在宿主机转换成普通本地目录，再只读 bind mount 到 `CF_EXTERNAL_SOURCES_ROOTS` 允许的容器路径；CloudFile 负责登记、授权、浏览与下载，不做直接 SMB/NFS 协议接入。具体边界见 [`../../docs/features/external-sources.md`](../../docs/features/external-sources.md)。
 
 ### 文件锁、关注、转换与导出
 
@@ -195,7 +195,7 @@ data/
 └── onlyoffice/     OnlyOffice 数据与日志
 ```
 
-核心业务备份至少覆盖 `data/db/` 与 `data/seafile/`。启用外部状态组件后，还需按恢复目标备份对应目录或确认其可重建；生产 S3/SMB/NFS 数据不在本地 `data/` 内。执行一致性备份前停止写入，并验证数据库与对象存储的恢复流程。
+核心业务备份至少覆盖 `data/db/` 与 `data/seafile/`。启用外部状态组件后，还需按恢复目标备份对应目录或确认其可重建；生产 S3 与宿主挂载的外部目录数据不在本地 `data/` 内。执行一致性备份前停止写入，并验证数据库与对象存储的恢复流程。
 
 ## 验证
 

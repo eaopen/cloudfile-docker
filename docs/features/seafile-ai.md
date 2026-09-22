@@ -95,7 +95,7 @@ Compose 没有为 `seafile-ai` 定义健康检查，本仓库也没有验证超�
 
 ## 外部内容联邦的边界
 
-CloudFile 未来可能把 SMB/NFS、OpenList/rclone 或其他外部内容联邦成统一的文件资料库视图，
+CloudFile 未来可能把宿主挂载的本地目录、OpenList/rclone 或其他外部内容联邦成统一的文件资料库视图（虚拟目录 v1 只支持只读挂载本地目录，不含任何直接协议接入），
 届时可以再设计同一权限模型下的 AI 入口。但当前
 [`external-sources.md`](external-sources.md) 只说明独立的外部资料源路径，外部文件不进入
 Seafile commit/block 模型；本仓库没有把外部资料源、统一资料库和 Seafile AI 连接起来的

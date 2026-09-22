@@ -34,7 +34,7 @@ cloudfile-server（seafile-server fork）
 
 独立项目 / 客户端
   cloudfile-local-agent、cloudfile-chrome-extension
-  规划中的 CloudFile 外部资料联邦（OpenList/rclone 适配）
+  规划中的 CloudFile 外部资料联邦（OpenList/rclone 适配；不属于虚拟目录 v1）
 ```
 
 `cloudfile-docker` 不承载业务请求，负责按 `release.yaml` 构建并用 Compose 写入配置、
@@ -75,9 +75,11 @@ Server 在 `cf_ext_init()` 注册底层终判 provider。`bootstrap.py` 从同�
 ## 外部服务与故障隔离
 
 同步权限终判不得依赖网络调用。外部目录、检索和内容服务通过周期任务、缓存或独立入口
-接入：调用失败不应放宽权限，也不应把外部目录误判为空。虚拟目录挂载的 OpenList/rclone
-方向归入规划中的 CloudFile 外部资料联邦模块，必须先以独立项目验证，再通过版本化接口
-为 AI 应用提供统一文件资料库、为 CloudFile 提供虚拟目录挂载；详见
+接入：调用失败不应放宽权限，也不应把外部目录误判为空。虚拟目录挂载 v1 **只支持只读
+挂载本地目录**：协议与第三方网盘（SMB/NFS/OpenList 等）由运维在宿主机转换成本地目录，
+CloudFile 不做任何直接协议接入，见[外部资料源与虚拟目录挂载](features/external-sources.md)。
+OpenList/rclone 的联邦方向归入规划中的 CloudFile 外部资料联邦模块，不属于 v1，必须先以
+独立项目验证，再通过版本化接口为 AI 应用提供统一文件资料库；详见
 [外部资料联邦与虚拟目录挂载](features/external-directory-mount.md)。
 
 AI 能力优先复用 [Seafile AI](features/seafile-ai.md)。模型服务故障只应影响 AI 请求，

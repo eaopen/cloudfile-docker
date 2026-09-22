@@ -41,6 +41,12 @@ CloudFile 不执行 `mount -t cifs/nfs`，不保存协议凭据，也不实现�
 > 验收说明：`cap external_sources_real` 用真实 Samba + 容器内 CIFS 挂载来跑同一套
 > 矩阵，它证明的是"经宿主机挂载后的共享与本地目录行为一致"，**是这条边界的证据，
 > 不是 SMB 支持**。真实挂载由门禁脚本自己建立并在结束时卸载。
+>
+> **实测记录**：`cap external_sources`（fs-backed）**2026-09-23 本机 20/20 通过**，
+> 同轮基线冒烟 12/12。`cap external_sources_real` 同日在本机 Docker 于 CIFS 挂载步骤
+> 失败（mount error(2)；`/proc/filesystems` 含 cifs，疑为 samba:latest 服务端行为漂移），
+> 与 NFS 侧限制同记为**环境限制、非产品缺口**（该门禁 2026-08-20 曾全绿，待 Linux
+> 宿主复验）。
 
 ## 与原生资料库的区别
 

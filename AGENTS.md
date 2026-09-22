@@ -31,33 +31,38 @@ workspace/
 本仓库同时是**发布的归属地**：`release.yaml` 决定每次构建用哪些代码，
 `BRANCHING.md` 定义三仓共用的分支模型。
 
-## 一个必须知道的前提：上游 14.0 CE 不存在
+## CE 14 基线：上游已发布，运行时配方以上游为准
 
 > **曾评估退回 CE 13.0，已否决——维持 14.0**（当前结论见 [docs/overview.md](docs/overview.md)，完整决策已归档）。
 > 关键事实：CloudFile 改了 C/Go 服务端，**13 和 14 都得重新编译**，于是 13.0
-> "复用官方镜像"的核心收益不成立；而 14.0 已跑通、更新、迁移成本为零。等上游
-> 发布 CE 14.0 镜像时再同版本平移。下面的"从源码重构 14.0 CE"仍是现行做法。
+> "复用官方镜像"的核心收益不成立；而 14.0 已跑通、更新、迁移成本为零。
 
-- `haiwen/seafile-server` 只有 `13.0` 和 `master` 分支，**没有 `14.0` 分支**
-- 14.0 只有 `-pro` tag，**没有 `-server`（CE）tag**
-- 上游提供 `image/seafile_13.0`（CE）和 `image/pro_seafile_14.0`（Pro），
-  **没有 CE 14.0 镜像**——所以 14.0 只能从 CE 源码构建
+**前提在 2026-09 变了**：上游补上了 CE 14 的发布与镜像，原先是"上游没有，所以只能
+从源码重构"的三条论据不再成立：
 
-两个后果贯穿整个构建：
+- `haiwen/seafile-server` 仍**没有 `14.0` 分支**（只有 `master`），但已有 CE tag
+  `v14.0.8-server`；`haiwen/seahub` 同样有 `v14.0.8-server`（以及 `-pro` 系列）
+- 上游提供 `image/seafile_14.0/`（CE 14 镜像配方，产出
+  `seafileltd/seafile-mc:<version>-testing`），不再只有 13.0 CE 与 14.0 Pro
 
-1. **各组件按 commit SHA 锁定，不是 tag**，因为根本没有可锁的 tag。SHA 写在
-   `release.yaml`，由 `build/cloudfile_14.0/cloudfile-build.sh` 读取。
-2. **`image/cloudfile_14.0/Dockerfile` 是我们自己写的**：以 13.0 CE 镜像为底，
-   套用 14.0 的 pip 版本 pin，去掉 Pro 专用部分（clamav、rados、boto3/oss2/twilio、
-   `IS_PRO_VERSION`）。
+按 [BRANCHING.md](BRANCHING.md)「冲突与移植的裁决顺序」第 1 条（涉及 CE 14 的以上游为准），运行时层跟上游：
 
-跟随上游时，`image/cloudfile_14.0/Dockerfile` 与 `image/pro_seafile_14.0/Dockerfile`
-的版本 pin 要保持同步——seahub 是按那些版本构建的。用 diff 确认差异仍然只有
-注释和 Pro 专用项：
+- **上游有的 pin 一个都不能少。** 比对对象是上游 CE 14 配方与 CloudFile 的
+  `image/cloudfile_14.0/Dockerfile.base`——pin 都在 base 里，不在应用 Dockerfile 里。
+- CloudFile 多出来的只有两类，都属于第 2 条，**不能因为上游没有就删**：编译改了
+  C/Go 的服务端所需的构建工具链（valac / golang / ccache / cmake / 各类 `-dev`），
+  以及自有能力与前端构建需要的 `scikit-learn`、`boto3`、Node。
 
 ```bash
-diff <(sed 's/scripts_13.0/scripts_14.0/' image/seafile_13.0/Dockerfile) image/cloudfile_14.0/Dockerfile
+# 上游 CE 14 的 pip pin 与 CloudFile base 的差集（应为空）
+comm -23 \
+  <(git show upstream/master:image/seafile_14.0/Dockerfile | grep -oE '[a-zA-Z0-9_.-]+==[0-9][^ ]*' | sort -u) \
+  <(grep -oE '[a-zA-Z0-9_.-]+==[0-9][^ ]*' image/cloudfile_14.0/Dockerfile.base | sort -u)
 ```
+
+构建方式本身不变：`image/cloudfile_14.0/Dockerfile` 仍是 CloudFile 自己写的应用层
+（以自建 base 为底、装 CloudFile 编译出的发行包），`release.yaml` 仍是 ref/SHA 的
+唯一真相来源。
 
 ## 目录
 

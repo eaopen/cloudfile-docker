@@ -1,8 +1,11 @@
 # CloudFile release manifest.
 #
-# Upstream 14.0 CE is not released: haiwen/seafile-server has no 14.0 branch and
-# 14.0 carries only "-pro" tags, no "-server" (CE) tags. CloudFile therefore
-# anchors every component to an explicit commit SHA rather than to a tag.
+# Upstream CE 14 is released now: haiwen/seafile-server and haiwen/seahub both
+# carry a v14.0.8-server tag, and upstream ships the CE 14 image recipe in
+# image/seafile_14.0/. Neither repo has a 14.0 branch, so CE 14 still tracks
+# master, and the components CloudFile does not fork stay pinned to explicit
+# commit SHAs -- they are versioned independently of that release, so there is
+# no CE tag to point at.
 #
 # The build script (build/cloudfile_14.0/cloudfile-build.sh) reads this file and
 # checks out exactly these refs. Bump the SHAs here, never in the build script.

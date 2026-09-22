@@ -1217,6 +1217,11 @@ def write_seafevents_search_config():
     }
 
     if '[SEASEARCH]\n' not in fp_lines:
+        # index_office_pdf comes from the 13.0 Pro lineage and upstream removed it
+        # from its CE 14 recipe. It stays here on purpose: full-text indexing of
+        # document content is a CloudFile capability, and the switch that governs
+        # it is CF_ENABLE_SEARCH, not upstream's default -- see BRANCHING.md's
+        # "冲突与移植的裁决顺序" rule 2. Do not drop it while syncing upstream.
         fp_lines += [
             '\n[SEASEARCH]\n',
             'enabled = %s\n' % values['enabled'],

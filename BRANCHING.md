@@ -43,6 +43,32 @@ git merge upstream/master
 
 允许修改的上游文件以 [`docs/upstream-patches/`](docs/upstream-patches/) 三份清单为准。脚本报告新增文件时，先确认无法用新增文件或现有扩展点实现，再更新清单和本文件；不能直接补登记来绕过审查。
 
+### 冲突与移植的裁决顺序（2026-09-22 追加）
+
+同步上游、或在两套实现之间取舍时，按下面三条判断。**顺序即优先级，第 3 条让位于前两条。**
+
+**1. 涉及 CE 14 的，以上游为准。**
+上游对 CE 14 的运行时依赖、镜像配方、配置默认值、脚本行为，只要有对应实现就跟上游，
+不再自建一套平行实现。2026-09 上游已补上 `image/seafile_14.0/`（CE 14 镜像配方）——
+本节前提里"上游没有 CE 14 镜像"那句已作废。判断方法是拿上游配方与 CloudFile 的
+`image/cloudfile_14.0/Dockerfile.base` 对比，**上游有的 pin 一个都不能少**；CloudFile
+多出来的部分要能说出属于第 2 条。
+
+**2. CloudFile 自有的能力、以及从 Pro 迁移过来的东西，按 CloudFile 的逻辑。**
+`cloudfile_ext/`、`frontend/src/cloudfile/`、`cf_*` 开关与表、镜像里的编译工具链、
+以及为 CE 补齐的原 Pro 能力（审计、OnlyOffice 内网根、SSO 建号回填、全文索引开关等）
+是 CloudFile 的产品面，不受第 1 条影响。反过来说，拿不准某个上游删除/简化该不该跟
+时，先问它属于"上游给的东西"还是"CloudFile 的产品面"。
+
+**3. `cloudfile-hub` 的代码规则优先跟随上游同类规则。**
+上游 `frontend/AGENTS.md`、`seahub/AGENTS.md` 定义的 import 路径、依赖分层、命名和
+lint 规则，CloudFile 自有的前端文件同样遵守：跨模块 import 用 `@/` 别名，同一子模块
+内部才用相对路径，import 顺序以 `npm run lint` 为准。既有违规按上游要求"不扩大、
+触及才迁移"。这条管**写法**，不改第 2 条里的**逻辑**。
+
+三条的共同底线仍是那条铁律：**`CF_ENABLE_*` 全关 = 原生 CE 行为**。第 1 条要跟上游的
+默认值，第 2 条要保 CloudFile 的开关语义，两者冲突时以"关掉开关必须与上游一致"收口。
+
 ### 上游改动登记（2026-08-15 追加）
 
 `cloudfile-server` 新增登记：

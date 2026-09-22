@@ -76,38 +76,52 @@ git merge upstream/master
   `seafile-object.h` 的生成折进 `valac` 命令并改用 `${valac_gen}`，消除并行构建下
   `valac` 的竞态。构建规则必须落在原文件。
 
-`cloudfile-hub` 新增登记（18），按性质分四类：
+`cloudfile-hub` 新增登记（13）：
 
-- **权限/安全就地收窄**（判定的是上游自己的权限调用点，扩展点覆盖不到）：
-  `seahub/api2/endpoints/internal_api.py`（Web 字节通道按目标路径而非根 `/` 判定，
-  堵住凭 Cookie 直连 URL 绕过子目录规则）、`seahub/api2/endpoints/file_tag.py`
-  （标签按目标真实路径判定，此前只查父目录）、`seahub/api2/endpoints/share_links.py`
-  与 `seahub/views/repo.py`（`CF_ENABLE_SHARE_RESTRICT` 不得被旧链接/匿名 token 绕过）。
-- **能力挂钩**：`seahub/api2/endpoints/file_access_log.py`（审计后端由 Pro 限定改为
-  CloudFile 提供）、`frontend/src/components/dialog/move-dirent-dialog.js`
-  （`CF_ENABLE_FILEOPS` 移动前成员影响确认）。
-- **UI/交互增强**：`frontend/src/components/dir-view-mode/dir-grid-view.js`、
-  `frontend/src/components/dropdown/item.js`、`frontend/src/components/repo-info-bar.js`、
-  `frontend/src/css/repo-info-bar.css`、`frontend/src/models/repo-tag.js`、
-  `frontend/src/metadata/components/cell-formatter/file-tags/index.js`、
-  `frontend/src/pages/lib-content-view/lib-content-view.js`。
-- **CE 兼容/部署**：`seahub/api2/endpoints/groups.py`（CE 无群组配额 API）、
-  `seahub/oauth/views.py`（SSO 建号后回填 `contact_email`，否则目录同步成员全为
-  UnknownSubject）、`seahub/onlyoffice/settings.py`、`seahub/onlyoffice/utils.py`、
-  `seahub/onlyoffice/views.py`（Document Server 可达的内部 fileserver 根）。
+上游这一次重构了前端目录（`components/dir-view-mode/` → `features/library-view/`、
+`pages/lib-content-view/` → `pages/app/main-panel/lib-content-view/`、
+`utils/seafile-api.js` → `api/seafile-api.js` 等），并把跨模块 import 改成 `@/` 别名。
+CloudFile 的改动跟着文件走，登记路径随之改写：
+
+- 路径迁移（11）：`frontend/src/api/seafile-api.js`、
+  `frontend/src/components/dirent-operation-menu/menuHandlers.js`、
+  `frontend/src/components/repo-info-bar/index.js`、
+  `frontend/src/components/repo-info-bar/index.css`、
+  `frontend/src/features/library-view/dir-grid-view/index.js`、
+  `frontend/src/features/library-view/dir-others/index.js`、
+  `frontend/src/features/metadata/components/cell-formatter/file-tags/index.js`、
+  `frontend/src/features/tag/hooks/tags.js`、
+  `frontend/src/pages/app/main-panel/lib-content-view/lib-content-view.js`、
+  `frontend/src/pages/file-history/history-list-view/history-list-item.js`、
+  `frontend/src/pages/file-history/history-list-view/history-list-view.js`。
+- `frontend/src/pages/file-history-old/index.js`：上游把 `frontend/file-history-old.js`
+  从 257 行缩成 6 行引导，实现搬到页面目录。CloudFile 的 `canRevert` 改动随之落到
+  新文件，旧路径条目删除。
+- `AGENTS.md`：上游新增了自己的根指南，以及 `frontend/AGENTS.md`、
+  `seahub/AGENTS.md` 两份局部指南。本仓根 `AGENTS.md` 保持 CloudFile 版本——它是本
+  fork 的权威指令文件——并补了一节说明上游那两份局部指南在各自目录内优先。这处冲突
+  以后仍会重复出现，登记在案。
+- 删除 `frontend/src/tag/utils/file.js` 的登记：上游删掉了这个文件，把 tag 视图接到
+  共享的 `getDirentItemMenuList` → `Utils.getDirentOperationList` →
+  `getFileOperationList`，其中 `ACCESS_LOG` 只由 `fileAuditEnabled` 控制。CloudFile
+  对该文件的改动正是这条 CE 开关，所以接受上游删除即保留了行为，补丁不再需要。
+
+同时清掉 13 条因上述迁移而失效的旧路径条目。
+
+`cloudfile-hub` 的既有能力登记（权限/安全就地收窄、能力挂钩、UI 增强、CE 兼容）
+不变，只是路径随上游重构改写；性质说明见本节的分类，此处不重复。
 
 **拒绝登记 3 项**（保持未登记，另行清理——不能用补登记掩盖）：
 
 - `seahub/ai/apis.py`、`seahub/ai/utils.py`：与上游只差尾随空白，不含任何能力。
   应还原为上游内容，让它自然退出清单。
-- `frontend/webpack-stats.pro.json`：构建产物，内容随构建漂移（本次 1060 行）。
+- `frontend/webpack-stats.pro.json`：构建产物，内容随构建漂移。
   2026-08-15 已因同样原因移出清单一次；应改为忽略/不追踪，而不是登记。
 
-同时修正 `release.yaml` 的 CI 比对锚点：`cloudfile-hub` 的 `seahub` 锚点停在
-`da3334e`，比它真正的合并基点落后 52 个上游提交，CI 里两点 diff 会把 219 个文件
-误报成 CloudFile 改动；已前移到真实合并基点 `84eeabf`（修正后与本地三点 diff 的
-21 项完全一致）。`seafile_server`（→ `d9ed57e`）与 `seafile_docker`（→ `566b7e5`）
-随本次同步前移。
+同时修正 `release.yaml` 的 CI 比对锚点。`seahub` 原先停在 `da3334e`，比真正的合并基点
+落后 52 个上游提交，CI 里两点 diff 会把 219 个文件误报成 CloudFile 改动；先前移到
+当时的合并基点 `84eeabf`，再随本次 hub 同步前移到 `957c7c50`。`seafile_server`
+（→ `d9ed57e`）与 `seafile_docker`（→ `566b7e5`）随各自同步前移。
 
 ## 合并与发布
 

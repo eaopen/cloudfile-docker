@@ -348,7 +348,7 @@ cap_fileop_run() {
         --state-file "$STAGE_DIR/fileop-matrix-state.json" || return 1
 }
 
-# 锁门禁先开锁/签入签出跑跨协议矩阵，再关开关证原生透传。
+# 锁门禁先开锁/签入签出跑跨协议矩阵，再关开关证明该能力不生效。
 # 矩阵自己只发 HTTP，配置切换与重启在这里做。
 cap_lock_run() {
     local base=$1
@@ -361,7 +361,7 @@ cap_lock_run() {
     python3 "$repo/tests/e2e/lock_matrix.py" --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
 
-    say "关闭后恢复原生 CE 透传"
+    say "关闭后该能力不生效"
     sed -i.bak -e "s|^CF_ENABLE_FILE_LOCK=.*|CF_ENABLE_FILE_LOCK=false|" \
                -e "s|^CF_ENABLE_CHECKOUT=.*|CF_ENABLE_CHECKOUT=false|" "$STAGE_DIR/.env" \
         && rm -f "$STAGE_DIR/.env.bak"
@@ -622,12 +622,12 @@ cap_search_run() {
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
         --state-file "$STAGE_DIR/search-matrix-state.json" || return 1
 
-    say "关闭 CF_ENABLE_SEARCH 并重启，确认恢复原生行为"
+    say "关闭 CF_ENABLE_SEARCH 并重启，确认该能力不生效"
     sed -i.bak "s|^CF_ENABLE_SEARCH=.*|CF_ENABLE_SEARCH=false|" "$STAGE_DIR/.env" \
         && rm -f "$STAGE_DIR/.env.bak"
     compose up -d --wait --wait-timeout 120 cloudfile || return 1
 
-    say "阶段 3 —— 关闭后恢复原生 403"
+    say "阶段 3 —— 关闭后回落上游 403"
     python3 "$repo/tests/e2e/search_matrix.py" --phase 3 --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
         --state-file "$STAGE_DIR/search-matrix-state.json" || return 1
@@ -710,7 +710,7 @@ base_url() {
 
 e2e() {
     local base; base=$(base_url)
-    say "原生 CE 冒烟 @ $base"
+    say "关闭态冒烟 @ $base"
     python3 "$repo/tests/e2e/smoke.py" --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
 
@@ -722,7 +722,7 @@ e2e() {
 # 能力门禁：开着自己的开关起栈，先证明没把原生功能弄坏，再跑能力自己的用例。
 #
 # 顺序是有意的：冒烟先挂的话，能力矩阵的失败信息会指向一堆下游症状，
-# 排查时分不清"规则拦错了"还是"服务压根没起来"，因此先跑原生冒烟。
+# 排查时分不清"规则拦错了"还是"服务压根没起来"，因此先跑关闭态冒烟。
 capability_e2e() {
     local name=$1 switch test_rel entry
     for entry in "${CAPABILITIES[@]}"; do

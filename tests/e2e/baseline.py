@@ -14,7 +14,7 @@ smoke.py 确认关闭态核心流程可用。这份检查的是另一半：**扩
     路由经 rooturl.py 挂上了）
   - 所有 CF_ENABLE_* 都报告为关闭
   - 没有任何能力路由存在（能力分支才会带来它们）
-  - 权限钩子链是透传的：原生权限没有被改变
+  - 权限钩子链是透传的：关闭态下目录列举与库同步仍然可用
 
 只用标准库。
 
@@ -165,14 +165,16 @@ def main():
         f'{base}/api/v2.1/cloudfile/repos/{repo_id}/dir-acl/?path=/', token=token)
     record('能力路由不存在（dir-acl 应 404）', status == 404, f'status={status}')
 
-    # 4. 权限钩子链透传：没有能力注册时，原生权限不被改变
+    # 4. 权限钩子链没有能力注册时不阻断正常路径。这里只断言可用性——不复刻
+    #    "原生权限逐字未变"：CloudFile 的基线里本就有不受开关约束的权限收紧
+    #    （如 Hub 侧 B-1 按目标路径判定），那句话已不作为 P0 标准。
     status, body = request(f'{base}/api2/repos/{repo_id}/dir/?p=/', token=token)
-    record('目录列举正常（列举钩子透传）', status == 200,
+    record('目录列举正常（列举钩子未阻断）', status == 200,
            f'status={status} {body[:120]}')
 
     status, body = request(f'{base}/api2/repos/{repo_id}/download-info/',
                            token=token)
-    record('库可同步（子树校验钩子透传）', status == 200,
+    record('库可同步（子树校验钩子未阻断）', status == 200,
            f'status={status} {body[:160]}')
 
     # 5. 检索扩展点没有改变原生行为

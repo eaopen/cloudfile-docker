@@ -118,7 +118,7 @@ def main():
     if not wait_ready(base, args.timeout):
         sys.exit('服务未就绪')
 
-    print('\n原生 CE 冒烟…', flush=True)
+    print('\n关闭态冒烟…', flush=True)
 
     status, body = request(base + '/api2/auth-token/', method='POST',
                            form={'username': args.admin,

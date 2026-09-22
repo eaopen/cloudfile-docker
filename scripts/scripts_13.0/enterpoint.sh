@@ -51,16 +51,24 @@ if [[ $NON_ROOT == "true" ]] ;then
     chown seafile:seafile /opt/seafile/
     chown -R seafile:seafile /opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/
 
-    # logrotate
-    sed -i 's/^        create 644 root root/        create 644 seafile seafile/' /scripts/logrotate-conf/seafile
-
     # seafile.sh
     sed -i 's/^    validate_running_user;/#    validate_running_user;/' /opt/seafile/$SEAFILE_SERVER-$SEAFILE_VERSION/seafile.sh
 fi
 
+
 # logrotate
-chmod 0644 /scripts/logrotate-conf/logrotate-cron
-/usr/bin/crontab /scripts/logrotate-conf/logrotate-cron
+if [[ -f /var/spool/cron/crontabs/root ]]; then
+    result=$(cat /var/spool/cron/crontabs/root | grep "logrotate")
+    if [[ "$result" != "" ]]; then
+        /usr/bin/crontab /var/spool/cron/crontabs/root
+    else
+        cat /scripts/logrotate-conf/logrotate-cron >> /var/spool/cron/crontabs/root
+        /usr/bin/crontab /var/spool/cron/crontabs/root
+    fi
+else
+    chmod 0644 /scripts/logrotate-conf/logrotate-cron
+    /usr/bin/crontab /scripts/logrotate-conf/logrotate-cron
+fi
 
 
 # start cluster server

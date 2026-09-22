@@ -1404,28 +1404,26 @@ def init_seafile_server():
             fp.write(f'\nAVATAR_FILE_STORAGE = \'seahub.base.database_storage.DatabaseStorage\'')
             fp.write('\n')
 
-    # Point [INDEX FILES] at the cluster's Elasticsearch and leave it disabled
-    # by default -- native upstream behaviour. CloudFile's own SeaSearch
-    # section is written separately by write_seafevents_search_config(), which
-    # (unlike this fresh-install-only block) runs on every start so that
-    # CF_ENABLE_SEARCH takes effect on a switch flip, not only at first
-    # install -- see that function's docstring.
+    # Point [INDEX FILES] at the cluster's Elasticsearch, but leave it disabled:
+    # with every CF_ENABLE_* off the baseline must not run a search backend.
+    #
+    # CloudFile's own [SEASEARCH] section is written on every start by
+    # write_seafevents_search_config(), which -- unlike this fresh-install-only
+    # block -- runs after the first install too, so that CF_ENABLE_SEARCH takes
+    # effect on a switch flip; see that function's docstring. Upstream's newer
+    # stub here seeds [SEASEARCH] with `interval` alone and is deliberately not
+    # taken: that function owns the section and rewrites it in full on the very
+    # same start, so the stub would only create a section it is about to
+    # overwrite (and, by existing first, would suppress the index_office_pdf
+    # line that function writes when it creates the section itself).
     if os.path.exists(join(topdir, 'conf', 'seafevents.conf')):
         with open(join(topdir, 'conf', 'seafevents.conf'), 'r') as fp:
             fp_lines = fp.readlines()
             if '[INDEX FILES]\n' in fp_lines:
                 section_index = fp_lines.index('[INDEX FILES]\n') + 1
-                if clsuter_mode and init_cluster:
+                if not clsuter_mode or clsuter_mode and init_cluster:
                     insert_lines = [
-                        'external_es_server = true\n',
-                        f'es_host = {get_conf("CLUSTER_INIT_ES_HOST", "<your elasticsearch server HOST>")}\n',
-                        f'es_port = {get_conf("CLUSTER_INIT_ES_PORT", "9200")}\n'
-                    ]
-                else:
-                    insert_lines = [
-                        'external_es_server = true\n',
-                        'es_host = elasticsearch\n',
-                        'es_port = 9200\n'
+                        'external_es_server = true\n'
                     ]
                 fp_lines[section_index:section_index] = insert_lines
 

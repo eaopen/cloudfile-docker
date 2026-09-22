@@ -1,8 +1,8 @@
 # 外部分享管控（P2-11）
 
 > **用途**：说明评审清单「外部分享」模块的落地面（review-share-cases.json 的
-> share-002/003/004）。新增开关 `CF_ENABLE_SHARE_RESTRICT`，默认关闭；关闭时
-> 外部分享为原生 CE 行为，开启后由 CloudFile 管控。
+> share-002/003/004）。新增开关 `CF_ENABLE_SHARE_RESTRICT`，默认打开
+> （2026-09-22 起；之前默认关闭）；置 `false` 时外部分享为原生 CE 行为。
 > **适用版本**：CloudFile `dev`，Seafile CE 14 参考基线。
 > **状态**：验证中；容器 E2E 由
 > `./tools/verify-local.sh cap review-share` 运行
@@ -10,11 +10,11 @@
 
 ## 开关与语义
 
-`CF_ENABLE_SHARE_RESTRICT`（默认 `false`）：
+`CF_ENABLE_SHARE_RESTRICT`（默认 `true`，2026-09-22 起）：
 
 | 状态 | 行为 |
 |---|---|
-| `false`（默认） | 原生 CE：任何有权限的用户可创建外链，匿名可访问，与上游一致 |
+| `false` | 原生 CE：任何有权限的用户可创建外链，匿名可访问，与上游一致 |
 | `true` | 外部分享管控：非系统管理员**创建外链被拒**（403）；**匿名访问任何旧外链被拒**（按不存在处理，404）；链接与历史数据**保留**，管理员仍可创建、列举与管理；前端分享入口隐藏（浏览器套件阶段验收） |
 
 ## 门禁面

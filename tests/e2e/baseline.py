@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""扩展基线检查：扩展点装好了，但没有任何能力启用。
+"""默认态基线检查：扩展点装好了，默认打开集生效、默认关闭集未启用。
 
 smoke.py 确认关闭态核心流程可用。这份检查的是另一半：**扩展机制确实生效了**。
 
@@ -12,8 +12,8 @@ smoke.py 确认关闭态核心流程可用。这份检查的是另一半：**扩
 检查项：
   - CloudFile 能力查询接口存在且可用（说明 cloudfile_ext 被 Django 加载了，
     路由经 rooturl.py 挂上了）
-  - 所有 CF_ENABLE_* 都报告为关闭
-  - 没有任何能力路由存在（能力分支才会带来它们）
+  - 默认打开集已生效、默认关闭集未被打开（默认值约定见 docs/configuration.md）
+  - 默认打开的目录 ACL 能力路由已挂载
   - 权限钩子链是透传的：关闭态下目录列举与库同步仍然可用
 
 只用标准库。
@@ -122,7 +122,13 @@ def main():
         print('\n════════ 基线未装配，后续检查跳过 ════════')
         sys.exit(1)
 
-    # 2. 开关清单完整，且全部关闭
+    # 2. 开关清单完整，且默认态与约定一致
+    #
+    # 修改逻辑（2026-09-22 产品决策）：默认值由“除 DIR_ACL 外一律关闭”改为
+    # “不依赖第三方/外部服务的能力默认打开”。本检查因此从“所有开关均为关闭”
+    # 改为逐项断言默认打开集与默认关闭集。
+    # 修改原因：默认值变了，继续断言“全关”会让基线门禁恒红；而只删掉断言又会让
+    # “默认态被意外改动”失去唯一的门禁——两组清单分开断言才能同时保住这两个目标。
     expected = {
         'CF_ENABLE_SSO', 'CF_ENABLE_DIR_ACL', 'CF_ENABLE_AUDIT',
         'CF_ENABLE_METADATA', 'CF_ENABLE_TAGS', 'CF_ENABLE_SEARCH',
@@ -136,8 +142,20 @@ def main():
     record('开关清单与约定一致', set(features) == expected,
            f'多出: {sorted(set(features) - expected)} 缺少: {sorted(expected - set(features))}')
 
-    on = sorted(k for k, v in features.items() if v)
-    record('所有开关均为关闭', not on, f'意外开启: {on}')
+    # 默认打开：能力与代码都在本栈内（METADATA/TAGS 依赖的 seafile-md-server
+    # 已进默认 compose 栈），不需要第三方服务或客户端。
+    default_on = {
+        'CF_ENABLE_DIR_ACL', 'CF_ENABLE_AUDIT', 'CF_ENABLE_METADATA',
+        'CF_ENABLE_TAGS', 'CF_ENABLE_FILE_PREVIEW', 'CF_ENABLE_FILE_LOCK',
+        'CF_ENABLE_CHECKOUT', 'CF_ENABLE_FAVORITES_ID', 'CF_ENABLE_WATCH',
+        'CF_ENABLE_FILEOPS', 'CF_ENABLE_SHARE_RESTRICT',
+    }
+    # 默认关闭：依赖第三方服务（IdP/检索/Office/对象存储）、宿主机挂载或客户端安装。
+    default_off = expected - default_on
+    wrongly_off = sorted(k for k in default_on if not features.get(k))
+    wrongly_on = sorted(k for k in default_off if features.get(k))
+    record('默认打开集已生效', not wrongly_off, f'应开未开: {wrongly_off}')
+    record('默认关闭集未被打开', not wrongly_on, f'应关却开: {wrongly_on}')
 
     # 2b. provider 机制装好了，但基线上一个都没选中
     #
@@ -154,7 +172,11 @@ def main():
         record('基线未选中任何 provider（检索等仍走原生路径）', not chosen,
                f'意外选中: {chosen}')
 
-    # 3. 基线不应带来任何能力路由
+    # 3. 目录 ACL 属默认打开集，其能力路由应当存在
+    #
+    # 修改逻辑（2026-09-22）：旧断言为“dir-acl 应 404”，建立在“基线不带任何能力”的模型上。
+    # 修改原因：DIR_ACL 已默认打开且 dev 包含已验收能力，该模型不再成立；
+    # 改为断言路由确实挂上，从而仍能发现“开关报告为开、路由却没注册”这类装配断链。
     status, body = request(base + '/api2/repos/', method='POST',
                            token=token, form={'name': 'baseline-' + uuid.uuid4().hex[:6]})
     repo_id = (jbody(body) or {}).get('repo_id')
@@ -163,7 +185,7 @@ def main():
 
     status, _ = request(
         f'{base}/api/v2.1/cloudfile/repos/{repo_id}/dir-acl/?path=/', token=token)
-    record('能力路由不存在（dir-acl 应 404）', status == 404, f'status={status}')
+    record('目录 ACL 能力路由已挂载（默认打开，不应 404）', status != 404, f'status={status}')
 
     # 4. 权限钩子链没有能力注册时不阻断正常路径。这里只断言可用性——不复刻
     #    "原生权限逐字未变"：CloudFile 的基线里本就有不受开关约束的权限收紧

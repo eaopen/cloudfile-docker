@@ -7,11 +7,16 @@
 #   docker compose --profile worker up -d    + background worker
 #   docker compose --profile s3 up -d        + MinIO test backend
 #   docker compose --profile ai up -d        + seafile-ai (needs a self-supplied LLM backend)
-#   docker compose --profile metadata up -d  + extended properties/tags server
 #   docker compose --profile full up -d      all application extensions
 #
-# Copy .env.example to .env first. Every CF_ENABLE_* switch defaults to off,
-# which makes this stack behave exactly like native Seafile CE.
+# Since 2026-09-22 the extended properties/tags service (cloudfile-metadata)
+# is part of the default stack, because METADATA and TAGS default to on.
+# `--profile metadata` is accepted but no longer starts anything extra.
+#
+# Copy .env.example to .env first. Defaults changed on 2026-09-22: the
+# capabilities that need no third party are on by default, so this stack is no
+# longer identical to native CE (that criterion was abolished the same day).
+# The metadata service moved from the metadata profile into the default stack.
 
 name: cloudfile
 
@@ -116,7 +121,7 @@ services:
       # Read on every start, so flipping one and restarting takes effect.
       CF_ENABLE_SSO: ${CF_ENABLE_SSO:-false}
       CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-true}
-      CF_ENABLE_AUDIT: ${CF_ENABLE_AUDIT:-false}
+      CF_ENABLE_AUDIT: ${CF_ENABLE_AUDIT:-true}
       # Write lifecycle gate instrument. Not a capability -- see
       # cloudfile-server/common/cf-fileop-test.h.
       CF_FILEOP_TEST_PROVIDER: ${CF_FILEOP_TEST_PROVIDER:-false}
@@ -125,8 +130,8 @@ services:
       # back into the refusal default.
       CF_FILEOP_TEST_REFUSE_TOKEN: ${CF_FILEOP_TEST_REFUSE_TOKEN-cf-refuse}
       CF_FILEOP_TEST_JOURNAL: ${CF_FILEOP_TEST_JOURNAL:-/shared/cf-fileop-journal.log}
-      CF_ENABLE_METADATA: ${CF_ENABLE_METADATA:-false}
-      CF_ENABLE_TAGS: ${CF_ENABLE_TAGS:-false}
+      CF_ENABLE_METADATA: ${CF_ENABLE_METADATA:-true}
+      CF_ENABLE_TAGS: ${CF_ENABLE_TAGS:-true}
       CF_ENABLE_SEARCH: ${CF_ENABLE_SEARCH:-false}
       CF_PROVIDER_SEARCH: ${CF_PROVIDER_SEARCH:-}
       CF_SEASEARCH_TOKEN: ${CF_SEASEARCH_TOKEN:-}
@@ -145,15 +150,15 @@ services:
       ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-}
       ONLYOFFICE_APIJS_URL: ${ONLYOFFICE_APIJS_URL:-}
       ONLYOFFICE_FILE_SERVER_ROOT: ${ONLYOFFICE_FILE_SERVER_ROOT:-}
-      CF_ENABLE_FILE_PREVIEW: ${CF_ENABLE_FILE_PREVIEW:-false}
-      CF_ENABLE_FILE_LOCK: ${CF_ENABLE_FILE_LOCK:-false}
-      CF_ENABLE_WATCH: ${CF_ENABLE_WATCH:-false}
+      CF_ENABLE_FILE_PREVIEW: ${CF_ENABLE_FILE_PREVIEW:-true}
+      CF_ENABLE_FILE_LOCK: ${CF_ENABLE_FILE_LOCK:-true}
+      CF_ENABLE_WATCH: ${CF_ENABLE_WATCH:-true}
       CF_ENABLE_CONVERT_EXPORT: ${CF_ENABLE_CONVERT_EXPORT:-false}
       ENABLE_SEADOC: ${CF_ENABLE_CONVERT_EXPORT:-false}
       SEADOC_SERVER_URL: ${SEAFILE_SERVER_PROTOCOL:-https}://${SEAFILE_SERVER_HOSTNAME:?set SEAFILE_SERVER_HOSTNAME in .env}/sdoc-server
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:-}
       CF_LOCK_BACKEND: ${CF_LOCK_BACKEND:-cloudfile}
-      CF_ENABLE_CHECKOUT: ${CF_ENABLE_CHECKOUT:-false}
+      CF_ENABLE_CHECKOUT: ${CF_ENABLE_CHECKOUT:-true}
       CF_ENABLE_LOCAL_APP: ${CF_ENABLE_LOCAL_APP:-false}
       CF_ENABLE_S3_STORAGE: ${CF_ENABLE_S3_STORAGE:-false}
       SEAF_SERVER_STORAGE_TYPE: ${SEAF_SERVER_STORAGE_TYPE:-}
@@ -176,17 +181,17 @@ services:
       CF_EXTERNAL_SCAN_INTERVAL: ${CF_EXTERNAL_SCAN_INTERVAL:-60}
       CF_EXTERNAL_SCAN_MAX_DIRS: ${CF_EXTERNAL_SCAN_MAX_DIRS:-20}
       CF_EXTERNAL_SCAN_MAX_FILES: ${CF_EXTERNAL_SCAN_MAX_FILES:-2000}
-      CF_ENABLE_FILEOPS: ${CF_ENABLE_FILEOPS:-false}
+      CF_ENABLE_FILEOPS: ${CF_ENABLE_FILEOPS:-true}
       # Copy/move unified precheck ceilings; 0 = unlimited (fileops docs).
       CF_FILEOP_MAX_FILE_SIZE: ${CF_FILEOP_MAX_FILE_SIZE:-0}
       CF_FILEOP_MAX_FOLDER_DEPTH: ${CF_FILEOP_MAX_FOLDER_DEPTH:-0}
       CF_FILEOP_MAX_ITEM_COUNT: ${CF_FILEOP_MAX_ITEM_COUNT:-0}
       CF_FILEOP_MAX_BATCH_SIZE: ${CF_FILEOP_MAX_BATCH_SIZE:-0}
-      CF_ENABLE_FAVORITES_ID: ${CF_ENABLE_FAVORITES_ID:-false}
-      CF_ENABLE_SHARE_RESTRICT: ${CF_ENABLE_SHARE_RESTRICT:-false}
+      CF_ENABLE_FAVORITES_ID: ${CF_ENABLE_FAVORITES_ID:-true}
+      CF_ENABLE_SHARE_RESTRICT: ${CF_ENABLE_SHARE_RESTRICT:-true}
       # Upstream reads these at import time. They intentionally mirror the
       # CloudFile switch rather than relying on a local settings assignment.
-      ENABLE_METADATA_MANAGEMENT: ${CF_ENABLE_METADATA:-false}
+      ENABLE_METADATA_MANAGEMENT: ${CF_ENABLE_METADATA:-true}
       INNER_METADATA_SERVER_URL: ${CF_METADATA_SERVER_URL:-http://cloudfile-metadata:8084}
       MD_FILE_COUNT_LIMIT: ${CF_METADATA_FILE_COUNT_LIMIT:-100000}
       # -- AI (docs/features/seafile-ai.md: reuse Seafile AI; deployment layer) --
@@ -350,14 +355,14 @@ services:
       # periodic extension tasks can therefore be enabled with the same .env.
       CF_ENABLE_SSO: ${CF_ENABLE_SSO:-false}
       CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-true}
-      CF_ENABLE_AUDIT: ${CF_ENABLE_AUDIT:-false}
+      CF_ENABLE_AUDIT: ${CF_ENABLE_AUDIT:-true}
       # Write lifecycle gate instrument. Not a capability -- see
       # cloudfile-server/common/cf-fileop-test.h.
       CF_FILEOP_TEST_PROVIDER: ${CF_FILEOP_TEST_PROVIDER:-false}
       CF_FILEOP_TEST_REFUSE_TOKEN: ${CF_FILEOP_TEST_REFUSE_TOKEN-cf-refuse}
       CF_FILEOP_TEST_JOURNAL: ${CF_FILEOP_TEST_JOURNAL:-/shared/cf-fileop-journal.log}
-      CF_ENABLE_METADATA: ${CF_ENABLE_METADATA:-false}
-      CF_ENABLE_TAGS: ${CF_ENABLE_TAGS:-false}
+      CF_ENABLE_METADATA: ${CF_ENABLE_METADATA:-true}
+      CF_ENABLE_TAGS: ${CF_ENABLE_TAGS:-true}
       CF_ENABLE_SEARCH: ${CF_ENABLE_SEARCH:-false}
       CF_PROVIDER_SEARCH: ${CF_PROVIDER_SEARCH:-}
       CF_SEASEARCH_TOKEN: ${CF_SEASEARCH_TOKEN:-}
@@ -376,12 +381,12 @@ services:
       ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-}
       ONLYOFFICE_APIJS_URL: ${ONLYOFFICE_APIJS_URL:-}
       ONLYOFFICE_FILE_SERVER_ROOT: ${ONLYOFFICE_FILE_SERVER_ROOT:-}
-      CF_ENABLE_FILE_PREVIEW: ${CF_ENABLE_FILE_PREVIEW:-false}
-      CF_ENABLE_FILE_LOCK: ${CF_ENABLE_FILE_LOCK:-false}
-      CF_ENABLE_WATCH: ${CF_ENABLE_WATCH:-false}
+      CF_ENABLE_FILE_PREVIEW: ${CF_ENABLE_FILE_PREVIEW:-true}
+      CF_ENABLE_FILE_LOCK: ${CF_ENABLE_FILE_LOCK:-true}
+      CF_ENABLE_WATCH: ${CF_ENABLE_WATCH:-true}
       CF_ENABLE_CONVERT_EXPORT: ${CF_ENABLE_CONVERT_EXPORT:-false}
       CF_LOCK_BACKEND: ${CF_LOCK_BACKEND:-cloudfile}
-      CF_ENABLE_CHECKOUT: ${CF_ENABLE_CHECKOUT:-false}
+      CF_ENABLE_CHECKOUT: ${CF_ENABLE_CHECKOUT:-true}
       CF_ENABLE_LOCAL_APP: ${CF_ENABLE_LOCAL_APP:-false}
       CF_ENABLE_S3_STORAGE: ${CF_ENABLE_S3_STORAGE:-false}
       CF_ENABLE_EXTERNAL_SOURCES: ${CF_ENABLE_EXTERNAL_SOURCES:-false}
@@ -461,10 +466,16 @@ services:
   # The only non-CE part of extended properties/tags.  The upstream Hub UI,
   # APIs and seafevents ingestion pipeline already ship in CE; this official
   # component is their metadata storage/query implementation.
+  #
+  # Removed from any profile on 2026-09-22 so it starts by default: the
+  # metadata and tag switches are on by default, and bootstrap enforces
+  # TAGS => METADATA. Leaving the service behind a profile would hand the
+  # default stack ENABLE_METADATA_MANAGEMENT=True with no backend to reach.
+  # The image is still 14.0.3-testing; pin CF_METADATA_IMAGE to a verified
+  # image before production.
   cloudfile-metadata:
     image: ${CF_METADATA_IMAGE:-seafileltd/seafile-md-server:14.0.3-testing}
     container_name: cloudfile-metadata
-    profiles: ["metadata", "full"]
     command:
       - /bin/bash
       - -lc

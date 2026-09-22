@@ -135,7 +135,7 @@ P2-10 已把操作历史模块的 5 条 api 用例做成绿（history-002/003/00
 入口）与 recycle-002（普通用户 API 拒绝）随决策移除。实现见
 [`review_recycle_matrix.py`](../tests/e2e/review_recycle_matrix.py)。
 P2-11 已把外部分享模块的 api 用例做成绿（share-002/003/004）：新增开关
-`CF_ENABLE_SHARE_RESTRICT`（默认 false = 原生 CE）。开启后非管理员创建外链
+`CF_ENABLE_SHARE_RESTRICT`（默认 true，2026-09-22 起；置 false = 原生 CE）。开启后非管理员创建外链
 被拒（403）、匿名访问旧外链按不存在处理（404）、列表/查询端点保留、管理员仍可
 创建与管理。实现见 [features/share-restrict.md](features/share-restrict.md) 与
 [`review_share_matrix.py`](../tests/e2e/review_share_matrix.py)；share-001

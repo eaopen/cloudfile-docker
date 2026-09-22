@@ -61,11 +61,19 @@ def load(func_name, env):
     ns = {
         'json': json,
         'get_conf': lambda key, default='': env.get(key, default),
-        'cf_enabled': lambda key: env.get(key, 'false').lower() == 'true',
+        # 修改逻辑（2026-09-22 默认值改为“不依赖第三方的能力默认打开”）：
+        # 替身 cf_enabled 改为与 bootstrap.py 真实实现同构——env 未显式提供时
+        # 回退到 CF_DEFAULT_ON 决定的默认值。
+        # 修改原因：原替身固定回退 'false'，默认值改变后本文件仍全绿
+        # ——即使真实实现已经默认打开。门禁空转比没有门禁更危险。
+        'cf_enabled': lambda key: env.get(
+            key, 'true' if key in ns['CF_DEFAULT_ON'] else 'false'
+        ).lower() == 'true',
         'get_proto': lambda: env.get('SEAFILE_SERVER_PROTOCOL', 'https'),
         # Read out of bootstrap.py rather than restated here: a restated switch
         # list is a fixture that can drift, and drifting fixtures are exactly
         # what this file exists to catch.
+        'CF_DEFAULT_ON': _module_constant(tree, 'CF_DEFAULT_ON'),
         'CF_FEATURE_SWITCHES': _module_constant(tree, 'CF_FEATURE_SWITCHES'),
     }
     exec(compile(ast.Module(body=[node], type_ignores=[]), BOOTSTRAP, 'exec'), ns)
@@ -196,8 +204,28 @@ def test_sso():
 
 def test_upstream_packages():
     print('── _settings_block_upstream')
-    packaged = load('_settings_block_upstream', {})
+    # 修改说明（2026-09-22）：METADATA/AUDIT 已默认打开，要复现“打包层开关
+    # 全部关闭”必须显式置 false；否则该用例在默认值变化后必然误报。
+    all_off = {
+        'CF_ENABLE_METADATA': 'false',
+        'CF_ENABLE_TAGS': 'false',
+        'CF_ENABLE_AUDIT': 'false',
+        'CF_ENABLE_CONVERT_EXPORT': 'false',
+        'CF_LDAP_ENABLED': 'false',
+        'CF_ADFS_ENABLED': 'false',
+        'CF_SHIBBOLETH_ENABLED': 'false',
+        'CF_TWO_FACTOR_ENABLED': 'false',
+    }
+    packaged = load('_settings_block_upstream', all_off)
     check('所有打包层开关关闭时不写任何内容', packaged() == '', repr(packaged()))
+
+    # 补充断言：默认态下应写入默认打开集对应的上游开关。
+    # 原因：上一条只能证明“关掉后不写”，无法发现默认值被改回 false 的回退。
+    default_packaged = load('_settings_block_upstream', {})()
+    check('默认态写入 METADATA/AUDIT 对应的上游开关',
+          'ENABLE_METADATA_MANAGEMENT = True' in default_packaged
+          and 'ENABLE_FILE_AUDIT = True' in default_packaged,
+          repr(default_packaged))
 
     env = {
         'CF_LDAP_ENABLED': 'true',
@@ -283,7 +311,10 @@ def test_upstream_packages():
     except Exception:
         check('2FA 负的记住天数时启动失败', True)
 
-    env = {'CF_ENABLE_TAGS': 'true'}
+    # 修改说明（2026-09-22）：METADATA 已默认打开，要真正触发
+    # TAGS⇒METADATA 校验必须显式把 METADATA 置 false；否则该用例会因为
+    # 默认值变化而失去意义（仍旧全绿，但已不再测试任何东西）。
+    env = {'CF_ENABLE_TAGS': 'true', 'CF_ENABLE_METADATA': 'false'}
     try:
         load('_settings_block_upstream', env)()
         check('标签未启用元数据时启动失败', False, '被接受了')
@@ -436,11 +467,21 @@ def test_fileop_seafile_conf():
         return ''.join(load('_seafile_conf_cloudfile_lines', env)())
 
     base = lines({})
-    check('默认能力开关与测试 provider 全为 false',
-          base.count(' = false\n')
-          == len(build.__globals__['CF_FEATURE_SWITCHES']) + 1,
+    # 修改逻辑（2026-09-22）：默认值改为“不依赖第三方的能力默认打开”，
+    # 本检查从“全部为 false”改为“默认打开集为 true、默认关闭集为 false”。
+    # 修改原因：继续断言“全为 false”会恒红；而只删断言又会让默认值被意外改动时
+    # 失去门禁。两组计数相加必须等于开关总数，漏写一个开关也会被发现。
+    default_on = build.__globals__['CF_DEFAULT_ON']
+    switches = build.__globals__['CF_FEATURE_SWITCHES']
+    check('默认打开集写入 true、默认关闭集写入 false',
+          base.count(' = true\n') == len(default_on)
+          and base.count(' = false\n') == len(switches) - len(default_on) + 1,
           # Capabilities are read from bootstrap.py, never duplicated here.
-          # The one additional line is the non-product fileop test provider.
+          # The one additional false line is the non-product fileop test provider.
+          repr(base))
+    check('每个开关都出现在生成的 seafile.conf 中',
+          all((name[len('CF_ENABLE_'):].lower() + '_enabled') in base
+              for name in switches),
           repr(base))
     check('测试 provider 默认关闭',
           'fileop_test_provider_enabled = false' in base, repr(base))

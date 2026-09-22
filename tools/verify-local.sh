@@ -694,7 +694,8 @@ up() {
     if [[ -n $ENABLE_SWITCHES ]]; then
         say "启动（开启：${ENABLE_SWITCHES}）"
     else
-        say "启动（开关全关）"
+        # 修改说明（2026-09-22）：默认值已不再是“全关”，改称“默认态”以免误导。
+        say "启动（默认态：不额外开关其他开关）"
     fi
     stage_compose
     compose up -d || fail "compose 启动失败"
@@ -710,11 +711,13 @@ base_url() {
 
 e2e() {
     local base; base=$(base_url)
-    say "关闭态冒烟 @ $base"
+    # 修改说明（2026-09-22）：默认值已改为“不依赖第三方的能力默认开”，
+    # 因此这里跑的是“默认态”而非“关闭态”。
+    say "默认态冒烟 @ $base"
     python3 "$repo/tests/e2e/smoke.py" --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
 
-    say "扩展点已装好，但没有能力启用"
+    say "扩展点已装好，默认打开集生效、默认关闭集未启用"
     python3 "$repo/tests/e2e/baseline.py" --url "$base" --insecure \
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
 }

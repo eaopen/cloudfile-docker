@@ -119,8 +119,14 @@ scripts/scripts_14.0/              容器内运行时脚本（上游文件，改
 
 ## 铁律
 
-**新增开关默认必须是 `false`**，`.env.example` 里也是 `false`。能力默认不生效，
+**新增开关默认必须是 `false`**，`.env.example` 里也是 `false`。未验收能力默认不生效，
 这是未验收能力与已发布能力之间的隔离机制。
+
+> 修改说明（2026-09-22 产品决策）：“新增开关默认 false”不变，但**已验收且不依赖第三方的能力已改为默认 `true`**
+> （DIR_ACL/AUDIT/METADATA/TAGS/FILE_PREVIEW/FILE_LOCK/CHECKOUT/FAVORITES_ID/WATCH/FILEOPS/SHARE_RESTRICT）。
+> 原因：网盘是产品线主工程，已验收能力默认关闭会让交付部署逐项开开关；
+> 而“全关 = 原生 CE”铁律已废除，默认关闭不再是升级成本的保证。
+> 完整名单与依赖边界见 [`docs/configuration.md`](docs/configuration.md)。
 
 **但不再要求"全关 = 原生 CE 逐字一致"**（2026-09-22 废除该 P0 标准）。CloudFile
 本来就是 CE 的扩展版，基线里始终存在不受开关约束的改动——登记在
@@ -158,7 +164,7 @@ python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_hub.r
 ## 基线与能力的边界
 
 ```
-dev       = 扩展基线 + 已验收能力，全部开关默认关闭
+dev       = 扩展基线 + 已验收能力，默认值见 docs/configuration.md
 feature/* = 开发中的能力（一个耦合簇一条），验收后合回 dev 并删除
 ```
 
@@ -167,7 +173,7 @@ feature/* = 开发中的能力（一个耦合簇一条），验收后合回 dev 
 以及 `./tools/verify-local.sh cap acl`。
 
 **能力不长期分叉**：构建脚本每个仓库只认一个 ref，两个尚未合并的能力无法一起
-构建，也就无法一起交付。让能力住在 `dev` 上仍然安全，靠的是**开关默认关闭**——
+构建，也就无法一起交付。让能力住在 `dev` 上仍然安全，靠的是**未验收能力默认关闭**——
 未验收的能力默认不生效，所以基线与能力可以共存于一条分支。（2026-09-22 之前这条
 论证依赖"全关 = 原生 CE"那条铁律；该铁律废除后，隔离由"默认不生效"承担，代价是
 关闭态的回归面比过去宽，见下面的门禁定位。）

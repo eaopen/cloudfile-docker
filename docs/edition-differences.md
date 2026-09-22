@@ -10,7 +10,7 @@
 |---|---|---|
 | Seafile CE | 上游开源版（haiwen/seahub、seafile、seafobj 等） | `cloudfile-*` 三仓的基线；工作区 `seafile/`、`seafobj/` 是上游依赖检出 |
 | Seafile Pro | 官方商业版，**闭源**。一部分"Pro 特性"代码其实就在 CE 源码里（由 settings/角色权限控制），一部分真在闭源组件里（如 seafevents 的 `ldap_sync`） | 本工作区没有 Pro 源码；Pro 侧信息只能来自官方对比页与文档映射，**不能拿 Pro 二进制行为当依据** |
-| CloudFile | CE 14 fork（`cloudfile-server` + `cloudfile-hub` + `cloudfile-docker`） | 新增能力走 `CF_ENABLE_*` 开关（默认 `false`）。它是对 CE 的**扩展**：基线里存在不受开关约束的兼容与安全补丁，因此**不承诺"全关 = 原生 CE"**（该 P0 铁律 2026-09-22 废除）；对上游文件的改动以 `upstream-patches/*.txt` 登记为准 |
+| CloudFile | CE 14 fork（`cloudfile-server` + `cloudfile-hub` + `cloudfile-docker`） | 新增能力走 `CF_ENABLE_*` 开关（**新增开关默认 `false`**；2026-09-22 起不依赖第三方的已验收能力默认 `true`，逐项见 `configuration.md`）。它是对 CE 的**扩展**：基线里存在不受开关约束的兼容与安全补丁，因此**不承诺"全关 = 原生 CE"**（该 P0 铁律 2026-09-22 废除）；对上游文件的改动以 `upstream-patches/*.txt` 登记为准 |
 
 能力状态与来源的权威文档：[功能矩阵](feature-matrix.md)（定位列：Pro 平替 / CE 补强 / 新应用扩展）。
 "Pro 逐项对标"的方法论见历史档 [Pro-对标-旧版](history/Pro-对标-旧版.md)——它教怎么把 Pro 卖点映射回 CE 源码，

@@ -130,10 +130,16 @@ docker compose --profile search up -d
 ### 属性与标签
 
 ```bash
-docker compose --profile metadata up -d
+docker compose up -d
 ```
 
-在 `.env` 中设置 `CF_ENABLE_METADATA=true`；标签还需 `CF_ENABLE_TAGS=true`。前端、REST API 与 seafevents 投喂链路复用 CE，`cloudfile-metadata` 提供外部存储/查询服务。生产环境必须将 `CF_METADATA_IMAGE` 固定到已验证镜像。
+修改说明（2026-09-22）：`CF_ENABLE_METADATA` 与 `CF_ENABLE_TAGS` 已**默认打开**，
+`cloudfile-metadata` 已从 `metadata` profile 提到**默认栈**，无需 `--profile metadata`（该 profile
+仍可作为兼容别名使用）。若要关闭，在 `.env` 里显式设
+`CF_ENABLE_METADATA=false`（注意：TAGS 依赖 METADATA，两者需同步关闭）。
+前端、REST API 与 seafevents 投喂链路复用 CE，`cloudfile-metadata` 提供外部存储/查询服务。
+生产环境必须将 `CF_METADATA_IMAGE` 固定到已验证镜像（当前默认为
+`seafileltd/seafile-md-server:14.0.3-testing`，**不宜直接用于生产**）。
 
 ### S3 与多存储
 

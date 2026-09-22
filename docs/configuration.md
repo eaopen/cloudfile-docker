@@ -14,23 +14,39 @@
 | `scripts/scripts_14.0/bootstrap.py` | 生成 `seahub_settings.py`、`seafile.conf` 和持久化 `.env` |
 | `cloudfile-hub/cloudfile_ext/settings_defaults.py` | Hub 侧安全默认值 |
 
-所有 `CF_ENABLE_*` 默认 `false`。关闭 CloudFile 开关时，bootstrap 不应覆盖运维自行设置
-的同名上游能力；新增开关必须同时更新 `.env.example`、Compose、bootstrap 和 Hub 清单。
+默认值见下表（默认值分两组（产品决策 2026-09-22）：不依赖第三方/外部服务的能力默认打开
+（DIR_ACL、AUDIT、METADATA、TAGS、FILE_PREVIEW、FILE_LOCK、CHECKOUT、FAVORITES_ID、
+WATCH、FILEOPS、SHARE_RESTRICT）；依赖第三方服务、宿主机挂载或客户端安装的保持默认关闭
+（SSO、SEARCH、ONLYOFFICE、CONVERT_EXPORT—S3_STORAGE、EXTERNAL_SOURCES、LOCAL_APP）。
+关闭 CloudFile 开关时，bootstrap 不应覆盖运维自行设置的同名上游能力；新增开关必须同时更新 `.env.example`、Compose、bootstrap 和 Hub 清单。
 
 ## 功能开关
 
-当前代码登记 15 个开关：
+当前代码登记 18 个开关（同步自 `bootstrap.py` 的 `CF_FEATURE_SWITCHES`）：
 
-```text
-CF_ENABLE_DIR_ACL          CF_ENABLE_SSO
-CF_ENABLE_AUDIT            CF_ENABLE_METADATA
-CF_ENABLE_TAGS             CF_ENABLE_SEARCH
-CF_ENABLE_FILE_PREVIEW     CF_ENABLE_ONLYOFFICE
-CF_ENABLE_FILE_LOCK        CF_ENABLE_WATCH
-CF_ENABLE_CONVERT_EXPORT   CF_ENABLE_CHECKOUT
-CF_ENABLE_LOCAL_APP        CF_ENABLE_S3_STORAGE
-CF_ENABLE_EXTERNAL_SOURCES
-```
+| 开关 | 默认值 | 默认开关的原因 / 默认关闭的依赖 |
+|---|---:|---|
+| `CF_ENABLE_DIR_ACL` | `true` | 目录级权限，网盘产品线核心需求（C 端终判 + Hub 咽喉）|
+| `CF_ENABLE_AUDIT` | `true` | 复用 seafevents `Activity`，无外部服务 |
+| `CF_ENABLE_METADATA` | `true` | 依赖官方 `seafile-md-server`；该服务已进默认 compose 栈 |
+| `CF_ENABLE_TAGS` | `true` | 与 METADATA 同一栈（bootstrap 强制 TAGS⇒METADATA）|
+| `CF_ENABLE_FILE_PREVIEW` | `true` | 复用 CE 原生预览渲染器 |
+| `CF_ENABLE_FILE_LOCK` | `true` | `cf-lock` 在 server 内实现，无外部依赖 |
+| `CF_ENABLE_CHECKOUT` | `true` | 签入签出复用同一锁 provider |
+| `CF_ENABLE_FAVORITES_ID` | `true` | `obj_id` 化收藏，纯 CE 表结构改造 |
+| `CF_ENABLE_WATCH` | `true` | 复用 CE monitored-repos、放开非 Pro gate |
+| `CF_ENABLE_FILEOPS` | `true` | 复制/移动统一预检查，Hub 影子端点 |
+| `CF_ENABLE_SHARE_RESTRICT` | `true` | 外部分享管控，复用 CE 外链表与端点 |
+| `CF_ENABLE_SSO` | `false` | 依赖第三方 IdP（Authentik/OIDC/SAML/LDAP）|
+| `CF_ENABLE_SEARCH` | `false` | 依赖 SeaSearch/Elasticsearch/Meilisearch 容器与索引 |
+| `CF_ENABLE_ONLYOFFICE` | `false` | 依赖第三方 Document Server |
+| `CF_ENABLE_CONVERT_EXPORT` | `false` | 依赖 SeaDoc 容器 + `JWT_PRIVATE_KEY` |
+| `CF_ENABLE_S3_STORAGE` | `false` | 依赖第三方 S3/MinIO 端点 |
+| `CF_ENABLE_EXTERNAL_SOURCES` | `false` | 依赖宿主机 SMB/NFS 挂载 |
+| `CF_ENABLE_LOCAL_APP` | `false` | 依赖用户机 Chrome 扩展 + Local Agent |
+
+> 修改说明（2026-09-22）：原表只列了 15 个开关（漏 `FAVORITES_ID`/`FILEOPS`/`SHARE_RESTRICT`）
+> 且未给出默认值。现以 `bootstrap.py` 的 `CF_FEATURE_SWITCHES` 为准逐项列出。
 
 开关表示装配意图，不单独证明能力可用。依赖、验证范围和限制见
 [功能矩阵](feature-matrix.md)。

@@ -2,7 +2,7 @@
 
 > **用途**：说明 CloudFile 把收藏（starred items）从 `repo_id + path` 改为对象唯一 ID 的语义、迁移和验收边界。
 > **适用版本**：CloudFile `14.0.0-cf.0`，基于 Seafile CE 14 源码重构。
-> **状态**：验证中；开关 `CF_ENABLE_FAVORITES_ID` 默认关闭，关闭时保持原生 CE 行为。纯规则单测通过，移动/重命名与迁移的容器 E2E 待补（见 [review-cases.md](review-cases.md)）。
+> **状态**：验证中；开关 `CF_ENABLE_FAVORITES_ID` 默认打开（2026-09-22 起；之前默认关闭），关闭时保持原生 CE 行为。纯规则单测通过，移动/重命名与迁移的容器 E2E 待补（见 [review-cases.md](review-cases.md)）。
 > **依赖**：P2-02（九模块用例集）；对象 ID 即 Seafile 文件 `obj_id` / 目录 `dir_id`。
 
 ## 问题
@@ -24,7 +24,7 @@ seafevents 与 `repos_batch.py` 的路径改写去追，路径改写对目录尾
 
 | 层 | 文件 | 作用 |
 |---|---|---|
-| 开关 | `cloudfile_ext/features.py`、`settings_defaults.py` | `CF_ENABLE_FAVORITES_ID`，默认 `false` |
+| 开关 | `cloudfile_ext/features.py`、`settings_defaults.py` | `CF_ENABLE_FAVORITES_ID`，默认 `true` |
 | 纯算法 | `cloudfile_ext/favorites/identity.py` | 无 Django/DB/Seafile 依赖的标识与重定位规则，单测 `test_identity.py` |
 | 数据 | `seahub/base/models.py` `UserStarredFiles.obj_id` | 可空字符列（64），索引；列由 `apply_starred_obj_id_schema_compatibility()` 幂等补齐 |
 | 逻辑 | `seahub/utils/star.py` | `star_file`/`unstar_file`/`is_file_starred` 按 `obj_id` 判存与去重；`get_dir_starred_obj_ids` 供目录列表打标 |

@@ -53,9 +53,31 @@ def parse_args():
 
     return ap.parse_args()
 
-# CloudFile: every CF_ENABLE_* switch, defaulting to off. Turning them all off
-# has to restore native CE behaviour -- that is the acceptance criterion that
-# keeps upgrades cheap -- so nothing here may default to true.
+# CloudFile: every CF_ENABLE_* switch.
+#
+# Defaults split in two groups (2026-09-22 product decision): capabilities
+# with no third-party dependency default to true (see CF_DEFAULT_ON), the rest
+# default to false. Reason: "all switches off == native CE" was abolished that
+# day, so default-off no longer buys anything for upgrade cost, while it did
+# force every deployment to flip switches by hand. These defaults only apply
+# when the container environment omits the variable; compose always passes all
+# of them.
+# 修改说明（2026-09-22）：用普通 tuple 而非 frozenset，便于门禁用 ast.literal_eval
+# 读取这份默认值并与实现对齐（见 tools/test-bootstrap-settings.py）。
+CF_DEFAULT_ON = (
+    'CF_ENABLE_DIR_ACL',
+    'CF_ENABLE_AUDIT',
+    'CF_ENABLE_METADATA',
+    'CF_ENABLE_TAGS',
+    'CF_ENABLE_FILE_PREVIEW',
+    'CF_ENABLE_FILE_LOCK',
+    'CF_ENABLE_CHECKOUT',
+    'CF_ENABLE_FAVORITES_ID',
+    'CF_ENABLE_WATCH',
+    'CF_ENABLE_FILEOPS',
+    'CF_ENABLE_SHARE_RESTRICT',
+)
+
 CF_FEATURE_SWITCHES = (
     'CF_ENABLE_SSO',
     'CF_ENABLE_DIR_ACL',
@@ -83,7 +105,12 @@ CF_END = '# --- end CloudFile ---'
 
 
 def cf_enabled(name):
-    return get_conf(name, 'false').lower() == 'true'
+    # Fall back to CF_DEFAULT_ON (2026-09-22) so this matches the Hub-side
+    # defaults in cloudfile_ext/settings_defaults.py. The previous hard-coded
+    # 'false' meant a run without compose -- a direct bootstrap or a unit test
+    # -- disagreed with the Hub about a switch's default.
+    default = 'true' if name in CF_DEFAULT_ON else 'false'
+    return get_conf(name, default).lower() == 'true'
 
 
 def _replace_block(path, begin, end, body):

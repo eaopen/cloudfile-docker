@@ -62,6 +62,53 @@ git merge upstream/master
 `cloudfile-hub` 清单移除过期项 `frontend/webpack-stats.pro.json`：与上游已无差异
 （构建产物回退），保留只会让清单失真。
 
+### 上游改动登记（2026-09-22 追加）
+
+跟随 `upstream/master` 同步时，登记脚本暴露了 24 个**既有但从未登记**的上游文件改动。
+逐个核对后登记 21 个、明确拒绝 3 个。新增登记的都是既有代码，不是本次同步引入的。
+
+`cloudfile-server` 新增登记（3）：
+
+- `server/repo-mgr.c`、`server/repo-mgr.h`：存储类能力给
+  `seaf_repo_manager_create_new_repo()` 增加 `storage_id` 参数。这是既有 C 函数的
+  签名，调用方必须传新参数，新增文件替代不了。
+- `lib/Makefile.am`：`fix(build): serialize Vala source generation` 把
+  `seafile-object.h` 的生成折进 `valac` 命令并改用 `${valac_gen}`，消除并行构建下
+  `valac` 的竞态。构建规则必须落在原文件。
+
+`cloudfile-hub` 新增登记（18），按性质分四类：
+
+- **权限/安全就地收窄**（判定的是上游自己的权限调用点，扩展点覆盖不到）：
+  `seahub/api2/endpoints/internal_api.py`（Web 字节通道按目标路径而非根 `/` 判定，
+  堵住凭 Cookie 直连 URL 绕过子目录规则）、`seahub/api2/endpoints/file_tag.py`
+  （标签按目标真实路径判定，此前只查父目录）、`seahub/api2/endpoints/share_links.py`
+  与 `seahub/views/repo.py`（`CF_ENABLE_SHARE_RESTRICT` 不得被旧链接/匿名 token 绕过）。
+- **能力挂钩**：`seahub/api2/endpoints/file_access_log.py`（审计后端由 Pro 限定改为
+  CloudFile 提供）、`frontend/src/components/dialog/move-dirent-dialog.js`
+  （`CF_ENABLE_FILEOPS` 移动前成员影响确认）。
+- **UI/交互增强**：`frontend/src/components/dir-view-mode/dir-grid-view.js`、
+  `frontend/src/components/dropdown/item.js`、`frontend/src/components/repo-info-bar.js`、
+  `frontend/src/css/repo-info-bar.css`、`frontend/src/models/repo-tag.js`、
+  `frontend/src/metadata/components/cell-formatter/file-tags/index.js`、
+  `frontend/src/pages/lib-content-view/lib-content-view.js`。
+- **CE 兼容/部署**：`seahub/api2/endpoints/groups.py`（CE 无群组配额 API）、
+  `seahub/oauth/views.py`（SSO 建号后回填 `contact_email`，否则目录同步成员全为
+  UnknownSubject）、`seahub/onlyoffice/settings.py`、`seahub/onlyoffice/utils.py`、
+  `seahub/onlyoffice/views.py`（Document Server 可达的内部 fileserver 根）。
+
+**拒绝登记 3 项**（保持未登记，另行清理——不能用补登记掩盖）：
+
+- `seahub/ai/apis.py`、`seahub/ai/utils.py`：与上游只差尾随空白，不含任何能力。
+  应还原为上游内容，让它自然退出清单。
+- `frontend/webpack-stats.pro.json`：构建产物，内容随构建漂移（本次 1060 行）。
+  2026-08-15 已因同样原因移出清单一次；应改为忽略/不追踪，而不是登记。
+
+同时修正 `release.yaml` 的 CI 比对锚点：`cloudfile-hub` 的 `seahub` 锚点停在
+`da3334e`，比它真正的合并基点落后 52 个上游提交，CI 里两点 diff 会把 219 个文件
+误报成 CloudFile 改动；已前移到真实合并基点 `84eeabf`（修正后与本地三点 diff 的
+21 项完全一致）。`seafile_server`（→ `d9ed57e`）与 `seafile_docker`（→ `566b7e5`）
+随本次同步前移。
+
 ## 合并与发布
 
 能力合并前必须证明开关关闭时仍走原生 CE 路径，并在开关开启时通过专项门禁。跨 Hub/Server 的语义先更新共享规格和用例，再同步实现。

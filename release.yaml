@@ -31,11 +31,17 @@ forks:
     url: https://github.com/eaopen/cloudfile-hub.git
     ref: dev
 
-# Not forked - pinned to the upstream commits the fork baseline was cut from.
+# Not forked. These are the upstream commits each fork is currently synced to.
+# tools/check-upstream-patches.sh uses them as its diff base in CI, where the
+# clone is too shallow to compute a merge base and the comparison is a two-point
+# diff -- so an anchor left behind makes CI report the un-merged upstream commits
+# as CloudFile modifications. Bump them in the same change that merges upstream.
+# Build inputs are forks.* and the seafobj/seafdav/seafevents/libsearpc/libevhtp
+# entries below; these three are only the CI comparison base.
 upstream:
-  seafile_server: 0e83ffdd16ce85e35d435d3b8f899a82b6b780d0
-  seahub: da3334e1d17caddf16120c60442307eb5d3946da
-  seafile_docker: 9a925bcc19eba95582d90ec8dd21030e0b4717e6
+  seafile_server: d9ed57e1d2ac9888a7c04f15158f2403a9411ce3
+  seahub: 84eeabfe6570bc8d15af56a29bc8598a625997c7
+  seafile_docker: 566b7e5e0911fb84c8b1f843efbaf8b928c6de7d
   seafobj: 794428d5f455338f2f2f472c1f0ee2eebf623103
   seafdav: 1ce0b05ea7d04495a1ca9121fc58c30d63b71e36
   seafevents: d07b9e885de866454b5c42bed5834ca82959f303

@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-"""扩展基线验收：扩展点装好了，但没有任何能力启用。
+"""扩展基线检查：扩展点装好了，但没有任何能力启用。
 
-smoke.py 证明"行为和原生 CE 一样"。这份证明的是另一半：**扩展机制确实生效了**。
+smoke.py 确认关闭态核心流程可用。这份检查的是另一半：**扩展机制确实生效了**。
 
 两者都必要。只跑 smoke 的话，一个 cloudfile_ext 根本没被加载的镜像也能通过——
 那样基线看似完好，实则什么扩展点都没有，等到第一个能力接上去才会发现。
+
+2026-09-22 之前这里被表述为"证明扩展机制生效，且行为与原生 CE 一致"。等同性要求
+已废除，本检查只覆盖"扩展框架已加载、能力确实都未启用"。
 
 检查项：
   - CloudFile 能力查询接口存在且可用（说明 cloudfile_ext 被 Django 加载了，
     路由经 rooturl.py 挂上了）
   - 所有 CF_ENABLE_* 都报告为关闭
   - 没有任何能力路由存在（能力分支才会带来它们）
-  - 权限钩子链是透传的：原生权限没有被改变
+  - 权限钩子链是透传的：关闭态下目录列举与库同步仍然可用
 
 只用标准库。
 
@@ -162,14 +165,16 @@ def main():
         f'{base}/api/v2.1/cloudfile/repos/{repo_id}/dir-acl/?path=/', token=token)
     record('能力路由不存在（dir-acl 应 404）', status == 404, f'status={status}')
 
-    # 4. 权限钩子链透传：没有能力注册时，原生权限不被改变
+    # 4. 权限钩子链没有能力注册时不阻断正常路径。这里只断言可用性——不复刻
+    #    "原生权限逐字未变"：CloudFile 的基线里本就有不受开关约束的权限收紧
+    #    （如 Hub 侧 B-1 按目标路径判定），那句话已不作为 P0 标准。
     status, body = request(f'{base}/api2/repos/{repo_id}/dir/?p=/', token=token)
-    record('目录列举正常（列举钩子透传）', status == 200,
+    record('目录列举正常（列举钩子未阻断）', status == 200,
            f'status={status} {body[:120]}')
 
     status, body = request(f'{base}/api2/repos/{repo_id}/download-info/',
                            token=token)
-    record('库可同步（子树校验钩子透传）', status == 200,
+    record('库可同步（子树校验钩子未阻断）', status == 200,
            f'status={status} {body[:160]}')
 
     # 5. 检索扩展点没有改变原生行为

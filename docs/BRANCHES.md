@@ -41,7 +41,7 @@ python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_hub.r
 能力进入 `dev` 前至少满足：
 
 1. 开关存在于 `.env.example`、启动配置和 Hub 特性清单，默认值均为 `false`。
-2. 开关关闭时通过 `smoke.py` 与 `baseline.py`，证明原生 CE 路径正常且扩展框架已加载但未启用。
+2. 开关关闭时通过 `smoke.py` 与 `baseline.py`：核心流程可用、扩展框架已加载、能力确实未启用。这是回归检查，**不再要求与原生 CE 逐字一致**（该 P0 标准 2026-09-22 废除）。
 3. 开关开启时通过专项用例和能力 E2E；“门禁文件已存在”不等于“已有成功跑次”。
 4. 跨 Hub/Server 的语义由同一规格和共享用例驱动，不能只修改一侧。
 5. 新增上游改动已登记；能通过扩展点实现的能力不得扩大上游修改面。

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""原生 CE 冒烟测试。
-
-P0 的核心验收项：**所有 CF_ENABLE_* 关闭时，行为必须与原生 Seafile CE 一致**。
-这是升级成本可控的前提——一旦扩展在关闭状态下仍然改变了行为，跟随上游就会
-变成无休止的回归排查。
+"""关闭态冒烟测试（回归检查）。
 
 覆盖最基本的一条链路：登录 → 建库 → 上传 → 列举 → 下载 → 分享链接 →
-WebDAV → 删除。不追求全面，只要求这些在开关全关时和原生 CE 没有差别。
+WebDAV → 删除，确认关闭态下这些仍然可用。
+
+2026-09-22 之前这份测试被当作 P0 的"等同性证明"——要求所有 CF_ENABLE_* 关闭时
+行为与原生 Seafile CE 逐字一致。该标准已废除：CloudFile 是 CE 的扩展版，基线里
+本就有不受开关约束的兼容与安全补丁。现在它只回答"关闭态有没有把可用性弄坏"。
 
 只用标准库。
 
@@ -118,7 +118,7 @@ def main():
     if not wait_ready(base, args.timeout):
         sys.exit('服务未就绪')
 
-    print('\n原生 CE 冒烟…', flush=True)
+    print('\n关闭态冒烟…', flush=True)
 
     status, body = request(base + '/api2/auth-token/', method='POST',
                            form={'username': args.admin,

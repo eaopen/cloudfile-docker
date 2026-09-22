@@ -1,8 +1,11 @@
 # CloudFile release manifest.
 #
-# Upstream 14.0 CE is not released: haiwen/seafile-server has no 14.0 branch and
-# 14.0 carries only "-pro" tags, no "-server" (CE) tags. CloudFile therefore
-# anchors every component to an explicit commit SHA rather than to a tag.
+# Upstream CE 14 is released now: haiwen/seafile-server and haiwen/seahub both
+# carry a v14.0.8-server tag, and upstream ships the CE 14 image recipe in
+# image/seafile_14.0/. Neither repo has a 14.0 branch, so CE 14 still tracks
+# master, and the components CloudFile does not fork stay pinned to explicit
+# commit SHAs -- they are versioned independently of that release, so there is
+# no CE tag to point at.
 #
 # The build script (build/cloudfile_14.0/cloudfile-build.sh) reads this file and
 # checks out exactly these refs. Bump the SHAs here, never in the build script.
@@ -31,16 +34,39 @@ forks:
     url: https://github.com/eaopen/cloudfile-hub.git
     ref: dev
 
-# Not forked - pinned to the upstream commits the fork baseline was cut from.
+# Not forked. These are the upstream commits each fork is currently synced to.
+# tools/check-upstream-patches.sh uses them as its diff base in CI, where the
+# clone is too shallow to compute a merge base and the comparison is a two-point
+# diff -- so an anchor left behind makes CI report the un-merged upstream commits
+# as CloudFile modifications. Bump them in the same change that merges upstream.
+# Build inputs are forks.* and the seafobj/seafdav/seafevents/libsearpc/libevhtp
+# entries below; these three are only the CI comparison base.
 upstream:
-  seafile_server: 0e83ffdd16ce85e35d435d3b8f899a82b6b780d0
-  seahub: da3334e1d17caddf16120c60442307eb5d3946da
-  seafile_docker: 9a925bcc19eba95582d90ec8dd21030e0b4717e6
+  seafile_server: d9ed57e1d2ac9888a7c04f15158f2403a9411ce3
+  seahub: 957c7c5006900b06fdf1e2860c82b1ca06b9b9cc
+  seafile_docker: 566b7e5e0911fb84c8b1f843efbaf8b928c6de7d
   seafobj: 794428d5f455338f2f2f472c1f0ee2eebf623103
   seafdav: 1ce0b05ea7d04495a1ca9121fc58c30d63b71e36
   seafevents: d07b9e885de866454b5c42bed5834ca82959f303
   libsearpc: 23d5df62815fb3b7825bf4e1a28b29af701e8cb2
   libevhtp: 291aedae9dda722976cf0dcece66105c93758729
+
+# The upstream CE 14 release CloudFile claims compatibility with. CloudFile
+# tracks upstream/master (syncs stay small) but must never fall behind the CE
+# release, so each entry below is the *source* commit of that release and
+# tools/check-ce-anchor.sh asserts the fork's dev contains it.
+#
+# seafile-server's v14.0.8-server tag sits on that source commit. seahub's tag
+# sits on a "[dist][CI SKIP] ... CI build" artifact commit instead of its source,
+# so the recorded SHA is the source commit the artifact was built from (the tag's
+# parent). Recording the tag's own commit for seahub would make the assertion
+# permanently false.
+#
+# Bump both when upstream tags a newer v14.0.N-server.
+ce_anchor:
+  version: v14.0.8-server
+  seafile_server: 17e4b875c2118233830316392ed76a736b374c69
+  seahub: 3c408439bfca54dbad61e2f6cdb706d2dcdf9f7a
 
 # Bump when cf_* tables change shape; the upgrade path keys off this.
 # 1 -> 2 (2026-08-17): added cf_dir_admin (directory-level delegated manage).

@@ -31,33 +31,42 @@ workspace/
 本仓库同时是**发布的归属地**：`release.yaml` 决定每次构建用哪些代码，
 `BRANCHING.md` 定义三仓共用的分支模型。
 
-## 一个必须知道的前提：上游 14.0 CE 不存在
+## CE 14 基线：上游已发布，运行时配方以上游为准
 
 > **曾评估退回 CE 13.0，已否决——维持 14.0**（当前结论见 [docs/overview.md](docs/overview.md)，完整决策已归档）。
 > 关键事实：CloudFile 改了 C/Go 服务端，**13 和 14 都得重新编译**，于是 13.0
-> "复用官方镜像"的核心收益不成立；而 14.0 已跑通、更新、迁移成本为零。等上游
-> 发布 CE 14.0 镜像时再同版本平移。下面的"从源码重构 14.0 CE"仍是现行做法。
+> "复用官方镜像"的核心收益不成立；而 14.0 已跑通、更新、迁移成本为零。
 
-- `haiwen/seafile-server` 只有 `13.0` 和 `master` 分支，**没有 `14.0` 分支**
-- 14.0 只有 `-pro` tag，**没有 `-server`（CE）tag**
-- 上游提供 `image/seafile_13.0`（CE）和 `image/pro_seafile_14.0`（Pro），
-  **没有 CE 14.0 镜像**——所以 14.0 只能从 CE 源码构建
+**前提在 2026-09 变了**：上游补上了 CE 14 的发布与镜像，原先是"上游没有，所以只能
+从源码重构"的三条论据不再成立：
 
-两个后果贯穿整个构建：
+- `haiwen/seafile-server` 仍**没有 `14.0` 分支**（只有 `master`），但已有 CE tag
+  `v14.0.8-server`；`haiwen/seahub` 同样有 `v14.0.8-server`（以及 `-pro` 系列）
+- 上游提供 `image/seafile_14.0/`（CE 14 镜像配方，产出
+  `seafileltd/seafile-mc:<version>-testing`），不再只有 13.0 CE 与 14.0 Pro
 
-1. **各组件按 commit SHA 锁定，不是 tag**，因为根本没有可锁的 tag。SHA 写在
-   `release.yaml`，由 `build/cloudfile_14.0/cloudfile-build.sh` 读取。
-2. **`image/cloudfile_14.0/Dockerfile` 是我们自己写的**：以 13.0 CE 镜像为底，
-   套用 14.0 的 pip 版本 pin，去掉 Pro 专用部分（clamav、rados、boto3/oss2/twilio、
-   `IS_PRO_VERSION`）。
+按 [BRANCHING.md](BRANCHING.md)「冲突与移植的裁决顺序」第 1 条（涉及 CE 14 的以上游为准），运行时层跟上游：
 
-跟随上游时，`image/cloudfile_14.0/Dockerfile` 与 `image/pro_seafile_14.0/Dockerfile`
-的版本 pin 要保持同步——seahub 是按那些版本构建的。用 diff 确认差异仍然只有
-注释和 Pro 专用项：
+- **上游有的 pin 一个都不能少。** 比对对象是上游 CE 14 配方与 CloudFile 的
+  `image/cloudfile_14.0/Dockerfile.base`——pin 都在 base 里，不在应用 Dockerfile 里。
+- CloudFile 多出来的只有两类，都属于第 2 条，**不能因为上游没有就删**：编译改了
+  C/Go 的服务端所需的构建工具链（valac / golang / ccache / cmake / 各类 `-dev`），
+  以及自有能力与前端构建需要的 `scikit-learn`、`boto3`、Node。
 
 ```bash
-diff <(sed 's/scripts_13.0/scripts_14.0/' image/seafile_13.0/Dockerfile) image/cloudfile_14.0/Dockerfile
+# 上游 CE 14 的 pip pin 与 CloudFile base 的差集（应为空）
+comm -23 \
+  <(git show upstream/master:image/seafile_14.0/Dockerfile | grep -oE '[a-zA-Z0-9_.-]+==[0-9][^ ]*' | sort -u) \
+  <(grep -oE '[a-zA-Z0-9_.-]+==[0-9][^ ]*' image/cloudfile_14.0/Dockerfile.base | sort -u)
 ```
+
+构建方式本身不变：`image/cloudfile_14.0/Dockerfile` 仍是 CloudFile 自己写的应用层
+（以自建 base 为底、装 CloudFile 编译出的发行包），`release.yaml` 仍是 ref/SHA 的
+唯一真相来源。
+
+基线跟 `upstream/master`，但不得落后于上游 CE 14 正式发布：`release.yaml` 的
+`ce_anchor` 记录那次发布的源码提交，`./tools/check-ce-anchor.sh` 断言它已在被验证的
+ref 上（`run-checks.sh` 已接入）。上游打新的 `v14.0.N-server` 时同步更新它。
 
 ## 目录
 
@@ -110,8 +119,16 @@ scripts/scripts_14.0/              容器内运行时脚本（上游文件，改
 
 ## 铁律
 
-**全部 `CF_ENABLE_*` 关闭 = 原生 CE 行为。** 这是 P0 的验收标准。
-新增开关时默认必须是 `false`，`.env.example` 里也是 `false`。
+**新增开关默认必须是 `false`**，`.env.example` 里也是 `false`。能力默认不生效，
+这是未验收能力与已发布能力之间的隔离机制。
+
+**但不再要求"全关 = 原生 CE 逐字一致"**（2026-09-22 废除该 P0 标准）。CloudFile
+本来就是 CE 的扩展版，基线里始终存在不受开关约束的改动——登记在
+[`docs/upstream-patches/`](docs/upstream-patches/) 的兼容与安全补丁就是这类，它们
+在全关时同样生效，例如 B-1 的字节通道按目标路径判定权限、标签按目标路径判定、
+CE 无群组配额、SSO 建号回填 `contact_email`。拿"全关是否等于原生 CE"当验收标准，
+在本仓从第一天起就不成立。升级成本可控靠的是"开关默认关闭 + 上游改动有登记清单"，
+不是关闭态逐字等于 CE。
 
 `docker-compose.yml` 里**不要给 profile 专属变量加 `:?` 必填标记**。
 compose 会对整个文件做插值，与激活哪个 profile 无关，`:?` 会让默认的
@@ -150,17 +167,22 @@ feature/* = 开发中的能力（一个耦合簇一条），验收后合回 dev 
 以及 `./tools/verify-local.sh cap acl`。
 
 **能力不长期分叉**：构建脚本每个仓库只认一个 ref，两个尚未合并的能力无法一起
-构建，也就无法一起交付。让能力住在 `dev` 上之所以安全，全靠下面那条铁律。
+构建，也就无法一起交付。让能力住在 `dev` 上仍然安全，靠的是**开关默认关闭**——
+未验收的能力默认不生效，所以基线与能力可以共存于一条分支。（2026-09-22 之前这条
+论证依赖"全关 = 原生 CE"那条铁律；该铁律废除后，隔离由"默认不生效"承担，代价是
+关闭态的回归面比过去宽，见下面的门禁定位。）
 论证与四条开发线的切分见 [docs/BRANCHES.md](docs/BRANCHES.md) 第一节。
 
-**基线本地门禁只回答两个问题**（`./tools/verify-local.sh`）：
+**基线本地门禁是回归检查，不是"与原生 CE 等同"的证明**（`./tools/verify-local.sh`）：
 
 1. 镜像能不能构建出来
-2. 开关全关时，行为是否与原生 Seafile CE 一致（`tests/e2e/smoke.py`），
-   且扩展点确实装好了但未启用（`tests/e2e/baseline.py`）
+2. 关闭态下核心流程可用（`tests/e2e/smoke.py`），且扩展机制确实装好了、
+   能力确实都没启用（`tests/e2e/baseline.py`）
 
-第 2 条的两半缺一不可：只跑 smoke 的话，一个 `cloudfile_ext` 根本没被加载的
-镜像也能通过。
+2026-09-22 之前第 2 条问的是"行为是否与原生 CE 一致"，现在只问"有没有把可用性
+弄坏"。两半仍然缺一不可：只跑 smoke 的话，一个 `cloudfile_ext` 根本没被加载的
+镜像也能通过。这类检查**不构成发布阻塞**——真正阻塞发布的是 `./tools/run-checks.sh`
+以及各能力的专项门禁。
 
 **能力门禁在本地另跑一份，各开各的开关。** 两层互不阻塞：某个能力的门禁挂了，
 把它的开关留在关闭状态照样能发基线——这就是原先靠分支隔离想达到的效果，

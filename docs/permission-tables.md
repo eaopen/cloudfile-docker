@@ -89,7 +89,9 @@ CloudFile 扩展（seafile-db，`cloudfile.sql`）。
 
 ### 4.1 三条落地原则
 
-1. **开关全关 = 原生 CE**：权限值空间是 CE 超集，但默认路径逐字等于 CE（P0 铁律）。
+1. **默认路径不额外收紧也不放宽**：权限值空间是 CE 超集，但无规则、开关全关时仍按
+   CE 的库级共享权限求解。2026-09-22 起不再把"逐字等于原生 CE"当 P0 铁律——基线里
+   本就有不受开关约束的收紧（如 B-1 字节通道按目标路径判定权限）。
 2. **C 只做粗粒度全序链**：C 端（WebDAV/同步/下载 token）只理解可全序比较的
    `invisible<none<r<rw`；细粒度在 Hub。这正是 Pro 的分层——Pro 的 C 端也只认 `r/rw/admin`。
 3. **单一 PermissionService 门面**：所有入口只调 `effective_perm()` + `can_manage()`，不各自判。

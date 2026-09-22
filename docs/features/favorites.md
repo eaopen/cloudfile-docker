@@ -40,8 +40,9 @@ seafevents 与 `repos_batch.py` 的路径改写去追，路径改写对目录尾
 - **跨库移动**：`obj_id` 不变，收藏跟随对象跨库迁移；`repo_id` 仅在移动回调中更新。
 - **旧数据无损**：回填只写 `obj_id`，从不删除行。资料库或路径已不存在的行保留原样，
   继续按原生“已删除”展示，待数据恢复后可再次回填。
-- **开关关闭 = 原生 CE**：`CF_ENABLE_FAVORITES_ID=false` 时全部逻辑走 `repo_id + path`，
-  不写不读 `obj_id`。
+- **开关关闭时回落原生实现**：`CF_ENABLE_FAVORITES_ID=false` 时全部逻辑走 `repo_id + path`，
+  不写不读 `obj_id`。（这是本能力的实现选择，不是全局"全关 = 原生 CE"要求——该 P0
+  标准已于 2026-09-22 废除。）
 
 ## 迁移
 

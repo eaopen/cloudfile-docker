@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """检索端到端门禁：默认 SeaSearch 路径可用，切到 Meilisearch 后结果一致，关闭
-开关后恢复原生行为。
+开关后该能力不生效（回落上游 403）。
 
 三阶段，跨两次配置变更（由 verify-local.sh 的 cap_search_run 或
 verify-local.sh cap search 编排，这份脚本本身不改配置、不重启容器）：
@@ -20,8 +20,8 @@ verify-local.sh cap search 编排，这份脚本本身不改配置、不重启�
                实时索引走的是同一条代码路径，所以这一项等于两项都测了）。
 
     phase 3 —— （编排层已把 CF_ENABLE_SEARCH 改回 false 并重启）验证两个入口
-               恢复到原生 CE 行为：403（IsProVersion 拒绝），不是 200 也不是
-               500——这是铁律"开关关闭=原生 CE"在检索这条能力上的验收点，也是
+               回到上游行为：403（IsProVersion 拒绝），不是 200 也不是
+               500——这是"该能力在关闭态不生效"在检索这条能力上的验收点，也是
                write_seafevents_search_config() 从"只在首次安装执行"改成
                "每次启动都执行"这个改动本身要证明的事：开关反复切换必须真的
                生效，而不是被 init_seafile_server() 提前返回吃掉。
@@ -344,7 +344,7 @@ def phase3(base, admin, password, context, state_file):
         return False
 
     status, _parsed, raw = search(base, token, 'anything', context)
-    passed = check('CF_ENABLE_SEARCH 关闭后恢复原生 CE 行为（403，不是 200/500）',
+    passed = check('CF_ENABLE_SEARCH 关闭后该能力不生效（上游 403，不是 200/500）',
                    status == 403, 'status=%s body=%s' % (status, raw[:200]))
 
     try:

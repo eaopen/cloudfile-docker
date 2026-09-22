@@ -31,6 +31,7 @@ fileserver/objstore/objstore_test.go
 fileserver/option/option.go
 include/seafile-rpc.h
 fuse/Makefile.am
+lib/Makefile.am
 python/seafile/rpcclient.py
 python/seaserv/api.py
 python/seaserv/__init__.py
@@ -43,6 +44,8 @@ server/gc/repo-mgr.c
 server/gc/repo-mgr.h
 server/gc/seaf-fsck.c
 server/gc/seafserv-gc.c
+server/repo-mgr.c
+server/repo-mgr.h
 server/repo-op.c
 server/seaf-server.c
 server/seafile-session.c

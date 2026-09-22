@@ -43,6 +43,27 @@ skip() {
 # 1. 上游改动登记 —— fork 维护成本的可观测警告，不阻断 CI
 run "上游改动登记" "$docker_repo/tools/check-upstream-patches.sh"
 run "上游改动警告语义" "$docker_repo/tests/tools/test-check-upstream-patches.sh"
+
+# CE14 兼容锚点有三种结果，所以不能走 run()。无法验证时必须显式报成跳过：把它
+# 当通过，正好会在"dev 落后于 CE 正式发布"这个不变式真的被违反、而本地又取不到
+# 锚点提交的场合静默放行（CI 用 actions/checkout 检出，只配 origin，没有
+# upstream remote）。这里不复用 skip()，因为它会再打一次分隔标题。
+echo
+echo "──────── CE14 兼容锚点 ────────"
+"$docker_repo/tools/check-ce-anchor.sh"
+case $? in
+    0)
+        echo "✓ CE14 兼容锚点"
+        ;;
+    2)
+        echo "⊘ 跳过：CE14 兼容锚点（无法取得锚点提交，判据未生效）"
+        skipped+=("CE14 兼容锚点（无法取得锚点提交）")
+        ;;
+    *)
+        echo "✗ CE14 兼容锚点"
+        failed+=("CE14 兼容锚点")
+        ;;
+esac
 run "容器工作流基础镜像契约" "$docker_repo/tests/tools/test-image-workflows.sh"
 run "构建平台规范化" "$docker_repo/tests/tools/test-build-platform.sh"
 run "构建缓存契约" "$docker_repo/tests/tools/test-build-cache-contract.sh"
@@ -188,7 +209,8 @@ run "配置生成" python3 "$docker_repo/tools/test-bootstrap-settings.py"
 run "发布清单" bash -c "
     set -e
     for k in product image forks.cloudfile_server.ref forks.cloudfile_hub.ref \
-             upstream.seahub upstream.seafile_server database_schema; do
+             upstream.seahub upstream.seafile_server database_schema \
+             ce_anchor.version ce_anchor.seafile_server ce_anchor.seahub; do
         python3 '$docker_repo/build/cloudfile_14.0/read-manifest.py' \
             '$docker_repo/release.yaml' \"\$k\" >/dev/null
     done

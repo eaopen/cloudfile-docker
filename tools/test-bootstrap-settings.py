@@ -103,7 +103,7 @@ def test_sso():
     print('── _settings_block_sso')
     sso = load('_settings_block_sso', {})
 
-    # 铁律：开关关掉 = 原生 CE。一个字节都不该写。
+    # 开关关闭时该能力不生效：一个字节都不该写。
     check('开关关闭时不写任何内容', sso() == '', repr(sso()))
 
     env = dict(BASE_ENV)
@@ -309,7 +309,7 @@ def test_search():
     print('── _settings_block_search')
     search = load('_settings_block_search', {})
 
-    # 铁律：开关关掉 = 原生 CE。一个字节都不该写——CF_PROVIDER_SEARCH 留空
+    # 开关关闭时该能力不生效：一个字节都不该写——CF_PROVIDER_SEARCH 留空
     # 时的默认行为（走 SeaSearch）也不该被写死成某个值。
     check('开关关闭时不写任何内容', search() == '', repr(search()))
 
@@ -598,7 +598,7 @@ def test_office():
         check('bootstrap 实现了 _settings_block_office', False, str(e))
         return
 
-    # 铁律：开关关掉 = 原生 CE。一个字节都不该写。
+    # 开关关闭时该能力不生效：一个字节都不该写。
     check('开关关闭时不写任何内容', block() == '', repr(block()))
 
     # 启用但缺 secret：必须起不来。空 secret 不允许回退成"兼容模式"——

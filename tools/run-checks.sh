@@ -43,6 +43,7 @@ skip() {
 # 1. 上游改动登记 —— fork 维护成本的可观测警告，不阻断 CI
 run "上游改动登记" "$docker_repo/tools/check-upstream-patches.sh"
 run "上游改动警告语义" "$docker_repo/tests/tools/test-check-upstream-patches.sh"
+run "CE14 兼容锚点" "$docker_repo/tools/check-ce-anchor.sh"
 run "容器工作流基础镜像契约" "$docker_repo/tests/tools/test-image-workflows.sh"
 run "构建平台规范化" "$docker_repo/tests/tools/test-build-platform.sh"
 run "构建缓存契约" "$docker_repo/tests/tools/test-build-cache-contract.sh"
@@ -188,7 +189,8 @@ run "配置生成" python3 "$docker_repo/tools/test-bootstrap-settings.py"
 run "发布清单" bash -c "
     set -e
     for k in product image forks.cloudfile_server.ref forks.cloudfile_hub.ref \
-             upstream.seahub upstream.seafile_server database_schema; do
+             upstream.seahub upstream.seafile_server database_schema \
+             ce_anchor.version ce_anchor.seafile_server ce_anchor.seahub; do
         python3 '$docker_repo/build/cloudfile_14.0/read-manifest.py' \
             '$docker_repo/release.yaml' \"\$k\" >/dev/null
     done

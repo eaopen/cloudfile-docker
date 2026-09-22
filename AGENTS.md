@@ -64,6 +64,10 @@ comm -23 \
 （以自建 base 为底、装 CloudFile 编译出的发行包），`release.yaml` 仍是 ref/SHA 的
 唯一真相来源。
 
+基线跟 `upstream/master`，但不得落后于上游 CE 14 正式发布：`release.yaml` 的
+`ce_anchor` 记录那次发布的源码提交，`./tools/check-ce-anchor.sh` 断言它已在被验证的
+ref 上（`run-checks.sh` 已接入）。上游打新的 `v14.0.N-server` 时同步更新它。
+
 ## 目录
 
 ```

@@ -43,6 +43,15 @@ git merge upstream/master
 
 允许修改的上游文件以 [`docs/upstream-patches/`](docs/upstream-patches/) 三份清单为准。脚本报告新增文件时，先确认无法用新增文件或现有扩展点实现，再更新清单和本文件；不能直接补登记来绕过审查。
 
+`release.yaml` 还有第二个锚点：`ce_anchor`。CloudFile 跟的是 `upstream/master`（同步频繁、
+冲突小），但产品自称 CE 14，基线就必须是上游 CE 14 **正式发布的超集**。上游打新的
+`v14.0.N-server` 时，把 `ce_anchor` 更新到那次发布的**源码提交**，`./tools/check-ce-anchor.sh`
+会断言它已在被验证的 ref 上（`run-checks.sh` 已接入，CI 的 dev 任务 HEAD 即 dev）。
+
+注意 `seahub` 的 `-server` tag 打在 `[dist][CI SKIP] ... CI build` 的产物提交上，不是
+`master` 的祖先；`ce_anchor.seahub` 记的是它基于的那个源码提交，直接记 tag 提交会让
+断言永远为假。
+
 ### 冲突与移植的裁决顺序（2026-09-22 追加）
 
 同步上游、或在两套实现之间取舍时，按下面三条判断。**顺序即优先级，第 3 条让位于前两条。**

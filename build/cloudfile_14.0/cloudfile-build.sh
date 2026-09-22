@@ -594,6 +594,10 @@ function install_frontend_dependencies() {
         # so an interrupted install can never make a partial tree look valid.
         rm -f "$stamp"
         npm ci --prefer-offline --no-audit --no-fund
+        # 修改逻辑/原因（2026-09-23）：全新克隆的 src/ 没有 .cache/ 目录，直接写
+        # stamp.tmp 会因目录缺失而中断构建（CI 的 Actions 缓存会先恢复出该目录，
+        # 故只在本地首建暴露）。在最早使用处创建，后续 tool/build 缓存同样受益。
+        mkdir -p "${code_path}/.cache"
         printf '%s\n' "$digest" > "${stamp}.tmp"
         mv "${stamp}.tmp" "$stamp"
     fi

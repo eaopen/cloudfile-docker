@@ -79,7 +79,7 @@ task_id、不再调用 `seafile_api`**——重复点击不会产生第二份副
 
 | 项 | 默认 | 说明 |
 |---|---|---|
-| `CF_ENABLE_FILEOPS` | false | 总开关，关闭 = 原生 CE |
+| `CF_ENABLE_FILEOPS` | false | 总开关；关闭时本能力不介入，搬移走原生路径 |
 | `CF_FILEOP_MAX_FILE_SIZE` | 0 | 单文件大小上限（字节），逐项 |
 | `CF_FILEOP_MAX_FOLDER_DEPTH` | 0 | 文件夹层级上限，逐项 |
 | `CF_FILEOP_MAX_ITEM_COUNT` | 0 | 单批对象数上限，整请求 |

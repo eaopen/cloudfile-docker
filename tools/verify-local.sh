@@ -7,15 +7,17 @@
 # 发现的。一次次"改一行、推一次、等二十分钟"太慢了。这个脚本把同样的步骤
 # 搬到本地，失败在几分钟内就能看见。
 #
-#   ./tools/verify-local.sh              # 基线全流程（开关全关 = 原生 CE）
+#   ./tools/verify-local.sh              # 基线全流程（关闭态回归检查）
 #   ./tools/verify-local.sh preflight    # 只做静态一致性检查（秒级）
 #   ./tools/verify-local.sh build        # 只构建发行包
 #   ./tools/verify-local.sh e2e          # 假设镜像已在，只跑起栈 + E2E
 #   ./tools/verify-local.sh cap acl      # 能力门禁：开着 ACL 跑六入口矩阵
 #   ./tools/verify-local.sh clean        # 清掉本地栈与数据
 #
-# 基线门禁与能力门禁问的是不同的问题，所以是两条命令：前者问"开关全关时是否
-# 等同原生 CE"，后者问"开着开关时，每个入口是否真的执行了规则"。
+# 基线回归与能力门禁问的是不同的问题，所以是两条命令：前者问"关闭态有没有把可用性
+# 弄坏、扩展框架是否已加载"，后者问"开着开关时，每个入口是否真的执行了规则"。
+# 2026-09-22 之前前者问的是"开关全关时是否等同原生 CE"——该 P0 标准已废除，
+# 这里的结论不构成发布阻塞。
 #
 # GitHub Actions 仅执行 dev 快速检查与 prod 构建；所有容器 E2E 均在本机执行。
 # 本地环境与 GitHub runner 的差异：

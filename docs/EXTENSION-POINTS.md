@@ -56,7 +56,7 @@ seasearch、Elasticsearch、企业自有检索服务都可以是同一个 kind �
 | `register_search_indexer` | 链 | ⚠️ **无上游调用点**，靠 `register_periodic_task` 自驱动 | 无索引器 |
 | `register_file_op_hook` | 链 | ⚠️ **无上游调用点**，见下方缺口 | 钩子永不触发 |
 | `register_external_source_provider` | 按类型 keyed | 无上游调用点（**刻意**）：经自有路由暴露，阶段 3 再影子原生端点，见缺口 3 | 无外部源 |
-| `register_periodic_task` | 链 | `cf_worker` 管理命令（自有进程） | 无任务，故 `worker` profile 非默认启用 |
+| `register_periodic_task` | 链 | `cf_worker` 管理命令（自有进程） | 无任务时为空转；`cf-worker` 自 2026-09-22 起进默认栈 |
 | `register_provider(kind, …)` | provider | 由声明该 kind 的一方分发 | 未选中 → 原生行为 |
 
 通用机制：

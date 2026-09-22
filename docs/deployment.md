@@ -54,17 +54,17 @@ CloudFile 配置块，并幂等应用 `cloudfile.sql`。
 |---|---|---|
 | `s3` | `minio`、`minio-init` | 仅本地 MinIO 集成验证；生产通常连接外部 S3 |
 | `search` | `seasearch`、`meilisearch` | 需设置检索开关并选择实际 provider |
-| `metadata` | `cloudfile-metadata` | 需 `CF_ENABLE_METADATA=true`；镜像 tag 必须单独验收 |
+| `metadata` | `cloudfile-metadata` | 已进默认栈（2026-09-22 起 METADATA/TAGS 默认开）；14.x 只有 `-testing` 镜像，tag 必须单独验收 |
 | `office` | `onlyoffice` | 需启用对应协作能力和稳定 JWT 密钥 |
 | `convert` | `seadoc` | 需启用转换/导出并配置 JWT |
-| `worker` | `cf-worker` | 组织同步、Meilisearch 索引等周期任务 |
+| `worker` | `cf-worker` | 已进默认栈（2026-09-22 起）：目录 ACL 迁移/同步、组织同步、索引等周期任务 |
 | `ai` | `seafile-ai` | 复用官方 Seafile AI 并外接 LLM；当前为验证中，不代表全链路已验收 |
 | `full` | 多个可选服务 | 只启动服务；不会自动把所有功能标记为已验证 |
 
 示例：
 
 ```bash
-docker compose --profile worker up -d
+docker compose up -d      # 核心栈，已含 cf-worker 与 cloudfile-metadata
 ```
 
 `docker compose --profile <name> up` 只启动容器。能力是否生效还取决于 `.env` 中的

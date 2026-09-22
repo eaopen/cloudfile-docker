@@ -5,6 +5,11 @@
 > **适用版本**：CloudFile `14.0.0-cf.0`，基于 Seafile CE 14 源码重构。
 > **状态**：验证中；CE 前端、API 和 Metadata Server 数据通路存在，当前容器门禁只验证标签定义的创建与读回，尚未验证目录/文件绑定全链路。P2-07 已在 `repo-tags` 上落地系统/用户标签分类、批量上限与权限校验。
 > **边界**：CloudFile 不建立平行标签存储；默认复用 CE `repo_metadata`、`repo_tags`/`file_tags` 与官方 Metadata Server。
+>
+> **镜像可用性（2026-09-22 核对 Docker Hub）**：`seafileltd/seafile-md-server` 的 14.x **只有 `-testing` 标签**，
+> 不存在 stable 14.x 镜像；默认已由 `14.0.3-testing`（2026-06-15）升到最新的 `14.0.7-testing`（2026-09-09）。
+> 存在 stable 的是 13.x（`13.0.28`），但**不可与 CE 14 混用**（共享 schema 与 API）。
+> 因此 METADATA/TAGS 默认打开后，生产部署必须用 `CF_METADATA_IMAGE` 显式固定一个已验证镜像。
 
 ## 现有实现
 

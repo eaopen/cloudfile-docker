@@ -56,10 +56,10 @@ WebDAV 读路径（PROPFIND 列举/GET/资源解析）已由
 
 | Profile | 新增服务 | 用途与状态 |
 |---|---|---|
-| 默认 | `cloudfile`、`db`、`cache`、`proxy` | 核心栈 |
-| `worker` | `cf-worker` | 组织同步、Meilisearch 索引和外部资料源扫描等周期任务 |
+| 默认 | `cloudfile`、`db`、`cache`、`proxy`、`cf-worker`、`cloudfile-metadata` | 核心栈；**2026-09-22 起 worker 与 metadata 也默认启动** |
+| `worker` | `cf-worker` | 已进默认栈；该 profile 仅作兼容别名，不再额外启动服务 |
 | `search` | `seasearch`、`meilisearch` | 同时提供默认 SeaSearch 与可选 Meilisearch；由 `CF_PROVIDER_SEARCH` 选择查询路径 |
-| `metadata` | `cloudfile-metadata` | 官方 Metadata Server；当前默认镜像是兼容验证用 `14.0.3-testing`，生产必须固定已验版本 |
+| `metadata` | `cloudfile-metadata` | 已进默认栈；该 profile 仅作兼容别名。官方 Metadata Server 的 14.x **只有 `-testing` 镜像**（当前 `14.0.7-testing`），生产必须固定已验版本 |
 | `ai` | `seafile-ai` | 官方按需 AI 组件；需自备 LLM 配置，真实端到端仍待验证 |
 | `office` | `onlyoffice` | OnlyOffice Document Server |
 | `convert` | `seadoc` | SeaDoc 转换与导出 |
@@ -69,9 +69,8 @@ WebDAV 读路径（PROPFIND 列举/GET/资源解析）已由
 启动示例：
 
 ```bash
-docker compose --profile worker up -d
+docker compose up -d                  # 核心栈已含 cf-worker 与 cloudfile-metadata
 docker compose --profile search up -d
-docker compose --profile metadata up -d
 docker compose --profile full up -d
 ```
 
@@ -108,7 +107,7 @@ curl -X POST -H "Authorization: Token $TOKEN" \
 
 ### SSO 与组织映射
 
-CloudFile 默认以 Authentik 作为企业身份入口，当前稳定参考版本为 `2026.5.6`；实现复用 Seafile CE 的通用 OAuth2/OIDC Authorization Code，并没有 Authentik 专用协议或 preset。`CF_ENABLE_SSO=true` 后，CloudFile 新增的目录 provider 可将外部组织结构同步到本地组；当前只实现 `static` 与 `external-service`，不是直连 Authentik 的组织目录。启用周期同步时同时启动 `worker` profile。端点、字段映射、登录/登出、首次用户和恢复方式见 [`../../docs/features/sso-authentik.md`](../../docs/features/sso-authentik.md)。
+CloudFile 默认以 Authentik 作为企业身份入口，当前稳定参考版本为 `2026.5.6`；实现复用 Seafile CE 的通用 OAuth2/OIDC Authorization Code，并没有 Authentik 专用协议或 preset。`CF_ENABLE_SSO=true` 后，CloudFile 新增的目录 provider 可将外部组织结构同步到本地组；当前只实现 `static` 与 `external-service`，不是直连 Authentik 的组织目录。周期同步由默认启动的 `cf-worker` 执行（2026-09-22 起进默认栈）。端点、字段映射、登录/登出、首次用户和恢复方式见 [`../../docs/features/sso-authentik.md`](../../docs/features/sso-authentik.md)。
 
 LDAP、ADFS/SAML、Shibboleth 是 CE 兼容路径，不是 CloudFile 的默认企业入口；角色和 2FA 也是 CE 已有设置。CloudFile 只将它们暴露为可重建的 `.env` 配置：
 
@@ -125,7 +124,7 @@ LDAP、ADFS/SAML、Shibboleth 是 CE 兼容路径，不是 CloudFile 的默认�
 docker compose --profile search up -d
 ```
 
-在 `.env` 中设置 `CF_ENABLE_SEARCH=true`、SeaSearch 首次管理员凭据，并令 `CF_SEASEARCH_TOKEN` 为 `用户名:密码` 的 Base64。若改用 Meilisearch，另设 `CF_PROVIDER_SEARCH=meilisearch`、`MEILI_MASTER_KEY` 和同值的 `CF_MEILISEARCH_API_KEY`，并启动 `worker` profile。限制见 [`../../docs/features/search.md`](../../docs/features/search.md)。
+在 `.env` 中设置 `CF_ENABLE_SEARCH=true`、SeaSearch 首次管理员凭据，并令 `CF_SEASEARCH_TOKEN` 为 `用户名:密码` 的 Base64。若改用 Meilisearch，另设 `CF_PROVIDER_SEARCH=meilisearch`、`MEILI_MASTER_KEY` 和同值的 `CF_MEILISEARCH_API_KEY`，限制见 [`../../docs/features/search.md`](../../docs/features/search.md)。
 
 ### 属性与标签
 
@@ -137,6 +136,11 @@ docker compose up -d
 `cloudfile-metadata` 已从 `metadata` profile 提到**默认栈**，无需 `--profile metadata`（该 profile
 仍可作为兼容别名使用）。若要关闭，在 `.env` 里显式设
 `CF_ENABLE_METADATA=false`（注意：TAGS 依赖 METADATA，两者需同步关闭）。
+
+> 镜像可用性（2026-09-22 核对 Docker Hub）：`seafileltd/seafile-md-server` 的 **14.x 只有
+> `-testing` 标签，不存在 stable 14.x 镜像**；最新为 `14.0.7-testing`（2026-09-09），
+> 默认值已由 `14.0.3-testing`（2026-06-15）升到它。存在 stable 的是 13.x（`13.0.28`），
+> 但**不可混用**——metadata-server 与 CE 版本共享 schema 与 API。
 前端、REST API 与 seafevents 投喂链路复用 CE，`cloudfile-metadata` 提供外部存储/查询服务。
 生产环境必须将 `CF_METADATA_IMAGE` 固定到已验证镜像（当前默认为
 `seafileltd/seafile-md-server:14.0.3-testing`，**不宜直接用于生产**）。

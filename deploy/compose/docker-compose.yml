@@ -4,14 +4,15 @@
 #   docker compose --profile search up -d    + SeaSearch, Meilisearch
 #   docker compose --profile office up -d    + OnlyOffice
 #   docker compose --profile convert up -d   + SeaDoc conversion/export
-#   docker compose --profile worker up -d    + background worker
 #   docker compose --profile s3 up -d        + MinIO test backend
 #   docker compose --profile ai up -d        + seafile-ai (needs a self-supplied LLM backend)
 #   docker compose --profile full up -d      all application extensions
 #
 # Since 2026-09-22 the extended properties/tags service (cloudfile-metadata)
-# is part of the default stack, because METADATA and TAGS default to on.
-# `--profile metadata` is accepted but no longer starts anything extra.
+# and the background worker (cf-worker) are part of the default stack: the
+# metadata/tag switches default to on, and the directory-ACL capability that
+# also defaults to on registers periodic tasks only the worker can run.
+# `--profile metadata` and `--profile worker` are accepted but start nothing extra.
 #
 # Copy .env.example to .env first. Defaults changed on 2026-09-22: the
 # capabilities that need no third party are on by default, so this stack is no
@@ -320,15 +321,17 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Background tasks: search indexing, external-source scans, audit archiving.
+  # Background tasks: ACL rule migration/sync, search indexing, external-source
+  # scans, audit archiving.
   #
-  # Not in the default set because nothing registers periodic work yet -- the
-  # capabilities that need it are P2 and later. Enable it with --profile worker
-  # once one of them is switched on.
+  # In the default stack since 2026-09-22: directory ACL defaults to on, and its
+  # acl-path-migration / acl-rule-sync periodic tasks exist only here -- without
+  # the worker, rules do not follow rename/move and the periodic reconcile never
+  # runs. Safe to start by default because it waits for cloudfile to be healthy
+  # and restarts, so it cannot race the RPC socket at boot.
   cf-worker:
     image: ${CLOUDFILE_IMAGE:-cloudfile/cloudfile:14.0.0-cf.0}
     container_name: cloudfile-worker
-    profiles: ["worker", "full"]
     command:
       - /bin/bash
       - -lc
@@ -394,6 +397,11 @@ services:
       CF_EXTERNAL_SCAN_INTERVAL: ${CF_EXTERNAL_SCAN_INTERVAL:-60}
       CF_EXTERNAL_SCAN_MAX_DIRS: ${CF_EXTERNAL_SCAN_MAX_DIRS:-20}
       CF_EXTERNAL_SCAN_MAX_FILES: ${CF_EXTERNAL_SCAN_MAX_FILES:-2000}
+      # 补齐主应用已有、worker 侧此前漏列的三个开关：worker 的周期性任务
+      # 注册表要与应用一致，否则同一个开关在两边语义不同。
+      CF_ENABLE_FILEOPS: ${CF_ENABLE_FILEOPS:-true}
+      CF_ENABLE_FAVORITES_ID: ${CF_ENABLE_FAVORITES_ID:-true}
+      CF_ENABLE_SHARE_RESTRICT: ${CF_ENABLE_SHARE_RESTRICT:-true}
       CF_SSO_OAUTH_CLIENT_ID: ${CF_SSO_OAUTH_CLIENT_ID:-}
       CF_SSO_OAUTH_CLIENT_SECRET: ${CF_SSO_OAUTH_CLIENT_SECRET:-}
       CF_SSO_OAUTH_AUTHORIZATION_URL: ${CF_SSO_OAUTH_AUTHORIZATION_URL:-}
@@ -471,10 +479,16 @@ services:
   # metadata and tag switches are on by default, and bootstrap enforces
   # TAGS => METADATA. Leaving the service behind a profile would hand the
   # default stack ENABLE_METADATA_MANAGEMENT=True with no backend to reach.
-  # The image is still 14.0.3-testing; pin CF_METADATA_IMAGE to a verified
-  # image before production.
+  # Image pinning (checked against Docker Hub on 2026-09-22): the 14.x line of
+  # seafileltd/seafile-md-server publishes ONLY -testing tags -- no stable 14.x
+  # exists. 14.0.7-testing (2026-09-09, amd64 sha256:13cf9fa6...56f0b) is the
+  # newest and closest to our CE 14.0.8 anchor; 14.0.3-testing (2026-06-15) was
+  # three revisions behind. The 13.x line does have stable tags (13.0.28) but
+  # must NOT be mixed in: metadata-server shares its schema and API with the
+  # CE version, so a 13.x backend under a CE 14 stack is a mismatch.
+  # Pin CF_METADATA_IMAGE to a verified image before production.
   cloudfile-metadata:
-    image: ${CF_METADATA_IMAGE:-seafileltd/seafile-md-server:14.0.3-testing}
+    image: ${CF_METADATA_IMAGE:-seafileltd/seafile-md-server:14.0.7-testing}
     container_name: cloudfile-metadata
     command:
       - /bin/bash

@@ -157,6 +157,13 @@ MinIO 的示例凭据只能用于本地测试。对象布局、迁移、GC/FSCK 
 
 ### 外部资料源
 
+**页面入口**：v1 的日常入口是原生资料库列表（影子注入，只读）。CloudFile 另有两个自有页面，
+直接访问 URL 即可，无需额外配置：
+
+- `https://<站点>/cloudfile/external-sources/` —— 外部资料源登记、授权与只读浏览（登记/授权需系统管理员）；
+- `https://<站点>/cloudfile/admin/` —— 能力开关总览，用于核对本部署实际打开了哪些 `CF_ENABLE_*`
+  （开关写在 `.env`、由容器启动时写入 `seahub_settings.py`，此前只能在 API 里读回）。
+
 CloudFile 不负责挂载任何外部存储。**v1 只支持只读挂载本地目录**：SMB/NFS、OpenList、rclone 等一律由运维先在宿主机转换成普通本地目录，再只读 bind mount 到 `CF_EXTERNAL_SOURCES_ROOTS` 允许的容器路径；CloudFile 负责登记、授权、浏览与下载，不做直接 SMB/NFS 协议接入。具体边界见 [`../../docs/features/external-sources.md`](../../docs/features/external-sources.md)。
 
 ### 文件锁、关注、转换与导出

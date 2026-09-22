@@ -48,6 +48,7 @@ frontend/src/features/library-view/dir-others/index.js
 frontend/src/features/metadata/components/cell-formatter/file-tags/index.js
 frontend/src/features/tag/hooks/tags.js
 frontend/src/hooks/file-operations/permission.js
+frontend/src/models/repo-info.js
 frontend/src/models/repo-tag.js
 frontend/src/pages/app/main-panel/lib-content-view/lib-content-view.js
 frontend/src/pages/file-history-old/history-item.js

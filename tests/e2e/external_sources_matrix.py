@@ -133,6 +133,51 @@ def main():
                     {'readme.txt', 'nested'},
                     'status=%s %s' % (status, body[:500]))
 
+    # 原生前端契约：React 侧栏目录树用 `parent_dir` 反推节点 key（原生格式带尾斜杠，
+    # 根目录为 `/`），并且 `with_parents=1` 必须一次返回祖先各级目录的条目。两者任一
+    # 不符，getNodeByPath 会取到 null、访问 node.isLoaded 抛错并被 catch 吞掉，表现为
+    # 目录树不再跟随导航进入子目录。见 shadows.py 的 `_native_parent_dir`。
+    status, body = request(base + '/api/v2.1/repos/%s/dir/?p=/' % repo_id,
+                           token=token, context=context)
+    root_parents = {entry.get('parent_dir')
+                    for entry in (body_json(body).get('dirent_list') or [])}
+    passed &= check('影子目录 parent_dir 用原生格式', status == 200 and root_parents == {'/'},
+                    'status=%s parents=%s %s' % (status, sorted(root_parents), body[:300]))
+
+    status, body = request(base + '/api/v2.1/repos/%s/dir/?p=/nested/&with_parents=1' % repo_id,
+                           token=token, context=context)
+    chain = body_json(body).get('dirent_list') or []
+    chain_parents = {entry.get('parent_dir') for entry in chain}
+    chain_names = {entry.get('name') for entry in chain}
+    passed &= check('影子目录 with_parents 返回祖先链', status == 200 and
+                    chain_parents == {'/', '/nested/'} and
+                    chain_names >= {'readme.txt', 'nested', 'inside.txt'},
+                    'status=%s parents=%s names=%s %s'
+                    % (status, sorted(chain_parents), sorted(chain_names), body[:300]))
+
+    # 原生库视图进入目录、预览文件、选中目录时会分别打这三个端点。合成 repo_id
+    # 在上游查不到库，一律 404；前端把前两个渲染成红色错误提示（repo-tags 在
+    # loadDirData 里必调，所以是「打开外部源就报错」）。影子必须用原生形状回答。
+    status, body = request(base + '/api/v2.1/repos/%s/repo-tags/' % repo_id,
+                           token=token, context=context)
+    passed &= check('影子库 repo-tags 返回空集而非 404', status == 200 and
+                    body_json(body).get('repo_tags') == [],
+                    'status=%s %s' % (status, body[:300]))
+
+    status, body = request(base + '/api/v2.1/repos/%s/file-tags/?file_path=/readme.txt' % repo_id,
+                           token=token, context=context)
+    passed &= check('影子库 file-tags 返回空集而非 404', status == 200 and
+                    body_json(body).get('file_tags') == [],
+                    'status=%s %s' % (status, body[:300]))
+
+    status, body = request(base + '/api/v2.1/repos/%s/dir/detail/?path=/nested' % repo_id,
+                           token=token, context=context)
+    detail = body_json(body)
+    passed &= check('影子库 dir/detail 返回目录详情', status == 200 and
+                    detail.get('name') == 'nested' and detail.get('permission') == 'r' and
+                    detail.get('repo_id') == repo_id and detail.get('path') == '/nested/',
+                    'status=%s %s' % (status, body[:300]))
+
     status, body = request(base + '/api2/repos/%s/file/?p=/readme.txt&op=download' % repo_id,
                            token=token, context=context)
     shadow_download = body_json(body)

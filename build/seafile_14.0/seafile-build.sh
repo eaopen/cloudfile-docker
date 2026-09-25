@@ -1,21 +1,28 @@
 #!/bin/bash
 
-if [[ $# != 1 ]]; then
+if [[ $# -gt 1 ]]; then
     echo ''
-    echo 'Usage: ./seafile-build.sh $version'
+    echo 'Usage: ./seafile-build.sh [seafile-version]'
     echo ''
-    exit 0
+    exit 2
 fi
-
-version=$1
-tag=v$1-server
-libevhtp_tag=1.1.6
-libsearpc_tag=v3.3-latest
 
 SCRIPT=$(readlink -f "$0")
 current_dir=$(dirname "${SCRIPT}")
 code_path=$current_dir/src
-mkdir -p ${code_path}
+manifest=$current_dir/release.json
+manifest_reader=$current_dir/source_manifest.py
+version=$(python3 "${manifest_reader}" "${manifest}" seafile_version) || exit 1
+product_version=$(python3 "${manifest_reader}" "${manifest}" product_version) || exit 1
+if [[ $# -eq 1 && "$1" != "${version}" ]]; then
+    echo "Requested Seafile version $1 does not match release manifest ${version}" >&2
+    exit 2
+fi
+mkdir -p "${code_path}"
+
+function manifest_value() {
+    python3 "${manifest_reader}" "${manifest}" "$2" "$1"
+}
 
 function install_dependencies() {
     apt-get update && apt-get upgrade -y
@@ -100,98 +107,37 @@ function install_python_dependencies() {
 }
 
 function clone_code() {
-    cd ${code_path}
+    cd "${code_path}" || exit 1
 
-    if [[ ! -e libevhtp ]]; then
-        git clone https://github.com/haiwen/libevhtp.git
-    fi
-
-    if [[ ! -e libsearpc ]]; then
-        git clone https://github.com/haiwen/libsearpc.git
-    fi
-
-    if [[ ! -e seafile-server ]]; then
-        git clone https://github.com/haiwen/seafile-server.git
-    fi
-
-    if [[ ! -e seafobj ]]; then
-        git clone https://github.com/haiwen/seafobj.git
-    fi
-
-    if [[ ! -e seafdav ]]; then
-        git clone https://github.com/haiwen/seafdav.git
-    fi
-
-    if [[ ! -e seafevents ]]; then
-        git clone https://github.com/haiwen/seafevents.git
-    fi
-
-    if [[ ! -e seahub ]]; then
-        git clone https://github.com/haiwen/seahub.git
-    fi
+    for source in libevhtp libsearpc seafile-server seafobj seafdav seafevents seahub; do
+        source_url=$(manifest_value "${source}" url) || exit 1
+        if [[ ! -e "${source}" ]]; then
+            git clone "${source_url}" "${source}" || exit 1
+        elif [[ -d "${source}/.git" ]]; then
+            git -C "${source}" remote set-url origin "${source_url}" || exit 1
+        else
+            echo "Existing source path is not a Git repository: ${code_path}/${source}" >&2
+            exit 1
+        fi
+    done
 }
 
 function fetch() {
-    cd ${code_path}
+    cd "${code_path}" || exit 1
 
     echo "Start fetch"
     echo ''
 
-    echo "Fetch libevhtp"
-    cd ${code_path}/libevhtp
-    git reset --hard
-    git clean -xf
-    git fetch origin tag ${libevhtp_tag}
-    git checkout ${libevhtp_tag}
-    cd ${code_path}
-
-    echo "Fetch libsearpc"
-    cd ${code_path}/libsearpc
-    git reset --hard
-    git clean -xf
-    git fetch origin tag ${libsearpc_tag}
-    git checkout ${libsearpc_tag}
-    cd ${code_path}
-
-    echo "Fetch seafile-server"
-    cd ${code_path}/seafile-server
-    git reset --hard
-    git clean -xf
-    git fetch origin tag ${tag}
-    git checkout ${tag}
-    cd ${code_path}
-
-    echo "Fetch seafobj"
-    cd ${code_path}/seafobj
-    git reset --hard
-    git clean -xf
-    git fetch origin tag ${tag}
-    git checkout ${tag}
-    cd ${code_path}
-
-    echo "Fetch seafdav"
-    cd ${code_path}/seafdav
-    git reset --hard
-    git clean -xf
-    git fetch origin tag ${tag}
-    git checkout ${tag}
-    cd ${code_path}
-
-    echo "Fetch seafevents"
-    cd ${code_path}/seafevents
-    git reset --hard
-    git clean -xf
-    git fetch origin tag ${tag}
-    git checkout ${tag}
-    cd ${code_path}
-
-    echo "Fetch seahub"
-    cd ${code_path}/seahub
-    git reset --hard
-    git clean -xf
-    git fetch origin tag ${tag}
-    git checkout ${tag}
-    cd ${code_path}
+    for source in libevhtp libsearpc seafile-server seafobj seafdav seafevents seahub; do
+        echo "Fetch ${source}"
+        source_ref=$(manifest_value "${source}" ref) || exit 1
+        cd "${code_path}/${source}" || exit 1
+        git reset --hard || exit 1
+        git clean -xffd || exit 1
+        git fetch --force origin "${source_ref}" || exit 1
+        git checkout --detach FETCH_HEAD || exit 1
+        cd "${code_path}" || exit 1
+    done
 }
 
 function build() {
@@ -200,7 +146,7 @@ function build() {
 }
 
 echo ''
-echo "Info: Seafile Version [ ${tag} ]"
+echo "Info: CloudFile ${product_version}, Seafile ${version}"
 echo ''
 
 install_dependencies

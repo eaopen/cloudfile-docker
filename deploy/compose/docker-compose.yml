@@ -427,6 +427,33 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # One local staging directory maps to one existing library. The client has
+  # its own image/state and never shares cf-worker's periodic-task process.
+  cf-migration:
+    profiles: ["migration"]
+    platform: linux/amd64
+    build:
+      context: ../..
+      dockerfile: image/migration/Dockerfile
+    image: cloudfile/seaf-cli-migration:9.0.21
+    container_name: cloudfile-migration
+    environment:
+      CF_MIGRATION_SERVER_URL: ${CF_MIGRATION_SERVER_URL:-http://cloudfile}
+      CF_MIGRATION_REPO_ID: ${CF_MIGRATION_REPO_ID:-}
+      CF_MIGRATION_USER: ${CF_MIGRATION_USER:-}
+      CF_MIGRATION_SOURCE_HOST: ${CF_MIGRATION_SOURCE_DIR:-./data/migration/source}
+      CF_MIGRATION_STATUS_INTERVAL: ${CF_MIGRATION_STATUS_INTERVAL:-60}
+    volumes:
+      - ${CF_MIGRATION_SOURCE_DIR:-./data/migration/source}:/migration/source
+      - ${CF_MIGRATION_STATE_DIR:-./data/migration/state}:/migration/state
+      - ./data/migration/control:/migration/control
+    secrets:
+      - cf_migration_token
+    depends_on:
+      cloudfile:
+        condition: service_healthy
+    restart: "no"
+
   # Default full-text backend (docs/search.md): upstream CE 14.0 already
   # integrates SeaSearch end to end (indexing and querying both happen inside
   # seafevents, driven by the [SEASEARCH] block cloudfile-docker's bootstrap
@@ -604,3 +631,8 @@ services:
       retries: 60
       start_period: 20s
     restart: unless-stopped
+
+secrets:
+  # A file-backed API token is passed only to the one-shot CLI container.
+  cf_migration_token:
+    file: ${CF_MIGRATION_TOKEN_FILE:-./data/migration/token}

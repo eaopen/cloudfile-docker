@@ -60,6 +60,7 @@ WebDAV 读路径（PROPFIND 列举/GET/资源解析）已由
 | `worker` | `cf-worker` | 已进默认栈；该 profile 仅作兼容别名，不再额外启动服务 |
 | `search` | `seasearch`、`meilisearch` | 同时提供默认 SeaSearch 与可选 Meilisearch；由 `CF_PROVIDER_SEARCH` 选择查询路径 |
 | `metadata` | `cloudfile-metadata` | 已进默认栈；该 profile 仅作兼容别名。官方 Metadata Server 的 14.x **只有 `-testing` 镜像**（当前 `14.0.7-testing`），生产必须固定已验版本 |
+| `migration` | `cf-migration` | 独立 seaf-cli 容器；从本地暂存副本同步，每次只允许一个资料库，需人工验证后停止 |
 | `ai` | `seafile-ai` | 官方按需 AI 组件；需自备 LLM 配置，真实端到端仍待验证 |
 | `office` | `onlyoffice` | OnlyOffice Document Server |
 | `convert` | `seadoc` | SeaDoc 转换与导出 |
@@ -143,7 +144,7 @@ docker compose up -d
 > 但**不可混用**——metadata-server 与 CE 版本共享 schema 与 API。
 前端、REST API 与 seafevents 投喂链路复用 CE，`cloudfile-metadata` 提供外部存储/查询服务。
 生产环境必须将 `CF_METADATA_IMAGE` 固定到已验证镜像（当前默认为
-`seafileltd/seafile-md-server:14.0.3-testing`，**不宜直接用于生产**）。
+`seafileltd/seafile-md-server:14.0.7-testing`，**不宜直接用于生产**）。
 
 ### S3 与多存储
 

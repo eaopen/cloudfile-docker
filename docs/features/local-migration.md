@@ -47,19 +47,17 @@ Seafile 14.0 官方 Metadata Server 的 `MD_FILE_COUNT_LIMIT` 默认是**每资�
 传给主服务和 Metadata Server，默认 `100000`。`MD_MAX_CACHE_SIZE`（默认 1GB）
 只是内存缓存上限，调大它不能解除文件数限制。
 
-100–200 万文件/资料库需先做容量验证，再将 `CF_METADATA_FILE_COUNT_LIMIT`
-在两侧一致地设成高于最大资料库文件数的值（例如试点设为 `2500000`）。
-不要直接删除上限：约 10 个资料库意味着约 1,000–2,000 万文件，
-需要测量初始化/追赶速度、内存与磁盘索引、数据库/Redis 压力、文件增删改延迟、
-API 查询延迟及进程重启恢复。先用 1 个有代表性的资料库试点，
-完成全量索引并观察持续同步，再决定是否推广；容量数值不是性能保证。
+**仅当该大资料库需要启用官方高级元数据**（Table/Kanban/Gallery/AI 等）时，
+才考虑在两侧一致地提高 `CF_METADATA_FILE_COUNT_LIMIT`，并先以代表性资料库验证
+初始化/追赶、资源占用和恢复；数值调高不是性能保证。CloudFile 核心标签和少量业务属性
+拟按[解耦方案](cloudfile-tags-properties-decoupling.md)走 Seahub 稀疏存储，
+不以放宽官方阈值作为长期前提；但此方案尚未实施，当前 `CF_ENABLE_TAGS` 仍依赖
+`CF_ENABLE_METADATA`，不能按规划直接关闭 Metadata Server。
 同步传输与元数据管理是两个独立链路；如同步出现 `fs-id-list` 超时，
 还需检查服务端 fileserver、反向代理的请求时限，而不是继续调高 metadata 阈值。
 
-目前没有证据表明一个通用开源搜索引擎可以直接替换 Metadata Server：
-替代实现必须兼容 CloudFile/Seafile 的元数据 API、资料库与路径权限、提交增量、
-删除/重命名和现有 schema。只有试点表明官方服务不能达到吞吐或恢复目标时，
-才考虑做协议兼容的定制服务；单独替换索引库不能直接解决这条链路。
+Meilisearch 只承担 CloudFile 的搜索投影，不能替代官方 Metadata Server 的
+列、链接、视图和 AI 数据；两套能力应保持明确边界。
 
 参考：[Seafile 14 Metadata Server 配置](https://manual.seafile.com/14.0/extension/metadata-server/)、
 [Linux CLI 使用说明](https://help.seafile.com/syncing_client/linux-cli/)。

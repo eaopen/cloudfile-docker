@@ -43,6 +43,14 @@
 | CloudFile 外部资料联邦（OpenList/rclone；不属于虚拟目录 v1） | 规划 | 计划独立项目；复用 OpenList/rclone 适配外部存储；CloudFile 负责消费接口 | 外部服务、部署、前端、后端 | 新应用扩展 | OpenList、rclone | [规划说明](features/external-directory-mount.md)；当前仓无匹配代码/配置/测试 | 不适合 PR | **不属于虚拟目录 v1**（v1 只支持只读挂载本地目录）。模块计划同时为 AI 应用提供统一文件资料库、为 CloudFile 提供虚拟目录挂载。它不同于 Seafile 虚拟资料库和现有 `local-path`；模式均未实现。 |
 | Seafile AI 与外接 LLM | 验证中 | 复用官方 Seahub/Seafile AI；本项目新增 Compose profile 与配置接线；模型由外部 LLM 提供 | 部署、配置、外部服务 | CE 补强 | `seafile-ai`、Metadata Server、Redis、OpenAI-compatible/local LLM | [AI 说明](features/seafile-ai.md)、[`docker-compose.yml`](../deploy/compose/docker-compose.yml)、[`.env.example`](../deploy/compose/.env.example) | 不适合 PR | `ai` profile、官方镜像和 `CF_AI_*` 配置已存在，但当前仓无容器 E2E 结果。CloudFile 不自研模型或平行 AI 后端。 |
 
+## 规划中的 CloudFile 标签/属性解耦
+
+[CloudFile 标签与扩展属性解耦方案](features/cloudfile-tags-properties-decoupling.md)处于
+**规划、未实现**状态：保留官方 Metadata Server 负责 Table/Kanban/Gallery/AI 等高级功能，
+CloudFile 核心标签优先复用 Seahub 的 `RepoTags/FileTags/FileUUIDMap`，少量业务属性稀疏落库，
+Meilisearch 只做搜索/facet 投影，Redis 负责缓存和异步分发。当前 `CF_ENABLE_TAGS` 仍依赖
+`CF_ENABLE_METADATA`；该规划不改变上表现有能力的实现与验证状态。
+
 ## 复用与新增的关键结论
 
 - OAuth2/OIDC 登录、SAML、LDAP、元数据 UI/API、预览及部分文件管理来自 Seafile CE；

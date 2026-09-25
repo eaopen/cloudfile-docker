@@ -5,6 +5,9 @@
 > **适用版本**：CloudFile `14.0.0-cf.0`，基于 Seafile CE 14 源码重构。
 > **状态**：验证中；CE 前端、API 和 Metadata Server 数据通路存在，当前容器门禁只验证标签定义的创建与读回，尚未验证目录/文件绑定全链路。P2-07 已在 `repo-tags` 上落地系统/用户标签分类、批量上限与权限校验。
 > **边界**：CloudFile 不建立平行标签存储；默认复用 CE `repo_metadata`、`repo_tags`/`file_tags` 与官方 Metadata Server。
+> **规划修正**：见[CloudFile 标签与扩展属性解耦方案](cloudfile-tags-properties-decoupling.md)。
+> 计划保留官方 Metadata Server 的高级元数据功能，CloudFile 核心标签优先扩展现有
+> `RepoTags/FileTags/FileUUIDMap`；该方案尚未实施，下面记录的仍是当前行为。
 >
 > **镜像可用性（2026-09-22 核对 Docker Hub）**：`seafileltd/seafile-md-server` 的 14.x **只有 `-testing` 标签**，
 > 不存在 stable 14.x 镜像；默认已由 `14.0.3-testing`（2026-06-15）升到最新的 `14.0.7-testing`（2026-09-09）。

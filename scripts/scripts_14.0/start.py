@@ -20,6 +20,7 @@ from utils import (
 from upgrade import check_upgrade
 from bootstrap import init_seafile_server
 from cloudfile import write_settings as write_cloudfile_settings
+from cloudfile import write_policy_worker_hooks
 
 
 shared_seafiledir = '/shared/seafile'
@@ -56,6 +57,7 @@ def main():
     wait_for_mysql()
     init_seafile_server()
     write_cloudfile_settings(join(topdir, 'conf', 'seahub_settings.py'))
+    write_policy_worker_hooks(join(topdir, 'conf', 'gunicorn.conf.py'))
 
     check_upgrade()
     os.chdir(installdir)

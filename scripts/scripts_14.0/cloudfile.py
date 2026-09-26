@@ -208,3 +208,50 @@ def write_settings(path, environment=None):
     with open(path, "w", encoding="utf-8") as settings_file:
         settings_file.write(updated)
     return True
+
+
+def write_policy_worker_hooks(path, environment=None):
+    """Manage only our block; preserve and compose existing Gunicorn hooks."""
+    environment = os.environ if environment is None else environment
+    enabled = _boolean(environment, "CLOUDFILE_POLICY_WORKER_HOOKS", False)
+    begin_marker = "# BEGIN CLOUDFILE POLICY WORKER HOOKS"
+    end_marker = "# END CLOUDFILE POLICY WORKER HOOKS"
+    try:
+        with open(path, "r", encoding="utf-8") as source:
+            current = source.read()
+    except FileNotFoundError:
+        current = ""
+    begin, end = current.find(begin_marker), current.find(end_marker)
+    if begin >= 0 or end >= 0:
+        if (begin < 0 or end < begin or current.count(begin_marker) != 1 or
+                current.count(end_marker) != 1):
+            raise ValueError("invalid policy worker hook markers")
+        end += len(end_marker)
+        if current[end:end + 1] == "\n":
+            end += 1
+        base = current[:begin] + current[end:]
+    else:
+        base = current
+    block = ""
+    if enabled:
+        block = '\n'.join((begin_marker,
+            "_cf_previous_post_worker_init = globals().get('post_worker_init')",
+            "_cf_previous_worker_exit = globals().get('worker_exit')",
+            "def post_worker_init(worker):",
+            "    if _cf_previous_post_worker_init is not None:",
+            "        _cf_previous_post_worker_init(worker)",
+            "    from cloudfile_extensions.authorization.gunicorn import post_worker_init as cf_init",
+            "    cf_init(worker)",
+            "def worker_exit(server, worker):",
+            "    try:",
+            "        if _cf_previous_worker_exit is not None:",
+            "            _cf_previous_worker_exit(server, worker)",
+            "    finally:",
+            "        from cloudfile_extensions.authorization.gunicorn import worker_exit as cf_exit",
+            "        cf_exit(server, worker)", end_marker, ""))
+    updated = base + ("\n" if block and base and not base.endswith("\n") else "") + block
+    if updated == current:
+        return False
+    with open(path, "w", encoding="utf-8") as target:
+        target.write(updated)
+    return True

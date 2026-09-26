@@ -2,6 +2,8 @@ import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
+from types import ModuleType
+from unittest.mock import Mock, patch
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "scripts_14.0" / "cloudfile.py"
@@ -11,6 +13,55 @@ SPEC.loader.exec_module(CLOUDFILE)
 
 
 class CloudFileSettingsTest(unittest.TestCase):
+    def test_policy_worker_hooks_preserve_compose_and_remove_only_owned_block(self):
+        environment = {"CLOUDFILE_POLICY_WORKER_HOOKS": "true"}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "gunicorn.conf.py"
+            original = "bind = '127.0.0.1:8000'\ndef post_worker_init(worker):\n    worker.append('original-init')\ndef worker_exit(server, worker):\n    worker.append('original-exit')\n"
+            path.write_text(original, encoding="utf-8")
+            self.assertTrue(CLOUDFILE.write_policy_worker_hooks(path, environment))
+            rendered = path.read_text(encoding="utf-8")
+            self.assertFalse(CLOUDFILE.write_policy_worker_hooks(path, environment))
+            self.assertEqual(path.read_text(encoding="utf-8"), rendered)
+            fixture = ModuleType("cloudfile_extensions.authorization.gunicorn")
+            fixture.post_worker_init = lambda worker: worker.append("cf-init")
+            fixture.worker_exit = lambda server, worker: worker.append("cf-exit")
+            with patch.dict("sys.modules", {fixture.__name__: fixture}):
+                namespace = {}
+                exec(compile(rendered, str(path), "exec"), namespace)
+                events = []
+                namespace["post_worker_init"](events)
+                namespace["worker_exit"](None, events)
+                self.assertEqual(events, ["original-init", "cf-init", "original-exit", "cf-exit"])
+            self.assertTrue(CLOUDFILE.write_policy_worker_hooks(path, {}))
+            self.assertEqual(path.read_text(encoding="utf-8"), original)
+            self.assertFalse(CLOUDFILE.write_policy_worker_hooks(path, {}))
+
+    def test_policy_exit_cleanup_runs_after_existing_hook_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "gunicorn.conf.py"
+            path.write_text("def worker_exit(server, worker):\n    raise RuntimeError('fixture')\n", encoding="utf-8")
+            CLOUDFILE.write_policy_worker_hooks(path, {"CLOUDFILE_POLICY_WORKER_HOOKS": "true"})
+            fixture = ModuleType("cloudfile_extensions.authorization.gunicorn")
+            fixture.worker_exit = Mock()
+            with patch.dict("sys.modules", {fixture.__name__: fixture}):
+                namespace = {}
+                exec(compile(path.read_text(encoding="utf-8"), str(path), "exec"), namespace)
+                with self.assertRaises(RuntimeError):
+                    namespace["worker_exit"]("server", "worker")
+                fixture.worker_exit.assert_called_once_with("server", "worker")
+
+    def test_policy_hook_malformed_markers_preserve_original_file(self):
+        for original in ("# BEGIN CLOUDFILE POLICY WORKER HOOKS\n",
+                         "# END CLOUDFILE POLICY WORKER HOOKS\n",
+                         "# BEGIN CLOUDFILE POLICY WORKER HOOKS\n# BEGIN CLOUDFILE POLICY WORKER HOOKS\n# END CLOUDFILE POLICY WORKER HOOKS\n"):
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "gunicorn.conf.py"
+                path.write_text(original, encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    CLOUDFILE.write_policy_worker_hooks(path, {"CLOUDFILE_POLICY_WORKER_HOOKS": "true"})
+                self.assertEqual(path.read_text(encoding="utf-8"), original)
+
     def test_write_is_idempotent_and_preserves_local_settings(self):
         environment = {
             "CLOUDFILE_EXTENSION_APPS": "project_extension",

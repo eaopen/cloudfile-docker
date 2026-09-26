@@ -14,6 +14,10 @@ URLCONF_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
 EXTENSION_NAME_RE = re.compile(r"^[a-z][a-z0-9-]*$")
 CAPABILITY_NAME_RE = re.compile(r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$")
 PUBLIC_CAPABILITY_FIELDS = {"enabled", "version", "provider"}
+RESERVED_DOMAINS = {
+    "directory", "authorization", "library-policy", "directory-acl", "annotations",
+    "audit", "search", "locks", "local-edit", "migration", "transfer",
+}
 
 
 def _extension_apps(raw_value):
@@ -37,6 +41,8 @@ def _extension_urlconfs(raw_value):
     for name, module in value.items():
         if not isinstance(name, str) or not EXTENSION_NAME_RE.fullmatch(name):
             raise ValueError(f"invalid CloudFile extension name: {name!r}")
+        if name in RESERVED_DOMAINS:
+            raise ValueError("deployment extension cannot replace a core CloudFile domain")
         if not isinstance(module, str) or not URLCONF_RE.fullmatch(module):
             raise ValueError(f"invalid CloudFile extension URLConf: {module!r}")
     return value
@@ -130,10 +136,10 @@ def _authentik_settings(environment):
             "preferred_username": (False, "login_id"),
         },
         "OAUTH_CREATE_UNKNOWN_USER": _boolean(
-            environment, "CLOUDFILE_AUTHENTIK_CREATE_UNKNOWN_USER", True
+            environment, "CLOUDFILE_AUTHENTIK_CREATE_UNKNOWN_USER", False
         ),
         "OAUTH_ACTIVATE_USER_AFTER_CREATION": _boolean(
-            environment, "CLOUDFILE_AUTHENTIK_ACTIVATE_USER_AFTER_CREATION", True
+            environment, "CLOUDFILE_AUTHENTIK_ACTIVATE_USER_AFTER_CREATION", False
         ),
         "DISABLE_SSO_USER_LOCAL_PWD_LOGIN": _boolean(
             environment, "CLOUDFILE_AUTHENTIK_DISABLE_LOCAL_PASSWORD", True
@@ -149,13 +155,14 @@ def render_settings(environment=None):
     capabilities = _capabilities(environment.get("CLOUDFILE_CAPABILITIES_JSON", ""))
     authentik = _authentik_settings(environment)
     capabilities.setdefault("auth.basic", {"enabled": True, "version": "14"})
+    webdav_enabled = _boolean(environment, "CLOUDFILE_WEBDAV_ENABLED", False)
     capabilities.setdefault(
         "protocol.webdav",
-        {"enabled": _boolean(environment, "CLOUDFILE_WEBDAV_ENABLED", True), "version": "14"},
+        {"enabled": webdav_enabled, "version": "14"},
     )
     capabilities.setdefault(
         "auth.oidc",
-        {"enabled": bool(authentik), "version": "1", "provider": "authentik"},
+        {"enabled": False, "version": "1", "provider": "authentik"},
     )
 
     lines = [
@@ -164,6 +171,7 @@ def render_settings(environment=None):
         "SITE_ROOT_URLCONF = 'cloudfile_extensions.root_urls'",
         f"CLOUDFILE_EXTENSION_URLCONFS = {pprint.pformat(urlconfs, sort_dicts=True)}",
         f"CLOUDFILE_CAPABILITIES = {pprint.pformat(capabilities, sort_dicts=True)}",
+        f"CLOUDFILE_WEBDAV_SERVICE_ENABLED = {webdav_enabled!r}",
     ]
     lines.extend(
         f"{name} = {pprint.pformat(value, sort_dicts=True)}"

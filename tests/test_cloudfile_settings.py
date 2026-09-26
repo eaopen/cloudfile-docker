@@ -15,7 +15,7 @@ class CloudFileSettingsTest(unittest.TestCase):
         environment = {
             "CLOUDFILE_EXTENSION_APPS": "project_extension",
             "CLOUDFILE_EXTENSION_URLCONFS_JSON": '{"project":"project_extension.urls"}',
-            "CLOUDFILE_CAPABILITIES_JSON": '{"search.fulltext":{"enabled":true,"provider":"meilisearch"}}',
+            "CLOUDFILE_CAPABILITIES_JSON": '{"search.resources":{"enabled":true,"provider":"meilisearch"}}',
         }
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "seahub_settings.py"
@@ -87,6 +87,33 @@ class CloudFileSettingsTest(unittest.TestCase):
                 "CLOUDFILE_AUTHENTIK_CLIENT_SECRET": "secret",
                 "SEAFILE_SERVER_HOSTNAME": "files.example.com",
             })
+
+    def test_preset_does_not_claim_completed_oidc(self):
+        namespace = {}
+        exec(CLOUDFILE.render_settings({
+            "CLOUDFILE_AUTHENTIK_ENABLED": "true",
+            "CLOUDFILE_AUTHENTIK_URL": "https://auth.example.com",
+            "CLOUDFILE_AUTHENTIK_CLIENT_ID": "cloudfile",
+            "CLOUDFILE_AUTHENTIK_CLIENT_SECRET": "example-only",
+            "SEAFILE_SERVER_HOSTNAME": "files.example.com",
+        }), namespace)
+        self.assertTrue(namespace["ENABLE_OAUTH"])
+        self.assertFalse(namespace["OAUTH_CREATE_UNKNOWN_USER"])
+        self.assertFalse(namespace["OAUTH_ACTIVATE_USER_AFTER_CREATION"])
+        self.assertFalse(namespace["CLOUDFILE_CAPABILITIES"]["auth.oidc"]["enabled"])
+
+    def test_webdav_requires_explicit_deployment_flag(self):
+        for value, expected in ((None, False), ("true", True), ("false", False)):
+            environment = {} if value is None else {"CLOUDFILE_WEBDAV_ENABLED": value}
+            namespace = {}
+            exec(CLOUDFILE.render_settings(environment), namespace)
+            self.assertEqual(namespace["CLOUDFILE_WEBDAV_SERVICE_ENABLED"], expected)
+            self.assertEqual(namespace["CLOUDFILE_CAPABILITIES"]["protocol.webdav"]["enabled"], expected)
+
+    def test_deployment_cannot_claim_reserved_domain(self):
+        for domain in CLOUDFILE.RESERVED_DOMAINS:
+            with self.assertRaises(ValueError):
+                CLOUDFILE.render_settings({"CLOUDFILE_EXTENSION_URLCONFS_JSON": '{"' + domain + '":"adapter.urls"}'})
 
 
 if __name__ == "__main__":

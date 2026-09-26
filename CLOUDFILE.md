@@ -8,8 +8,10 @@
 
 - `CLOUDFILE_EXTENSION_APPS`：额外 Django 应用，逗号分隔。
 - `CLOUDFILE_EXTENSION_URLCONFS_JSON`：扩展名到 URLConf 模块的 JSON 对象。
-- `CLOUDFILE_CAPABILITIES_JSON`：部署能力声明；公开字段仅限 `enabled`、`version`、`provider`。
-- `CLOUDFILE_WEBDAV_ENABLED`：声明 WebDAV 是否可用，默认 `true`；它不代替 WebDAV 服务本身的启停配置。
+- `CLOUDFILE_CAPABILITIES_JSON`：请求启用已注册实现；公开字段仅限 `enabled`、`version`、`provider`，配置不能开启缺失实现或绕过依赖。
+- `CLOUDFILE_WEBDAV_ENABLED`：声明已配置启用 WebDAV，默认 `false`；它不代替 WebDAV 服务本身的启停配置。
+
+部署 URLConf 不得占用 directory、authorization、library-policy、directory-acl、annotations、audit、search、locks、local-edit、migration、transfer 核心域。自有能力由受信 Python 启动代码注册，配置 JSON 不能注册实现。
 
 ## Authentik OIDC
 
@@ -26,7 +28,7 @@ SEAFILE_SERVER_HOSTNAME=files.example.com
 
 默认回调地址为 `https://<SEAFILE_SERVER_HOSTNAME>/oauth/callback/`，也可用 `CLOUDFILE_AUTHENTIK_REDIRECT_URL` 覆盖。预设将 OIDC `sub` 映射为 CE OAuth `uid`，将 `preferred_username` 映射为 CE `login_id`；`sub` 是认证绑定键，不替代业务主体 `userId`。如果业务 `userId` 不等于 `preferred_username`，必须在部署验收前完成可信 claim 的映射调整和目录对账；当前预设本身不保证两者相同。
 
-新用户默认自动创建并激活，SSO 用户默认禁止本地密码登录。受控组织场景建议设置 `CLOUDFILE_AUTHENTIK_CREATE_UNKNOWN_USER=false` 和 `CLOUDFILE_AUTHENTIK_ACTIVATE_USER_AFTER_CREATION=false`，先预绑定业务身份并验收停用/撤权。仅本地开发可显式设置 `CLOUDFILE_AUTHENTIK_ALLOW_INSECURE=true`。
+未知用户默认不自动创建、不自动激活，SSO 用户默认禁止本地密码登录。先预绑定业务身份并验收停用/撤权；显式开启自动建号也不等于实现受控 JIT。仅本地开发可显式设置 `CLOUDFILE_AUTHENTIK_ALLOW_INSECURE=true`。
 
 该预设复用 CE OAuth 授权码/UserInfo 回调，不应单凭 `openid` scope 声称完整 OIDC 已验收。ID Token 签名、issuer/audience/有效期/nonce、UserInfo sub 一致性与退出流程须按产品身份特性单独实现和验证。
 

@@ -577,6 +577,7 @@ def copy_scripts_and_libs():
     copy_notification_server()
 
     # copy shared c libs
+    copy_cloudfile_acl_core()
     copy_shared_libs()
     copy_user_manuals()
 
@@ -603,6 +604,23 @@ def get_dependent_libs(executable):
         ret.add(tokens[2])
 
     return ret
+
+
+def copy_cloudfile_acl_core():
+    """Package the Server-installed ABI1 core for both native and Hub consumers.
+
+    Do not depend on ldd discovering an unversioned development symlink, or
+    silently package a runtime that cannot load its policy core.
+    """
+    prefix = os.path.join(conf[CONF_BUILDDIR], 'seafile-server', 'seafile')
+    candidates = [os.path.join(prefix, directory, 'seafile', 'libcloudfile_acl.so.1')
+                  for directory in ('lib', 'lib64')]
+    installed = [path for path in candidates if os.path.isfile(path)]
+    if len(installed) != 1:
+        error('CloudFile ABI1 permission core must be installed exactly once')
+    source = installed[0]
+    destination = os.path.join(prefix, 'lib', 'libcloudfile_acl.so.1')
+    must_copy(source, destination)
 
 
 def copy_shared_libs():

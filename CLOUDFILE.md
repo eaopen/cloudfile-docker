@@ -131,3 +131,36 @@ v0.2 目标方案采用受控 JIT，而不是当前预设的无条件建号：�
 基础认证继续用于本地账户。WebDAV 不复用浏览器 OIDC 会话，应使用独立的 WebDAV 应用密码。CloudFile 不扩展客户端及同步功能。
 
 产品规划与上线设计在 `eap-cloudfile` 仓库；本文件仅说明当前容器配置，不代表目录 ACL、审计、搜索、标签、锁、本地编辑或迁移 API 已实现。
+
+## 开发验证与完整验收分层
+
+复用 v0.1 的分层验证方式，新增 `tests/verify.py`。日常 Python 修改直接挂载当前 Hub 源码到既有 CE14 依赖镜像，不生成发布包、不重新编译 C/Go、不启动 Seahub/native 服务。组件测试使用自己的 MySQL8/Redis7 内部网络，真实数据库/C ACL 用例不跳过。此证据明确标为 `development-source-overlay`，不能替代锁定制品验收。
+
+```bash
+# 先看选择；默认包含各仓 HEAD 后的工作区、暂存区和未跟踪改动。
+python3 tests/verify.py changed --plan
+# 可用 --base 指定四仓均存在的 Git ref，加入 BASE...HEAD 已提交改动。
+python3 tests/verify.py changed --warm
+python3 tests/verify.py identity --warm
+python3 tests/verify.py authorization --warm
+python3 tests/verify.py transfer --warm
+python3 tests/verify.py docker
+
+# 按需管理本工作区独占的开发 SQL/Redis；没有发布端口或宿主数据卷。
+python3 tests/verify.py warm --warm-action status
+python3 tests/verify.py warm --warm-action up
+python3 tests/verify.py warm --warm-action down
+
+# 显式新装验收：不使用 warm 服务或挂载的开发源码。
+python3 tests/verify.py runtime
+python3 tests/verify.py identity-runtime
+python3 tests/verify.py full
+```
+
+`--image` 可指定本地镜像。`changed` 以生产模块/测试夹具的反向 Python import 闭包选择关联测试；身份修改另列 identity runtime 门禁。显式 `identity/authorization/transfer` 则运行整个组件依赖闭包，包含必要的暂存域消费者回归，不启动 v0.3 产品服务。schema/common/jobs/根接线、原生修改和未知路径保守要求完整门禁；动态导入不保证能由 AST 完全识别，提交/RC 前仍必须显式全量验收。`--changed-file repository/path` 仅用于明确指定范围或检查映射，不能冒充自动检测全部改动。
+
+退出码：0 为所选测试通过且无待执行门禁，1 为失败，2 为所选测试通过但报告中的运行/全量门禁尚待执行。报告记录模块集合、测试数量、跳过/错误、耗时、镜像 ID、源码 HEAD/dirty 与扩展源码摘要；执行期间源码变化拒绝通过。源码挂载只支持 Python 开发；Server dirty 或镜像 Server SHA 不匹配时拒绝组件集成，须先生成匹配 native 制品。`full` 先检查清单、干净 Hub/Server 与镜像来源一致，再执行全新 CE14、全部扩展回归和身份夹具；仍不代表真实 Authentik/eTech/浏览器 TLS 或全部 RC 场景已通过。
+
+warm 仅保留本工作区带 ownership label 的 MySQL/Redis，测试仍创建/删除随机 schema。Redis 夹具可能 flush 自己的测试库，因此跨进程加锁，不能并发跑同一 warm 服务；错标签、外部网络、发布端口、停止/换镜像的服务拒绝复用。不主动重启或删除其他容器。默认不带 `--warm` 时成功/失败均清理，runner 超时也清理。warm tmpfs 不是持久数据库，显式 down 后数据消失。
+
+当前没有把带账号/组/会话副作用的 CE14 身份夹具直接改成长驻环境；需先补幂等数据重置与 worker 生命周期后再复用。IdP 夹具继续单独标注范围，保持测试行为验证与真实部署 E2E 分开。本轮实测 `identity/runtime.py` 关联 78 项：warm 5.344 秒、fresh core 10.975 秒；显式 identity 388 项 warm 22.606 秒，均零失败/跳过。耗时仅为本机当前镜像/用例，非通用性能承诺。

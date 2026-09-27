@@ -206,7 +206,7 @@ os.environ.update(DJANGO_SETTINGS_MODULE='seahub.settings', SEAHUB_DIR=package +
     SEAFES_DIR=package + '/pro/python',
     SEAFILE_DATA_DIR='/shared/seafile/seafile-data',
     SEAFILE_CENTRAL_CONF_DIR='/shared/seafile/conf',
-    SEAFILE_RPC_PIPE_PATH='/shared/seafile/seafile-data')
+    SEAFILE_RPC_PIPE_PATH=package + '/runtime')
 import django
 django.setup()
 suite = unittest.defaultTestLoader.loadTestsFromName(
@@ -284,7 +284,7 @@ report = {'tests': result.testsRun, 'native_tests_separate': 1, 'skipped': len(r
 print(json.dumps(report))
 '''
             regression = json.loads(docker('exec', app, 'python3', '-c', code, timeout=600))
-            if regression['failures'] or regression['errors']:
+            if regression['failures'] or regression['errors'] or regression['skipped']:
                 # Test IDs are safe; do not expose exception bodies or tokens.
                 raise RuntimeError('regression_tests=' + json.dumps(regression))
             checks.append(stage)

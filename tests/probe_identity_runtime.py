@@ -28,6 +28,8 @@ def require(condition, label):
 
 def run():
     require(os.environ.get('CF_DISPOSABLE_IDENTITY_PROBE') == 'true', 'disposable_marker')
+    scenario = os.environ.get('CF_IDENTITY_SCENARIO', 'prebound')
+    require(scenario in {'prebound', 'provisioning'}, 'identity_scenario')
     package = '/opt/seafile/seafile-server-latest'
     os.chdir(package + '/seahub')
     sys.path[:0] = [package + '/seahub', package + '/seahub/thirdpart',
@@ -107,7 +109,8 @@ def run():
                 serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
             key_file.chmod(0o600)
             codes, tokens = {}, {}
-            fixture = {'mode': 'active', 'claim_user': 'fixture-user-1', 'directory_calls': 0}
+            fixture = {'mode': 'active', 'claim_user': 'fixture-user-1',
+                'claim_sub': 'fixture-subject-1', 'directory_calls': 0, 'calls_by_user': {}}
             origin = ''
             redirect_uri = 'https://cloudfile-smoke.invalid/' + LOGIN_PREFIX + 'callback/'
             client_secret = secrets.token_hex(32)
@@ -152,14 +155,18 @@ def run():
                         if token not in tokens:
                             return self.respond({}, 401)
                         self.respond(tokens[token])
-                    elif path.path == '/directory/users/fixture-user-1/context':
+                    elif (path.path.startswith('/directory/users/') and path.path.endswith('/context')
+                            and path.path.count('/') == 4):
+                        user_id = path.path.split('/')[3]
                         fixture['directory_calls'] += 1
+                        count = fixture['calls_by_user'].get(user_id, 0) + 1
+                        fixture['calls_by_user'][user_id] = count
                         if self.headers.get('Authorization') != 'Bearer ' + directory_secret:
                             return self.respond({}, 401)
-                        if fixture['mode'] == 'outage':
+                        if fixture['mode'] == 'outage' or count == fixture.get('fail_fetch'):
                             return self.respond({}, 503)
                         disabled = fixture['mode'] == 'disabled'
-                        self.respond({'userId': 'fixture-user-1',
+                        self.respond({'userId': user_id,
                             'status': 'disabled' if disabled else 'active', 'attributes': {},
                             'organizations': [] if disabled else [{'namespace': 'directory',
                                 'external_id': 'dept-1', 'is_primary': True}],
@@ -188,10 +195,10 @@ def run():
                             or params.get('grant_type') != ['authorization_code']):
                         return self.respond({}, 400)
                     token = secrets.token_urlsafe(32)
-                    tokens[token] = {'sub': 'fixture-subject-1', 'userId': fixture['claim_user']}
+                    tokens[token] = {'sub': fixture['claim_sub'], 'userId': fixture['claim_user']}
                     issued = int(time.time())
                     id_token = jwt.encode({'iss': origin, 'aud': 'fixture-client',
-                        'sub': 'fixture-subject-1', 'userId': fixture['claim_user'],
+                        'sub': fixture['claim_sub'], 'userId': fixture['claim_user'],
                         'iat': issued, 'exp': issued + 300, 'nonce': transaction['nonce'],
                         'sid': secrets.token_urlsafe(16)}, signing_key, algorithm='RS256',
                         headers={'kid': 'fixture-key'})
@@ -214,6 +221,7 @@ def run():
                 'directory_bearer_token': directory_secret, 'attribute_allowlist': [],
                 'core_library': package + '/seafile/lib/libcloudfile_acl.so.1', 'cloud_mode': False}
             settings.CLOUDFILE_OIDC_ENABLED = True
+            settings.CLOUDFILE_OIDC_JIT_ENABLED = scenario == 'provisioning'
             settings.CLOUDFILE_OIDC_CONFIG = {'issuer': origin, 'client_id': 'fixture-client',
                 'client_secret': client_secret, 'redirect_uri': redirect_uri,
                 'authorization_url': origin + '/authorize', 'token_url': origin + '/token',
@@ -250,6 +258,15 @@ def run():
                     if str(cookie['max-age']) == '0' and name in browser.cookies:
                         del browser.cookies[name]
                 return response
+
+            if scenario == 'provisioning':
+                stage = 'jit_provisioning'
+                from identity_provisioning_runtime import exercise
+                checks.extend(exercise(db=db, fixture=fixture, origin=origin, prefix=prefix,
+                    initiate=initiate, complete=complete, require=require, groups={dept, role},
+                    configuration_dir=temporary))
+                return {'result': 'passed', 'checks': checks,
+                    'scope': 'TLS fixture JIT worker, real native SQL/RPC, pending proofs and fresh OIDC login; no external IdP/eTech/ingress claim'}
 
             stage = 'cold_cache_login'
             browser = Client(enforce_csrf_checks=True)

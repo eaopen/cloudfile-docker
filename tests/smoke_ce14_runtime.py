@@ -2,6 +2,7 @@
 """Disposable CE14 native HTTP acceptance; no host volumes or published ports."""
 import argparse
 import base64
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -62,7 +63,8 @@ def multipart(fields, content):
     return b''.join(chunks), 'multipart/form-data; boundary=' + boundary
 
 
-def run(image, native_regression=False, extensions_regression=False, identity_runtime=False):
+def run(image, native_regression=False, extensions_regression=False, identity_runtime=False,
+        identity_scenario='prebound', development_worker_overlay=False):
     if not __debug__:
         raise RuntimeError('Acceptance requires Python assertions enabled')
     prefix = 'cf02-smoke-' + secrets.token_hex(6)
@@ -293,8 +295,27 @@ print(json.dumps(report))
             start('identity-redis', 'identity-redis', 'redis:7-alpine', {}, ['/data:rw,size=64m'])
             fixture = Path(__file__).with_name('probe_identity_runtime.py')
             docker('cp', str(fixture), app + ':/tmp/probe_identity_runtime.py')
+            worker_path = '/scripts/cloudfile-jit-worker.py'
+            worker_sha = None
+            if identity_scenario == 'provisioning':
+                fixture = Path(__file__).with_name('identity_provisioning_runtime.py')
+                docker('cp', str(fixture), app + ':/tmp/identity_provisioning_runtime.py')
+                worker = Path(__file__).resolve().parents[1] / 'scripts/scripts_14.0/cloudfile-jit-worker.py'
+                worker_sha = hashlib.sha256(worker.read_bytes()).hexdigest()
+                if development_worker_overlay:
+                    worker_path = '/tmp/cloudfile-jit-worker.py'
+                    docker('cp', str(worker), app + ':' + worker_path)
+                actual_sha = docker('exec', app, 'python3', '-c',
+                    'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())', worker_path)
+                if actual_sha != worker_sha:
+                    raise RuntimeError('JIT worker image is stale; rebuild the application image')
             identity = json.loads(docker('exec', '-e', 'CF_DISPOSABLE_IDENTITY_PROBE=true',
+                '-e', 'CF_IDENTITY_SCENARIO=' + identity_scenario,
+                '-e', 'CF_JIT_WORKER_SCRIPT=' + worker_path,
                 app, 'python3', '/tmp/probe_identity_runtime.py', timeout=90))
+            if worker_sha:
+                identity.update(worker_sha256=worker_sha,
+                    worker_mode='development-script-overlay' if development_worker_overlay else 'packaged-image-script')
             checks.append(stage)
         return {'result': 'passed', 'scope': 'CE14 local admin/native file baseline; optional identity fixture separately scoped',
                 'image_id': metadata['Id'], 'package_sha256': digest,
@@ -328,5 +349,9 @@ if __name__ == '__main__':
                         help='Run extensions with a separate disposable SQL/Redis fixture')
     parser.add_argument('--identity-runtime', action='store_true',
                         help='Probe real TLS fixture OIDC/directory with actual CE accounts and SQL')
+    parser.add_argument('--identity-scenario', choices=['prebound', 'provisioning'], default='prebound')
+    parser.add_argument('--development-worker-overlay', action='store_true',
+                        help='JIT development only: use host worker script; not packaged release evidence')
     args = parser.parse_args()
-    print(json.dumps(run(args.image, args.native_regression, args.extensions_regression, args.identity_runtime), indent=2))
+    print(json.dumps(run(args.image, args.native_regression, args.extensions_regression,
+                         args.identity_runtime, args.identity_scenario, args.development_worker_overlay), indent=2))

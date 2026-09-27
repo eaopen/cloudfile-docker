@@ -28,6 +28,11 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(selected['groups'], ['docker'])
         self.assertEqual(selected['required_gates'], ['identity-runtime'])
 
+    def test_worker_or_jit_fixture_edit_requires_actual_provisioning_gate(self):
+        for path in ('scripts/scripts_14.0/cloudfile-jit-worker.py', 'tests/identity_provisioning_runtime.py'):
+            selected = verify.plan(['cloudfile-docker/' + path])
+            self.assertEqual(selected['required_gates'], ['identity-provisioning'])
+
     def test_reverse_imports_include_transitive_consumers_and_relative_imports(self):
         with tempfile.TemporaryDirectory() as directory:
             hub = Path(directory)

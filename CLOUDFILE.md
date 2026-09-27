@@ -107,6 +107,26 @@ Django app 启动先把原始配置校验为既有 `OIDCConfig`；只替换原�
 
 首次部署可从已预绑定账号闭环，JIT 保持关闭。升级前先显式执行现有迁移，不在请求或 app ready 自动 DDL。回退时先排空/冻结受管入口并恢复匹配配置/数据库，不得把受保护 OIDC session 改为普通 session middleware 继续提供访问。
 
+### 受控 JIT 独立 Worker
+
+在完成新装/schema、可信 OIDC/目录配置后，显式设置 `CLOUDFILE_OIDC_JIT_ENABLED=true`。独立进程复用当前生成的 Seahub 配置与既有 `ProvisioningBackground`，不接受请求选择 provider/handler，不自动迁移或开 capability：
+
+```bash
+# 在已初始化的 CloudFile 容器内；生产由部署 supervisor 显式托管。
+python3 /scripts/cloudfile-jit-worker.py
+# 一次处理，适用于诊断；poll 1～30 秒，lease 1～300 秒。
+python3 /scripts/cloudfile-jit-worker.py --once --lease-seconds 30
+
+# 专项新装运行验收；使用镜像内脚本并核对摘要，不覆盖生产代码。
+python3 tests/verify.py identity-provisioning
+```
+
+OIDC 或 JIT 未明确启用时拒绝启动；使用新进程拥有的 policy/SQL/Redis/目录资源，关闭时先结束当前任务再释放资源。SQL 断连不自动重连，部署 supervisor 重启后沿用既有租约/fencing 恢复。JSONL 输出只有 `ready/job_processed/stopped` 和任务 ID；`job_processed` 表示已处理，业务失败仍记录为 failed，不可将进程退出码 0 当任务成功。
+
+未知身份的可信 callback 返回 202、浏览器绑定的 pending proof，不创建账号或认证会话。worker 只为当前可信目录 active 的用户原子写入 native identity/profile/OIDC 绑定与审计，再完成受管成员与主体 ready。中途失败保留同一任务/账号；新的可信 OIDC 登录可重新排队，成功后仍须新的 OIDC 流程建立会话，pending 查询成功不提供会话或文件权限。管理员原生停用不会因目录 active 自动解除。
+
+当前实测涵盖镜像内脚本的新进程建号、SQL/RPC 重载及组织/角色、pending proof 跨浏览器拒绝、成功后新登录/重复复用、identity 提交后第二次真实 HTTPS 目录请求 503 与第二次执行恢复、目录停用不建号、空队列退出、空闲 SIGTERM 与显式关闭拒绝。这里只是 TLS 测试 IdP/Directory、真实 CE14/SQL/Redis 与 Django Client 证据，实际 Authentik/eTech/浏览器 TLS、RP/backchannel 另验。
+
 ## 旧 Authentik OAuth 配置预设
 
 CloudFile 内建的是 Authentik 的首选 OIDC 配置，不在本容器中捆绑 Authentik 服务。必填变量：
@@ -126,7 +146,7 @@ SEAFILE_SERVER_HOSTNAME=files.example.com
 
 该预设复用 CE OAuth 授权码/UserInfo 回调，不应单凭 `openid` scope 声称完整 OIDC 已验收。ID Token 签名、issuer/audience/有效期/nonce、UserInfo sub 一致性与退出流程须按产品身份特性单独实现和验证。
 
-v0.2 目标方案采用受控 JIT，而不是当前预设的无条件建号：仅可信 userId 已在目录存在且启用、无绑定冲突、provider 获准时创建新用户；已有用户复用或预绑定。持久身份沿用 CE 用户/原生绑定，动态主体只缓存 CF 专属 Redis，缓存过期刷新最新目录。详见 `eap-cloudfile/docs/features/identity-directory.md`；这些流程尚未实现，不能通过打开当前自动建号变量替代。
+v0.2 完整 OIDC 已实现受控 JIT 与预绑定，并取得当前 CE14 运行夹具分项证据；它与本节旧 OAuth 预设是不同部署模式，不能用旧的自动建号变量替代。持久身份沿用 CE 用户/原生绑定，动态主体只缓存 CF 专属 Redis，缓存过期刷新最新目录。实际外部联验与完整退出仍待，详见 `eap-cloudfile/docs/features/identity-directory.md`。
 
 基础认证继续用于本地账户。WebDAV 不复用浏览器 OIDC 会话，应使用独立的 WebDAV 应用密码。CloudFile 不扩展客户端及同步功能。
 
@@ -154,6 +174,7 @@ python3 tests/verify.py warm --warm-action down
 # 显式新装验收：不使用 warm 服务或挂载的开发源码。
 python3 tests/verify.py runtime
 python3 tests/verify.py identity-runtime
+python3 tests/verify.py identity-provisioning
 python3 tests/verify.py full
 ```
 
@@ -161,7 +182,9 @@ python3 tests/verify.py full
 
 契约门禁使用安装了 `eap-cloudfile/tools/design-requirements.txt` 的开发 Python；已有环境直接用 `--contract-python /path/to/venv/bin/python`，默认当前解释器。依赖缺失返回失败，不自动修改运行镜像、重新下载依赖或静默跳过。
 
-退出码：0 为所选测试通过且无待执行门禁，1 为失败，2 为所选测试通过但报告中的运行/全量门禁尚待执行。报告记录模块集合、测试数量、跳过/错误、耗时、镜像 ID、源码 HEAD/dirty 与扩展源码摘要；执行期间源码变化拒绝通过。源码挂载只支持 Python 开发；Server dirty 或镜像 Server SHA 不匹配时拒绝组件集成，须先生成匹配 native 制品。`full` 先检查清单、干净 Hub/Server 与镜像来源一致，再执行全新 CE14、全部扩展回归和身份夹具；仍不代表真实 Authentik/eTech/浏览器 TLS 或全部 RC 场景已通过。
+退出码：0 为所选测试通过且无待执行门禁，1 为失败，2 为所选测试通过但报告中的运行/全量门禁尚待执行。报告记录模块集合、测试数量、跳过/错误、耗时、镜像 ID、源码 HEAD/dirty 与扩展源码摘要；执行期间源码变化拒绝通过。源码挂载只支持 Python 开发；Server dirty 或镜像 Server SHA 不匹配时拒绝组件集成，须先生成匹配 native 制品。`full` 先检查清单、干净 Hub/Server 与镜像来源一致，再执行全新 CE14、全部扩展回归、预绑定和 JIT 两种独立身份夹具；仍不代表真实 Authentik/eTech/浏览器 TLS 或全部 RC 场景已通过。
+
+JIT worker/对应运行夹具修改自动要求 `identity-provisioning` 门禁。开发新 worker 时可用 `smoke_ce14_runtime.py --identity-runtime --identity-scenario provisioning --development-worker-overlay` 单独覆盖脚本验证；报告明确标为开发覆盖。默认专项/完整验收要求镜像内脚本摘要匹配源码，缺失或陈旧拒绝，先只重装配应用镜像，不重新编译未变化的 native 包。
 
 warm 仅保留本工作区带 ownership label 的 MySQL/Redis，测试仍创建/删除随机 schema。Redis 夹具可能 flush 自己的测试库，因此跨进程加锁，不能并发跑同一 warm 服务；错标签、外部网络、发布端口、停止/换镜像的服务拒绝复用。不主动重启或删除其他容器。默认不带 `--warm` 时成功/失败均清理，runner 超时也清理。warm tmpfs 不是持久数据库，显式 down 后数据消失。
 

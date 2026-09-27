@@ -46,7 +46,7 @@ python3 tests/smoke_ce14_runtime.py --image cloudfile/cloudfile:14.0.8-v0.2-rc-w
 - `CLOUDFILE_AUTHORIZATION_ENABLED`：挂载内建 authorization v1 路由，默认 `false`；必须同时启用 post-fork policy worker，并配置真实目录、主体刷新和委托发行运行时。该开关不自动声明 capability 已交付。
 - `CLOUDFILE_POLICY_CONFIG_JSON`：严格 JSON 的可信 worker 配置；包含数据库、专属 Redis、Directory Adapter、C ACL 库、机器凭证范围、刷新 provider grant 与独立委托签名键。`CLOUDFILE_AUTHORIZATION_ENABLED=true` 时必须同时设置它和 `CLOUDFILE_POLICY_WORKER_HOOKS=true`，重复字段或不完整安全配置拒绝启动。
 - `CLOUDFILE_LOCAL_EDIT_ENABLED`：挂载内建 local-edit URL，默认 `false`；只有同时配置 post-fork policy worker、资源生命周期读取器、本地编辑版本读取器和固定 HTTPS 实例 origin 后才可设为 `true`，该开关本身不声明能力已交付。
-- `CLOUDFILE_TRANSFER_ENABLED`：挂载 cookie-free 的 `transfer/v1/delegated-read-tickets/`，默认 `false`；必须同时设置 `ENABLE_GO_FILESERVER=true`、启用 post-fork policy worker，并由完整 `CLOUDFILE_POLICY_CONFIG_JSON` 构造独立委托验签键、共享撤销存储与 native ticket RPC。C 文件服务没有增强下载路由，选择它时拒绝启用委托传输。该开关不挂载 OIDC 会话票据，也不自动声明 `transfer.web` 已交付。
+- `CLOUDFILE_TRANSFER_ENABLED`：挂载 cookie-free 的 `transfer/v1/delegated-read-tickets/`，默认 `false`；必须同时设置 `ENABLE_GO_FILESERVER=true`、启用 post-fork policy worker，并由完整 `CLOUDFILE_POLICY_CONFIG_JSON` 构造独立委托验签键、共享撤销存储与 native ticket RPC。C 文件服务没有增强下载路由，选择它时拒绝启用委托传输。该开关在 OIDC 同时启用时也挂载受 CSRF 保护的会话读取/手动替换路由，不自动声明 `transfer.web` 已交付。
 
 部署 URLConf 不得占用 directory、authorization、library-policy、directory-acl、annotations、audit、search、locks、local-edit、migration、transfer、identity 核心域。自有能力由受信 Python 启动代码注册，配置 JSON 不能注册实现。
 
@@ -236,3 +236,7 @@ trusted_tls_proxies = 127.0.0.1/32
 ```
 
 身份库名、Redis 地址/凭据、subject/revocation prefix 必须与实际 `CLOUDFILE_POLICY_CONFIG_JSON` 一致；native 使用 Redis DB 0。`trusted_tls_proxies` 填实际 TLS 终止代理的明确 CIDR；示例仅适用于同容器 loopback 代理，不可改成全网信任。代理覆盖 `X-Forwarded-Proto=https`，不接受客户端自行声明。配置含凭据，按部署秘密管理保护权限。本轮受控 TLS 入口使用此接线，真实 eTech/生产代理仍单独验收。
+
+OIDC 与 transfer 同时启用时挂载 CSRF 保护的 `identity/v1/read-tickets/` 和 `identity/v1/manual-update/`；前者接受既有 exact-file JSON，后者接受 multipart 的 `repo_id/path/head_id/file`（单文件、显式预期 head，当前最大 512 MiB）。只用真实 OIDC 本地会话，不接受服务 Bearer 或客户提交的 userId/epoch/会话证明。手动替换复用现有 C 条件提交，最终检查当前 CE 资格、ACL、主体、会话/退出 fence、head 和已有写保护；未知 RPC 完成结果不返回成功。它不是新文件创建、Agent 或自动回写。
+
+`python3 tests/verify.py web-runtime` 定向验证当前制品的 OIDC 读取、显式替换及更新字节，CSRF、旧 head、只读/CF ACL 拒绝。Web 页面接入、新文件上传、受管库普通 CE/Go/WebDAV 等入口防绕过仍待完成；不自动开放 capability，不把增强路由的通过当全入口安全证据。

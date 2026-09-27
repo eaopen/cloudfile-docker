@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
-             certificate, tls_key, package):
+             certificate, tls_key, package, web=False):
     import jwt
     import requests
     from django.test import Client
@@ -20,13 +20,15 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
 
     checks = []
     browser = Client(enforce_csrf_checks=True)
+    if web:
+        browser.get('/accounts/login/', secure=True, HTTP_HOST='cloudfile-smoke.invalid')
     require(complete(browser, initiate(browser)).status_code == 302, 'transfer_oidc_login')
     with db.cursor() as cursor:
         cursor.execute('SELECT repo_id FROM RepoOwner WHERE owner_id=%s', (manager.username,))
         repos = cursor.fetchall()
     require(len(repos) == 1, 'single_fixture_library')
     repo = repos[0][0]
-    seafile_api.share_repo(repo, manager.username, user.username, 'r')
+    seafile_api.share_repo(repo, manager.username, user.username, 'rw' if web else 'r')
     reference = dict(repo_id=repo, path='/probe.txt', kind='file')
     payload = (b'CloudFile CE14 native upload, download and Range acceptance.\n' * 4
                + b'Explicit manual update.\n')
@@ -139,6 +141,47 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
             return transport.get(origin + '/seafhttp/cloudfile/read', headers=headers,
                                  verify=certificate, timeout=10)
 
+        if web:
+            from django.conf import settings
+            from django.core.files.uploadedfile import SimpleUploadedFile
+            prefix = '/api/v2.1/cloudfile/extensions/identity/v1/'
+            csrf = browser.cookies[settings.CSRF_COOKIE_NAME].value
+            def web_ticket():
+                response = browser.post(prefix + 'read-tickets/', data=json.dumps({'reference': reference}),
+                    content_type='application/json', secure=True, HTTP_HOST='cloudfile-smoke.invalid',
+                    HTTP_ORIGIN='https://cloudfile-smoke.invalid', HTTP_X_CSRFTOKEN=csrf)
+                require(response.status_code == 201, 'web_ticket_' + str(response.status_code))
+                return response.json()['ticket']
+            require(read(web_ticket()).content == payload, 'web_native_original_bytes')
+            checks.append('web_oidc_native_read')
+            head = seafile_api.get_repo(repo).head_cmmt_id
+            updated = payload + b'Controlled OIDC explicit Web replacement.\n'
+            def update(expected, csrf_header=True):
+                headers = {'HTTP_HOST': 'cloudfile-smoke.invalid', 'HTTP_ORIGIN': 'https://cloudfile-smoke.invalid'}
+                if csrf_header:
+                    headers['HTTP_X_CSRFTOKEN'] = csrf
+                return browser.post(prefix + 'manual-update/', data={'repo_id': repo, 'path': '/probe.txt',
+                    'head_id': expected, 'file': SimpleUploadedFile('probe.txt', updated)}, secure=True, **headers)
+            require(update(head, False).status_code == 403, 'web_update_csrf')
+            require(seafile_api.get_repo(repo).head_cmmt_id == head, 'csrf_no_publication')
+            response = update(head)
+            require(response.status_code == 200, 'web_update_' + str(response.status_code))
+            object_id = response.json()['object_id']
+            require(seafile_api.get_file_id_by_path(repo, '/probe.txt') == object_id, 'web_update_current_object')
+            require(read(web_ticket()).content == updated, 'web_update_native_bytes')
+            current_head = seafile_api.get_repo(repo).head_cmmt_id
+            require(current_head != head, 'web_update_current_head')
+            require(update(head).status_code in (409, 503), 'web_stale_head_denied')
+            require(seafile_api.get_repo(repo).head_cmmt_id == current_head, 'web_stale_no_publication')
+            checks.append('web_csrf_explicit_update_and_stale_head')
+            # Denied write must preserve both current head and file bytes.
+            seafile_api.set_share_permission(repo, manager.username, user.username, 'r')
+            require(update(current_head).status_code == 403, 'web_readonly_update_denied')
+            require(seafile_api.get_repo(repo).head_cmmt_id == current_head, 'web_readonly_no_publication')
+            checks.append('web_current_readonly_update_denied')
+            seafile_api.set_share_permission(repo, manager.username, user.username, 'rw')
+            payload = updated
+
         value = ticket()
         response = read(value)
         require(response.status_code == 200 and response.content == payload,
@@ -176,6 +219,10 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
                  'none', 0, str(uuid4())))
         response = read(pending)
         require(response.status_code in (401, 403, 503) and response.content != payload, 'current_cf_acl_denied')
+        if web:
+            require(update(current_head).status_code == 403, 'web_cf_acl_update_denied')
+            require(seafile_api.get_repo(repo).head_cmmt_id == current_head, 'web_cf_acl_no_publication')
+            checks.append('web_current_cf_acl_update_denied')
         with db.cursor() as cursor:
             cursor.execute('DELETE FROM cf_dir_acl WHERE id=%s', (rule,))
         checks.append('native_current_cf_acl_denied')

@@ -29,7 +29,7 @@ def require(condition, label):
 def run():
     require(os.environ.get('CF_DISPOSABLE_IDENTITY_PROBE') == 'true', 'disposable_marker')
     scenario = os.environ.get('CF_IDENTITY_SCENARIO', 'prebound')
-    require(scenario in {'prebound', 'provisioning', 'logout', 'backchannel', 'transfer'}, 'identity_scenario')
+    require(scenario in {'prebound', 'provisioning', 'logout', 'backchannel', 'transfer', 'web'}, 'identity_scenario')
     package = '/opt/seafile/seafile-server-latest'
     os.chdir(package + '/seahub')
     sys.path[:0] = [package + '/seahub', package + '/seahub/thirdpart',
@@ -257,7 +257,7 @@ def run():
             settings.CLOUDFILE_OIDC_BACKCHANNEL_ENABLED = scenario == 'backchannel'
             settings.ENABLE_OAUTH = False
             configure_oidc_host(settings)
-            if scenario == 'transfer':
+            if scenario in {'transfer', 'web'}:
                 machine_secret, delegation_secret = secrets.token_hex(32), secrets.token_hex(32)
                 settings.CLOUDFILE_POLICY_CONFIG.update(
                     service_credentials={'login-v1': {'service_id': 'etech-login',
@@ -334,14 +334,14 @@ def run():
                 return {'result': 'passed', 'checks': checks,
                     'scope': 'Hosted cookie-free backchannel, real JWT/JWKS TLS, native SQL/session fences and standalone deletion process; Django Client, no external IdP/eTech/ingress claim'}
 
-            if scenario == 'transfer':
+            if scenario in {'transfer', 'web'}:
                 stage = 'delegated_transfer'
                 from delegated_transfer_runtime import exercise
                 checks.extend(exercise(db=db, user=user, manager=manager, machine_secret=machine_secret,
                     initiate=initiate, complete=complete, require=require,
-                    certificate=str(ca_file), tls_key=str(key_file), package=package))
+                    certificate=str(ca_file), tls_key=str(key_file), package=package, web=scenario == 'web'))
                 return {'result': 'passed', 'checks': checks,
-                    'scope': 'Controlled HTTPS login-service delegation and actual C/Go bytes/Range/audit; no external eTech or production ingress claim'}
+                    'scope': ('OIDC Web read/manual replacement via full Django Client plus actual C/Go bytes/Range; ' if scenario == 'web' else '') + 'controlled HTTPS service delegation; no actual browser/external eTech/production ingress claim'}
 
             stage = 'cold_cache_login'
             browser = Client(enforce_csrf_checks=True)

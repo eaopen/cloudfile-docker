@@ -13,7 +13,7 @@
     },
     "seafile-server": {
       "url": "https://github.com/eaopen/cloudfile-server.git",
-      "ref": "7a682ee6afff5d3e2e439a5641cdb16d5d6832cd"
+      "ref": "b869c00a5823bdd94f0087892a239245439b099c"
     },
     "seafobj": {
       "url": "https://github.com/haiwen/seafobj.git",
@@ -29,7 +29,7 @@
     },
     "seahub": {
       "url": "https://github.com/eaopen/cloudfile-hub.git",
-      "ref": "baf3bcbd666802685d9847fd83fa579dc703579c"
+      "ref": "38db47fd611e5aed6d6c2600f3f4899734c11e5a"
     }
   }
 }

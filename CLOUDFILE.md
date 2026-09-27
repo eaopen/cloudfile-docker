@@ -237,6 +237,6 @@ trusted_tls_proxies = 127.0.0.1/32
 
 身份库名、Redis 地址/凭据、subject/revocation prefix 必须与实际 `CLOUDFILE_POLICY_CONFIG_JSON` 一致；native 使用 Redis DB 0。`trusted_tls_proxies` 填实际 TLS 终止代理的明确 CIDR；示例仅适用于同容器 loopback 代理，不可改成全网信任。代理覆盖 `X-Forwarded-Proto=https`，不接受客户端自行声明。配置含凭据，按部署秘密管理保护权限。本轮受控 TLS 入口使用此接线，真实 eTech/生产代理仍单独验收。
 
-OIDC 与 transfer 同时启用时挂载 CSRF 保护的 `identity/v1/read-tickets/` 和 `identity/v1/manual-update/`；前者接受既有 exact-file JSON，后者接受 multipart 的 `repo_id/path/head_id/file`（单文件、显式预期 head，当前最大 512 MiB）。只用真实 OIDC 本地会话，不接受服务 Bearer 或客户提交的 userId/epoch/会话证明。手动替换复用现有 C 条件提交，最终检查当前 CE 资格、ACL、主体、会话/退出 fence、head 和已有写保护；未知 RPC 完成结果不返回成功。它不是新文件创建、Agent 或自动回写。
+OIDC 与 transfer 同时启用时挂载 CSRF 保护的 `identity/v1/read-tickets/`、`identity/v1/manual-upload/` 和 `identity/v1/manual-update/`；读取接受既有 exact-file JSON，上传/替换接受 multipart 的 `repo_id/path/head_id/file`（单文件、显式预期 head，当前最大 512 MiB）。只用真实 OIDC 本地会话，不接受服务 Bearer 或客户提交的 userId/epoch/会话证明。手动替换复用现有 C 条件提交，最终检查当前 CE 资格、ACL、主体、会话/退出 fence、head 和已有写保护；未知 RPC 完成结果不返回成功。新文件创建由固定 upload 路由选择，返回 201，检查父目录及目标当前写权限并拒绝覆盖已有文件；替换返回 200。不支持 Agent 或自动回写。
 
-`python3 tests/verify.py web-runtime` 定向验证当前制品的 OIDC 读取、显式替换及更新字节，CSRF、旧 head、只读/CF ACL 拒绝。Web 页面接入、新文件上传、受管库普通 CE/Go/WebDAV 等入口防绕过仍待完成；不自动开放 capability，不把增强路由的通过当全入口安全证据。
+`python3 tests/verify.py web-runtime` 定向验证当前制品的 OIDC 读取、显式替换及更新字节，CSRF、旧 head、只读/CF ACL 拒绝，以及新文件实际字节、拒绝覆盖和父目录只读拒绝。Web 页面接入、受管库普通 CE/Go/WebDAV 等入口防绕过仍待完成；不自动开放 capability，不把增强路由的通过当全入口安全证据。

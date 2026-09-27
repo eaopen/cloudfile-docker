@@ -146,8 +146,8 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
             from django.core.files.uploadedfile import SimpleUploadedFile
             prefix = '/api/v2.1/cloudfile/extensions/identity/v1/'
             csrf = browser.cookies[settings.CSRF_COOKIE_NAME].value
-            def web_ticket():
-                response = browser.post(prefix + 'read-tickets/', data=json.dumps({'reference': reference}),
+            def web_ticket(target=None):
+                response = browser.post(prefix + 'read-tickets/', data=json.dumps({'reference': target or reference}),
                     content_type='application/json', secure=True, HTTP_HOST='cloudfile-smoke.invalid',
                     HTTP_ORIGIN='https://cloudfile-smoke.invalid', HTTP_X_CSRFTOKEN=csrf)
                 require(response.status_code == 201, 'web_ticket_' + str(response.status_code))
@@ -180,6 +180,40 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
             require(seafile_api.get_repo(repo).head_cmmt_id == current_head, 'web_readonly_no_publication')
             checks.append('web_current_readonly_update_denied')
             seafile_api.set_share_permission(repo, manager.username, user.username, 'rw')
+            new_reference = dict(reference, path='/new-upload.txt')
+            new_bytes = b'CloudFile explicit new upload, without overwrite.\n'
+            def upload(path, expected):
+                return browser.post(prefix + 'manual-upload/', data={'repo_id': repo, 'path': path,
+                    'head_id': expected, 'file': SimpleUploadedFile('ignored-client-name.txt', new_bytes)},
+                    secure=True, HTTP_HOST='cloudfile-smoke.invalid',
+                    HTTP_ORIGIN='https://cloudfile-smoke.invalid', HTTP_X_CSRFTOKEN=csrf)
+            created = upload(new_reference['path'], current_head)
+            require(created.status_code == 201, 'web_upload_' + str(created.status_code))
+            require(seafile_api.get_file_id_by_path(repo, new_reference['path']) == created.json()['object_id'],
+                    'web_upload_exact_target')
+            require(read(web_ticket(new_reference)).content == new_bytes, 'web_upload_native_bytes')
+            current_head = seafile_api.get_repo(repo).head_cmmt_id
+            require(upload(new_reference['path'], current_head).status_code in (409, 503), 'web_upload_existing_denied')
+            require(seafile_api.get_repo(repo).head_cmmt_id == current_head, 'web_upload_no_overwrite')
+            require(read(web_ticket(new_reference)).content == new_bytes, 'web_upload_preserved_bytes')
+            checks.append('web_new_file_upload_without_overwrite')
+            root_rule = str(uuid4())
+            subject = dict(type='user', provider='etech', namespace='user', external_id='fixture-user-1')
+            subject_hash = hashlib.sha256(json.dumps(subject, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+            with db.cursor() as cursor:
+                cursor.execute('INSERT INTO cf_dir_acl(id,repo_id,path,path_hash,kind,subject_type,provider,'
+                    'namespace,external_id,subject_hash,permission,inherit,revision) '
+                    'VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                    (root_rule, repo, '/', hashlib.sha256(b'/').hexdigest(), 'dir', 'user', 'etech', 'user',
+                     'fixture-user-1', subject_hash, 'r', 0, str(uuid4())))
+            # Exact-root r leaves the new-file decision writable via CE, so
+            # this specifically proves the additional parent requirement.
+            require(upload('/parent-denied.txt', current_head).status_code == 403, 'web_upload_parent_denied')
+            require(seafile_api.get_repo(repo).head_cmmt_id == current_head, 'web_upload_parent_no_publication')
+            require(seafile_api.get_file_id_by_path(repo, '/parent-denied.txt') is None, 'web_upload_parent_no_file')
+            with db.cursor() as cursor:
+                cursor.execute('DELETE FROM cf_dir_acl WHERE id=%s', (root_rule,))
+            checks.append('web_new_file_parent_write_denied')
             payload = updated
 
         value = ticket()

@@ -33,6 +33,10 @@ class SelectionTests(unittest.TestCase):
             selected = verify.plan(['cloudfile-docker/' + path])
             self.assertEqual(selected['required_gates'], ['identity-provisioning'])
 
+    def test_logout_fixture_requires_actual_logout_gate(self):
+        selected = verify.plan(['cloudfile-docker/tests/identity_logout_runtime.py'])
+        self.assertEqual(selected['required_gates'], ['identity-logout'])
+
     def test_reverse_imports_include_transitive_consumers_and_relative_imports(self):
         with tempfile.TemporaryDirectory() as directory:
             hub = Path(directory)

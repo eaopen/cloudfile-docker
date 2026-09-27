@@ -29,7 +29,7 @@ def require(condition, label):
 def run():
     require(os.environ.get('CF_DISPOSABLE_IDENTITY_PROBE') == 'true', 'disposable_marker')
     scenario = os.environ.get('CF_IDENTITY_SCENARIO', 'prebound')
-    require(scenario in {'prebound', 'provisioning'}, 'identity_scenario')
+    require(scenario in {'prebound', 'provisioning', 'logout'}, 'identity_scenario')
     package = '/opt/seafile/seafile-server-latest'
     os.chdir(package + '/seahub')
     sys.path[:0] = [package + '/seahub', package + '/seahub/thirdpart',
@@ -110,7 +110,8 @@ def run():
             key_file.chmod(0o600)
             codes, tokens = {}, {}
             fixture = {'mode': 'active', 'claim_user': 'fixture-user-1',
-                'claim_sub': 'fixture-subject-1', 'directory_calls': 0, 'calls_by_user': {}}
+                'claim_sub': 'fixture-subject-1', 'directory_calls': 0, 'calls_by_user': {},
+                'issued_ids': set(), 'rp_requests': 0, 'rp_mode': 'active'}
             origin = ''
             redirect_uri = 'https://cloudfile-smoke.invalid/' + LOGIN_PREFIX + 'callback/'
             client_secret = secrets.token_hex(32)
@@ -178,6 +179,28 @@ def run():
                         self.respond({}, 404)
 
                 def do_POST(self):
+                    if self.path == '/logout':
+                        length = int(self.headers.get('Content-Length', '0'))
+                        if not 0 < length <= 65536:
+                            return self.respond({}, 400)
+                        params = parse_qs(self.rfile.read(length).decode())
+                        if (set(params) != {'id_token_hint', 'post_logout_redirect_uri', 'state'}
+                                or any(len(value) != 1 for value in params.values())
+                                or params['id_token_hint'][0] not in fixture['issued_ids']
+                                or params['post_logout_redirect_uri'] != [
+                                    'https://cloudfile-smoke.invalid/' + LOGIN_PREFIX + 'logout/return/']):
+                            return self.respond({}, 400)
+                        jwt.decode(params['id_token_hint'][0], signing_key.public_key(),
+                            algorithms=['RS256'], issuer=origin, audience='fixture-client')
+                        fixture['rp_requests'] += 1
+                        if fixture['rp_mode'] == 'outage':
+                            return self.respond({}, 503)
+                        self.send_response(302)
+                        self.send_header('Location', params['post_logout_redirect_uri'][0] + '?' + urlencode({
+                            'state': params['state'][0]}))
+                        self.send_header('Content-Length', '0')
+                        self.end_headers()
+                        return
                     if self.path != '/token':
                         return self.respond({}, 404)
                     length = int(self.headers.get('Content-Length', '0'))
@@ -202,6 +225,7 @@ def run():
                         'iat': issued, 'exp': issued + 300, 'nonce': transaction['nonce'],
                         'sid': secrets.token_urlsafe(16)}, signing_key, algorithm='RS256',
                         headers={'kid': 'fixture-key'})
+                    fixture['issued_ids'].add(id_token)
                     self.respond({'access_token': token, 'token_type': 'Bearer',
                                   'expires_in': 300, 'id_token': id_token})
 
@@ -227,6 +251,9 @@ def run():
                 'authorization_url': origin + '/authorize', 'token_url': origin + '/token',
                 'userinfo_url': origin + '/userinfo', 'jwks_url': origin + '/jwks',
                 'ca_bundle': str(ca_file)}
+            if scenario == 'logout':
+                settings.CLOUDFILE_OIDC_CONFIG.update(end_session_url=origin + '/logout',
+                    post_logout_redirect_uri='https://cloudfile-smoke.invalid/' + LOGIN_PREFIX + 'logout/return/')
             settings.ENABLE_OAUTH = False
             configure_oidc_host(settings)
             gunicorn.post_worker_init(None)
@@ -267,6 +294,14 @@ def run():
                     configuration_dir=temporary))
                 return {'result': 'passed', 'checks': checks,
                     'scope': 'TLS fixture JIT worker, real native SQL/RPC, pending proofs and fresh OIDC login; no external IdP/eTech/ingress claim'}
+
+            if scenario == 'logout':
+                stage = 'rp_logout'
+                from identity_logout_runtime import exercise
+                checks.extend(exercise(db=db, fixture=fixture, origin=origin, prefix=prefix,
+                    initiate=initiate, complete=complete, require=require, ca_bundle=str(ca_file)))
+                return {'result': 'passed', 'checks': checks,
+                    'scope': 'Actual RP logout form/HTTPS fixture/return and native session SQL; Django Client, no real IdP/global logout/browser ingress claim'}
 
             stage = 'cold_cache_login'
             browser = Client(enforce_csrf_checks=True)

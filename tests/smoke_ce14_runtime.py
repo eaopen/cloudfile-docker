@@ -309,6 +309,9 @@ print(json.dumps(report))
                     'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())', worker_path)
                 if actual_sha != worker_sha:
                     raise RuntimeError('JIT worker image is stale; rebuild the application image')
+            elif identity_scenario == 'logout':
+                fixture = Path(__file__).with_name('identity_logout_runtime.py')
+                docker('cp', str(fixture), app + ':/tmp/identity_logout_runtime.py')
             identity = json.loads(docker('exec', '-e', 'CF_DISPOSABLE_IDENTITY_PROBE=true',
                 '-e', 'CF_IDENTITY_SCENARIO=' + identity_scenario,
                 '-e', 'CF_JIT_WORKER_SCRIPT=' + worker_path,
@@ -349,7 +352,7 @@ if __name__ == '__main__':
                         help='Run extensions with a separate disposable SQL/Redis fixture')
     parser.add_argument('--identity-runtime', action='store_true',
                         help='Probe real TLS fixture OIDC/directory with actual CE accounts and SQL')
-    parser.add_argument('--identity-scenario', choices=['prebound', 'provisioning'], default='prebound')
+    parser.add_argument('--identity-scenario', choices=['prebound', 'provisioning', 'logout'], default='prebound')
     parser.add_argument('--development-worker-overlay', action='store_true',
                         help='JIT development only: use host worker script; not packaged release evidence')
     args = parser.parse_args()

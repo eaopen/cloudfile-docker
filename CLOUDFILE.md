@@ -107,6 +107,18 @@ Django app 启动先把原始配置校验为既有 `OIDCConfig`；只替换原�
 
 首次部署可从已预绑定账号闭环，JIT 保持关闭。升级前先显式执行现有迁移，不在请求或 app ready 自动 DDL。回退时先排空/冻结受管入口并恢复匹配配置/数据库，不得把受保护 OIDC session 改为普通 session middleware 继续提供访问。
 
+### RP Logout 运行验证
+
+RP logout 需同时配置固定 HTTPS `end_session_url` 与同应用 `post_logout_redirect_uri`，从已登录浏览器以 CSRF POST 调用 `identity/v1/logout/idp/`。仅使用当前已验证 OIDC 会话保存在服务端的 ID Token hint，返回固定 IdP 地址的 POST form；hint 不放入 Location/return URL。清理当前 native session/索引与浏览器登录状态之后才将表单交给浏览器；其他本地会话不会因此自动退出。
+
+```bash
+python3 tests/verify.py identity-logout
+```
+
+当前真实 TLS 测试 IdP、数据库 session/index 与完整 Django Client 通过：缺 CSRF 拒绝且保留旧会话；固定 HTTPS form/POST 与 cookie/CSP；当前会话删除而其他会话仍可用；wrong-browser 返回拒绝；迟到的固定 return 只消费一次 state，保留期间新的登录；IdP 实际返回 503 时本地会话不恢复。返回值为 `rp_returned=true, idp_logged_out=null`，仅证明关联回调，不能宣称全局退出。这里没有执行真实浏览器自动提交脚本或实际 Authentik/eTech 联验。
+
+backchannel 已有签名校验、持久撤销 fence/任务与数据库删除 worker，但当前 hosted 路由尚未显式安装该通知入口，仍保持不可用；需补配置门禁/请求 scope/仅该通知入口的 CSRF 豁免及独立 worker 部署与实际验收，不能把已有 adapter 单测当成当前部署闭环。
+
 ### 受控 JIT 独立 Worker
 
 在完成新装/schema、可信 OIDC/目录配置后，显式设置 `CLOUDFILE_OIDC_JIT_ENABLED=true`。独立进程复用当前生成的 Seahub 配置与既有 `ProvisioningBackground`，不接受请求选择 provider/handler，不自动迁移或开 capability：
@@ -175,6 +187,7 @@ python3 tests/verify.py warm --warm-action down
 python3 tests/verify.py runtime
 python3 tests/verify.py identity-runtime
 python3 tests/verify.py identity-provisioning
+python3 tests/verify.py identity-logout
 python3 tests/verify.py full
 ```
 
@@ -182,7 +195,7 @@ python3 tests/verify.py full
 
 契约门禁使用安装了 `eap-cloudfile/tools/design-requirements.txt` 的开发 Python；已有环境直接用 `--contract-python /path/to/venv/bin/python`，默认当前解释器。依赖缺失返回失败，不自动修改运行镜像、重新下载依赖或静默跳过。
 
-退出码：0 为所选测试通过且无待执行门禁，1 为失败，2 为所选测试通过但报告中的运行/全量门禁尚待执行。报告记录模块集合、测试数量、跳过/错误、耗时、镜像 ID、源码 HEAD/dirty 与扩展源码摘要；执行期间源码变化拒绝通过。源码挂载只支持 Python 开发；Server dirty 或镜像 Server SHA 不匹配时拒绝组件集成，须先生成匹配 native 制品。`full` 先检查清单、干净 Hub/Server 与镜像来源一致，再执行全新 CE14、全部扩展回归、预绑定和 JIT 两种独立身份夹具；仍不代表真实 Authentik/eTech/浏览器 TLS 或全部 RC 场景已通过。
+退出码：0 为所选测试通过且无待执行门禁，1 为失败，2 为所选测试通过但报告中的运行/全量门禁尚待执行。报告记录模块集合、测试数量、跳过/错误、耗时、镜像 ID、源码 HEAD/dirty 与扩展源码摘要；执行期间源码变化拒绝通过。源码挂载只支持 Python 开发；Server dirty 或镜像 Server SHA 不匹配时拒绝组件集成，须先生成匹配 native 制品。`full` 先检查清单、干净 Hub/Server 与镜像来源一致，再执行全新 CE14、全部扩展回归、预绑定/JIT/RP 三种独立身份夹具；仍不代表 backchannel、真实 Authentik/eTech/浏览器 TLS 或全部 RC 场景已通过。
 
 JIT worker/对应运行夹具修改自动要求 `identity-provisioning` 门禁。开发新 worker 时可用 `smoke_ce14_runtime.py --identity-runtime --identity-scenario provisioning --development-worker-overlay` 单独覆盖脚本验证；报告明确标为开发覆盖。默认专项/完整验收要求镜像内脚本摘要匹配源码，缺失或陈旧拒绝，先只重装配应用镜像，不重新编译未变化的 native 包。
 

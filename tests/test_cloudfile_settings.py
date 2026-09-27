@@ -168,6 +168,13 @@ class CloudFileSettingsTest(unittest.TestCase):
             exec(CLOUDFILE.render_settings(environment), namespace)
             self.assertEqual(namespace["CLOUDFILE_LOCAL_EDIT_ENABLED"], expected)
 
+    def test_authorization_routes_require_explicit_deployment_flag(self):
+        for value, expected in ((None, False), ("true", True), ("false", False)):
+            environment = {} if value is None else {"CLOUDFILE_AUTHORIZATION_ENABLED": value}
+            namespace = {}
+            exec(CLOUDFILE.render_settings(environment), namespace)
+            self.assertEqual(namespace["CLOUDFILE_AUTHORIZATION_ENABLED"], expected)
+
     def test_deployment_cannot_claim_reserved_domain(self):
         for domain in CLOUDFILE.RESERVED_DOMAINS:
             with self.assertRaises(ValueError):

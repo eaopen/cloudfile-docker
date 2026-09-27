@@ -29,7 +29,7 @@
     },
     "seahub": {
       "url": "https://github.com/eaopen/cloudfile-hub.git",
-      "ref": "d02a832c8da5505a6ac81bc953e0abd4b5a4996e"
+      "ref": "da6e9c5036c49645dcfecd90e99791ddb125a99d"
     }
   }
 }

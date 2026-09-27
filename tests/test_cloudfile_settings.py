@@ -169,11 +169,31 @@ class CloudFileSettingsTest(unittest.TestCase):
             self.assertEqual(namespace["CLOUDFILE_LOCAL_EDIT_ENABLED"], expected)
 
     def test_authorization_routes_require_explicit_deployment_flag(self):
+        policy = '{"database":{},"redis":{}}'
         for value, expected in ((None, False), ("true", True), ("false", False)):
-            environment = {} if value is None else {"CLOUDFILE_AUTHORIZATION_ENABLED": value}
+            environment = {} if value is None else {
+                "CLOUDFILE_AUTHORIZATION_ENABLED": value,
+                "CLOUDFILE_POLICY_CONFIG_JSON": policy,
+                "CLOUDFILE_POLICY_WORKER_HOOKS": "true",
+            }
             namespace = {}
             exec(CLOUDFILE.render_settings(environment), namespace)
             self.assertEqual(namespace["CLOUDFILE_AUTHORIZATION_ENABLED"], expected)
+
+    def test_enabled_authorization_rejects_incomplete_or_ambiguous_policy_config(self):
+        with self.assertRaisesRegex(ValueError, "policy config and worker hooks"):
+            CLOUDFILE.render_settings({"CLOUDFILE_AUTHORIZATION_ENABLED": "true"})
+        with self.assertRaisesRegex(ValueError, "policy config and worker hooks"):
+            CLOUDFILE.render_settings({
+                "CLOUDFILE_AUTHORIZATION_ENABLED": "true",
+                "CLOUDFILE_POLICY_CONFIG_JSON": "{}",
+            })
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            CLOUDFILE.render_settings({
+                "CLOUDFILE_POLICY_CONFIG_JSON": '{"database":{},"database":{}}',
+            })
+        with self.assertRaisesRegex(ValueError, "strict JSON"):
+            CLOUDFILE.render_settings({"CLOUDFILE_POLICY_CONFIG_JSON": '{"port":NaN}'})
 
     def test_deployment_cannot_claim_reserved_domain(self):
         for domain in CLOUDFILE.RESERVED_DOMAINS:

@@ -73,6 +73,31 @@ def _capabilities(raw_value):
     return value
 
 
+def _policy_config(raw_value):
+    if not raw_value:
+        return None
+
+    def pairs(items):
+        value = {}
+        for key, item in items:
+            if key in value:
+                raise ValueError("duplicate CLOUDFILE_POLICY_CONFIG_JSON field")
+            value[key] = item
+        return value
+
+    def invalid_constant(_):
+        raise ValueError("CLOUDFILE_POLICY_CONFIG_JSON must contain strict JSON")
+
+    try:
+        value = json.loads(raw_value, object_pairs_hook=pairs,
+            parse_constant=invalid_constant)
+    except (TypeError, json.JSONDecodeError):
+        raise ValueError("CLOUDFILE_POLICY_CONFIG_JSON must contain strict JSON") from None
+    if not isinstance(value, dict):
+        raise ValueError("CLOUDFILE_POLICY_CONFIG_JSON must contain a JSON object")
+    return value
+
+
 def _boolean(environment, name, default=False):
     raw_value = environment.get(name)
     if raw_value is None:
@@ -153,11 +178,15 @@ def render_settings(environment=None):
     extension_apps = _extension_apps(environment.get("CLOUDFILE_EXTENSION_APPS", ""))
     urlconfs = _extension_urlconfs(environment.get("CLOUDFILE_EXTENSION_URLCONFS_JSON", ""))
     capabilities = _capabilities(environment.get("CLOUDFILE_CAPABILITIES_JSON", ""))
+    policy_config = _policy_config(environment.get("CLOUDFILE_POLICY_CONFIG_JSON", ""))
     authentik = _authentik_settings(environment)
     capabilities.setdefault("auth.basic", {"enabled": True, "version": "14"})
     webdav_enabled = _boolean(environment, "CLOUDFILE_WEBDAV_ENABLED", False)
     authorization_enabled = _boolean(environment, "CLOUDFILE_AUTHORIZATION_ENABLED", False)
     local_edit_enabled = _boolean(environment, "CLOUDFILE_LOCAL_EDIT_ENABLED", False)
+    if authorization_enabled and (policy_config is None
+            or not _boolean(environment, "CLOUDFILE_POLICY_WORKER_HOOKS", False)):
+        raise ValueError("enabled authorization requires policy config and worker hooks")
     capabilities.setdefault(
         "protocol.webdav",
         {"enabled": webdav_enabled, "version": "14"},
@@ -173,6 +202,7 @@ def render_settings(environment=None):
         "SITE_ROOT_URLCONF = 'cloudfile_extensions.root_urls'",
         f"CLOUDFILE_EXTENSION_URLCONFS = {pprint.pformat(urlconfs, sort_dicts=True)}",
         f"CLOUDFILE_CAPABILITIES = {pprint.pformat(capabilities, sort_dicts=True)}",
+        f"CLOUDFILE_POLICY_CONFIG = {pprint.pformat(policy_config, sort_dicts=True)}",
         f"CLOUDFILE_WEBDAV_SERVICE_ENABLED = {webdav_enabled!r}",
         f"CLOUDFILE_AUTHORIZATION_ENABLED = {authorization_enabled!r}",
         f"CLOUDFILE_LOCAL_EDIT_ENABLED = {local_edit_enabled!r}",

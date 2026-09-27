@@ -184,9 +184,10 @@ def render_settings(environment=None):
     webdav_enabled = _boolean(environment, "CLOUDFILE_WEBDAV_ENABLED", False)
     authorization_enabled = _boolean(environment, "CLOUDFILE_AUTHORIZATION_ENABLED", False)
     local_edit_enabled = _boolean(environment, "CLOUDFILE_LOCAL_EDIT_ENABLED", False)
-    if authorization_enabled and (policy_config is None
+    transfer_enabled = _boolean(environment, "CLOUDFILE_TRANSFER_ENABLED", False)
+    if (authorization_enabled or transfer_enabled) and (policy_config is None
             or not _boolean(environment, "CLOUDFILE_POLICY_WORKER_HOOKS", False)):
-        raise ValueError("enabled authorization requires policy config and worker hooks")
+        raise ValueError("enabled authorization or transfer requires policy config and worker hooks")
     capabilities.setdefault(
         "protocol.webdav",
         {"enabled": webdav_enabled, "version": "14"},
@@ -206,6 +207,7 @@ def render_settings(environment=None):
         f"CLOUDFILE_WEBDAV_SERVICE_ENABLED = {webdav_enabled!r}",
         f"CLOUDFILE_AUTHORIZATION_ENABLED = {authorization_enabled!r}",
         f"CLOUDFILE_LOCAL_EDIT_ENABLED = {local_edit_enabled!r}",
+        f"CLOUDFILE_TRANSFER_ENABLED = {transfer_enabled!r}",
     ]
     lines.extend(
         f"{name} = {pprint.pformat(value, sort_dicts=True)}"

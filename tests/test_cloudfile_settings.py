@@ -180,6 +180,22 @@ class CloudFileSettingsTest(unittest.TestCase):
             exec(CLOUDFILE.render_settings(environment), namespace)
             self.assertEqual(namespace["CLOUDFILE_AUTHORIZATION_ENABLED"], expected)
 
+    def test_transfer_routes_require_explicit_deployment_flag(self):
+        policy = '{"database":{},"redis":{}}'
+        for value, expected in ((None, False), ("true", True), ("false", False)):
+            environment = {} if value is None else {
+                "CLOUDFILE_TRANSFER_ENABLED": value,
+                "CLOUDFILE_POLICY_CONFIG_JSON": policy,
+                "CLOUDFILE_POLICY_WORKER_HOOKS": "true",
+            }
+            namespace = {}
+            exec(CLOUDFILE.render_settings(environment), namespace)
+            self.assertEqual(namespace["CLOUDFILE_TRANSFER_ENABLED"], expected)
+
+    def test_enabled_transfer_rejects_missing_policy_worker(self):
+        with self.assertRaisesRegex(ValueError, "authorization or transfer"):
+            CLOUDFILE.render_settings({"CLOUDFILE_TRANSFER_ENABLED": "true"})
+
     def test_enabled_authorization_rejects_incomplete_or_ambiguous_policy_config(self):
         with self.assertRaisesRegex(ValueError, "policy config and worker hooks"):
             CLOUDFILE.render_settings({"CLOUDFILE_AUTHORIZATION_ENABLED": "true"})

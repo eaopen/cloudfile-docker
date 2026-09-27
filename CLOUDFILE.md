@@ -13,10 +13,11 @@
 - `CLOUDFILE_AUTHORIZATION_ENABLED`：挂载内建 authorization v1 路由，默认 `false`；必须同时启用 post-fork policy worker，并配置真实目录、主体刷新和委托发行运行时。该开关不自动声明 capability 已交付。
 - `CLOUDFILE_POLICY_CONFIG_JSON`：严格 JSON 的可信 worker 配置；包含数据库、专属 Redis、Directory Adapter、C ACL 库、机器凭证范围、刷新 provider grant 与独立委托签名键。`CLOUDFILE_AUTHORIZATION_ENABLED=true` 时必须同时设置它和 `CLOUDFILE_POLICY_WORKER_HOOKS=true`，重复字段或不完整安全配置拒绝启动。
 - `CLOUDFILE_LOCAL_EDIT_ENABLED`：挂载内建 local-edit URL，默认 `false`；只有同时配置 post-fork policy worker、资源生命周期读取器、本地编辑版本读取器和固定 HTTPS 实例 origin 后才可设为 `true`，该开关本身不声明能力已交付。
+- `CLOUDFILE_TRANSFER_ENABLED`：挂载 cookie-free 的 `transfer/v1/delegated-read-tickets/`，默认 `false`；必须同时启用 post-fork policy worker，并由完整 `CLOUDFILE_POLICY_CONFIG_JSON` 构造独立委托验签键、共享撤销存储与 native ticket RPC。该开关不挂载 OIDC 会话票据，也不自动声明 `transfer.web` 已交付。
 
 部署 URLConf 不得占用 directory、authorization、library-policy、directory-acl、annotations、audit、search、locks、local-edit、migration、transfer 核心域。自有能力由受信 Python 启动代码注册，配置 JSON 不能注册实现。
 
-authorization 的 `CLOUDFILE_POLICY_CONFIG_JSON` 最小结构如下；示例值必须由部署密钥系统替换，机器凭证密钥与委托签名密钥不得相同：
+authorization/transfer 的 `CLOUDFILE_POLICY_CONFIG_JSON` 最小结构如下；示例值必须由部署密钥系统替换，机器凭证密钥与委托签名密钥不得相同：
 
 ```json
 {

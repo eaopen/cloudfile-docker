@@ -16,7 +16,7 @@ CAPABILITY_NAME_RE = re.compile(r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$")
 PUBLIC_CAPABILITY_FIELDS = {"enabled", "version", "provider"}
 RESERVED_DOMAINS = {
     "directory", "authorization", "library-policy", "directory-acl", "annotations",
-    "audit", "search", "locks", "local-edit", "migration", "transfer",
+    "audit", "search", "locks", "local-edit", "migration", "transfer", "identity",
 }
 
 
@@ -73,7 +73,7 @@ def _capabilities(raw_value):
     return value
 
 
-def _policy_config(raw_value):
+def _strict_config(raw_value, name):
     if not raw_value:
         return None
 
@@ -81,20 +81,57 @@ def _policy_config(raw_value):
         value = {}
         for key, item in items:
             if key in value:
-                raise ValueError("duplicate CLOUDFILE_POLICY_CONFIG_JSON field")
+                raise ValueError(f"duplicate {name} field")
             value[key] = item
         return value
 
     def invalid_constant(_):
-        raise ValueError("CLOUDFILE_POLICY_CONFIG_JSON must contain strict JSON")
+        raise ValueError(f"{name} must contain strict JSON")
 
     try:
         value = json.loads(raw_value, object_pairs_hook=pairs,
             parse_constant=invalid_constant)
     except (TypeError, json.JSONDecodeError):
-        raise ValueError("CLOUDFILE_POLICY_CONFIG_JSON must contain strict JSON") from None
+        raise ValueError(f"{name} must contain strict JSON") from None
     if not isinstance(value, dict):
-        raise ValueError("CLOUDFILE_POLICY_CONFIG_JSON must contain a JSON object")
+        raise ValueError(f"{name} must contain a JSON object")
+    return value
+
+
+def _policy_config(raw_value):
+    return _strict_config(raw_value, "CLOUDFILE_POLICY_CONFIG_JSON")
+
+
+def _oidc_config(raw_value):
+    value = _strict_config(raw_value, "CLOUDFILE_OIDC_CONFIG_JSON")
+    if value is None:
+        return None
+    required = {"issuer", "client_id", "client_secret", "redirect_uri",
+                "authorization_url", "token_url", "userinfo_url", "jwks_url"}
+    optional = {"user_id_claim", "ca_bundle", "end_session_url", "post_logout_redirect_uri"}
+    if not required <= value.keys() or value.keys() - required - optional:
+        raise ValueError("OIDC configuration has missing or unsupported fields")
+    if any(not isinstance(value[name], str) or not value[name] or "\x00" in value[name]
+           for name in required):
+        raise ValueError("OIDC configuration requires non-empty strings")
+    for name in ("issuer", "redirect_uri", "authorization_url", "token_url", "userinfo_url", "jwks_url",
+                 "end_session_url", "post_logout_redirect_uri"):
+        if value.get(name) is None:
+            continue
+        url = value[name]
+        if not isinstance(url, str) or any(ord(char) < 33 for char in url):
+            raise ValueError("OIDC endpoints require trusted HTTPS URLs")
+        try:
+            parsed = urlparse(url)
+            valid = (parsed.scheme == "https" and parsed.hostname and not parsed.username
+                     and not parsed.password and not parsed.fragment)
+            parsed.port
+        except ValueError:
+            valid = False
+        if not valid:
+            raise ValueError("OIDC endpoints require trusted HTTPS URLs")
+    if (value.get("end_session_url") is None) != (value.get("post_logout_redirect_uri") is None):
+        raise ValueError("OIDC logout endpoint and return URI must be configured together")
     return value
 
 
@@ -179,7 +216,17 @@ def render_settings(environment=None):
     urlconfs = _extension_urlconfs(environment.get("CLOUDFILE_EXTENSION_URLCONFS_JSON", ""))
     capabilities = _capabilities(environment.get("CLOUDFILE_CAPABILITIES_JSON", ""))
     policy_config = _policy_config(environment.get("CLOUDFILE_POLICY_CONFIG_JSON", ""))
+    oidc_config = _oidc_config(environment.get("CLOUDFILE_OIDC_CONFIG_JSON", ""))
+    oidc_enabled = _boolean(environment, "CLOUDFILE_OIDC_ENABLED", False)
+    oidc_jit_enabled = _boolean(environment, "CLOUDFILE_OIDC_JIT_ENABLED", False)
     authentik = _authentik_settings(environment)
+    if oidc_enabled and (oidc_config is None or policy_config is None
+            or not _boolean(environment, "CLOUDFILE_POLICY_WORKER_HOOKS", False)):
+        raise ValueError("enabled OIDC requires OIDC config, policy config and worker hooks")
+    if oidc_enabled and authentik:
+        raise ValueError("CloudFile OIDC and the legacy Authentik OAuth preset cannot both be enabled")
+    if oidc_jit_enabled and not oidc_enabled:
+        raise ValueError("OIDC JIT requires the explicit OIDC host")
     capabilities.setdefault("auth.basic", {"enabled": True, "version": "14"})
     webdav_enabled = _boolean(environment, "CLOUDFILE_WEBDAV_ENABLED", False)
     authorization_enabled = _boolean(environment, "CLOUDFILE_AUTHORIZATION_ENABLED", False)
@@ -204,6 +251,9 @@ def render_settings(environment=None):
         f"CLOUDFILE_EXTENSION_URLCONFS = {pprint.pformat(urlconfs, sort_dicts=True)}",
         f"CLOUDFILE_CAPABILITIES = {pprint.pformat(capabilities, sort_dicts=True)}",
         f"CLOUDFILE_POLICY_CONFIG = {pprint.pformat(policy_config, sort_dicts=True)}",
+        f"CLOUDFILE_OIDC_ENABLED = {oidc_enabled!r}",
+        f"CLOUDFILE_OIDC_CONFIG = {pprint.pformat(oidc_config, sort_dicts=True)}",
+        f"CLOUDFILE_OIDC_JIT_ENABLED = {oidc_jit_enabled!r}",
         f"CLOUDFILE_WEBDAV_SERVICE_ENABLED = {webdav_enabled!r}",
         f"CLOUDFILE_AUTHORIZATION_ENABLED = {authorization_enabled!r}",
         f"CLOUDFILE_LOCAL_EDIT_ENABLED = {local_edit_enabled!r}",

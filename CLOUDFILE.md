@@ -19,7 +19,7 @@
 - `CLOUDFILE_LOCAL_EDIT_ENABLED`：挂载内建 local-edit URL，默认 `false`；只有同时配置 post-fork policy worker、资源生命周期读取器、本地编辑版本读取器和固定 HTTPS 实例 origin 后才可设为 `true`，该开关本身不声明能力已交付。
 - `CLOUDFILE_TRANSFER_ENABLED`：挂载 cookie-free 的 `transfer/v1/delegated-read-tickets/`，默认 `false`；必须同时启用 post-fork policy worker，并由完整 `CLOUDFILE_POLICY_CONFIG_JSON` 构造独立委托验签键、共享撤销存储与 native ticket RPC。该开关不挂载 OIDC 会话票据，也不自动声明 `transfer.web` 已交付。
 
-部署 URLConf 不得占用 directory、authorization、library-policy、directory-acl、annotations、audit、search、locks、local-edit、migration、transfer 核心域。自有能力由受信 Python 启动代码注册，配置 JSON 不能注册实现。
+部署 URLConf 不得占用 directory、authorization、library-policy、directory-acl、annotations、audit、search、locks、local-edit、migration、transfer、identity 核心域。自有能力由受信 Python 启动代码注册，配置 JSON 不能注册实现。
 
 authorization/transfer 的 `CLOUDFILE_POLICY_CONFIG_JSON` 最小结构如下；示例值必须由部署密钥系统替换，机器凭证密钥与委托签名密钥不得相同：
 
@@ -30,10 +30,10 @@ authorization/transfer 的 `CLOUDFILE_POLICY_CONFIG_JSON` 最小结构如下；�
   "provider":"etech",
   "native_schema":"ccnet_db",
   "identity_schema":"seahub_db",
-  "directory_url":"https://etech.example.com/eap/cloudDrive/directory/context/v2",
+  "directory_url":"https://etech.example.com/eap/cloudDrive/directory/v2",
   "directory_bearer_token":"replace-me",
   "attribute_allowlist":[],
-  "core_library":"/opt/seafile/lib/libcloudfile_acl.so.1",
+  "core_library":"/opt/seafile/seafile-server-latest/seafile/lib/libcloudfile_acl.so.1",
   "cloud_mode":false,
   "service_credentials":{"login-v1":{"service_id":"etech-login","issuer":"etech-login","audience":"cloudfile-authorization","secret":"replace-with-machine-secret-32-bytes-min","scopes":["subject.refresh","user.delegation.issue"],"maximum_ttl":120}},
   "refresh_provider_grants":{"etech-login":["etech"]},
@@ -43,7 +43,42 @@ authorization/transfer 的 `CLOUDFILE_POLICY_CONFIG_JSON` 最小结构如下；�
 
 上述 JSON 只在 Gunicorn worker fork 后构造 Redis 撤销存储、机器 verifier 和委托 signer；URLConf/preload master 不持有连接。生产环境应限制生成的 `seahub_settings.py` 读取权限，并通过编排系统注入秘密，不能把实际值提交到源码仓库。
 
-## Authentik OIDC
+## 完整 OIDC 的显式部署接线
+
+v0.2 的完整 OIDC 使用既有签名校验、登录资源、原生 session backend 和 guarded session middleware，默认关闭。先部署 schema、预绑定账号、真实目录与权限配置，再显式设置：
+
+```dotenv
+CLOUDFILE_OIDC_ENABLED=true
+CLOUDFILE_POLICY_WORKER_HOOKS=true
+CLOUDFILE_OIDC_JIT_ENABLED=false
+CLOUDFILE_AUTHENTIK_ENABLED=false
+```
+
+同时提供 `CLOUDFILE_POLICY_CONFIG_JSON` 和严格 `CLOUDFILE_OIDC_CONFIG_JSON`，例如：
+
+```json
+{
+  "issuer":"https://auth.example.com/application/o/cloudfile/",
+  "client_id":"cloudfile",
+  "client_secret":"replace-through-deployment-secret-store",
+  "redirect_uri":"https://files.example.com/api/v2.1/cloudfile/extensions/identity/v1/callback/",
+  "authorization_url":"https://auth.example.com/application/o/authorize/",
+  "token_url":"https://auth.example.com/application/o/token/",
+  "userinfo_url":"https://auth.example.com/application/o/userinfo/",
+  "jwks_url":"https://auth.example.com/application/o/cloudfile/jwks/",
+  "user_id_claim":"userId"
+}
+```
+
+issuer/JWKS 等必须取实际 provider 配置并精确注册 callback；示例不替代 IdP 联验。可选 `ca_bundle` 指向可信容器内 CA 文件；RP logout 的 `end_session_url` 与 `post_logout_redirect_uri` 必须同时配置，后者固定为同 origin 的 `identity/v1/logout/return/`。SITE_ROOT 非 `/` 时 callback/return URI 必须含相同前缀。
+
+Django app 启动先把原始配置校验为既有 `OIDCConfig`；只替换原位置的 SessionMiddleware，保留本地恢复认证 backend，追加 CloudFile backend，并要求数据库 session。legacy `ENABLE_OAUTH`、多个 session middleware、另一套 login resource owner、回调路径不符或配置不完整均拒绝，不输出秘密。启用后 session/CSRF cookie 为 Secure，session 为 HttpOnly。反向代理须按真实信任边界提供 HTTPS，不能对任意客户端信任转发头。
+
+内建路径为 `identity/v1/begin/`、`callback/`、`pending/`、`logout/`、`logout/idp/`、`logout/return/`。URLConf 不在 preload master 创建连接；请求和会话保护通过当前 post-fork PolicyHost 获取资源。未初始化、排空或缺资源返回 503，worker 配置失败拒绝启动。`CLOUDFILE_OIDC_ENABLED` 不自动声明 `auth.oidc` capability，也不自动启动 JIT worker或安装 backchannel logout；这些须各自取得完整运行证据。
+
+首次部署可从已预绑定账号闭环，JIT 保持关闭。升级前先显式执行现有迁移，不在请求或 app ready 自动 DDL。回退时先排空/冻结受管入口并恢复匹配配置/数据库，不得把受保护 OIDC session 改为普通 session middleware 继续提供访问。
+
+## 旧 Authentik OAuth 配置预设
 
 CloudFile 内建的是 Authentik 的首选 OIDC 配置，不在本容器中捆绑 Authentik 服务。必填变量：
 

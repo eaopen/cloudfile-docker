@@ -217,5 +217,72 @@ class CloudFileSettingsTest(unittest.TestCase):
                 CLOUDFILE.render_settings({"CLOUDFILE_EXTENSION_URLCONFS_JSON": '{"' + domain + '":"adapter.urls"}'})
 
 
+class OIDCSettingsTest(unittest.TestCase):
+    @staticmethod
+    def environment():
+        import json
+        return {"CLOUDFILE_OIDC_ENABLED": "true", "CLOUDFILE_POLICY_WORKER_HOOKS": "true",
+            "CLOUDFILE_POLICY_CONFIG_JSON": '{"provider":"fixture"}',
+            "CLOUDFILE_OIDC_CONFIG_JSON": json.dumps(dict(
+                issuer="https://idp.example/application/o/cloudfile/", client_id="cloudfile",
+                client_secret="fixture-client-secret",
+                redirect_uri="https://files.example/api/v2.1/cloudfile/extensions/identity/v1/callback/",
+                authorization_url="https://idp.example/authorize/", token_url="https://idp.example/token/",
+                userinfo_url="https://idp.example/userinfo/", jwks_url="https://idp.example/jwks/"))}
+
+    def test_explicit_oidc_renders_primitives_without_claiming_capability(self):
+        namespace = {}
+        exec(CLOUDFILE.render_settings(self.environment()), namespace)
+        self.assertTrue(namespace["CLOUDFILE_OIDC_ENABLED"])
+        self.assertFalse(namespace["CLOUDFILE_OIDC_JIT_ENABLED"])
+        self.assertEqual(namespace["CLOUDFILE_OIDC_CONFIG"]["client_id"], "cloudfile")
+        self.assertFalse(namespace["CLOUDFILE_CAPABILITIES"]["auth.oidc"]["enabled"])
+        self.assertNotIn("ENABLE_OAUTH", namespace)
+        self.assertFalse(namespace["CLOUDFILE_LOCAL_EDIT_ENABLED"])
+
+    def test_missing_runtime_or_worker_hooks_rejected(self):
+        for key in ("CLOUDFILE_POLICY_CONFIG_JSON", "CLOUDFILE_OIDC_CONFIG_JSON",
+                    "CLOUDFILE_POLICY_WORKER_HOOKS"):
+            environment = self.environment()
+            del environment[key]
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                CLOUDFILE.render_settings(environment)
+
+    def test_legacy_oauth_and_jit_without_host_are_rejected(self):
+        environment = self.environment()
+        environment.update(CLOUDFILE_AUTHENTIK_ENABLED="true",
+            CLOUDFILE_AUTHENTIK_URL="https://idp.example",
+            CLOUDFILE_AUTHENTIK_CLIENT_ID="fixture", CLOUDFILE_AUTHENTIK_CLIENT_SECRET="fixture",
+            CLOUDFILE_AUTHENTIK_REDIRECT_URL="https://files.example/oauth/callback/")
+        with self.assertRaises(ValueError):
+            CLOUDFILE.render_settings(environment)
+        with self.assertRaises(ValueError):
+            CLOUDFILE.render_settings({"CLOUDFILE_OIDC_JIT_ENABLED": "true"})
+
+    def test_oidc_json_and_endpoint_errors_are_redacted(self):
+        import json
+        for raw in ('{"client_secret":"fixture-client-secret","client_secret":"duplicate"}',
+                    '{"secret":NaN}', '[]'):
+            environment = self.environment()
+            environment["CLOUDFILE_OIDC_CONFIG_JSON"] = raw
+            with self.subTest(raw=raw), self.assertRaises(ValueError) as error:
+                CLOUDFILE.render_settings(environment)
+            self.assertNotIn("fixture-client-secret", str(error.exception))
+        for uri in ("http://idp.example", "https://user:fixture-client-secret@idp.example",
+                    "https://idp.example/#fragment", "https://idp.example:invalid", "https://idp.example/\n"):
+            environment = self.environment()
+            value = json.loads(environment["CLOUDFILE_OIDC_CONFIG_JSON"])
+            value["issuer"] = uri
+            environment["CLOUDFILE_OIDC_CONFIG_JSON"] = json.dumps(value)
+            with self.subTest(uri=uri), self.assertRaises(ValueError) as error:
+                CLOUDFILE.render_settings(environment)
+            self.assertNotIn("fixture-client-secret", str(error.exception))
+
+    def test_identity_domain_cannot_be_replaced_by_project_urlconf(self):
+        with self.assertRaises(ValueError):
+            CLOUDFILE.render_settings({"CLOUDFILE_EXTENSION_URLCONFS_JSON":
+                                      '{"identity":"project.urls"}'})
+
+
 if __name__ == "__main__":
     unittest.main()

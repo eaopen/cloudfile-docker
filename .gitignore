@@ -20,3 +20,4 @@ build/seafile-server-*
 build/*/src
 build/*/seafile-server-*
 build/*/build-output.*
+build/*/.cache

@@ -46,6 +46,10 @@ function source_override() {
 }
 
 function install_dependencies() {
+    if [[ "${CLOUDFILE_BUILD_BASE:-false}" == "true" ]]; then
+        echo 'Reuse the prebuilt CE14 toolchain; skip APT installation.'
+        return
+    fi
     apt-get update && apt-get upgrade -y
     apt-get install -y build-essential
     export DEBIAN_FRONTEND=noninteractive && apt-get install -y tzdata
@@ -123,8 +127,30 @@ function install_python_dependencies() {
 
     # pymysql for scripts
     sed -i '$a\pymysql' requirements-thirdpart.txt
-    # install
-    pip3 install -r requirements-thirdpart.txt -t ${code_path}/thirdpartdir
+    # Reuse installed Python dependencies only for this exact requirement set,
+    # toolchain image and interpreter. A partial/old directory lacks the marker.
+    dependency_key=$(python3 - <<'PY'
+import hashlib, os, platform, sys
+from pathlib import Path
+value = Path('requirements-thirdpart.txt').read_bytes()
+value += repr((sys.version, platform.machine(), os.environ.get('CLOUDFILE_BUILD_BASE_ID', 'unmanaged'))).encode()
+print(hashlib.sha256(value).hexdigest())
+PY
+)
+    marker="${code_path}/thirdpartdir/.cloudfile-requirements.sha256"
+    if [[ "${CF_FORCE_THIRDPART_REFRESH:-false}" != "true" && -f "${marker}" && \
+            "$(cat "${marker}")" == "${dependency_key}" ]]; then
+        echo 'Reuse matching installed Python dependencies.'
+        return
+    fi
+    thirdpart_output=$(mktemp -d "${code_path}/thirdpart-build.XXXXXX")
+    pip3 install -r requirements-thirdpart.txt -t "${thirdpart_output}"
+    echo "${dependency_key}" > "${thirdpart_output}/.cloudfile-requirements.sha256"
+    if [[ -e "${code_path}/thirdpartdir" ]]; then
+        previous_dependencies=$(mktemp -d "${code_path}/thirdpart-previous.XXXXXX")
+        mv "${code_path}/thirdpartdir" "${previous_dependencies}/thirdpartdir"
+    fi
+    mv "${thirdpart_output}" "${code_path}/thirdpartdir"
 }
 
 function clone_code() {
@@ -172,8 +198,10 @@ function fetch() {
             validated_override=$(python3 "${override_validator}" "${override}" "${source_ref}") || exit 1
             git remote set-url origin "${validated_override}" || exit 1
         fi
-        git fetch --force origin "${source_ref}" || exit 1
-        git checkout --detach FETCH_HEAD || exit 1
+        if [[ "$(git rev-parse HEAD)" != "${source_ref}" ]]; then
+            git fetch --force origin "${source_ref}" || exit 1
+            git checkout --detach FETCH_HEAD || exit 1
+        fi
         cd "${code_path}" || exit 1
     done
 }
@@ -185,7 +213,7 @@ function build() {
     build_output=$(mktemp -d "${current_dir}/build-output.XXXXXX")
     python3 ./seafile-build.py --version="${version}" --builddir="${build_output}" \
         --srcdir="${code_path}" --thirdpartdir="${code_path}/thirdpartdir" \
-        --mysql_config=/usr/bin/mariadb_config
+        --mysql_config=/usr/bin/mariadb_config --jobs="${CF_BUILD_JOBS:-4}"
     python3 ./package_provenance.py "${build_output}/seafile-server-${version}" "${manifest}"
     package="${current_dir}/seafile-server-${version}"
     if [[ -e "${package}" || -L "${package}" ]]; then

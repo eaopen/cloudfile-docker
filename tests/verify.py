@@ -46,10 +46,11 @@ def extensions_hash():
     return digest.hexdigest()
 
 
-def baseline_checks():
+def baseline_checks(contract_python):
     reports = {}
     for name in ('verify_baseline.py', 'check_design_contracts.py'):
-        result = command([sys.executable, str(WORKSPACE / 'eap-cloudfile/tools' / name)])
+        interpreter = contract_python if name == 'check_design_contracts.py' else sys.executable
+        result = command([interpreter, str(WORKSPACE / 'eap-cloudfile/tools' / name)])
         reports[name] = dict(passed=result.returncode == 0, output=result.stdout[-2000:])
     return reports
 
@@ -285,6 +286,8 @@ def main():
     parser.add_argument('--warm', action='store_true', help='Keep/reuse owned isolated MySQL/Redis for component tests')
     parser.add_argument('--warm-action', choices=['up', 'status', 'down'], default='status')
     parser.add_argument('--image', default=DEFAULT_IMAGE)
+    parser.add_argument('--contract-python', default=sys.executable,
+                        help='Python with eap-cloudfile/tools/design-requirements.txt installed; used only for contract gate')
     args = parser.parse_args()
     if args.scope == 'warm':
         names = core_names(True)
@@ -303,7 +306,7 @@ def main():
     if args.scope in ('full', 'runtime', 'identity-runtime'):
         # Full gate tests the packaged artifact, never the development overlay.
         if args.scope == 'full':
-            if not all(item['passed'] for item in baseline_checks().values()):
+            if not all(item['passed'] for item in baseline_checks(args.contract_python).values()):
                 raise RuntimeError('Locked source baseline failed; full gate refused')
             labels = json.loads(docker('image', 'inspect', args.image))[0]['Config']['Labels']
             for repo, label in [('cloudfile-hub', 'seahub'), ('cloudfile-server', 'seafile-server')]:
@@ -325,7 +328,7 @@ def main():
         report['docker_tests'] = dict(passed=result.returncode == 0, output=result.stderr[-1500:])
         passed &= result.returncode == 0
     if 'baseline-contracts' in selection['required_gates']:
-        report['baseline'] = baseline_checks()
+        report['baseline'] = baseline_checks(args.contract_python)
         passed &= all(item['passed'] for item in report['baseline'].values())
     report['source'] = {repo: dict(head=git(repo, 'rev-parse', 'HEAD'), dirty=bool(git(repo, 'status', '--porcelain')))
                         for repo in ('cloudfile-hub', 'cloudfile-server', 'cloudfile-docker', 'eap-cloudfile')}

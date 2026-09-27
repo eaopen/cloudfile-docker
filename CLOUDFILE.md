@@ -159,6 +159,8 @@ python3 tests/verify.py full
 
 `--image` 可指定本地镜像。`changed` 以生产模块/测试夹具的反向 Python import 闭包选择关联测试；身份修改另列 identity runtime 门禁。显式 `identity/authorization/transfer` 则运行整个组件依赖闭包，包含必要的暂存域消费者回归，不启动 v0.3 产品服务。schema/common/jobs/根接线、原生修改和未知路径保守要求完整门禁；动态导入不保证能由 AST 完全识别，提交/RC 前仍必须显式全量验收。`--changed-file repository/path` 仅用于明确指定范围或检查映射，不能冒充自动检测全部改动。
 
+契约门禁使用安装了 `eap-cloudfile/tools/design-requirements.txt` 的开发 Python；已有环境直接用 `--contract-python /path/to/venv/bin/python`，默认当前解释器。依赖缺失返回失败，不自动修改运行镜像、重新下载依赖或静默跳过。
+
 退出码：0 为所选测试通过且无待执行门禁，1 为失败，2 为所选测试通过但报告中的运行/全量门禁尚待执行。报告记录模块集合、测试数量、跳过/错误、耗时、镜像 ID、源码 HEAD/dirty 与扩展源码摘要；执行期间源码变化拒绝通过。源码挂载只支持 Python 开发；Server dirty 或镜像 Server SHA 不匹配时拒绝组件集成，须先生成匹配 native 制品。`full` 先检查清单、干净 Hub/Server 与镜像来源一致，再执行全新 CE14、全部扩展回归和身份夹具；仍不代表真实 Authentik/eTech/浏览器 TLS 或全部 RC 场景已通过。
 
 warm 仅保留本工作区带 ownership label 的 MySQL/Redis，测试仍创建/删除随机 schema。Redis 夹具可能 flush 自己的测试库，因此跨进程加锁，不能并发跑同一 warm 服务；错标签、外部网络、发布端口、停止/换镜像的服务拒绝复用。不主动重启或删除其他容器。默认不带 `--warm` 时成功/失败均清理，runner 超时也清理。warm tmpfs 不是持久数据库，显式 down 后数据消失。

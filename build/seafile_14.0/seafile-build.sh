@@ -179,8 +179,26 @@ function fetch() {
 }
 
 function build() {
-    cd ${current_dir}
-    python3 ./seafile-build.py --version=${version} --builddir=${current_dir} --srcdir=${code_path} --thirdpartdir=${code_path}/thirdpartdir --mysql_config=/usr/bin/mariadb_config
+    cd "${current_dir}"
+    # Never overlay an old completed package or a previous partial build.
+    # Failed output stays isolated for diagnosis; the last package stays intact.
+    build_output=$(mktemp -d "${current_dir}/build-output.XXXXXX")
+    python3 ./seafile-build.py --version="${version}" --builddir="${build_output}" \
+        --srcdir="${code_path}" --thirdpartdir="${code_path}/thirdpartdir" \
+        --mysql_config=/usr/bin/mariadb_config
+    python3 ./package_provenance.py "${build_output}/seafile-server-${version}" "${manifest}"
+    package="${current_dir}/seafile-server-${version}"
+    if [[ -e "${package}" || -L "${package}" ]]; then
+        previous=$(mktemp -d "${current_dir}/seafile-server-${version}.previous.XXXXXX")
+        mv "${package}" "${previous}/package"
+    fi
+    if ! mv "${build_output}/seafile-server-${version}" "${package}"; then
+        if [[ -n "${previous:-}" ]]; then
+            mv "${previous}/package" "${package}"
+        fi
+        exit 1
+    fi
+    rmdir "${build_output}"
 }
 
 echo ''

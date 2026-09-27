@@ -9,6 +9,7 @@ current_dir=$(dirname "${SCRIPT}")
 repo_dir=$(readlink -f "${current_dir}/../..")
 manifest="${current_dir}/release.json"
 manifest_reader="${current_dir}/source_manifest.py"
+provenance_reader="${current_dir}/package_provenance.py"
 version=$(python3 "${manifest_reader}" "${manifest}" seafile_version)
 product_version=$(python3 "${manifest_reader}" "${manifest}" product_version)
 server_ref=$(python3 "${manifest_reader}" "${manifest}" ref seafile-server)
@@ -20,6 +21,7 @@ if [[ ! -d "${package}" ]]; then
     echo "Missing verified package: ${package}" >&2
     exit 1
 fi
+package_digest=$(python3 "${provenance_reader}" "${package}" "${manifest}")
 if ! command -v docker >/dev/null 2>&1; then
     echo "docker is required to build the local image" >&2
     exit 1
@@ -32,6 +34,13 @@ cp -a "${repo_dir}/base_scripts" "${context}/base_scripts"
 cp -a "${repo_dir}/scripts/scripts_14.0" "${context}/scripts_14.0"
 cp -a "${repo_dir}/services" "${context}/services"
 cp -a "${package}" "${context}/seafile-server-${version}"
+# Validate the copied context too, so a changed source package cannot be labeled
+# with the current pins between the original check and context assembly.
+copied_digest=$(python3 "${provenance_reader}" "${context}/seafile-server-${version}" "${manifest}")
+if [[ "${copied_digest}" != "${package_digest}" ]]; then
+    echo "Native package changed while preparing the image context" >&2
+    exit 1
+fi
 
 docker build \
     --build-arg "server_version=${version}" \
@@ -39,6 +48,7 @@ docker build \
     --label "com.cloudfile.seafile.version=${version}" \
     --label "com.cloudfile.source.seafile-server=${server_ref}" \
     --label "com.cloudfile.source.seahub=${hub_ref}" \
+    --label "com.cloudfile.package.sha256=${package_digest}" \
     -t "${tag}" \
     "${context}"
 

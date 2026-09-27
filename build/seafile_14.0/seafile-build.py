@@ -22,6 +22,8 @@ import re
 import subprocess
 import optparse
 
+from package_provenance import capture_sources, write_provenance
+
 ####################
 # Global variables
 ####################
@@ -319,6 +321,11 @@ def show_build_info():
 
 def prepare_builddir(builddir):
     must_mkdir(builddir)
+
+    versioned = os.path.join(builddir, 'seafile-server-' + conf[CONF_VERSION])
+    staging = os.path.join(builddir, 'seafile-server')
+    if os.path.lexists(versioned) or os.path.lexists(staging):
+        error('choose a fresh build directory; existing packages must not be overlaid')
 
     os.chdir(builddir)
 
@@ -708,13 +715,10 @@ def strip_and_rename():
         error('failed to move %s to %s: %s' %
               (serverdir, versioned_serverdir, e))
 
-    print('---------------------------------------------')
-    print('The build is successfully.')
-    print('---------------------------------------------')
-
-
 def main():
     parse_args()
+    manifest_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'release.json')
+    sources = capture_sources(manifest_path, conf[CONF_SRCDIR])
     setup_build_env()
 
     libsearpc = Libsearpc()
@@ -729,6 +733,11 @@ def main():
 
     copy_scripts_and_libs()
     strip_and_rename()
+    package = os.path.join(conf[CONF_BUILDDIR], 'seafile-server-' + conf[CONF_VERSION])
+    write_provenance(package, sources, manifest_path)
+    print('---------------------------------------------')
+    print('The build is successful; package provenance recorded.')
+    print('---------------------------------------------')
 
 
 if __name__ == '__main__':

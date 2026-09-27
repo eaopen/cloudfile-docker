@@ -5,11 +5,11 @@
   "sources": {
     "libevhtp": {
       "url": "https://github.com/haiwen/libevhtp.git",
-      "ref": "1.1.6"
+      "ref": "91071e2f20749cd469b87ac2ef1c158dc2a6806f"
     },
     "libsearpc": {
       "url": "https://github.com/haiwen/libsearpc.git",
-      "ref": "v3.3-latest"
+      "ref": "23d5df62815fb3b7825bf4e1a28b29af701e8cb2"
     },
     "seafile-server": {
       "url": "https://github.com/eaopen/cloudfile-server.git",
@@ -17,15 +17,15 @@
     },
     "seafobj": {
       "url": "https://github.com/haiwen/seafobj.git",
-      "ref": "v14.0.8-server"
+      "ref": "794428d5f455338f2f2f472c1f0ee2eebf623103"
     },
     "seafdav": {
       "url": "https://github.com/haiwen/seafdav.git",
-      "ref": "v14.0.8-server"
+      "ref": "1ce0b05ea7d04495a1ca9121fc58c30d63b71e36"
     },
     "seafevents": {
       "url": "https://github.com/haiwen/seafevents.git",
-      "ref": "v14.0.8-server"
+      "ref": "d5300b3e5600973a79875439d64e23e1794b2653"
     },
     "seahub": {
       "url": "https://github.com/eaopen/cloudfile-hub.git",

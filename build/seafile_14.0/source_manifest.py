@@ -17,7 +17,7 @@ SOURCE_NAMES = (
     "seafevents",
     "seahub",
 )
-REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+REF_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def load_manifest(path):
@@ -42,7 +42,7 @@ def load_manifest(path):
         if parsed.scheme != "https" or not parsed.netloc:
             raise ValueError(f"source {name!r} must use an absolute HTTPS URL")
         if not isinstance(source["ref"], str) or not REF_RE.fullmatch(source["ref"]):
-            raise ValueError(f"source {name!r} has an invalid ref")
+            raise ValueError(f"source {name!r} requires an immutable 40-character commit pin")
     return manifest
 
 

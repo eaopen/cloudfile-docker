@@ -13,6 +13,13 @@ SPEC.loader.exec_module(CLOUDFILE)
 
 
 class CloudFileSettingsTest(unittest.TestCase):
+    def test_backchannel_flag_requires_enabled_oidc_and_defaults_off(self):
+        namespace = {}
+        exec(CLOUDFILE.render_settings({}), namespace)
+        self.assertIs(namespace['CLOUDFILE_OIDC_BACKCHANNEL_ENABLED'], False)
+        with self.assertRaisesRegex(ValueError, 'backchannel'):
+            CLOUDFILE.render_settings({'CLOUDFILE_OIDC_BACKCHANNEL_ENABLED': 'true'})
+
     def test_policy_worker_hooks_preserve_compose_and_remove_only_owned_block(self):
         environment = {"CLOUDFILE_POLICY_WORKER_HOOKS": "true"}
         with tempfile.TemporaryDirectory() as directory:

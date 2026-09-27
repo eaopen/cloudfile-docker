@@ -10,10 +10,11 @@ import threading
 from uuid import uuid4
 
 
-def require_enabled(settings):
+def require_enabled(settings, *, logout=False):
+    flag = 'CLOUDFILE_OIDC_BACKCHANNEL_ENABLED' if logout else 'CLOUDFILE_OIDC_JIT_ENABLED'
     if (getattr(settings, 'CLOUDFILE_OIDC_ENABLED', False) is not True or
-            getattr(settings, 'CLOUDFILE_OIDC_JIT_ENABLED', False) is not True):
-        raise ValueError('explicit OIDC and JIT enablement required')
+            getattr(settings, flag, False) is not True):
+        raise ValueError('explicit OIDC and worker enablement required')
 
 
 def bootstrap():
@@ -31,7 +32,7 @@ def bootstrap():
     django.setup()
 
 
-def main(argv=None):
+def main(argv=None, *, logout=False):
     parser = argparse.ArgumentParser(description='Drain verified CloudFile JIT jobs; never start from a web request')
     parser.add_argument('--once', action='store_true')
     parser.add_argument('--poll-seconds', type=int, default=2)
@@ -48,7 +49,8 @@ def main(argv=None):
         from django.conf import settings
         from cloudfile_extensions.authorization import gunicorn
         from cloudfile_extensions.identity.background import ProvisioningBackground
-        require_enabled(settings)
+        from cloudfile_extensions.identity.logout_background import LogoutBackground
+        require_enabled(settings, logout=logout)
         hooks = gunicorn
         # Own a fresh process host; never close an existing caller's host.
         if hooks._host is not None:
@@ -59,12 +61,15 @@ def main(argv=None):
         for number in (signal.SIGTERM, signal.SIGINT):
             previous_signals[number] = signal.signal(number, lambda *_: stop.set())
         with hooks.login_resources_scope() as resources:
-            with ProvisioningBackground(resources.resources, issuer=resources.oidc.issuer,
-                    owner='jit-' + uuid4().hex, enabled=True, lease_seconds=arguments.lease_seconds) as worker:
+            worker = (LogoutBackground(resources, owner='logout-' + uuid4().hex,
+                        enabled=True, lease_seconds=arguments.lease_seconds) if logout else
+                      ProvisioningBackground(resources.resources, issuer=resources.oidc.issuer,
+                        owner='jit-' + uuid4().hex, enabled=True, lease_seconds=arguments.lease_seconds))
+            with worker:
                 worker.run(stop, poll_seconds=arguments.poll_seconds, once=arguments.once,
                     emit=lambda value: print(json.dumps(value), flush=True))
     except Exception:
-        print('CloudFile JIT worker failed; check explicit enablement, configuration, schema and worker state',
+        print('CloudFile identity worker failed; check explicit enablement, configuration, schema and worker state',
               file=sys.stderr)
         result = 1
     finally:
@@ -74,7 +79,7 @@ def main(argv=None):
             try:
                 hooks.worker_exit(None, None)
             except Exception:
-                print('CloudFile JIT worker cleanup failed', file=sys.stderr)
+                print('CloudFile identity worker cleanup failed', file=sys.stderr)
                 result = 1
     return result
 

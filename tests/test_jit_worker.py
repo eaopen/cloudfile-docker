@@ -23,6 +23,15 @@ class JITWorkerConfigurationTests(unittest.TestCase):
                 self.assertEqual(worker.main(arguments), 1)
                 bootstrap.assert_not_called()
 
+    def test_logout_worker_uses_its_own_flag_without_requiring_jit(self):
+        settings = SimpleNamespace(CLOUDFILE_OIDC_ENABLED=True, CLOUDFILE_OIDC_BACKCHANNEL_ENABLED=True,
+            CLOUDFILE_OIDC_JIT_ENABLED=False)
+        worker.require_enabled(settings, logout=True)
+        for value in (False, 'true'):
+            settings.CLOUDFILE_OIDC_BACKCHANNEL_ENABLED = value
+            with self.assertRaises(ValueError):
+                worker.require_enabled(settings, logout=True)
+
 
 if __name__ == '__main__':
     unittest.main()

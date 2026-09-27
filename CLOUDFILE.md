@@ -117,7 +117,23 @@ python3 tests/verify.py identity-logout
 
 当前真实 TLS 测试 IdP、数据库 session/index 与完整 Django Client 通过：缺 CSRF 拒绝且保留旧会话；固定 HTTPS form/POST 与 cookie/CSP；当前会话删除而其他会话仍可用；wrong-browser 返回拒绝；迟到的固定 return 只消费一次 state，保留期间新的登录；IdP 实际返回 503 时本地会话不恢复。返回值为 `rp_returned=true, idp_logged_out=null`，仅证明关联回调，不能宣称全局退出。这里没有执行真实浏览器自动提交脚本或实际 Authentik/eTech 联验。
 
-backchannel 已有签名校验、持久撤销 fence/任务与数据库删除 worker，但当前 hosted 路由尚未显式安装该通知入口，仍保持不可用；需补配置门禁/请求 scope/仅该通知入口的 CSRF 豁免及独立 worker 部署与实际验收，不能把已有 adapter 单测当成当前部署闭环。
+backchannel 使用独立显式开关，配置及专项验收如下；RP return 的全局退出结论仍保持未知。
+
+### Backchannel Logout 接线
+
+`CLOUDFILE_OIDC_BACKCHANNEL_ENABLED=true` 要求完整 OIDC/policy/hooks 已启用，默认 false；只挂载 `identity/v1/logout/backchannel/`，不自动声明 capability。IdP 以 HTTPS、无 cookie/Authorization header 的 form POST 发送唯一 `logout_token`。入口使用固定 issuer/audience/JWKS 的 RS256 验签、purpose/events/时效/jti/sid/sub 验证；仅该签名通知入口豁免 CSRF，浏览器 local/RP logout 仍检查 CSRF。
+
+```bash
+# 已初始化的 CloudFile 容器内，独立 supervisor 显式托管。
+python3 /scripts/cloudfile-logout-worker.py
+python3 /scripts/cloudfile-logout-worker.py --once
+# 当前锁定制品的新装专项。
+python3 tests/verify.py identity-backchannel
+```
+
+请求通过 post-fork login scope 使用独立 SQL/JWKS 连接，不获取员工目录；ACK 200 仅代表签名通知与单调撤销 fence/任务已持久提交。相同通知重复受理返回 200 而不重复排队；ACK 不表示异步物理删除已完成。撤销 fence 立即保护请求、迟到 session save 和旧认证登录；独立 worker 分页删除匹配的 native 数据库 session/index，较晚的真实认证保留，sid 通知不删除其他 sid。JIT 与 logout 入口复用同一已验证的进程/信号/资源清理代码，但各自只注册固定任务、校验各自开关；关闭 backchannel 时 worker 拒绝启动。
+
+当前镜像与真实 TLS/JWKS、SQL/session、完整 Django Client 的专项通过：错 aud/nonce/ID Token purpose/浏览器 cookie/替代认证拒绝；员工目录故障仍受理；ACK 后 fence 立即拒绝旧 sid，请求守卫清理与 worker 实际删除使用不同原生 session 行分别取证；同 sid 的多个原生会话删除、另一 sid 保留；sub 通知后较晚的新登录保留；独立进程完成并退出、关闭开关拒绝 ready。真实 Authentik/eTech 通知配置、实际浏览器/HTTPS ingress 与完整 RC 仍单列验收。
 
 ### 受控 JIT 独立 Worker
 
@@ -188,6 +204,7 @@ python3 tests/verify.py runtime
 python3 tests/verify.py identity-runtime
 python3 tests/verify.py identity-provisioning
 python3 tests/verify.py identity-logout
+python3 tests/verify.py identity-backchannel
 python3 tests/verify.py full
 ```
 
@@ -195,7 +212,7 @@ python3 tests/verify.py full
 
 契约门禁使用安装了 `eap-cloudfile/tools/design-requirements.txt` 的开发 Python；已有环境直接用 `--contract-python /path/to/venv/bin/python`，默认当前解释器。依赖缺失返回失败，不自动修改运行镜像、重新下载依赖或静默跳过。
 
-退出码：0 为所选测试通过且无待执行门禁，1 为失败，2 为所选测试通过但报告中的运行/全量门禁尚待执行。报告记录模块集合、测试数量、跳过/错误、耗时、镜像 ID、源码 HEAD/dirty 与扩展源码摘要；执行期间源码变化拒绝通过。源码挂载只支持 Python 开发；Server dirty 或镜像 Server SHA 不匹配时拒绝组件集成，须先生成匹配 native 制品。`full` 先检查清单、干净 Hub/Server 与镜像来源一致，再执行全新 CE14、全部扩展回归、预绑定/JIT/RP 三种独立身份夹具；仍不代表 backchannel、真实 Authentik/eTech/浏览器 TLS 或全部 RC 场景已通过。
+退出码：0 为所选测试通过且无待执行门禁，1 为失败，2 为所选测试通过但报告中的运行/全量门禁尚待执行。报告记录模块集合、测试数量、跳过/错误、耗时、镜像 ID、源码 HEAD/dirty 与扩展源码摘要；执行期间源码变化拒绝通过。源码挂载只支持 Python 开发；Server dirty 或镜像 Server SHA 不匹配时拒绝组件集成，须先生成匹配 native 制品。`full` 先检查清单、干净 Hub/Server 与镜像来源一致，再执行全新 CE14、全部扩展回归、预绑定/JIT/RP/backchannel 四种独立身份夹具；仍不代表真实 Authentik/eTech/浏览器 TLS 或全部 RC 场景已通过。
 
 JIT worker/对应运行夹具修改自动要求 `identity-provisioning` 门禁。开发新 worker 时可用 `smoke_ce14_runtime.py --identity-runtime --identity-scenario provisioning --development-worker-overlay` 单独覆盖脚本验证；报告明确标为开发覆盖。默认专项/完整验收要求镜像内脚本摘要匹配源码，缺失或陈旧拒绝，先只重装配应用镜像，不重新编译未变化的 native 包。
 

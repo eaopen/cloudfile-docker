@@ -31,11 +31,16 @@ class SelectionTests(unittest.TestCase):
     def test_worker_or_jit_fixture_edit_requires_actual_provisioning_gate(self):
         for path in ('scripts/scripts_14.0/cloudfile-jit-worker.py', 'tests/identity_provisioning_runtime.py'):
             selected = verify.plan(['cloudfile-docker/' + path])
-            self.assertEqual(selected['required_gates'], ['identity-provisioning'])
+            expected = ['identity-backchannel', 'identity-provisioning'] if path.startswith('scripts/') else ['identity-provisioning']
+            self.assertEqual(selected['required_gates'], expected)
 
     def test_logout_fixture_requires_actual_logout_gate(self):
         selected = verify.plan(['cloudfile-docker/tests/identity_logout_runtime.py'])
         self.assertEqual(selected['required_gates'], ['identity-logout'])
+
+    def test_backchannel_worker_and_fixture_require_actual_notification_gate(self):
+        for path in ('tests/identity_backchannel_runtime.py', 'scripts/scripts_14.0/cloudfile-logout-worker.py'):
+            self.assertEqual(verify.plan(['cloudfile-docker/' + path])['required_gates'], ['identity-backchannel'])
 
     def test_reverse_imports_include_transitive_consumers_and_relative_imports(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -219,6 +219,7 @@ def render_settings(environment=None):
     oidc_config = _oidc_config(environment.get("CLOUDFILE_OIDC_CONFIG_JSON", ""))
     oidc_enabled = _boolean(environment, "CLOUDFILE_OIDC_ENABLED", False)
     oidc_jit_enabled = _boolean(environment, "CLOUDFILE_OIDC_JIT_ENABLED", False)
+    oidc_backchannel_enabled = _boolean(environment, "CLOUDFILE_OIDC_BACKCHANNEL_ENABLED", False)
     authentik = _authentik_settings(environment)
     if oidc_enabled and (oidc_config is None or policy_config is None
             or not _boolean(environment, "CLOUDFILE_POLICY_WORKER_HOOKS", False)):
@@ -227,6 +228,8 @@ def render_settings(environment=None):
         raise ValueError("CloudFile OIDC and the legacy Authentik OAuth preset cannot both be enabled")
     if oidc_jit_enabled and not oidc_enabled:
         raise ValueError("OIDC JIT requires the explicit OIDC host")
+    if oidc_backchannel_enabled and not oidc_enabled:
+        raise ValueError("OIDC backchannel requires the explicit OIDC host")
     capabilities.setdefault("auth.basic", {"enabled": True, "version": "14"})
     webdav_enabled = _boolean(environment, "CLOUDFILE_WEBDAV_ENABLED", False)
     authorization_enabled = _boolean(environment, "CLOUDFILE_AUTHORIZATION_ENABLED", False)
@@ -256,6 +259,7 @@ def render_settings(environment=None):
         f"CLOUDFILE_OIDC_ENABLED = {oidc_enabled!r}",
         f"CLOUDFILE_OIDC_CONFIG = {pprint.pformat(oidc_config, sort_dicts=True)}",
         f"CLOUDFILE_OIDC_JIT_ENABLED = {oidc_jit_enabled!r}",
+        f"CLOUDFILE_OIDC_BACKCHANNEL_ENABLED = {oidc_backchannel_enabled!r}",
         f"CLOUDFILE_WEBDAV_SERVICE_ENABLED = {webdav_enabled!r}",
         f"CLOUDFILE_AUTHORIZATION_ENABLED = {authorization_enabled!r}",
         f"CLOUDFILE_LOCAL_EDIT_ENABLED = {local_edit_enabled!r}",

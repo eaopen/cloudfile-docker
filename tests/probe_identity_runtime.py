@@ -29,7 +29,7 @@ def require(condition, label):
 def run():
     require(os.environ.get('CF_DISPOSABLE_IDENTITY_PROBE') == 'true', 'disposable_marker')
     scenario = os.environ.get('CF_IDENTITY_SCENARIO', 'prebound')
-    require(scenario in {'prebound', 'provisioning', 'logout'}, 'identity_scenario')
+    require(scenario in {'prebound', 'provisioning', 'logout', 'backchannel'}, 'identity_scenario')
     package = '/opt/seafile/seafile-server-latest'
     os.chdir(package + '/seahub')
     sys.path[:0] = [package + '/seahub', package + '/seahub/thirdpart',
@@ -223,7 +223,7 @@ def run():
                     id_token = jwt.encode({'iss': origin, 'aud': 'fixture-client',
                         'sub': fixture['claim_sub'], 'userId': fixture['claim_user'],
                         'iat': issued, 'exp': issued + 300, 'nonce': transaction['nonce'],
-                        'sid': secrets.token_urlsafe(16)}, signing_key, algorithm='RS256',
+                        'sid': fixture.get('session_sid') or secrets.token_urlsafe(16)}, signing_key, algorithm='RS256',
                         headers={'kid': 'fixture-key'})
                     fixture['issued_ids'].add(id_token)
                     self.respond({'access_token': token, 'token_type': 'Bearer',
@@ -251,9 +251,10 @@ def run():
                 'authorization_url': origin + '/authorize', 'token_url': origin + '/token',
                 'userinfo_url': origin + '/userinfo', 'jwks_url': origin + '/jwks',
                 'ca_bundle': str(ca_file)}
-            if scenario == 'logout':
+            if scenario in {'logout', 'backchannel'}:
                 settings.CLOUDFILE_OIDC_CONFIG.update(end_session_url=origin + '/logout',
                     post_logout_redirect_uri='https://cloudfile-smoke.invalid/' + LOGIN_PREFIX + 'logout/return/')
+            settings.CLOUDFILE_OIDC_BACKCHANNEL_ENABLED = scenario == 'backchannel'
             settings.ENABLE_OAUTH = False
             configure_oidc_host(settings)
             gunicorn.post_worker_init(None)
@@ -302,6 +303,25 @@ def run():
                     initiate=initiate, complete=complete, require=require, ca_bundle=str(ca_file)))
                 return {'result': 'passed', 'checks': checks,
                     'scope': 'Actual RP logout form/HTTPS fixture/return and native session SQL; Django Client, no real IdP/global logout/browser ingress claim'}
+
+            if scenario == 'backchannel':
+                stage = 'backchannel_logout'
+                from identity_backchannel_runtime import exercise
+                def claims(token):
+                    return jwt.decode(token, signing_key.public_key(), algorithms=['RS256'],
+                        issuer=origin, audience='fixture-client')
+                def notification(values):
+                    issued = int(time.time())
+                    value = {'iss': origin, 'aud': 'fixture-client', 'iat': issued, 'exp': issued + 300,
+                        'jti': secrets.token_urlsafe(24),
+                        'events': {'http://schemas.openid.net/event/backchannel-logout': {}}, **values}
+                    return jwt.encode(value, signing_key, algorithm='RS256',
+                        headers={'kid': 'fixture-key', 'typ': 'logout+jwt'})
+                checks.extend(exercise(db=db, fixture=fixture, prefix=prefix,
+                    initiate=initiate, complete=complete, require=require, configuration_dir=temporary,
+                    claims=claims, notification=notification))
+                return {'result': 'passed', 'checks': checks,
+                    'scope': 'Hosted cookie-free backchannel, real JWT/JWKS TLS, native SQL/session fences and standalone deletion process; Django Client, no external IdP/eTech/ingress claim'}
 
             stage = 'cold_cache_login'
             browser = Client(enforce_csrf_checks=True)

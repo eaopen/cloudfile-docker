@@ -240,3 +240,11 @@ trusted_tls_proxies = 127.0.0.1/32
 OIDC 与 transfer 同时启用时挂载 CSRF 保护的 `identity/v1/read-tickets/`、`identity/v1/manual-upload/` 和 `identity/v1/manual-update/`；读取接受既有 exact-file JSON，上传/替换接受 multipart 的 `repo_id/path/head_id/file`（单文件、显式预期 head，当前最大 512 MiB）。只用真实 OIDC 本地会话，不接受服务 Bearer 或客户提交的 userId/epoch/会话证明。手动替换复用现有 C 条件提交，最终检查当前 CE 资格、ACL、主体、会话/退出 fence、head 和已有写保护；未知 RPC 完成结果不返回成功。新文件创建由固定 upload 路由选择，返回 201，检查父目录及目标当前写权限并拒绝覆盖已有文件；替换返回 200。不支持 Agent 或自动回写。
 
 `python3 tests/verify.py web-runtime` 定向验证当前制品的 OIDC 读取、显式替换及更新字节，CSRF、旧 head、只读/CF ACL 拒绝，以及新文件实际字节、拒绝覆盖和父目录只读拒绝。Web 页面接入、受管库普通 CE/Go/WebDAV 等入口防绕过仍待完成；不自动开放 capability，不把增强路由的通过当全入口安全证据。
+
+### v0.2 受管库边界（Golden Path）
+
+`cf_managed_library` 只有 repo_id 与登记时间，状态为未登记/已登记；没有解除受管、历史版本或新生命周期系统。显式 schema 032 登记已有目录策略库；授权策略修改在同一事务登记；增强授权写入的登记与 native 发布同事务成功或失败，删掉最后一条 ACL 不删登记。
+
+一旦 extension ledger/登记表存在，普通 C 票据签发/消费、C 条件发布和 Go 发布自动要求该边界；`[cloudfile] managed_library_guard=true` 可提前要求存储就绪，false/省略不能解除已安装边界。缺表、错误结构、当前状态读取失败均拒绝；未安装扩展的本地管理员 CE 文件基线仍可用。受管读写使用已有增强票据与显式上传/替换；Go 普通文件/Range/预览字节与普通票据不能替代增强授权。当前运行验证采用实际数据库变量；RR/SERIALIZABLE 检查沿用既有 MySQL/MariaDB 兼容逻辑。
+
+这是常用文件链限制，不宣称 Seafile 所有内部 RPC 或低频入口均已加固。库/目录列表过滤与 CE 页面接线仍待；分享/ZIP/历史/回收站/sync/WebDAV 不作为当前主流程开放，需要部署入口关闭或代理白名单。未取得这些限制证据时不宣称 RC；低频内部调用与极端竞争记录为 debt，不再扩 native 改造。

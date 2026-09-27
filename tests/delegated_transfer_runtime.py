@@ -115,6 +115,9 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
     transport = requests.Session()
     transport.trust_env = False
     try:
+        if not web:
+            with db.cursor() as cursor:
+                cursor.execute('INSERT INTO cf_managed_library(repo_id,created_at) VALUES(%s,UTC_TIMESTAMP(6))', (repo,))
         issued = int(time.time())
         machine = jwt.encode(dict(iss='etech-login', aud='cloudfile-authorization',
             sub='etech-login', iat=issued, exp=issued + 120, jti=secrets.token_hex(16),
@@ -153,6 +156,13 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
                 require(response.status_code == 201, 'web_ticket_' + str(response.status_code))
                 return response.json()['ticket']
             require(read(web_ticket()).content == payload, 'web_native_original_bytes')
+            original_id = seafile_api.get_file_id_by_path(repo, '/probe.txt')
+            old_read = seafile_api.get_fileserver_access_token(repo, original_id, 'download', user.username, False)
+            old_update = seafile_api.get_fileserver_access_token(repo, json.dumps({'parent_dir': '/'}),
+                'update', user.username, False)
+            legacy_origin = 'http://127.0.0.1:8082'
+            old_read_url = legacy_origin + '/files/' + old_read + '/probe.txt'
+            require(transport.get(old_read_url, timeout=10).content == payload, 'legacy_unmanaged_read_bytes')
             checks.append('web_oidc_native_read')
             head = seafile_api.get_repo(repo).head_cmmt_id
             updated = payload + b'Controlled OIDC explicit Web replacement.\n'
@@ -169,6 +179,29 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
             object_id = response.json()['object_id']
             require(seafile_api.get_file_id_by_path(repo, '/probe.txt') == object_id, 'web_update_current_object')
             require(read(web_ticket()).content == updated, 'web_update_native_bytes')
+            with db.cursor() as cursor:
+                cursor.execute('SELECT COUNT(*) FROM cf_managed_library WHERE repo_id=%s', (repo,))
+                require(cursor.fetchone()[0] == 1, 'enhanced_write_persistent_enrollment')
+            require(transport.get(old_read_url, timeout=10).status_code == 403, 'old_ordinary_read_ticket_denied')
+            head_before_legacy = seafile_api.get_repo(repo).head_cmmt_id
+            response = transport.post(legacy_origin + '/update-api/' + old_update,
+                data={'target_file': '/probe.txt'}, files={'file': ('probe.txt', b'ordinary-bypass-attempt')}, timeout=10)
+            require(response.status_code == 403, 'old_ordinary_update_ticket_denied')
+            import tempfile
+            with tempfile.NamedTemporaryFile(dir='/shared/seafile/seafile-data/httptemp') as staging:
+                staging.write(b'native-ordinary-bypass-attempt')
+                staging.flush()
+                denied = False
+                try:
+                    seafile_api.put_file(repo, staging.name, '/', 'probe.txt', user.username, None)
+                except Exception:
+                    denied = True
+                require(denied, 'ordinary_native_put_denied')
+            require(seafile_api.get_repo(repo).head_cmmt_id == head_before_legacy,
+                'legacy_rejected_without_publication')
+            require(read(web_ticket()).content == updated, 'enhanced_read_after_legacy_denial')
+            checks.append('managed_library_old_tokens_and_native_write_denied')
+
             current_head = seafile_api.get_repo(repo).head_cmmt_id
             require(current_head != head, 'web_update_current_head')
             require(update(head).status_code in (409, 503), 'web_stale_head_denied')
@@ -214,6 +247,14 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
             with db.cursor() as cursor:
                 cursor.execute('DELETE FROM cf_dir_acl WHERE id=%s', (root_rule,))
             checks.append('web_new_file_parent_write_denied')
+            with db.cursor() as cursor:
+                cursor.execute('SELECT COUNT(*) FROM cf_dir_acl WHERE repo_id=%s', (repo,))
+                require(cursor.fetchone()[0] == 0, 'last_acl_removed')
+                cursor.execute('SELECT COUNT(*) FROM cf_managed_library WHERE repo_id=%s', (repo,))
+                require(cursor.fetchone()[0] == 1, 'managed_after_last_acl_removed')
+            require(transport.get(old_read_url, timeout=10).status_code == 403, 'legacy_still_denied_without_acl')
+            checks.append('managed_library_remains_after_last_acl_removed')
+
             payload = updated
 
         value = ticket()

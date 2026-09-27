@@ -167,6 +167,16 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
             old_read_url = legacy_origin + '/files/' + old_read + '/probe.txt'
             require(transport.get(old_read_url, timeout=10).content == payload, 'legacy_unmanaged_read_bytes')
             checks.append('web_oidc_native_read')
+            def audit(response, action, expected):
+                with db.cursor() as cursor:
+                    cursor.execute('SELECT event_payload FROM cf_audit_event WHERE request_id=%s ORDER BY id',
+                        (response['X-Request-ID'],))
+                    events = [json.loads(row[0]) for row in cursor.fetchall()]
+                require([event['result'] for event in events] == expected, 'web_audit_results_' + action)
+                require(all(event['actor_user_id'] == 'fixture-user-1' and event['actor_kind'] == 'user'
+                    and event['source'] == 'hub' and event['repo_id'] == repo and event['path']
+                    and event['occurred_at'] and event['action'] == action for event in events), 'web_audit_origin')
+                return events
             head = seafile_api.get_repo(repo).head_cmmt_id
             updated = payload + b'Controlled OIDC explicit Web replacement.\n'
             def update(expected, csrf_header=True):
@@ -177,9 +187,17 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
                     'head_id': expected, 'file': SimpleUploadedFile('probe.txt', updated)}, secure=True, **headers)
             require(update(head, False).status_code == 403, 'web_update_csrf')
             require(seafile_api.get_repo(repo).head_cmmt_id == head, 'csrf_no_publication')
+            from unittest.mock import patch
+            from cloudfile_extensions.common.errors import ContractError
+            with patch('cloudfile_extensions.identity.manual_update_http.record_transfer',
+                       side_effect=ContractError('AUDIT_UNAVAILABLE', 'Fixture unavailable', 503)):
+                require(update(head).status_code == 503, 'web_audit_failure_denies_publication')
+                require(seafile_api.get_repo(repo).head_cmmt_id == head, 'web_audit_failure_no_head_change')
             response = update(head)
             require(response.status_code == 200, 'web_update_' + str(response.status_code))
             object_id = response.json()['object_id']
+            events = audit(response, 'file.update', ['attempted', 'succeeded'])
+            require(events[-1]['content_version'] == object_id, 'web_confirmed_write_audit_version')
             require(seafile_api.get_file_id_by_path(repo, '/probe.txt') == object_id, 'web_update_current_object')
             require(read(web_ticket()).content == updated, 'web_update_native_bytes')
             with db.cursor() as cursor:
@@ -259,12 +277,16 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
 
             current_head = seafile_api.get_repo(repo).head_cmmt_id
             require(current_head != head, 'web_update_current_head')
-            require(update(head).status_code in (409, 503), 'web_stale_head_denied')
+            rejected = update(head)
+            require(rejected.status_code in (409, 503), 'web_stale_head_denied')
+            audit(rejected, 'file.update', ['attempted', 'interrupted'])
             require(seafile_api.get_repo(repo).head_cmmt_id == current_head, 'web_stale_no_publication')
             checks.append('web_csrf_explicit_update_and_stale_head')
             # Denied write must preserve both current head and file bytes.
             seafile_api.set_share_permission(repo, manager.username, user.username, 'r')
-            require(update(current_head).status_code == 403, 'web_readonly_update_denied')
+            rejected = update(current_head)
+            require(rejected.status_code == 403, 'web_readonly_update_denied')
+            audit(rejected, 'file.update', ['attempted', 'denied'])
             require(seafile_api.get_repo(repo).head_cmmt_id == current_head, 'web_readonly_no_publication')
             checks.append('web_current_readonly_update_denied')
             seafile_api.set_share_permission(repo, manager.username, user.username, 'rw')
@@ -277,6 +299,7 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
                     HTTP_ORIGIN='https://cloudfile-smoke.invalid', HTTP_X_CSRFTOKEN=csrf)
             created = upload(new_reference['path'], current_head)
             require(created.status_code == 201, 'web_upload_' + str(created.status_code))
+            audit(created, 'file.upload', ['attempted', 'succeeded'])
             require(seafile_api.get_file_id_by_path(repo, new_reference['path']) == created.json()['object_id'],
                     'web_upload_exact_target')
             require(read(web_ticket(new_reference)).content == new_bytes, 'web_upload_native_bytes')
@@ -350,7 +373,15 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
         response = read(pending)
         require(response.status_code in (401, 403, 503) and response.content != payload, 'current_cf_acl_denied')
         if web:
-            require(update(current_head).status_code == 403, 'web_cf_acl_update_denied')
+            rejected = update(current_head)
+            require(rejected.status_code == 403, 'web_cf_acl_update_denied')
+            audit(rejected, 'file.update', ['attempted', 'denied'])
+            rejected = browser.post(prefix + 'read-tickets/', data=json.dumps({'reference': reference}),
+                content_type='application/json', secure=True, HTTP_HOST='cloudfile-smoke.invalid',
+                HTTP_ORIGIN='https://cloudfile-smoke.invalid', HTTP_X_CSRFTOKEN=csrf)
+            require(rejected.status_code == 403, 'web_read_policy_denied')
+            audit(rejected, 'file.download', ['denied'])
+            checks.append('basic_read_write_audit_and_audit_failure_boundary')
             require(seafile_api.get_repo(repo).head_cmmt_id == current_head, 'web_cf_acl_no_publication')
             checks.append('web_current_cf_acl_update_denied')
         with db.cursor() as cursor:

@@ -142,7 +142,7 @@ def run(image, native_regression=False, extensions_regression=False, identity_ru
         record = json.loads(docker('exec', app, 'cat',
             '/opt/seafile/seafile-server-latest/cloudfile-build.json'))
         assembly = record.get('assembly')
-        if assembly:
+        if assembly and identity_scenario != 'annotations':
             stage = 'packaged_app_assets'
             for name, expected_sha in assembly['frontend']['assets_sha256'].items():
                 response = request('/media/assets/frontend/' + name)
@@ -192,42 +192,43 @@ def run(image, native_regression=False, extensions_regression=False, identity_ru
                 containers=containers, request=request, auth=auth, repo=repo)
             return dict(result='passed', scope='isolated offline small-library import/resume only',
                 image_id=metadata['Id'], package_sha256=digest, checks=checks + [stage], migration=migration)
-        content = b'CloudFile CE14 native upload, download and Range acceptance.\n' * 4
+        if identity_scenario != 'annotations':
+            content = b'CloudFile CE14 native upload, download and Range acceptance.\n' * 4
 
-        def download():
-            response = request(base + '/file/?p=/probe.txt', headers=auth)
-            assert response['status'] == 200
-            return native_path(json.loads(response['body']), 'files')
+            def download():
+                response = request(base + '/file/?p=/probe.txt', headers=auth)
+                assert response['status'] == 200
+                return native_path(json.loads(response['body']), 'files')
 
-        for operation, fields, payload in (
-                ('upload', {'parent_dir': '/'}, content),
-                ('update', {'target_file': '/probe.txt'}, content + b'Explicit manual update.\n')):
-            stage = operation
-            response = request(base + '/' + operation + '-link/?p=/', headers=auth)
-            assert response['status'] == 200
-            path = native_path(json.loads(response['body']), operation + '-api')
-            data, content_type = multipart(fields, payload)
-            response = request(path, 'POST', data, {'Content-Type': content_type})
-            assert response['status'] == 200
+            for operation, fields, payload in (
+                    ('upload', {'parent_dir': '/'}, content),
+                    ('update', {'target_file': '/probe.txt'}, content + b'Explicit manual update.\n')):
+                stage = operation
+                response = request(base + '/' + operation + '-link/?p=/', headers=auth)
+                assert response['status'] == 200
+                path = native_path(json.loads(response['body']), operation + '-api')
+                data, content_type = multipart(fields, payload)
+                response = request(path, 'POST', data, {'Content-Type': content_type})
+                assert response['status'] == 200
+                checks.append(stage)
+                stage = operation + '_download_bytes'
+                path = download()
+                response = request(path)
+                assert response['status'] == 200 and response['body'] == payload
+                checks.append(stage)
+                stage = operation + '_range'
+                response = request(download(), headers={'Range': 'bytes=7-31'})
+                assert response['status'] == 206 and response['body'] == payload[7:32]
+                assert response['headers'].get('Content-Range') == 'bytes 7-31/' + str(len(payload))
+                checks.append(stage)
+            stage = 'anonymous_denied'
+            status = request(base + '/file/?p=/probe.txt')['status']
+            if status not in (401, 403):
+                raise RuntimeError('anonymous_file_status=' + str(status))
+            status = request('/seafhttp/cloudfile/read')['status']
+            if status != 401:
+                raise RuntimeError('secure_read_status=' + str(status))
             checks.append(stage)
-            stage = operation + '_download_bytes'
-            path = download()
-            response = request(path)
-            assert response['status'] == 200 and response['body'] == payload
-            checks.append(stage)
-            stage = operation + '_range'
-            response = request(download(), headers={'Range': 'bytes=7-31'})
-            assert response['status'] == 206 and response['body'] == payload[7:32]
-            assert response['headers'].get('Content-Range') == 'bytes 7-31/' + str(len(payload))
-            checks.append(stage)
-        stage = 'anonymous_denied'
-        status = request(base + '/file/?p=/probe.txt')['status']
-        if status not in (401, 403):
-            raise RuntimeError('anonymous_file_status=' + str(status))
-        status = request('/seafhttp/cloudfile/read')['status']
-        if status != 401:
-            raise RuntimeError('secure_read_status=' + str(status))
-        checks.append(stage)
         if native_regression or extensions_regression:
             stage = 'native_actor_regression'
             code = '''
@@ -342,6 +343,12 @@ print(json.dumps(report))
                     'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())', worker_path)
                 if actual_sha != worker_sha:
                     raise RuntimeError('JIT worker image is stale; rebuild the application image')
+            elif identity_scenario == 'annotations':
+                hub = Path(__file__).resolve().parents[2] / 'cloudfile-hub'
+                destination = app + ':/opt/seafile/seafile-server-latest/seahub/'
+                docker('cp', str(hub / 'cloudfile_extensions') + '/.', destination + 'cloudfile_extensions/')
+                docker('cp', str(Path(__file__).with_name('annotations_http_runtime.py')),
+                    app + ':/tmp/annotations_http_runtime.py')
             elif identity_scenario in {'transfer', 'web'}:
                 fixture = Path(__file__).with_name('delegated_transfer_runtime.py')
                 docker('cp', str(fixture), app + ':/tmp/delegated_transfer_runtime.py')

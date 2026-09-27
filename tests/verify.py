@@ -304,7 +304,10 @@ def main():
     parser.add_argument('--contract-python', default=sys.executable,
                         help='Python with eap-cloudfile/tools/design-requirements.txt installed; used only for contract gate')
     parser.add_argument('--annotations-probe', action='store_true', help='Runtime only: targeted native annotations source overlay')
+    parser.add_argument('--annotations-http-probe', action='store_true', help='Identity-runtime only: targeted authenticated annotations source overlay')
     args = parser.parse_args()
+    if args.annotations_http_probe and args.scope != 'identity-runtime':
+        parser.error('--annotations-http-probe requires identity-runtime')
     if args.annotations_probe and args.scope != 'runtime':
         parser.error('--annotations-probe requires runtime scope')
     if args.scope == 'warm':
@@ -333,7 +336,7 @@ def main():
         from smoke_ce14_runtime import run
         report = run(args.image, annotations_runtime=args.annotations_probe, extensions_regression=args.scope == 'full',
                      identity_runtime=args.scope in ('full', 'identity-runtime', 'identity-provisioning', 'identity-logout', 'identity-backchannel', 'transfer-runtime', 'web-runtime'),
-                     identity_scenario='provisioning' if args.scope == 'identity-provisioning' else
+                     identity_scenario='annotations' if args.annotations_http_probe else 'provisioning' if args.scope == 'identity-provisioning' else
                          'logout' if args.scope == 'identity-logout' else
                          'backchannel' if args.scope == 'identity-backchannel' else
                          'transfer' if args.scope == 'transfer-runtime' else

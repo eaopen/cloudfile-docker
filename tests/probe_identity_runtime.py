@@ -29,7 +29,7 @@ def require(condition, label):
 def run():
     require(os.environ.get('CF_DISPOSABLE_IDENTITY_PROBE') == 'true', 'disposable_marker')
     scenario = os.environ.get('CF_IDENTITY_SCENARIO', 'prebound')
-    require(scenario in {'prebound', 'provisioning', 'logout', 'backchannel', 'transfer', 'web'}, 'identity_scenario')
+    require(scenario in {'prebound', 'provisioning', 'logout', 'backchannel', 'transfer', 'web', 'annotations'}, 'identity_scenario')
     package = '/opt/seafile/seafile-server-latest'
     os.chdir(package + '/seahub')
     sys.path[:0] = [package + '/seahub', package + '/seahub/thirdpart',
@@ -268,6 +268,15 @@ def run():
                         'issuer': 'cloudfile', 'audience': 'cloudfile-download', 'secret': delegation_secret}})
                 settings.CLOUDFILE_AUTHORIZATION_ENABLED = True
                 settings.CLOUDFILE_TRANSFER_ENABLED = True
+            if scenario == 'annotations':
+                from seaserv import seafile_api
+                from cloudfile_extensions.resources.native import NativeResourceReader
+                settings.CLOUDFILE_ANNOTATIONS_ENABLED = True
+                # The base fixture explicitly disables OIDC discovery; opt in
+                # here without weakening the production explicit-disable rule.
+                settings.CLOUDFILE_CAPABILITIES = dict(settings.CLOUDFILE_CAPABILITIES, **{'auth.oidc': True})
+                settings.CLOUDFILE_RESOURCE_SECRET = secrets.token_bytes(32)
+                settings.CLOUDFILE_RESOURCE_LIFECYCLE_READER = NativeResourceReader(seafile_api)
             gunicorn.post_worker_init(None)
             clear_url_caches()
             management = IdentityManagement(db, native_schema='ccnet_db', identity_schema='seahub_db',
@@ -297,6 +306,14 @@ def run():
                     if str(cookie['max-age']) == '0' and name in browser.cookies:
                         del browser.cookies[name]
                 return response
+
+            if scenario == 'annotations':
+                stage = 'annotations_http'
+                from annotations_http_runtime import exercise
+                checks.extend(exercise(db=db, user=user, manager=manager,
+                    initiate=initiate, complete=complete, require=require))
+                return dict(result='passed', checks=checks,
+                    scope='Actual OIDC TLS fixture/session, shared native qualification/C Policy Core, native resource history and HTTP/SQL; no external eTech or deployment acceptance')
 
             if scenario == 'provisioning':
                 stage = 'jit_provisioning'

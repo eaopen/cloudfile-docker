@@ -156,6 +156,7 @@ def render_settings(environment=None):
     authentik = _authentik_settings(environment)
     capabilities.setdefault("auth.basic", {"enabled": True, "version": "14"})
     webdav_enabled = _boolean(environment, "CLOUDFILE_WEBDAV_ENABLED", False)
+    local_edit_enabled = _boolean(environment, "CLOUDFILE_LOCAL_EDIT_ENABLED", False)
     capabilities.setdefault(
         "protocol.webdav",
         {"enabled": webdav_enabled, "version": "14"},
@@ -172,6 +173,7 @@ def render_settings(environment=None):
         f"CLOUDFILE_EXTENSION_URLCONFS = {pprint.pformat(urlconfs, sort_dicts=True)}",
         f"CLOUDFILE_CAPABILITIES = {pprint.pformat(capabilities, sort_dicts=True)}",
         f"CLOUDFILE_WEBDAV_SERVICE_ENABLED = {webdav_enabled!r}",
+        f"CLOUDFILE_LOCAL_EDIT_ENABLED = {local_edit_enabled!r}",
     ]
     lines.extend(
         f"{name} = {pprint.pformat(value, sort_dicts=True)}"

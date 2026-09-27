@@ -10,6 +10,7 @@
 - `CLOUDFILE_EXTENSION_URLCONFS_JSON`：扩展名到 URLConf 模块的 JSON 对象。
 - `CLOUDFILE_CAPABILITIES_JSON`：请求启用已注册实现；公开字段仅限 `enabled`、`version`、`provider`，配置不能开启缺失实现或绕过依赖。
 - `CLOUDFILE_WEBDAV_ENABLED`：声明已配置启用 WebDAV，默认 `false`；它不代替 WebDAV 服务本身的启停配置。
+- `CLOUDFILE_LOCAL_EDIT_ENABLED`：挂载内建 local-edit URL，默认 `false`；只有同时配置 post-fork policy worker、资源生命周期读取器、本地编辑版本读取器和固定 HTTPS 实例 origin 后才可设为 `true`，该开关本身不声明能力已交付。
 
 部署 URLConf 不得占用 directory、authorization、library-policy、directory-acl、annotations、audit、search、locks、local-edit、migration、transfer 核心域。自有能力由受信 Python 启动代码注册，配置 JSON 不能注册实现。
 

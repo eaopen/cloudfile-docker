@@ -2,6 +2,10 @@
 
 本仓库从 `build/seafile_14.0/release.json` 锁定 CloudFile 与上游 Seafile 14.0.8 源码，避免构建时重新落到未定制的上游 Seahub。`seafile-build.sh` 可不传版本；如传入版本，必须与清单一致。
 
+尚未由人工推送的本地提交可通过 `CLOUDFILE_SERVER_SOURCE`、`CLOUDFILE_HUB_SOURCE` 提供给构建容器。两个值必须是绝对路径，且工作区干净、HEAD 与 `release.json` 的 40 位提交完全一致；构建器会复制 Git 对象后再构建，不修改来源仓库。未设置时继续只从清单中的 HTTPS 远端构建。例如在构建容器中把两个仓库只读挂载到 `/sources/cloudfile-server`、`/sources/cloudfile-hub`，并把对应环境变量设为这些容器内路径。该覆盖只用于本地已提交但尚未推送的 CloudFile 源码，不能绕过 release pin。
+
+源码包成功生成后，运行 `build/seafile_14.0/build-local-image.sh [镜像标签]`。脚本使用临时 Docker context 组合已验证包、14.0 运行脚本及公共镜像资源，并把产品版本、Seafile 版本及 Hub/Server 精确提交写入镜像标签；它只构建本地镜像，不执行 push。
+
 ## 扩展配置
 
 容器每次启动都会幂等更新 `seahub_settings.py` 中的 CloudFile 配置块，并保留块外的本地配置。

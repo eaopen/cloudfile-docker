@@ -16,3 +16,6 @@ custom/*/base_scripts
 
 build/src
 build/seafile-server-*
+# Versioned builders keep cloned sources and packaged output beside their script.
+build/*/src
+build/*/seafile-server-*

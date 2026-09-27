@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# A partial native package is unusable; stop on the first failed clone,
+# dependency install, compile, or packaging command instead of printing success.
+set -euo pipefail
+
 if [[ $# -gt 1 ]]; then
     echo ''
     echo 'Usage: ./seafile-build.sh [seafile-version]'
@@ -12,6 +16,7 @@ current_dir=$(dirname "${SCRIPT}")
 code_path=$current_dir/src
 manifest=$current_dir/release.json
 manifest_reader=$current_dir/source_manifest.py
+override_validator=$current_dir/source_override.py
 version=$(python3 "${manifest_reader}" "${manifest}" seafile_version) || exit 1
 product_version=$(python3 "${manifest_reader}" "${manifest}" product_version) || exit 1
 if [[ $# -eq 1 && "$1" != "${version}" ]]; then
@@ -22,6 +27,22 @@ mkdir -p "${code_path}"
 
 function manifest_value() {
     python3 "${manifest_reader}" "${manifest}" "$2" "$1"
+}
+
+function source_override() {
+    # Local overrides are intentionally limited to CloudFile-owned repositories.
+    # This lets an operator build exact local commits before a human pushes them.
+    case "$1" in
+        seafile-server)
+            echo "${CLOUDFILE_SERVER_SOURCE:-}"
+            ;;
+        seahub)
+            echo "${CLOUDFILE_HUB_SOURCE:-}"
+            ;;
+        *)
+            echo ""
+            ;;
+    esac
 }
 
 function install_dependencies() {
@@ -111,10 +132,22 @@ function clone_code() {
 
     for source in libevhtp libsearpc seafile-server seafobj seafdav seafevents seahub; do
         source_url=$(manifest_value "${source}" url) || exit 1
+        source_ref=$(manifest_value "${source}" ref) || exit 1
+        override=$(source_override "${source}")
         if [[ ! -e "${source}" ]]; then
-            git clone "${source_url}" "${source}" || exit 1
+            if [[ -n "${override}" ]]; then
+                validated_override=$(python3 "${override_validator}" "${override}" "${source_ref}") || exit 1
+                git clone --no-hardlinks "${validated_override}" "${source}" || exit 1
+            else
+                git clone "${source_url}" "${source}" || exit 1
+            fi
         elif [[ -d "${source}/.git" ]]; then
-            git -C "${source}" remote set-url origin "${source_url}" || exit 1
+            if [[ -n "${override}" ]]; then
+                validated_override=$(python3 "${override_validator}" "${override}" "${source_ref}") || exit 1
+                git -C "${source}" remote set-url origin "${validated_override}" || exit 1
+            else
+                git -C "${source}" remote set-url origin "${source_url}" || exit 1
+            fi
         else
             echo "Existing source path is not a Git repository: ${code_path}/${source}" >&2
             exit 1
@@ -131,9 +164,14 @@ function fetch() {
     for source in libevhtp libsearpc seafile-server seafobj seafdav seafevents seahub; do
         echo "Fetch ${source}"
         source_ref=$(manifest_value "${source}" ref) || exit 1
+        override=$(source_override "${source}")
         cd "${code_path}/${source}" || exit 1
         git reset --hard || exit 1
         git clean -xffd || exit 1
+        if [[ -n "${override}" ]]; then
+            validated_override=$(python3 "${override_validator}" "${override}" "${source_ref}") || exit 1
+            git remote set-url origin "${validated_override}" || exit 1
+        fi
         git fetch --force origin "${source_ref}" || exit 1
         git checkout --detach FETCH_HEAD || exit 1
         cd "${code_path}" || exit 1

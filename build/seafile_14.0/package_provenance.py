@@ -48,7 +48,7 @@ def capture_sources(manifest_path, source_root):
     return {"schema": 1, "manifest": manifest, "source_commits": commits}
 
 
-def package_digest(package):
+def package_digest(package, *, exclude_hub=False):
     package = Path(package)
     if not package.is_dir() or package.is_symlink():
         raise ValueError("native package must be a real directory")
@@ -63,7 +63,7 @@ def package_digest(package):
         for name in sorted(directories + files):
             path = Path(directory) / name
             relative = path.relative_to(package).as_posix()
-            if relative == RECORD_NAME:
+            if relative == RECORD_NAME or (exclude_hub and (relative == "seahub" or relative.startswith("seahub/"))):
                 continue
             entry = path.lstat()
             mode = stat.S_IMODE(entry.st_mode)
@@ -87,8 +87,15 @@ def package_digest(package):
             else:
                 raise ValueError("native package contains a special file")
             digest.update(json.dumps(value, ensure_ascii=True, separators=(",", ":")).encode() + b"\n")
+        if exclude_hub and Path(directory) == package:
+            directories[:] = [name for name in directories if name != "seahub"]
         directories.sort()
     return digest.hexdigest()
+
+
+def preserved_digest(package):
+    """Every packaged byte/mode/link outside Hub and its provenance record."""
+    return package_digest(package, exclude_hub=True)
 
 
 def _validate_sources(record, manifest):
@@ -129,6 +136,21 @@ def verify_package(package, manifest_path):
     _validate_sources(record, manifest)
     if record.get("package_sha256") != package_digest(package):
         raise ValueError("native package content differs from its build provenance")
+    assembly = record.get("assembly")
+    if assembly is not None:
+        if assembly.get("kind") != "hub-application-reassembly":
+            raise ValueError("unknown application assembly provenance")
+        base = assembly["base_provenance"]
+        _validate_sources(base, base["manifest"])
+        expected = json.loads(json.dumps(base["manifest"]))
+        expected["sources"]["seahub"] = manifest["sources"]["seahub"]
+        if expected != manifest or assembly["preserved_non_hub_sha256"] != preserved_digest(package):
+            raise ValueError("application assembly changed native release inputs or bytes")
+        frontend = assembly["frontend"]
+        for name, expected_hash in frontend["assets_sha256"].items():
+            if (not name.startswith("static/") or ".." in Path(name).parts or
+                    hashlib.sha256((Path(package) / "seahub/media/assets/frontend" / name).read_bytes()).hexdigest() != expected_hash):
+                raise ValueError("assembled frontend differs from compiled evidence")
     return record
 
 

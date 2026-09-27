@@ -248,3 +248,32 @@ OIDC 与 transfer 同时启用时挂载 CSRF 保护的 `identity/v1/read-tickets
 一旦 extension ledger/登记表存在，普通 C 票据签发/消费、C 条件发布和 Go 发布自动要求该边界；`[cloudfile] managed_library_guard=true` 可提前要求存储就绪，false/省略不能解除已安装边界。缺表、错误结构、当前状态读取失败均拒绝；未安装扩展的本地管理员 CE 文件基线仍可用。受管读写使用已有增强票据与显式上传/替换；Go 普通文件/Range/预览字节与普通票据不能替代增强授权。当前运行验证采用实际数据库变量；RR/SERIALIZABLE 检查沿用既有 MySQL/MariaDB 兼容逻辑。
 
 这是常用文件链限制，不宣称 Seafile 所有内部 RPC 或低频入口均已加固。库/目录列表过滤与 CE 页面接线仍待；分享/ZIP/历史/回收站/sync/WebDAV 不作为当前主流程开放，需要部署入口关闭或代理白名单。未取得这些限制证据时不宣称 RC；低频内部调用与极端竞争记录为 debt，不再扩 native 改造。
+
+### 仅应用重装配（CF02-08）
+
+Python/页面变化且 native/dependency pins 不变时，使用已验证包作为只读基础，创建
+全新应用包；禁止重写旧包 cloudfile-build.json。入口自动验证旧包、当前 clean Hub
+精确 SHA、既有 app 编译证据及文件 SHA；任何非 Hub release pin 变化拒绝复用。
+
+```sh
+python3 build/seafile_14.0/assemble_application.py \
+  --base build/seafile_14.0/seafile-server-14.0.8 \
+  --hub ../cloudfile-hub \
+  --output build/seafile_14.0/seafile-server-14.0.8.application \
+  --manifest build/seafile_14.0/release.json \
+  --stats build/seafile_14.0/build-output.app-stats.json \
+  --evidence ../eap-cloudfile/docs/releases/evidence/cf02-page-2026-09-27.json
+CLOUDFILE_PACKAGE_DIR="$PWD/build/seafile_14.0/seafile-server-14.0.8.application" \
+  bash build/seafile_14.0/build-local-image.sh cloudfile/cloudfile:14.0.8-v0.2-rc-app
+```
+
+output 必须不存在，已完成的包不可再盖章。stats 是之前 app-only 编译保存的生成
+文件（被 Git 忽略），引用的文件必须与证据一致；编译后 frontend 变化时明确要求
+重新编译 app。其余 native、依赖、生成 locale/静态资产保留原来源，包内 assembly
+记录旧包摘要、非 Hub 全树摘要、新源码 archive 摘要及新 app 的逐资产 hash。
+其余前端入口继续沿用旧包 bundle，明确保留旧 Hub 来源，不能宣称全部 frontend
+已经重编；非主流程入口保持关闭计划，CF02-08 部署/浏览器门禁另验。
+
+新 app stats 合并到原多入口清单，静态文件映射纳入 Django manifest；实际镜像内
+完整包摘要及 nginx 每个新资产内容通过后，复用 web-runtime 核对模板加载新 app
+与真实文件链。无 C/Go 编译、APT/pip、runtime-base 或全前端重复编译。

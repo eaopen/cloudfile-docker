@@ -137,6 +137,18 @@ def run(image, native_regression=False, extensions_regression=False, identity_ru
                 raise RuntimeError('CE14 startup deadline exceeded')
             time.sleep(2)
         checks.append('startup')
+        # Freshly assembled app assets must be served by actual nginx, not just
+        # present in a host build directory or mentioned in webpack stats.
+        record = json.loads(docker('exec', app, 'cat',
+            '/opt/seafile/seafile-server-latest/cloudfile-build.json'))
+        assembly = record.get('assembly')
+        if assembly:
+            stage = 'packaged_app_assets'
+            for name, expected_sha in assembly['frontend']['assets_sha256'].items():
+                response = request('/media/assets/frontend/' + name)
+                assert response['status'] == 200
+                assert hashlib.sha256(response['body']).hexdigest() == expected_sha
+            checks.append(stage)
         stage = 'capabilities'
         response = request('/api/v2.1/cloudfile/capabilities/')
         assert response['status'] == 200

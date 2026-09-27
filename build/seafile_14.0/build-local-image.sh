@@ -15,7 +15,7 @@ product_version=$(python3 "${manifest_reader}" "${manifest}" product_version)
 server_ref=$(python3 "${manifest_reader}" "${manifest}" ref seafile-server)
 hub_ref=$(python3 "${manifest_reader}" "${manifest}" ref seahub)
 tag=${1:-cloudfile/cloudfile:${version}-${product_version}-local}
-package="${current_dir}/seafile-server-${version}"
+package="${CLOUDFILE_PACKAGE_DIR:-${current_dir}/seafile-server-${version}}"
 
 if [[ ! -d "${package}" ]]; then
     echo "Missing verified package: ${package}" >&2

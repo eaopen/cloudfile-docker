@@ -228,6 +228,9 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
             require(page.status_code == 200 and b'cloudFileWebEnabled: true' in page.content, 'web_page_enhanced_transfer_enabled_' + str(page.status_code) +
                     '_field_' + str(b'cloudFileWebEnabled' in page.content) +
                     '_false_' + str(b'cloudFileWebEnabled: false' in page.content))
+            if json.loads(Path(package + '/cloudfile-build.json').read_text()).get('assembly'):
+                app_names = json.loads(Path(package + '/seahub/frontend/webpack-stats.pro.json').read_text())['chunks']['app']
+                require(all(name.encode() in page.content for name in app_names), 'web_page_packaged_app_bundles')
             libraries = '/api/v2.1/repos/'
             directory = '/api/v2.1/repos/' + repo + '/dir/'
             listed = browse(libraries)

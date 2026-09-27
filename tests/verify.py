@@ -140,6 +140,8 @@ def plan(files):
             groups.add('docker')
             if path == 'scripts/scripts_14.0/cloudfile-jit-worker.py':
                 gates.update(('identity-provisioning', 'identity-backchannel'))
+            elif path == 'tests/delegated_transfer_runtime.py':
+                gates.add('transfer-runtime')
             elif path == 'tests/identity_provisioning_runtime.py':
                 gates.add('identity-provisioning')
             elif path == 'tests/identity_logout_runtime.py':
@@ -290,7 +292,7 @@ def run_components(modules, image, warm):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('scope', choices=['changed', *GROUPS, 'docker', 'full', 'runtime', 'identity-runtime', 'identity-provisioning', 'identity-logout', 'identity-backchannel', 'warm'])
+    parser.add_argument('scope', choices=['changed', *GROUPS, 'docker', 'full', 'runtime', 'identity-runtime', 'identity-provisioning', 'identity-logout', 'identity-backchannel', 'transfer-runtime', 'warm'])
     parser.add_argument('--base', help='Explicit common Git ref for committed diff in all four repositories')
     parser.add_argument('--changed-file', action='append', help='Repository/path; replaces Git change discovery')
     parser.add_argument('--plan', action='store_true', help='Show selection without running services/tests')
@@ -314,7 +316,7 @@ def main():
     if args.plan:
         print(json.dumps(selection, indent=2))
         return
-    if args.scope in ('full', 'runtime', 'identity-runtime', 'identity-provisioning', 'identity-logout', 'identity-backchannel'):
+    if args.scope in ('full', 'runtime', 'identity-runtime', 'identity-provisioning', 'identity-logout', 'identity-backchannel', 'transfer-runtime'):
         # Full gate tests the packaged artifact, never the development overlay.
         if args.scope == 'full':
             if not all(item['passed'] for item in baseline_checks(args.contract_python).values()):
@@ -325,10 +327,11 @@ def main():
                     raise RuntimeError('Full gate requires clean source matching packaged image: ' + repo)
         from smoke_ce14_runtime import run
         report = run(args.image, extensions_regression=args.scope == 'full',
-                     identity_runtime=args.scope in ('full', 'identity-runtime', 'identity-provisioning', 'identity-logout', 'identity-backchannel'),
+                     identity_runtime=args.scope in ('full', 'identity-runtime', 'identity-provisioning', 'identity-logout', 'identity-backchannel', 'transfer-runtime'),
                      identity_scenario='provisioning' if args.scope == 'identity-provisioning' else
                          'logout' if args.scope == 'identity-logout' else
-                         'backchannel' if args.scope == 'identity-backchannel' else 'prebound')
+                         'backchannel' if args.scope == 'identity-backchannel' else
+                         'transfer' if args.scope == 'transfer-runtime' else 'prebound')
         if args.scope == 'full':
             report['provisioning_runtime'] = run(args.image, identity_runtime=True,
                 identity_scenario='provisioning')

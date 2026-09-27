@@ -29,7 +29,7 @@ def require(condition, label):
 def run():
     require(os.environ.get('CF_DISPOSABLE_IDENTITY_PROBE') == 'true', 'disposable_marker')
     scenario = os.environ.get('CF_IDENTITY_SCENARIO', 'prebound')
-    require(scenario in {'prebound', 'provisioning', 'logout', 'backchannel'}, 'identity_scenario')
+    require(scenario in {'prebound', 'provisioning', 'logout', 'backchannel', 'transfer'}, 'identity_scenario')
     package = '/opt/seafile/seafile-server-latest'
     os.chdir(package + '/seahub')
     sys.path[:0] = [package + '/seahub', package + '/seahub/thirdpart',
@@ -257,6 +257,17 @@ def run():
             settings.CLOUDFILE_OIDC_BACKCHANNEL_ENABLED = scenario == 'backchannel'
             settings.ENABLE_OAUTH = False
             configure_oidc_host(settings)
+            if scenario == 'transfer':
+                machine_secret, delegation_secret = secrets.token_hex(32), secrets.token_hex(32)
+                settings.CLOUDFILE_POLICY_CONFIG.update(
+                    service_credentials={'login-v1': {'service_id': 'etech-login',
+                        'issuer': 'etech-login', 'audience': 'cloudfile-authorization',
+                        'secret': machine_secret, 'scopes': ['subject.refresh', 'user.delegation.issue'],
+                        'maximum_ttl': 120}}, refresh_provider_grants={'etech-login': ['etech']},
+                    delegation_signing_keys={'etech-login': {'kid': 'delegation-v1',
+                        'issuer': 'cloudfile', 'audience': 'cloudfile-download', 'secret': delegation_secret}})
+                settings.CLOUDFILE_AUTHORIZATION_ENABLED = True
+                settings.CLOUDFILE_TRANSFER_ENABLED = True
             gunicorn.post_worker_init(None)
             clear_url_caches()
             management = IdentityManagement(db, native_schema='ccnet_db', identity_schema='seahub_db',
@@ -322,6 +333,15 @@ def run():
                     claims=claims, notification=notification))
                 return {'result': 'passed', 'checks': checks,
                     'scope': 'Hosted cookie-free backchannel, real JWT/JWKS TLS, native SQL/session fences and standalone deletion process; Django Client, no external IdP/eTech/ingress claim'}
+
+            if scenario == 'transfer':
+                stage = 'delegated_transfer'
+                from delegated_transfer_runtime import exercise
+                checks.extend(exercise(db=db, user=user, manager=manager, machine_secret=machine_secret,
+                    initiate=initiate, complete=complete, require=require,
+                    certificate=str(ca_file), tls_key=str(key_file), package=package))
+                return {'result': 'passed', 'checks': checks,
+                    'scope': 'Controlled HTTPS login-service delegation and actual C/Go bytes/Range/audit; no external eTech or production ingress claim'}
 
             stage = 'cold_cache_login'
             browser = Client(enforce_csrf_checks=True)

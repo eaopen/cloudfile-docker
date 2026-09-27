@@ -219,3 +219,20 @@ JIT worker/对应运行夹具修改自动要求 `identity-provisioning` 门禁�
 warm 仅保留本工作区带 ownership label 的 MySQL/Redis，测试仍创建/删除随机 schema。Redis 夹具可能 flush 自己的测试库，因此跨进程加锁，不能并发跑同一 warm 服务；错标签、外部网络、发布端口、停止/换镜像的服务拒绝复用。不主动重启或删除其他容器。默认不带 `--warm` 时成功/失败均清理，runner 超时也清理。warm tmpfs 不是持久数据库，显式 down 后数据消失。
 
 当前没有把带账号/组/会话副作用的 CE14 身份夹具直接改成长驻环境；需先补幂等数据重置与 worker 生命周期后再复用。IdP 夹具继续单独标注范围，保持测试行为验证与真实部署 E2E 分开。本轮实测 `identity/runtime.py` 关联 78 项：warm 5.344 秒、fresh core 10.975 秒；显式 identity 388 项 warm 22.606 秒，均零失败/跳过。耗时仅为本机当前镜像/用例，非通用性能承诺。
+
+常用委托文件链定向验收：`python3 tests/verify.py transfer-runtime`。复用隔离 CE14 与 TLS Directory/OIDC 夹具，验证受信机器凭证→当前用户委托→原生单次票据→Go 实际字节/Range/基础审计与消费前撤权拒绝；不等同于外部 eTech/生产代理联验。不重建镜像，不增加长驻 IdP。
+
+增强委托传输还要求部署者在 `seafile.conf` 的 `[cloudfile]` 段配置 native 终判所需的同一身份库、主体缓存和撤销存储。仅生成 Seahub policy JSON 不会配置 Server；缺项将拒绝发票/读取，不会降级放行。修改后重启 Server/fileserver：
+
+```ini
+[cloudfile]
+identity_database = seahub_db
+subject_redis_host = redis
+subject_redis_port = 6379
+subject_redis_password = replace-me
+subject_redis_prefix = cf:subjects:
+delegation_revocation_prefix = cf:service-revocations:
+trusted_tls_proxies = 127.0.0.1/32
+```
+
+身份库名、Redis 地址/凭据、subject/revocation prefix 必须与实际 `CLOUDFILE_POLICY_CONFIG_JSON` 一致；native 使用 Redis DB 0。`trusted_tls_proxies` 填实际 TLS 终止代理的明确 CIDR；示例仅适用于同容器 loopback 代理，不可改成全网信任。代理覆盖 `X-Forwarded-Proto=https`，不接受客户端自行声明。配置含凭据，按部署秘密管理保护权限。本轮受控 TLS 入口使用此接线，真实 eTech/生产代理仍单独验收。

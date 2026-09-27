@@ -64,7 +64,7 @@ def multipart(fields, content):
 
 
 def run(image, native_regression=False, extensions_regression=False, identity_runtime=False,
-        identity_scenario='prebound', development_worker_overlay=False, migration_runtime=False):
+        identity_scenario='prebound', development_worker_overlay=False, migration_runtime=False, annotations_runtime=False):
     if not __debug__:
         raise RuntimeError('Acceptance requires Python assertions enabled')
     prefix = 'cf02-smoke-' + secrets.token_hex(6)
@@ -171,6 +171,20 @@ def run(image, native_regression=False, extensions_regression=False, identity_ru
         repo = json.loads(response['body'])['repo_id']
         base = '/api2/repos/' + repo
         checks.append(stage)
+        if annotations_runtime:
+            stage = 'annotations_native_probe'
+            # Reuse locked CE14 assets, overlay only the new Python adapter.
+            hub = Path(__file__).resolve().parents[2] / 'cloudfile-hub'
+            destination = app + ':/opt/seafile/seafile-server-latest/seahub/cloudfile_extensions/resources/native.py'
+            docker('cp', str(hub / 'cloudfile_extensions/resources/native.py'), destination)
+            docker('cp', str(Path(__file__).with_name('resource_annotations_runtime.py')),
+                app + ':/tmp/resource_annotations_runtime.py')
+            probe = json.loads(docker('exec', app, 'python3', '/tmp/resource_annotations_runtime.py', repo, timeout=30))
+            if probe.get('result') != 'passed':
+                print(json.dumps(probe))
+                raise RuntimeError('annotations_probe_failed')
+            return dict(result='passed', scope='targeted native annotations development overlay',
+                image_id=metadata['Id'], checks=checks + [stage], annotations=probe)
         if migration_runtime:
             stage = 'migration_runtime'
             from migration_runtime import exercise

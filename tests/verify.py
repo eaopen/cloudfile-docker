@@ -303,7 +303,10 @@ def main():
     parser.add_argument('--image', default=DEFAULT_IMAGE)
     parser.add_argument('--contract-python', default=sys.executable,
                         help='Python with eap-cloudfile/tools/design-requirements.txt installed; used only for contract gate')
+    parser.add_argument('--annotations-probe', action='store_true', help='Runtime only: targeted native annotations source overlay')
     args = parser.parse_args()
+    if args.annotations_probe and args.scope != 'runtime':
+        parser.error('--annotations-probe requires runtime scope')
     if args.scope == 'warm':
         names = core_names(True)
         if args.warm_action == 'up':
@@ -328,7 +331,7 @@ def main():
                 if git(repo, 'status', '--porcelain') or labels.get('com.cloudfile.source.' + label) != git(repo, 'rev-parse', 'HEAD'):
                     raise RuntimeError('Full gate requires clean source matching packaged image: ' + repo)
         from smoke_ce14_runtime import run
-        report = run(args.image, extensions_regression=args.scope == 'full',
+        report = run(args.image, annotations_runtime=args.annotations_probe, extensions_regression=args.scope == 'full',
                      identity_runtime=args.scope in ('full', 'identity-runtime', 'identity-provisioning', 'identity-logout', 'identity-backchannel', 'transfer-runtime', 'web-runtime'),
                      identity_scenario='provisioning' if args.scope == 'identity-provisioning' else
                          'logout' if args.scope == 'identity-logout' else

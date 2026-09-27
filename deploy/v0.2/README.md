@@ -1,4 +1,8 @@
-# v0.2 业务入口
+# v0.2 部署入口配置要求
+
+本文件仅提出部署配置要求，白名单测试、生产白名单核验及逐路径覆盖不作为 v0.2 RC 门禁。
+现有 profile 是可参考的配置示例，可由项目已有反向代理实现，不要求增加独立侧车。
+已有探针与证据保留为历史记录，不继续运行或扩展。
 
 该 profile 为当前应用镜像外的独立 TLS Nginx 入口，不改变 CE/native 镜像或权限代码。
 默认只允许 Golden Path。后端应用必须位于专用私网，使用 `cloudfile` 网络别名；
@@ -43,10 +47,10 @@ docker compose -f deploy/v0.2/compose.ingress.yml up -d
 
 独立代理不会改写 body、Cookie、Authorization、CSRF 或 Range；业务权限/签名检查
 继续由已有应用执行。对于代理归一化的极端 URI/低频组合，本轮不追加穷举验证。
-浏览器真实常用流程与生产部署/证书/网络验收仍是 CF02-08 后续 gate；若浏览器发现
+浏览器常用业务流程与应用部署仍按原计划推进，不能把白名单覆盖作为前置；若浏览器发现
 必需的外围请求被关闭，先证明属于主流程，再加最小精确路由，不能开放整个 API 前缀。
 
-最小验证：`python3 tests/verify.py changed --plan`，
+历史验证入口（无需继续执行）：`python3 tests/verify.py changed --plan`，
 `python3 tests/ingress_runtime.py --image cloudfile/cloudfile:14.0.8-v0.2-rc-app`。
 探针运行实际只读 Nginx 与校验证书的 HTTPS，使用透明响应夹具核对路由/方法/
 请求体/头/Range。它不冒充新的 CE 身份、文件权限或真实 eTech 联验。

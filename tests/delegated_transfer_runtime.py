@@ -29,6 +29,8 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
     require(len(repos) == 1, 'single_fixture_library')
     repo = repos[0][0]
     seafile_api.share_repo(repo, manager.username, user.username, 'rw' if web else 'r')
+    if web:
+        seafile_api.post_dir(repo, '/', 'private', manager.username)
     reference = dict(repo_id=repo, path='/probe.txt', kind='file')
     payload = (b'CloudFile CE14 native upload, download and Range acceptance.\n' * 4
                + b'Explicit manual update.\n')
@@ -156,6 +158,7 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
                 require(response.status_code == 201, 'web_ticket_' + str(response.status_code))
                 return response.json()['ticket']
             require(read(web_ticket()).content == payload, 'web_native_original_bytes')
+
             original_id = seafile_api.get_file_id_by_path(repo, '/probe.txt')
             old_read = seafile_api.get_fileserver_access_token(repo, original_id, 'download', user.username, False)
             old_update = seafile_api.get_fileserver_access_token(repo, json.dumps({'parent_dir': '/'}),
@@ -201,6 +204,53 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
                 'legacy_rejected_without_publication')
             require(read(web_ticket()).content == updated, 'enhanced_read_after_legacy_denial')
             checks.append('managed_library_old_tokens_and_native_write_denied')
+            def browse(url, **query):
+                return browser.get(url, data=query, secure=True, HTTP_HOST='cloudfile-smoke.invalid')
+            libraries = '/api/v2.1/repos/'
+            directory = '/api/v2.1/repos/' + repo + '/dir/'
+            listed = browse(libraries)
+            require(listed.status_code == 200 and repo in [r['repo_id'] for r in listed.json()['repos']],
+                    'web_library_visible')
+            listed = browse(directory)
+            require(listed.status_code == 200 and {'probe.txt', 'private'} <=
+                    {r['name'] for r in listed.json()['dirent_list']}, 'web_directory_visible')
+            subject = dict(type='user', provider='etech', namespace='user', external_id='fixture-user-1')
+            subject_hash = hashlib.sha256(json.dumps(subject, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+            rules = []
+            def browse_rule(path, kind, permission, inherit=0):
+                rule = str(uuid4())
+                with db.cursor() as cursor:
+                    cursor.execute('INSERT INTO cf_dir_acl(id,repo_id,path,path_hash,kind,subject_type,provider,'
+                        'namespace,external_id,subject_hash,permission,inherit,revision) '
+                        'VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                        (rule, repo, path, hashlib.sha256(path.encode()).hexdigest(), kind, 'user', 'etech', 'user',
+                         'fixture-user-1', subject_hash, permission, inherit, str(uuid4())))
+                rules.append(rule)
+            browse_rule('/private', 'dir', 'invisible', 1)
+            browse_rule('/probe.txt', 'file', 'invisible')
+            listed = browse(directory)
+            require(listed.status_code == 200 and not {'probe.txt', 'private'} &
+                    {r['name'] for r in listed.json()['dirent_list']},
+                    'web_denied_names_hidden_status_' + str(listed.status_code) +
+                    ('_' + listed.json().get('message', '') if listed.status_code != 200 else ''))
+            require(browse(directory, p='/private').status_code == 403, 'web_denied_directory_rejected')
+            browse_rule('/', 'dir', 'r')
+            listed = browse(libraries)
+            require(listed.status_code == 200 and next(r for r in listed.json()['repos']
+                    if r['repo_id'] == repo)['permission'] == 'r', 'web_readonly_library_permission')
+            require(browse(directory).json()['user_perm'] == 'r', 'web_readonly_directory_permission')
+            with db.cursor() as cursor:
+                cursor.execute('UPDATE cf_dir_acl SET permission=%s WHERE id=%s', ('invisible', rules[-1]))
+            listed = browse(libraries)
+            require(listed.status_code == 200 and repo not in [r['repo_id'] for r in listed.json()['repos']],
+                    'web_denied_library_hidden')
+            require(browse(directory).status_code == 403, 'web_denied_root_rejected')
+            require(browse(directory, recursive='1').status_code == 403, 'web_recursive_browse_closed')
+            with db.cursor() as cursor:
+                for rule in rules:
+                    cursor.execute('DELETE FROM cf_dir_acl WHERE id=%s', (rule,))
+            checks.append('web_library_directory_acl_filter_and_readonly')
+
 
             current_head = seafile_api.get_repo(repo).head_cmmt_id
             require(current_head != head, 'web_update_current_head')

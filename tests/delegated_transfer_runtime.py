@@ -206,6 +206,10 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
             checks.append('managed_library_old_tokens_and_native_write_denied')
             def browse(url, **query):
                 return browser.get(url, data=query, secure=True, HTTP_HOST='cloudfile-smoke.invalid')
+            page = browse('/libraries/')
+            require(page.status_code == 200 and b'cloudFileWebEnabled: true' in page.content, 'web_page_enhanced_transfer_enabled_' + str(page.status_code) +
+                    '_field_' + str(b'cloudFileWebEnabled' in page.content) +
+                    '_false_' + str(b'cloudFileWebEnabled: false' in page.content))
             libraries = '/api/v2.1/repos/'
             directory = '/api/v2.1/repos/' + repo + '/dir/'
             listed = browse(libraries)
@@ -214,6 +218,7 @@ def exercise(*, db, user, manager, machine_secret, initiate, complete, require,
             listed = browse(directory)
             require(listed.status_code == 200 and {'probe.txt', 'private'} <=
                     {r['name'] for r in listed.json()['dirent_list']}, 'web_directory_visible')
+            require(listed.json()['head_id'] == seafile_api.get_repo(repo).head_cmmt_id, 'web_current_head_for_manual_upload')
             subject = dict(type='user', provider='etech', namespace='user', external_id='fixture-user-1')
             subject_hash = hashlib.sha256(json.dumps(subject, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
             rules = []

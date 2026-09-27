@@ -1,0 +1,323 @@
+"""Run only inside smoke_ce14_runtime's disposable, initialized CE14 container.
+
+Actual TLS OIDC/directory fixture, SQL/native RPC and full Django request chain.
+This is not an Authentik deployment or real browser/TLS ingress acceptance.
+"""
+import base64
+from datetime import datetime, timedelta, timezone
+import hashlib
+import ipaddress
+import json
+import os
+from pathlib import Path
+import secrets
+import ssl
+import sys
+import tempfile
+import threading
+import time
+import traceback
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlencode, urlsplit
+
+
+def require(condition, label):
+    if not condition:
+        raise RuntimeError('identity_check=' + label)
+
+
+def run():
+    require(os.environ.get('CF_DISPOSABLE_IDENTITY_PROBE') == 'true', 'disposable_marker')
+    package = '/opt/seafile/seafile-server-latest'
+    os.chdir(package + '/seahub')
+    sys.path[:0] = [package + '/seahub', package + '/seahub/thirdpart',
+                   package + '/seafile/lib/python3/site-packages', package + '/pro/python']
+    os.environ.update(DJANGO_SETTINGS_MODULE='seahub.settings', SEAHUB_DIR=package + '/seahub',
+        SEAFES_DIR=package + '/pro/python', SEAFILE_DATA_DIR='/shared/seafile/seafile-data',
+        SEAFILE_CENTRAL_CONF_DIR='/shared/seafile/conf',
+        SEAFILE_RPC_PIPE_PATH=package + '/runtime')
+    import django
+    django.setup()
+    from django.conf import settings
+    from django.contrib.sessions.models import Session
+    from django.test import Client
+    from django.urls import clear_url_caches
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+    import jwt
+    import pymysql
+    import redis
+    import requests
+    from seaserv import ccnet_api
+    from seahub.base.accounts import User
+    from seahub.profile.models import Profile
+    from seahub.auth import SESSION_KEY, BACKEND_SESSION_KEY
+    from cloudfile_extensions.authorization import gunicorn
+    from cloudfile_extensions.identity.configuration import configure_oidc_host, LOGIN_PREFIX
+    from cloudfile_extensions.identity.management import IdentityManagement
+    from cloudfile_extensions.identity.native_session import BACKEND
+    from cloudfile_extensions.schema.runner import SchemaRunner
+
+    checks = []
+    stage = 'schema'
+    db = pymysql.connect(host='db', user=os.environ['SEAFILE_MYSQL_DB_USER'],
+        password=os.environ['SEAFILE_MYSQL_DB_PASSWORD'], database='seafile_db',
+        autocommit=True, charset='utf8mb4')
+    cache = redis.Redis(host='identity-redis', port=6379, socket_timeout=2)
+    server = None
+    try:
+        SchemaRunner(db).apply()
+        SchemaRunner(db).require_current()
+        checks.append(stage)
+        stage = 'native_fixture'
+        manager = User.objects.get(email='admin@smoke.invalid')
+        Profile.objects.add_or_update(manager.username, login_id='fixture-manager')
+        user = User.objects.create_user('oidc-user@smoke.invalid', password=secrets.token_hex(24),
+                                       is_active=True, is_staff=False)
+        # Seed real native groups through existing RPC; only mapping ownership
+        # is fixture data. The normal projection owns its SQL effects.
+        dept = ccnet_api.create_group('Fixture department', manager.username, parent_group_id=-1)
+        role = ccnet_api.create_group('Fixture role', manager.username)
+        manual = ccnet_api.create_group('Fixture manual group', manager.username)
+        ccnet_api.group_add_member(manual, manager.username, user.username)
+        with db.cursor() as cursor:
+            for kind, namespace, external_id, group in (
+                    ('dept', 'directory', 'dept-1', dept), ('group', 'role', 'role-1', role)):
+                cursor.execute('INSERT INTO cf_sso_group_map(provider,subject_type,namespace,external_id,group_id,name) '
+                               'VALUES(%s,%s,%s,%s,%s,%s)', ('etech', kind, namespace, external_id, group, external_id))
+        checks.append(stage)
+        stage = 'tls_fixture'
+        signing_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        tls_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, 'CloudFile disposable IdP')])
+        now = datetime.now(timezone.utc)
+        certificate = (x509.CertificateBuilder().subject_name(name).issuer_name(name)
+            .public_key(tls_key.public_key()).serial_number(x509.random_serial_number())
+            .not_valid_before(now - timedelta(minutes=1)).not_valid_after(now + timedelta(hours=1))
+            .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+            .add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address('127.0.0.1'))]),
+                           critical=False).sign(tls_key, hashes.SHA256()))
+        with tempfile.TemporaryDirectory(prefix='cf-identity-') as temporary:
+            ca_file = Path(temporary) / 'ca.pem'
+            key_file = Path(temporary) / 'tls.pem'
+            ca_file.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+            key_file.write_bytes(tls_key.private_bytes(serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+            key_file.chmod(0o600)
+            codes, tokens = {}, {}
+            fixture = {'mode': 'active', 'claim_user': 'fixture-user-1', 'directory_calls': 0}
+            origin = ''
+            redirect_uri = 'https://cloudfile-smoke.invalid/' + LOGIN_PREFIX + 'callback/'
+            client_secret = secrets.token_hex(32)
+            directory_secret = secrets.token_hex(32)
+
+            class Handler(BaseHTTPRequestHandler):
+                def log_message(self, *args):
+                    pass  # Codes, bearer tokens and credentials never go to diagnostics.
+
+                def respond(self, value, status=200):
+                    body = json.dumps(value).encode()
+                    self.send_response(status)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Length', str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+
+                def do_GET(self):
+                    path = urlsplit(self.path)
+                    if path.path == '/authorize':
+                        params = parse_qs(path.query)
+                        required = {'state', 'nonce', 'code_challenge', 'code_challenge_method',
+                                    'redirect_uri', 'client_id', 'response_type', 'scope'}
+                        if (set(params) != required or any(len(v) != 1 for v in params.values())
+                                or params['code_challenge_method'] != ['S256']
+                                or params['redirect_uri'] != [redirect_uri]
+                                or params['client_id'] != ['fixture-client']
+                                or params['response_type'] != ['code']):
+                            return self.respond({}, 400)
+                        code = secrets.token_urlsafe(32)
+                        codes[code] = {key: value[0] for key, value in params.items()}
+                        self.send_response(302)
+                        self.send_header('Location', redirect_uri + '?' + urlencode({
+                            'state': params['state'][0], 'code': code}))
+                        self.send_header('Content-Length', '0')
+                        self.end_headers()
+                    elif path.path == '/jwks':
+                        jwk = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(signing_key.public_key()))
+                        self.respond({'keys': [{**jwk, 'kid': 'fixture-key', 'use': 'sig', 'alg': 'RS256'}]})
+                    elif path.path == '/userinfo':
+                        token = self.headers.get('Authorization', '').removeprefix('Bearer ')
+                        if token not in tokens:
+                            return self.respond({}, 401)
+                        self.respond(tokens[token])
+                    elif path.path == '/directory/users/fixture-user-1/context':
+                        fixture['directory_calls'] += 1
+                        if self.headers.get('Authorization') != 'Bearer ' + directory_secret:
+                            return self.respond({}, 401)
+                        if fixture['mode'] == 'outage':
+                            return self.respond({}, 503)
+                        disabled = fixture['mode'] == 'disabled'
+                        self.respond({'userId': 'fixture-user-1',
+                            'status': 'disabled' if disabled else 'active', 'attributes': {},
+                            'organizations': [] if disabled else [{'namespace': 'directory',
+                                'external_id': 'dept-1', 'is_primary': True}],
+                            'organization_ancestors': [],
+                            'roles': [] if disabled else [{'namespace': 'role', 'external_id': 'role-1'}],
+                            'revision': '1', 'etag': 'fixture-v1',
+                            'generated_at': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')})
+                    else:
+                        self.respond({}, 404)
+
+                def do_POST(self):
+                    if self.path != '/token':
+                        return self.respond({}, 404)
+                    length = int(self.headers.get('Content-Length', '0'))
+                    if not 0 < length <= 8192:
+                        return self.respond({}, 400)
+                    params = parse_qs(self.rfile.read(length).decode())
+                    code = params.get('code', [''])[0]
+                    transaction = codes.pop(code, None)
+                    basic = 'Basic ' + base64.b64encode(('fixture-client:' + client_secret).encode()).decode()
+                    verifier = params.get('code_verifier', [''])[0]
+                    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
+                    if (transaction is None or self.headers.get('Authorization') != basic
+                            or challenge != transaction['code_challenge']
+                            or params.get('redirect_uri') != [redirect_uri]
+                            or params.get('grant_type') != ['authorization_code']):
+                        return self.respond({}, 400)
+                    token = secrets.token_urlsafe(32)
+                    tokens[token] = {'sub': 'fixture-subject-1', 'userId': fixture['claim_user']}
+                    issued = int(time.time())
+                    id_token = jwt.encode({'iss': origin, 'aud': 'fixture-client',
+                        'sub': 'fixture-subject-1', 'userId': fixture['claim_user'],
+                        'iat': issued, 'exp': issued + 300, 'nonce': transaction['nonce'],
+                        'sid': secrets.token_urlsafe(16)}, signing_key, algorithm='RS256',
+                        headers={'kid': 'fixture-key'})
+                    self.respond({'access_token': token, 'token_type': 'Bearer',
+                                  'expires_in': 300, 'id_token': id_token})
+
+            server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+            origin = 'https://127.0.0.1:' + str(server.server_port)
+            tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            tls.load_cert_chain(str(ca_file), str(key_file))
+            server.socket = tls.wrap_socket(server.socket, server_side=True)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            settings.CLOUDFILE_POLICY_CONFIG = {'database': {'host': 'db',
+                'user': os.environ['SEAFILE_MYSQL_DB_USER'], 'name': 'seafile_db',
+                'password': os.environ['SEAFILE_MYSQL_DB_PASSWORD']},
+                'redis': {'host': 'identity-redis', 'port': 6379, 'password': ''},
+                'provider': 'etech', 'native_schema': 'ccnet_db', 'identity_schema': 'seahub_db',
+                'directory_url': origin + '/directory', 'directory_ca_bundle': str(ca_file),
+                'directory_bearer_token': directory_secret, 'attribute_allowlist': [],
+                'core_library': package + '/seafile/lib/libcloudfile_acl.so.1', 'cloud_mode': False}
+            settings.CLOUDFILE_OIDC_ENABLED = True
+            settings.CLOUDFILE_OIDC_CONFIG = {'issuer': origin, 'client_id': 'fixture-client',
+                'client_secret': client_secret, 'redirect_uri': redirect_uri,
+                'authorization_url': origin + '/authorize', 'token_url': origin + '/token',
+                'userinfo_url': origin + '/userinfo', 'jwks_url': origin + '/jwks',
+                'ca_bundle': str(ca_file)}
+            settings.ENABLE_OAUTH = False
+            configure_oidc_host(settings)
+            gunicorn.post_worker_init(None)
+            clear_url_caches()
+            management = IdentityManagement(db, native_schema='ccnet_db', identity_schema='seahub_db',
+                directory_provider='etech', actor_user_id='fixture-manager', request_id='fixture-prebind')
+            stage = 'authorized_prebind'
+            management.prebind(issuer=origin, subject='fixture-subject-1', user_id='fixture-user-1',
+                username=user.username, reason='Disposable identity runtime fixture')
+            checks.append(stage)
+            prefix = '/' + LOGIN_PREFIX
+
+            def initiate(browser):
+                begin = browser.get(prefix + 'begin/', secure=True, HTTP_HOST='cloudfile-smoke.invalid')
+                require(begin.status_code == 302, 'begin_status_' + str(begin.status_code))
+                with requests.Session() as transport:
+                    transport.trust_env = False
+                    authorize = transport.get(begin['Location'], verify=str(ca_file),
+                                              allow_redirects=False, timeout=10)
+                require(authorize.status_code == 302, 'authorize')
+                callback = urlsplit(authorize.headers['Location'])
+                return callback.path + '?' + callback.query
+
+            def complete(browser, callback):
+                response = browser.get(callback, secure=True, HTTP_HOST='cloudfile-smoke.invalid')
+                # Django Client retains expired cookies; an actual browser
+                # removes them. Model deletion without changing host guards.
+                for name, cookie in response.cookies.items():
+                    if str(cookie['max-age']) == '0' and name in browser.cookies:
+                        del browser.cookies[name]
+                return response
+
+            stage = 'cold_cache_login'
+            browser = Client(enforce_csrf_checks=True)
+            browser.get('/accounts/login/', secure=True, HTTP_HOST='cloudfile-smoke.invalid')
+            callback = initiate(browser)
+            response = complete(browser, callback)
+            require(response.status_code == 302, 'callback_status_' + str(response.status_code))
+            session = browser.session
+            require(session[SESSION_KEY] == user.username and session[BACKEND_SESSION_KEY] == BACKEND,
+                    'native_session_identity')
+            require(Session.objects.filter(session_key=session.session_key).exists(), 'persisted_session')
+            with db.cursor() as cursor:
+                cursor.execute('SELECT group_id FROM ccnet_db.GroupUser WHERE user_name=%s', (user.username,))
+                require({row[0] for row in cursor.fetchall()} == {dept, role, manual}, 'owned_projection')
+                cursor.execute('SELECT COUNT(*) FROM cf_oidc_session')
+                require(cursor.fetchone()[0] == 1, 'session_index')
+            require(fixture['directory_calls'] == 1, 'cold_directory_fetch')
+            checks.append(stage)
+            stage = 'session_reload'
+            require(browser.get('/api2/account/info/', secure=True,
+                    HTTP_HOST='cloudfile-smoke.invalid').status_code == 200, 'guarded_native_account')
+            checks.append(stage)
+            stage = 'callback_replay'
+            require(complete(Client(), callback).status_code == 401, 'browser_proof_replay')
+            checks.append(stage)
+            stage = 'local_logout'
+            old_key = session.session_key
+            # Existing CE login page supplies the browser's CSRF cookie.
+            csrf = browser.cookies[settings.CSRF_COOKIE_NAME].value
+            response = browser.post(prefix + 'logout/', data='', content_type='application/octet-stream',
+                secure=True, HTTP_HOST='cloudfile-smoke.invalid',
+                HTTP_ORIGIN='https://cloudfile-smoke.invalid', HTTP_X_CSRFTOKEN=csrf)
+            require(response.status_code == 200, 'logout_status_' + str(response.status_code))
+            require(not Session.objects.filter(session_key=old_key).exists(), 'session_deleted')
+            with db.cursor() as cursor:
+                cursor.execute('SELECT COUNT(*) FROM cf_oidc_session')
+                require(cursor.fetchone()[0] == 0, 'index_deleted')
+            checks.append(stage)
+            for mode, claim, active, expected in (
+                    ('active', 'conflicting-user', True, 409),
+                    ('active', 'fixture-user-1', False, 403),
+                    ('disabled', 'fixture-user-1', True, 403),
+                    ('outage', 'fixture-user-1', True, 503)):
+                stage = 'reject_' + ('claim_conflict' if claim != 'fixture-user-1' else
+                    'native_disabled' if not active else mode)
+                fixture.update(mode=mode, claim_user=claim)
+                user.is_active = active
+                user.save()
+                cache.flushdb()  # Dedicated disposable Redis only.
+                other = Client(enforce_csrf_checks=True)
+                response = complete(other, initiate(other))
+                require(response.status_code == expected, stage + '_status_' + str(response.status_code))
+                require(not other.session.get(SESSION_KEY), stage + '_no_session')
+                checks.append(stage)
+            return {'result': 'passed', 'checks': checks,
+                'scope': 'TLS test IdP/directory; actual CE SQL/RPC and Django client, no Authentik/eTech or ingress claim'}
+    except Exception as error:
+        label = str(error) if str(error).startswith('identity_check=') else (type(error).__name__ + ';frames=' + json.dumps([(item.filename.rsplit('/', 1)[-1], item.name, item.lineno) for item in traceback.extract_tb(error.__traceback__)]))
+        raise RuntimeError('identity_stage=' + stage + ';' + label) from None
+    finally:
+        if gunicorn._host is not None:
+            gunicorn.worker_exit(None, None)
+        if server is not None:
+            server.shutdown()
+            server.server_close()
+        cache.close()
+        db.close()
+
+
+if __name__ == '__main__':
+    print(json.dumps(run()))

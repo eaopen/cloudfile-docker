@@ -32,6 +32,10 @@ def docker(*args, input=None, timeout=180):
     result = subprocess.run(['docker', *args], input=input, text=True,
                             capture_output=True, timeout=timeout)
     if result.returncode:
+        # Only the identity fixture's controlled stage/type labels are safe.
+        for line in result.stderr.splitlines():
+            if line.startswith('RuntimeError: identity_stage='):
+                raise RuntimeError(line.removeprefix('RuntimeError: '))
         # Docker/HTTP diagnostics may contain ephemeral credentials or tickets.
         raise RuntimeError('Docker operation failed: ' + args[0])
     return result.stdout.strip()
@@ -58,7 +62,7 @@ def multipart(fields, content):
     return b''.join(chunks), 'multipart/form-data; boundary=' + boundary
 
 
-def run(image, native_regression=False, extensions_regression=False):
+def run(image, native_regression=False, extensions_regression=False, identity_runtime=False):
     if not __debug__:
         raise RuntimeError('Acceptance requires Python assertions enabled')
     prefix = 'cf02-smoke-' + secrets.token_hex(6)
@@ -66,6 +70,7 @@ def run(image, native_regression=False, extensions_regression=False):
     containers = []
     checks = []
     regression = None
+    identity = None
     stage = 'image_identity'
     metadata = json.loads(docker('image', 'inspect', image))[0]
     labels = metadata['Config'].get('Labels') or {}
@@ -283,13 +288,21 @@ print(json.dumps(report))
                 # Test IDs are safe; do not expose exception bodies or tokens.
                 raise RuntimeError('regression_tests=' + json.dumps(regression))
             checks.append(stage)
-        return {'result': 'passed', 'scope': 'CE14 local admin/native file baseline only',
+        if identity_runtime:
+            stage = 'identity_runtime'
+            start('identity-redis', 'identity-redis', 'redis:7-alpine', {}, ['/data:rw,size=64m'])
+            fixture = Path(__file__).with_name('probe_identity_runtime.py')
+            docker('cp', str(fixture), app + ':/tmp/probe_identity_runtime.py')
+            identity = json.loads(docker('exec', '-e', 'CF_DISPOSABLE_IDENTITY_PROBE=true',
+                app, 'python3', '/tmp/probe_identity_runtime.py', timeout=90))
+            checks.append(stage)
+        return {'result': 'passed', 'scope': 'CE14 local admin/native file baseline; optional identity fixture separately scoped',
                 'image_id': metadata['Id'], 'package_sha256': digest,
                 'source_seahub': labels.get('com.cloudfile.source.seahub'),
                 'source_server': labels.get('com.cloudfile.source.seafile-server'),
-                'checks': checks, 'extensions_regression': regression}
+                'checks': checks, 'extensions_regression': regression, 'identity_runtime': identity}
     except Exception as error:
-        detail = str(error) if str(error).startswith(('anonymous_file_status=', 'secure_read_status=', 'regression_tests=', 'native_import=')) else type(error).__name__
+        detail = str(error) if str(error).startswith(('anonymous_file_status=', 'secure_read_status=', 'regression_tests=', 'native_import=', 'identity_stage=')) else type(error).__name__
         raise RuntimeError('Isolated runtime acceptance failed at stage: ' + stage + ' (' + detail + ')') from None
     finally:
         failures = []
@@ -313,5 +326,7 @@ if __name__ == '__main__':
                         help='Also run the native actor import regression under real Seahub configuration')
     parser.add_argument('--extensions-regression', action='store_true',
                         help='Run extensions with a separate disposable SQL/Redis fixture')
+    parser.add_argument('--identity-runtime', action='store_true',
+                        help='Probe real TLS fixture OIDC/directory with actual CE accounts and SQL')
     args = parser.parse_args()
-    print(json.dumps(run(args.image, args.native_regression, args.extensions_regression), indent=2))
+    print(json.dumps(run(args.image, args.native_regression, args.extensions_regression, args.identity_runtime), indent=2))

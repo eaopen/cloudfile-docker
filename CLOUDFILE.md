@@ -2,11 +2,22 @@
 
 本仓库从 `build/seafile_14.0/release.json` 锁定 CloudFile 与上游 Seafile 14.0.8 源码，避免构建时重新落到未定制的上游 Seahub。`seafile-build.sh` 可不传版本；如传入版本，必须与清单一致。
 
+日常构建使用 `build/seafile_14.0/build-in-docker.sh`，复用 v0.1 Docker `51f4e6520f84ef3551e222c024bfdcbeffbcec1c` 的预制工具链/架构门禁/持久缓存方案。默认已有 `cloudfile-build-base:ce14-v2`，按宿主 arm64/amd64 原生运行；基础镜像架构不符拒绝。通过 `CF_BASE_IMAGE`、`CF_PLATFORM`、`CF_BUILD_JOBS`、`CF_CACHE_DIR` 覆盖。若当前工作区保留 `.v0.1-local/cloudfile-docker/cloudfile_14.0/.cache`，默认直接复用其中 ccache/Go/pip 缓存；否则用本仓库忽略的 `.cache`。缓存不是来源证明，所有源码与最终包仍执行完整 pin/摘要校验。
+
+```sh
+build/seafile_14.0/build-in-docker.sh
+build/seafile_14.0/build-local-image.sh cloudfile/cloudfile:14.0.8-v0.2-rc-work
+```
+
+预制工具链入口跳过 APT，已有相同 SHA checkout 不重复 fetch。Python thirdpart 安装缓存只在需求清单、Python/架构及工具链 image ID 相同且完成标记存在时复用；改依赖或 `CF_FORCE_THIRDPART_REFRESH=true` 重装，失败保留上个完整目录。编译缓存持久化并不代表每个新临时构建目录均命中，具体命中率需实际构建统计；本轮不将语法/缓存单测冒充完整 native 增量构建提速实测。
+
 尚未由人工推送的本地提交可通过 `CLOUDFILE_SERVER_SOURCE`、`CLOUDFILE_HUB_SOURCE` 提供给构建容器。两个值必须是绝对路径，且工作区干净、HEAD 与 `release.json` 的 40 位提交完全一致；构建器会复制 Git 对象后再构建，不修改来源仓库。未设置时继续只从清单中的 HTTPS 远端构建。例如在构建容器中把两个仓库只读挂载到 `/sources/cloudfile-server`、`/sources/cloudfile-hub`，并把对应环境变量设为这些容器内路径。该覆盖只用于本地已提交但尚未推送的 CloudFile 源码，不能绕过 release pin。
 
 全部七个构建来源均锁定 40 位提交。构建开始时核对实际 checkout HEAD 与清单、拒绝修改或未跟踪文件；只在完整包成功生成后写入 `cloudfile-build.json`，记录清单、实际提交与全部安装文件/目录/执行权限/符号链接摘要。每次在新临时目录构建，成功校验后保留旧包并替换，失败不覆盖上一个包。
 
 源码包成功生成后，运行 `build/seafile_14.0/build-local-image.sh [镜像标签]`。脚本校验原包及复制后的临时 Docker context，缺来源记录、源码 pin 不符或内容改变均拒绝；不能给旧包补写新来源记录。镜像标签含产品版本、Seafile 版本、Hub/Server 精确提交和 `com.cloudfile.package.sha256`；它只构建本地镜像，不执行 push。
+
+运行依赖与应用镜像分层：`Dockerfile.runtime-base` 延续 CE14 的 Ubuntu/Python/系统依赖，`cloudfile/runtime-base:14.0.8-local` 首次需要时生成；日常应用 Dockerfile 只复制脚本和发行包，没有 APT/pip。记录基础镜像 ID，并用对应内容标识本地 tag 构建。`CLOUDFILE_RUNTIME_BASE` 可指定已经生成的同 CE 版本依赖镜像；`CLOUDFILE_REFRESH_RUNTIME_BASE=true` 显式重新运行基础镜像构建。该重新构建仍使用 BuildKit 缓存；维护依赖版本/安全更新时需明确更新基础定义并验证，不把这个参数当作自动更新所有通配版本依赖。
 
 ## 隔离运行验收
 
@@ -15,9 +26,14 @@
 ```sh
 python3 tests/smoke_ce14_runtime.py --image cloudfile/cloudfile:14.0.8-v0.2-rc-work
 python3 tests/smoke_ce14_runtime.py --image cloudfile/cloudfile:14.0.8-v0.2-rc-work --native-regression --extensions-regression
+python3 tests/smoke_ce14_runtime.py --image cloudfile/cloudfile:14.0.8-v0.2-rc-work --identity-runtime
 ```
 
 基础验收明确使用 `ENABLE_GO_FILESERVER=true`，覆盖初始化、能力关闭态、本地管理员登录、建库、真实上传/下载字节、Range、显式更新及匿名拒绝。`--native-regression` 在实际 Seahub 配置运行 download actor 回归；`--extensions-regression` 使用另一个独立 SQL/Redis，复用既有扩展测试，报告通过/跳过/失败数量。扩展回归需同级 `eap-cloudfile/contracts` 两份共享 JSON 样本，复制到临时容器；原生 actor 自动在单独完整 Django 进程执行，其余 HTTP 单元夹具保留最小 settings，报告分别计数。报告不含密码或令牌。该夹具不证明真实 Authentik/eTech、HTTPS 委托授权、全入口权限、迁移恢复或 RC 完成。
+
+`--identity-runtime` 复用当前镜像，不重编译 C/Go 或执行全量扩展回归；真实 TLS 的本机测试 IdP/Directory 与原生 CE RPC/SQL、实际 cf schema、完整 Django Client 链验证管理员受控预绑定、RS256/JWKS/state/nonce/PKCE、冷缓存组织/角色投影且保留非托管组、持久会话/索引、重载及 CSRF 本地退出，以及身份冲突/原生停用/目录停用/目录故障拒绝。Django Client 显式模拟浏览器删除过期 cookie，不放宽服务器守卫。测试账号通过 CE RPC 创建，仅用于已有预绑定路径，不证明 JIT worker、RP/backchannel、真实 Authentik/eTech 或浏览器 TLS 入口已验收。
+
+验证分层：改配置/缓存先跑 Docker 单测（Linux `python3 -m unittest discover -s tests`，39 项）；仅改身份夹具跑 `--identity-runtime`；C/Go 改动执行相应 native 回归后重建制品；合并阶段或影响跨域边界再执行 `--extensions-regression`。保留通过证据，只因新变化、失败或未解决边界重复全量，避免用完整构建/全量测试调试路径与 fixture。
 
 ## 扩展配置
 

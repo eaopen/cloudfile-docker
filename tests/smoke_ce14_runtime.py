@@ -64,7 +64,7 @@ def multipart(fields, content):
 
 
 def run(image, native_regression=False, extensions_regression=False, identity_runtime=False,
-        identity_scenario='prebound', development_worker_overlay=False):
+        identity_scenario='prebound', development_worker_overlay=False, migration_runtime=False):
     if not __debug__:
         raise RuntimeError('Acceptance requires Python assertions enabled')
     prefix = 'cf02-smoke-' + secrets.token_hex(6)
@@ -159,6 +159,13 @@ def run(image, native_regression=False, extensions_regression=False, identity_ru
         repo = json.loads(response['body'])['repo_id']
         base = '/api2/repos/' + repo
         checks.append(stage)
+        if migration_runtime:
+            stage = 'migration_runtime'
+            from migration_runtime import exercise
+            migration = exercise(docker=docker, app=app, network=network, prefix=prefix,
+                containers=containers, request=request, auth=auth, repo=repo)
+            return dict(result='passed', scope='isolated offline small-library import/resume only',
+                image_id=metadata['Id'], package_sha256=digest, checks=checks + [stage], migration=migration)
         content = b'CloudFile CE14 native upload, download and Range acceptance.\n' * 4
 
         def download():
@@ -339,7 +346,7 @@ print(json.dumps(report))
                 'source_server': labels.get('com.cloudfile.source.seafile-server'),
                 'checks': checks, 'extensions_regression': regression, 'identity_runtime': identity}
     except Exception as error:
-        detail = str(error) if str(error).startswith(('anonymous_file_status=', 'secure_read_status=', 'regression_tests=', 'native_import=', 'identity_stage=')) else type(error).__name__
+        detail = str(error) if str(error).startswith(('anonymous_file_status=', 'secure_read_status=', 'regression_tests=', 'native_import=', 'identity_stage=', 'migration_check=')) else type(error).__name__
         raise RuntimeError('Isolated runtime acceptance failed at stage: ' + stage + ' (' + detail + ')') from None
     finally:
         failures = []
@@ -368,6 +375,7 @@ if __name__ == '__main__':
     parser.add_argument('--identity-scenario', choices=['prebound', 'provisioning', 'logout', 'backchannel', 'transfer', 'web'], default='prebound')
     parser.add_argument('--development-worker-overlay', action='store_true',
                         help='JIT development only: use host worker script; not packaged release evidence')
+    parser.add_argument('--migration-runtime', action='store_true', help='Reuse v0.1 CLI for offline small-directory import and resume only')
     args = parser.parse_args()
     print(json.dumps(run(args.image, args.native_regression, args.extensions_regression,
-                         args.identity_runtime, args.identity_scenario, args.development_worker_overlay), indent=2))
+                         args.identity_runtime, args.identity_scenario, args.development_worker_overlay, args.migration_runtime), indent=2))

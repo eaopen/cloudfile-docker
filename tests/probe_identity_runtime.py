@@ -275,6 +275,13 @@ def run():
                 # The base fixture explicitly disables OIDC discovery; opt in
                 # here without weakening the production explicit-disable rule.
                 settings.CLOUDFILE_CAPABILITIES = dict(settings.CLOUDFILE_CAPABILITIES, **{'auth.oidc': True})
+                settings.CLOUDFILE_SYSTEM_TAG_PROVIDER_ENABLED = True
+                from cloudfile_extensions.identity.service_tokens import ServiceCredential
+                settings.CLOUDFILE_SYSTEM_TAG_PROVIDER_CREDENTIALS = {'tags-v1': ServiceCredential(
+                    'etech-tags', 'etech-tags', 'cloudfile-tags', secrets.token_bytes(32),
+                    frozenset({'tags.system.write'}))}
+                settings.CLOUDFILE_SYSTEM_TAG_PROVIDER_GRANTS = {'etech-tags': dict(
+                    provider='etech', namespaces=['etech:project'])}
                 settings.CLOUDFILE_RESOURCE_SECRET = secrets.token_bytes(32)
                 settings.CLOUDFILE_RESOURCE_LIFECYCLE_READER = NativeResourceReader(seafile_api)
             gunicorn.post_worker_init(None)

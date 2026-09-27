@@ -65,6 +65,28 @@ def exercise(*, db, user, manager, initiate, complete, require):
         base64.urlsafe_b64encode(b'other-user').decode().rstrip('=')).status_code == 403, 'annotations_subject_mismatch')
     require(post('resources/', body, 'csrf-1', HTTP_X_CSRFTOKEN='').status_code == 403, 'annotations_csrf')
     checks.append('stale_revision_subject_mismatch_and_csrf_rejected')
+    import time
+    from uuid import uuid4
+    import jwt
+    credential = settings.CLOUDFILE_SYSTEM_TAG_PROVIDER_CREDENTIALS['tags-v1']
+    now = int(time.time())
+    provider_token = 'Bearer ' + jwt.encode(dict(iss='etech-tags', aud='cloudfile-tags', sub='etech-tags',
+        iat=now, exp=now + 60, jti=str(uuid4()), scope='tags.system.write'), credential.secret,
+        algorithm='HS256', headers={'kid': 'tags-v1'})
+    provider_body = dict(reference=reference, revision=current['revision'],
+        updates=[dict(namespace='etech:project', values=[dict(code='P1', label='Project 1')])])
+    provider_headers = dict(HTTP_X_CLOUDFILE_PROVIDER_AUTHORIZATION=provider_token)
+    require(post('resources/system-tags/', provider_body, 'provider-missing').status_code == 401, 'provider_credential_required')
+    system = ok(post('resources/system-tags/', provider_body, 'provider-1', **provider_headers))
+    require({tag['label'] for tag in system['tags']} == {'Project 1', 'drawing'}, 'provider_preserves_user_tags')
+    require(ok(post('resources/system-tags/', provider_body, 'provider-1', **provider_headers)) == system, 'provider_replay')
+    provider_body['revision'] = system['revision']
+    provider_body['updates'][0]['namespace'] = 'foreign:project'
+    require(post('resources/system-tags/', provider_body, 'provider-foreign', **provider_headers).status_code == 403, 'provider_foreign_namespace')
+    provider_body['updates'][0] = dict(namespace='etech:project', values=[])
+    cleared = ok(post('resources/system-tags/', provider_body, 'provider-clear', **provider_headers))
+    require([tag['label'] for tag in cleared['tags']] == ['drawing'], 'provider_clear_preserves_user_tags')
+    checks.append('provider_machine_scope_namespace_save_replay_and_clear')
     # Downgrade the actual CE share, then remove it. Each request reloads the
     # same-cursor qualification; capability discovery never grants permission.
     seafile_api.set_share_permission(repo, manager.username, user.username, 'r')
@@ -72,6 +94,8 @@ def exercise(*, db, user, manager, initiate, complete, require):
     require(readonly['access']['read'] is True and readonly['access']['write'] is False, 'annotations_readonly_access')
     body['expected_revision'] = readonly['revision']; body['changes']['description'] = 'must not save'
     require(post('resources/', body, 'readonly-1').status_code == 403, 'annotations_readonly_write_denied')
+    provider_body['revision'] = readonly['revision']
+    require(post('resources/system-tags/', provider_body, 'provider-readonly', **provider_headers).status_code == 403, 'provider_readonly_write_denied')
     seafile_api.remove_share(repo, manager.username, user.username)
     require(post('resources/resolve/', reference).status_code == 403, 'annotations_revoked_read_denied')
     checks.append('native_readonly_and_revoked_share_enforced')

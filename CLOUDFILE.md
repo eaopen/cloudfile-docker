@@ -4,7 +4,20 @@
 
 尚未由人工推送的本地提交可通过 `CLOUDFILE_SERVER_SOURCE`、`CLOUDFILE_HUB_SOURCE` 提供给构建容器。两个值必须是绝对路径，且工作区干净、HEAD 与 `release.json` 的 40 位提交完全一致；构建器会复制 Git 对象后再构建，不修改来源仓库。未设置时继续只从清单中的 HTTPS 远端构建。例如在构建容器中把两个仓库只读挂载到 `/sources/cloudfile-server`、`/sources/cloudfile-hub`，并把对应环境变量设为这些容器内路径。该覆盖只用于本地已提交但尚未推送的 CloudFile 源码，不能绕过 release pin。
 
-源码包成功生成后，运行 `build/seafile_14.0/build-local-image.sh [镜像标签]`。脚本使用临时 Docker context 组合已验证包、14.0 运行脚本及公共镜像资源，并把产品版本、Seafile 版本及 Hub/Server 精确提交写入镜像标签；它只构建本地镜像，不执行 push。
+全部七个构建来源均锁定 40 位提交。构建开始时核对实际 checkout HEAD 与清单、拒绝修改或未跟踪文件；只在完整包成功生成后写入 `cloudfile-build.json`，记录清单、实际提交与全部安装文件/目录/执行权限/符号链接摘要。每次在新临时目录构建，成功校验后保留旧包并替换，失败不覆盖上一个包。
+
+源码包成功生成后，运行 `build/seafile_14.0/build-local-image.sh [镜像标签]`。脚本校验原包及复制后的临时 Docker context，缺来源记录、源码 pin 不符或内容改变均拒绝；不能给旧包补写新来源记录。镜像标签含产品版本、Seafile 版本、Hub/Server 精确提交和 `com.cloudfile.package.sha256`；它只构建本地镜像，不执行 push。
+
+## 隔离运行验收
+
+复用 CE14 新装流程与原生 API，使用 Docker 私有内部网络、随机测试账号、临时 MariaDB/缓存与 tmpfs 数据。没有发布端口、宿主数据卷或外部数据库参数；结束时自动删除本次容器/网络。预先准备 `mariadb:10.11`、`memcached:1.6-alpine`，扩展回归另需 `mysql:8`、`redis:7-alpine`。
+
+```sh
+python3 tests/smoke_ce14_runtime.py --image cloudfile/cloudfile:14.0.8-v0.2-rc-work
+python3 tests/smoke_ce14_runtime.py --image cloudfile/cloudfile:14.0.8-v0.2-rc-work --native-regression --extensions-regression
+```
+
+基础验收明确使用 `ENABLE_GO_FILESERVER=true`，覆盖初始化、能力关闭态、本地管理员登录、建库、真实上传/下载字节、Range、显式更新及匿名拒绝。`--native-regression` 在实际 Seahub 配置运行 download actor 回归；`--extensions-regression` 使用另一个独立 SQL/Redis，复用既有扩展测试，报告通过/跳过/失败数量。扩展回归需同级 `eap-cloudfile/contracts` 两份共享 JSON 样本，复制到临时容器；原生 actor 自动在单独完整 Django 进程执行，其余 HTTP 单元夹具保留最小 settings，报告分别计数。报告不含密码或令牌。该夹具不证明真实 Authentik/eTech、HTTPS 委托授权、全入口权限、迁移恢复或 RC 完成。
 
 ## 扩展配置
 
@@ -17,7 +30,7 @@
 - `CLOUDFILE_AUTHORIZATION_ENABLED`：挂载内建 authorization v1 路由，默认 `false`；必须同时启用 post-fork policy worker，并配置真实目录、主体刷新和委托发行运行时。该开关不自动声明 capability 已交付。
 - `CLOUDFILE_POLICY_CONFIG_JSON`：严格 JSON 的可信 worker 配置；包含数据库、专属 Redis、Directory Adapter、C ACL 库、机器凭证范围、刷新 provider grant 与独立委托签名键。`CLOUDFILE_AUTHORIZATION_ENABLED=true` 时必须同时设置它和 `CLOUDFILE_POLICY_WORKER_HOOKS=true`，重复字段或不完整安全配置拒绝启动。
 - `CLOUDFILE_LOCAL_EDIT_ENABLED`：挂载内建 local-edit URL，默认 `false`；只有同时配置 post-fork policy worker、资源生命周期读取器、本地编辑版本读取器和固定 HTTPS 实例 origin 后才可设为 `true`，该开关本身不声明能力已交付。
-- `CLOUDFILE_TRANSFER_ENABLED`：挂载 cookie-free 的 `transfer/v1/delegated-read-tickets/`，默认 `false`；必须同时启用 post-fork policy worker，并由完整 `CLOUDFILE_POLICY_CONFIG_JSON` 构造独立委托验签键、共享撤销存储与 native ticket RPC。该开关不挂载 OIDC 会话票据，也不自动声明 `transfer.web` 已交付。
+- `CLOUDFILE_TRANSFER_ENABLED`：挂载 cookie-free 的 `transfer/v1/delegated-read-tickets/`，默认 `false`；必须同时设置 `ENABLE_GO_FILESERVER=true`、启用 post-fork policy worker，并由完整 `CLOUDFILE_POLICY_CONFIG_JSON` 构造独立委托验签键、共享撤销存储与 native ticket RPC。C 文件服务没有增强下载路由，选择它时拒绝启用委托传输。该开关不挂载 OIDC 会话票据，也不自动声明 `transfer.web` 已交付。
 
 部署 URLConf 不得占用 directory、authorization、library-policy、directory-acl、annotations、audit、search、locks、local-edit、migration、transfer、identity 核心域。自有能力由受信 Python 启动代码注册，配置 JSON 不能注册实现。
 

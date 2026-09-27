@@ -235,6 +235,8 @@ def render_settings(environment=None):
     if (authorization_enabled or transfer_enabled) and (policy_config is None
             or not _boolean(environment, "CLOUDFILE_POLICY_WORKER_HOOKS", False)):
         raise ValueError("enabled authorization or transfer requires policy config and worker hooks")
+    if transfer_enabled and not _boolean(environment, "ENABLE_GO_FILESERVER", False):
+        raise ValueError("enabled CloudFile transfer requires ENABLE_GO_FILESERVER=true")
     capabilities.setdefault(
         "protocol.webdav",
         {"enabled": webdav_enabled, "version": "14"},

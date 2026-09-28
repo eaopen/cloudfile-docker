@@ -1,0 +1,94 @@
+# cloudfile-hub 允许修改的上游文件。
+#
+# 当前登记 61 个。加新能力**通常不需要**再动上游：路由用 registry.register_urls()，
+# 权限用 register_permission_check()，检索后端用 register_search_provider()，
+# Django app 用 seahub_settings.py 的 EXTRA_INSTALLED_APPS。
+#
+# 下面只解释其中最承重、最容易在同步时被误删的入口；完整清单以文件末尾为准。
+#
+#   frontend/config/webpack.entry.js  纯数据追加（往 entryFiles 加一个 key）
+#   seahub/utils/rooturl.py           追加 CloudFile 路由
+#   seahub/views/__init__.py          check_folder_permission 委派（覆盖 255 处调用点）
+#   seahub/search/utils.py            search_files 委派给已选中的检索 provider
+#   seahub/utils/__init__.py          HAS_FILE_SEARCH 或上"provider 是否已配置"
+#   scripts/seaf-fsck.sh              离线 S3 迁移前置校验 + 传播退出码
+#   scripts/seaf-gc.sh                传播退出码
+#
+# 后两个（search）是一起的，缺一不可：不改 utils/__init__.py 的话，CE 部署上
+# 六个搜索入口都因为 HAS_FILE_SEARCH=False 而根本不路由到 search_files，
+# provider 永远不会被调用。两处都是加法（或上 / 未选中则回落），不改变原生行为。
+# 理由与取舍见 docs/EXTENSION-POINTS.md 第六节。
+#
+# 最后两个（fsck/gc）是离线 S3 维护 wrapper 的一部分，见
+# feat(storage): add offline S3 maintenance wrappers。上游两个脚本内部调用
+# run_seaf_fsck/run_seaf_gc 后，无论成败都执行到末尾的 `echo "Done."`，
+# 脚本自身的退出码永远是 0——调用方（迁移编排）拿不到失败信号。这不能用新文件
+# 旁路：要么整份复制这两个脚本自己维护（~100+ 行，且没有 check-upstream-patches.sh
+# 这类机制盯着它会不会跟上游的选项解析、路径推导悄悄分叉），要么原脚本继续可以
+# 被直接调用从而绕开新加的离线校验——两者都比在唯一入口上加几行判断更差。
+# fsck 额外加了 validate_repair_is_offline：-r/--repair 前 pgrep 一次
+# seaf-server/fileserver，防止修复期间服务仍在写数据。
+#
+# 见 AGENTS.md「最重要的一条：不要改上游文件」。
+.gitignore
+AGENTS.md
+frontend/config/webpack.entry.js
+frontend/src/api/seafile-api.js
+frontend/src/components/dialog/move-dirent-dialog.js
+frontend/src/components/dirent-detail/dirent-details/file-details/index.js
+frontend/src/components/dirent-detail/index.js
+frontend/src/components/dirent-operation-menu/menuHandlers.js
+frontend/src/components/dropdown/item.js
+frontend/src/components/repo-info-bar/index.css
+frontend/src/components/repo-info-bar/index.js
+frontend/src/components/search/search-result-item.js
+frontend/src/components/search/search.js
+frontend/src/features/library-view/dir-grid-view/index.js
+frontend/src/features/library-view/dir-others/index.js
+frontend/src/features/metadata/components/cell-formatter/file-tags/index.js
+frontend/src/features/tag/hooks/tags.js
+frontend/src/hooks/file-operations/permission.js
+frontend/src/models/repo-info.js
+frontend/src/models/repo-tag.js
+frontend/src/pages/app/main-panel/lib-content-view/lib-content-view.js
+frontend/src/pages/file-history-old/history-item.js
+frontend/src/pages/file-history-old/index.js
+frontend/src/pages/file-history/history-list-view/history-list-item.js
+frontend/src/pages/file-history/history-list-view/history-list-view.js
+frontend/src/pages/file-history/side-panel.js
+frontend/src/utils/constants.js
+frontend/src/utils/text-translation.js
+frontend/src/utils/utils.js
+scripts/seaf-fsck.sh
+scripts/seaf-gc.sh
+seahub/api2/endpoints/admin/__pycache__/users.cpython-38.pyc.275104027952
+seahub/api2/endpoints/dir.py
+seahub/api2/endpoints/file_access_log.py
+seahub/api2/endpoints/file_tag.py
+seahub/api2/endpoints/file.py
+seahub/api2/endpoints/groups.py
+seahub/api2/endpoints/internal_api.py
+seahub/api2/endpoints/monitored_repos.py
+seahub/api2/endpoints/repo_tags.py
+seahub/api2/endpoints/repos_batch.py
+seahub/api2/endpoints/share_links.py
+seahub/api2/endpoints/starred_items.py
+seahub/api2/utils.py
+seahub/api2/views.py
+seahub/base/models.py
+seahub/oauth/views.py
+seahub/onlyoffice/settings.py
+seahub/onlyoffice/utils.py
+seahub/onlyoffice/views.py
+seahub/repo_tags/models.py
+seahub/search/utils.py
+seahub/templates/base_for_react.html
+seahub/templates/file_revisions_new.html
+seahub/templates/file_revisions_old.html
+seahub/utils/__init__.py
+seahub/utils/rooturl.py
+seahub/utils/star.py
+seahub/views/__init__.py
+seahub/views/ajax.py
+seahub/views/file.py
+seahub/views/repo.py

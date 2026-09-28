@@ -1,0 +1,17 @@
+diff --git a/seasearch/index_store/repo_file_index.py b/seasearch/index_store/repo_file_index.py
+index 0b53f26..6222e8d 100644
+--- a/seasearch/index_store/repo_file_index.py
++++ b/seasearch/index_store/repo_file_index.py
+@@ -209,8 +209,10 @@ class RepoFileIndex(object):
+         if not self.is_valid_range(time_range):
+             return query_map
+         search_content = {}
+-        time_from = time_range[0] * 1000
+-        time_to = time_range[1] * 1000
++        # is_valid_range allows half-open ranges ([None, ts] / [ts, None]);
++        # multiplying None crashes -- coerce open ends first.
++        time_from = time_range[0] * 1000 if time_range[0] is not None else None
++        time_to = time_range[1] * 1000 if time_range[1] is not None else None
+         if time_from:
+             search_content['gte'] = time_from
+         if time_to:

@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "module": "icon",
+  "title": "图标视图",
+  "review": "couldfile_review20260814.md 二、核心功能设计·图标视图",
+  "comment": "Executable form of the review checklist `couldfile_review20260814.md` for this module. channel: `api` = assertable over HTTP by tests/e2e/review_<module>_matrix.py; channel: `ui` = browser-only, reported as skipped by the API matrix and deferred to a future browser suite. perm is the CE permission level the principal exercises (r / rw / admin / none / n/a); the five-level role model is NOT adopted (see docs/roles-semantics.md), so role-level cases are absent by design.",
+  "cases": [
+    {
+      "id": "icon-001",
+      "name": "drag marquee selection",
+      "review": "支持拖拽框选",
+      "channel": "ui",
+      "perm": "n/a",
+      "expect": "dragging a marquee selects the items inside it"
+    },
+    {
+      "id": "icon-002",
+      "name": "ctrl/cmd disjoint multi-select",
+      "review": "Ctrl/Command 离散多选",
+      "channel": "ui",
+      "perm": "n/a",
+      "expect": "ctrl/cmd-click toggles individual items into a disjoint selection"
+    },
+    {
+      "id": "icon-003",
+      "name": "shift range selection",
+      "review": "Shift 连续选择",
+      "channel": "ui",
+      "perm": "n/a",
+      "expect": "shift-click selects a contiguous range"
+    },
+    {
+      "id": "icon-004",
+      "name": "select all on current page",
+      "review": "全选当前页",
+      "channel": "ui",
+      "perm": "n/a",
+      "expect": "select-all selects every item on the current page only"
+    },
+    {
+      "id": "icon-005",
+      "name": "batch action bar after multi-select",
+      "review": "多选后显示底部批量操作栏",
+      "channel": "ui",
+      "perm": "n/a",
+      "expect": "a bottom batch-action bar appears once more than one item is selected"
+    }
+  ]
+}

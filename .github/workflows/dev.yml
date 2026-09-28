@@ -1,0 +1,52 @@
+name: CloudFile development checks
+
+on:
+  push:
+    branches: [dev]
+
+concurrency:
+  group: dev-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: cloudfile-docker
+          fetch-depth: 0
+
+      - uses: actions/checkout@v4
+        with:
+          repository: eaopen/cloudfile-server
+          ref: dev
+          path: cloudfile-server
+          fetch-depth: 0
+
+      - uses: actions/checkout@v4
+        with:
+          repository: eaopen/cloudfile-hub
+          ref: dev
+          path: cloudfile-hub
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cloudfile-server/fileserver/go.mod
+          cache-dependency-path: cloudfile-server/fileserver/go.sum
+
+      - name: Install C test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libglib2.0-dev pkg-config
+
+      - name: Install pytest
+        run: pip install --quiet pytest
+
+      - name: Run development checks
+        run: ./cloudfile-docker/tools/run-checks.sh

@@ -1,0 +1,738 @@
+#!/usr/bin/env python3
+"""执行 bootstrap 生成的 seahub_settings.py 片段，验证它真的能跑。
+
+preflight 的 `check_seahub_settings_block` 是**静态**的：它按正则找
+`FOO['bar'] =` 这类依赖 seahub settings 命名空间的写法。那条检查抓住了当年
+`DATABASES['cloudfile'] = {...}` 那个事故的形状，但抓不住别的形状——引号没转义、
+把字符串拼成了非法字面量、`%r` 用在了元组上，全都能过静态检查，然后在容器里
+被 seahub 吞成一行 NameError/SyntaxError，**整个文件的 CloudFile 配置一起丢掉，
+而服务看起来是正常起来的**。
+
+所以这里换个问法：把生成函数抠出来，喂各种 .env，`exec()` 它的输出，再断言得到
+的值就是预期的值。秒级，不需要 docker，不需要真的 seahub。
+
+    python3 tools/test-bootstrap-settings.py
+
+只抠函数、不 import 整个 bootstrap，是因为 bootstrap 顶上 `from utils import ...`
+依赖容器里的运行环境；为了跑一个纯字符串函数去搭那套环境不值得，而抠出来的是
+**同一份源码**，不是复制品——这一点很关键，与被测代码不一致的 fixture 什么都
+证明不了（`DATABASES['cloudfile']` 正是被一份手写的 fixture 放过去的）。
+"""
+
+import ast
+import json
+import os
+import sys
+import types
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+BOOTSTRAP = os.path.join(HERE, '..', 'scripts', 'scripts_14.0', 'bootstrap.py')
+
+failures = []
+
+
+def check(name, condition, detail=''):
+    if condition:
+        print('  \033[32m✓\033[0m %s' % name)
+    else:
+        print('  \033[31m✗\033[0m %s%s' % (name, ('：' + detail) if detail else ''))
+        failures.append(name)
+
+
+def _module_constant(tree, name):
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == name for t in node.targets):
+            return ast.literal_eval(node.value)
+    raise SystemExit('bootstrap.py 里找不到常量 %s' % name)
+
+
+def load(func_name, env):
+    """把 bootstrap 里的一个函数按当前 .env 取出来执行。"""
+    with open(BOOTSTRAP, encoding='utf-8') as fp:
+        tree = ast.parse(fp.read())
+
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == func_name:
+            break
+    else:
+        raise SystemExit('bootstrap.py 里找不到 %s' % func_name)
+
+    ns = {
+        'json': json,
+        'get_conf': lambda key, default='': env.get(key, default),
+        # 修改逻辑（2026-09-22 默认值改为“不依赖第三方的能力默认打开”）：
+        # 替身 cf_enabled 改为与 bootstrap.py 真实实现同构——env 未显式提供时
+        # 回退到 CF_DEFAULT_ON 决定的默认值。
+        # 修改原因：原替身固定回退 'false'，默认值改变后本文件仍全绿
+        # ——即使真实实现已经默认打开。门禁空转比没有门禁更危险。
+        'cf_enabled': lambda key: env.get(
+            key, 'true' if key in ns['CF_DEFAULT_ON'] else 'false'
+        ).lower() == 'true',
+        'get_proto': lambda: env.get('SEAFILE_SERVER_PROTOCOL', 'https'),
+        # Read out of bootstrap.py rather than restated here: a restated switch
+        # list is a fixture that can drift, and drifting fixtures are exactly
+        # what this file exists to catch.
+        'CF_DEFAULT_ON': _module_constant(tree, 'CF_DEFAULT_ON'),
+        'CF_FEATURE_SWITCHES': _module_constant(tree, 'CF_FEATURE_SWITCHES'),
+    }
+    exec(compile(ast.Module(body=[node], type_ignores=[]), BOOTSTRAP, 'exec'), ns)
+    return ns[func_name]
+
+
+def evaluate(block):
+    """按 seahub 的方式加载：普通模块，没有任何预置名字。"""
+    namespace = {}
+    exec(block, namespace)
+    return namespace
+
+
+BASE_ENV = {
+    'CF_ENABLE_SSO': 'true',
+    'SEAFILE_SERVER_HOSTNAME': 'cloudfile.example.com',
+    'CF_SSO_OAUTH_CLIENT_ID': 'cloudfile',
+    # 带引号的密码是真实存在的，而且是最容易把生成的文件写坏的一种值。
+    'CF_SSO_OAUTH_CLIENT_SECRET': "it's a secret",
+    'CF_SSO_OAUTH_AUTHORIZATION_URL': 'https://idp.example.com/authorize',
+    'CF_SSO_OAUTH_TOKEN_URL': 'https://idp.example.com/token',
+    'CF_SSO_OAUTH_USER_INFO_URL': 'https://idp.example.com/userinfo',
+    'CF_SSO_OAUTH_LOGOUT_URL': 'https://idp.example.com/end-session/',
+    'CF_SSO_OAUTH_PROVIDER': 'idp.example.com',
+    'CF_SSO_OAUTH_CREATE_UNKNOWN_USER': 'false',
+    'CF_PROVIDER_SSO_DIRECTORY': 'static',
+    'CF_SSO_GROUP_OWNER': 'admin@example.com',
+    'CF_SSO_DIRECTORY_STATIC':
+        '[{"external_id": "eng", "name": "Engineering",'
+        ' "members": ["alice@example.com"]}]',
+}
+
+
+def test_sso():
+    print('── _settings_block_sso')
+    sso = load('_settings_block_sso', {})
+
+    # 开关关闭时该能力不生效：一个字节都不该写。
+    check('开关关闭时不写任何内容', sso() == '', repr(sso()))
+
+    env = dict(BASE_ENV)
+    sso = load('_settings_block_sso', env)
+    block = sso()
+
+    try:
+        values = evaluate(block)
+    except Exception as e:
+        check('生成的片段可以被加载', False, '%s: %s' % (type(e).__name__, e))
+        return
+
+    check('生成的片段可以被加载', True)
+    check('登录被打开', values.get('ENABLE_OAUTH') is True)
+    check('回调地址由部署自己的主机名推导',
+          values.get('OAUTH_REDIRECT_URL')
+          == 'https://cloudfile.example.com/oauth/callback/',
+          repr(values.get('OAUTH_REDIRECT_URL')))
+    check('带引号的密码没有把文件写坏',
+          values.get('OAUTH_CLIENT_SECRET') == "it's a secret",
+          repr(values.get('OAUTH_CLIENT_SECRET')))
+    check('scope 是列表而不是一整个字符串',
+          values.get('OAUTH_SCOPE') == ['openid', 'email', 'profile'],
+          repr(values.get('OAUTH_SCOPE')))
+    check('OAuth 登出交给配置的通用 RP 端点',
+          values.get('OAUTH_LOGOUT_URL')
+          == 'https://idp.example.com/end-session/',
+          repr(values.get('OAUTH_LOGOUT_URL')))
+    check('首次 OAuth 用户创建策略可显式关闭',
+          values.get('OAUTH_CREATE_UNKNOWN_USER') is False,
+          repr(values.get('OAUTH_CREATE_UNKNOWN_USER')))
+    check('email claim 是必需项',
+          values.get('OAUTH_ATTRIBUTE_MAP', {}).get('email') == (True, 'email'),
+          repr(values.get('OAUTH_ATTRIBUTE_MAP')))
+    check('static 目录被解析成结构',
+          values.get('CF_SSO_DIRECTORY_STATIC', [{}])[0].get('external_id') == 'eng',
+          repr(values.get('CF_SSO_DIRECTORY_STATIC')))
+
+    # uid 与 email 取同一个 claim 的 IdP 是存在的。字典会吃掉其中一个，
+    # 吃掉哪个取决于插入顺序——如果吃掉的是 email，登录会因"必需属性缺失"
+    # 被拒，而报错里完全看不出是 .env 里两行配成了同一个值。
+    env = dict(BASE_ENV, CF_SSO_OAUTH_UID_CLAIM='email')
+    values = evaluate(load('_settings_block_sso', env)())
+    check('uid 与 email 同名时 email 仍是必需项',
+          values.get('OAUTH_ATTRIBUTE_MAP', {}).get('email') == (True, 'email'),
+          repr(values.get('OAUTH_ATTRIBUTE_MAP')))
+
+    # 只要组织映射、登录仍走 LDAP/SAML 的部署：不能因此打开 OAuth。
+    env = dict(BASE_ENV, CF_SSO_OAUTH_CLIENT_ID='')
+    values = evaluate(load('_settings_block_sso', env)())
+    check('没配 client id 就不打开 OAuth', 'ENABLE_OAUTH' not in values)
+    check('但组织映射的配置照写',
+          values.get('CF_SSO_GROUP_OWNER') == 'admin@example.com')
+
+    # OAuth 的必填项和 TLS 要在启动阶段阻止，不要等首次用户登录才报一个
+    # 无法定位的上游错误。实验环境可显式允许 HTTP，生产默认不允许。
+    for name, changes in (
+            ('缺 OAuth secret 时启动失败',
+             {'CF_SSO_OAUTH_CLIENT_SECRET': ''}),
+            ('缺 OAuth provider 时启动失败',
+             {'CF_SSO_OAUTH_PROVIDER': ''}),
+            ('生产配置拒绝 HTTP token endpoint',
+             {'CF_SSO_OAUTH_TOKEN_URL': 'http://idp.example.com/token'}),
+            ('非法首次用户创建开关时启动失败',
+             {'CF_SSO_OAUTH_CREATE_UNKNOWN_USER': 'sometimes'})):
+        try:
+            load('_settings_block_sso', dict(BASE_ENV, **changes))()
+            check(name, False, '被接受了')
+        except Exception:
+            check(name, True)
+
+    env = dict(BASE_ENV,
+               CF_SSO_OAUTH_INSECURE='true',
+               CF_SSO_OAUTH_AUTHORIZATION_URL='http://idp.example.com/authorize',
+               CF_SSO_OAUTH_TOKEN_URL='http://idp.example.com/token',
+               CF_SSO_OAUTH_USER_INFO_URL='http://idp.example.com/userinfo')
+    values = evaluate(load('_settings_block_sso', env)())
+    check('实验配置显式允许 HTTP IdP',
+          values.get('OAUTH_ENABLE_INSECURE_TRANSPORT') is True,
+          repr(values.get('OAUTH_ENABLE_INSECURE_TRANSPORT')))
+
+    # JSON 写错要在启动时炸（运维正看着），不是在第一次同步时才炸。
+    env = dict(BASE_ENV, CF_SSO_DIRECTORY_STATIC='{oops')
+    try:
+        load('_settings_block_sso', env)()
+        check('static 目录的 JSON 写错时启动失败', False, '被接受了')
+    except Exception:
+        check('static 目录的 JSON 写错时启动失败', True)
+
+
+def test_upstream_packages():
+    print('── _settings_block_upstream')
+    # 修改说明（2026-09-22）：METADATA/AUDIT 已默认打开，要复现“打包层开关
+    # 全部关闭”必须显式置 false；否则该用例在默认值变化后必然误报。
+    all_off = {
+        'CF_ENABLE_METADATA': 'false',
+        'CF_ENABLE_TAGS': 'false',
+        'CF_ENABLE_AUDIT': 'false',
+        'CF_ENABLE_CONVERT_EXPORT': 'false',
+        'CF_LDAP_ENABLED': 'false',
+        'CF_ADFS_ENABLED': 'false',
+        'CF_SHIBBOLETH_ENABLED': 'false',
+        'CF_TWO_FACTOR_ENABLED': 'false',
+    }
+    packaged = load('_settings_block_upstream', all_off)
+    check('所有打包层开关关闭时不写任何内容', packaged() == '', repr(packaged()))
+
+    # 补充断言：默认态下应写入默认打开集对应的上游开关。
+    # 原因：上一条只能证明“关掉后不写”，无法发现默认值被改回 false 的回退。
+    default_packaged = load('_settings_block_upstream', {})()
+    check('默认态写入 METADATA/AUDIT 对应的上游开关',
+          'ENABLE_METADATA_MANAGEMENT = True' in default_packaged
+          and 'ENABLE_FILE_AUDIT = True' in default_packaged,
+          repr(default_packaged))
+
+    env = {
+        'CF_LDAP_ENABLED': 'true',
+        'CF_LDAP_SERVER_URL': 'ldaps://directory.example.com:636',
+        'CF_LDAP_BASE_DN': 'ou=people,dc=example,dc=com',
+        'CF_LDAP_ADMIN_DN': 'cn=reader,dc=example,dc=com',
+        'CF_LDAP_ADMIN_PASSWORD': "it's a secret",
+        'CF_LDAP_LOGIN_ATTR': 'uid',
+        'CF_LDAP_CONTACT_EMAIL_ATTR': 'mail',
+        'CF_ADFS_ENABLED': 'true',
+        'CF_ADFS_REMOTE_METADATA_URL': 'https://idp.example.com/metadata',
+        'CF_ADFS_ATTRIBUTE_MAPPING_JSON':
+            '{"uid":["uid"],"email":["mail"]}',
+        'CF_SHIBBOLETH_ENABLED': 'true',
+        'CF_SHIBBOLETH_REMOTE_USER_HEADER': 'HTTP_X_AUTH_REQUEST_EMAIL',
+        'CF_SHIBBOLETH_ATTRIBUTE_MAP_JSON':
+            '{"HTTP_DISPLAYNAME":"name"}',
+        'CF_SHIBBOLETH_AFFILIATION_ROLE_MAP_JSON':
+            '{"staff@example.com":"staff"}',
+        'CF_SHIBBOLETH_LOGOUT_URL': 'https://idp.example.com/logout?return=',
+        'CF_SHIBBOLETH_LOGOUT_RETURN': 'https://cloudfile.example.com/',
+        'CF_ROLE_PERMISSIONS_JSON':
+            '{"default":{"can_add_repo":false}}',
+        'CF_ADMIN_ROLE_PERMISSIONS_JSON':
+            '{"daily_admin":{"can_manage_group":false}}',
+        'CF_TWO_FACTOR_ENABLED': 'true',
+        'CF_TWO_FACTOR_DEVICE_REMEMBER_DAYS': '0',
+    }
+    try:
+        values = evaluate(load('_settings_block_upstream', env)())
+    except Exception as e:
+        check('完整打包配置可以被加载', False,
+              '%s: %s' % (type(e).__name__, e))
+        return
+
+    check('完整打包配置可以被加载', True)
+    check('LDAP 及带引号的绑定密码被完整写入',
+          values.get('ENABLE_LDAP') is True
+          and values.get('LDAP_ADMIN_PASSWORD') == "it's a secret",
+          repr(values.get('LDAP_ADMIN_PASSWORD')))
+    check('ADFS 写入元数据、属性映射和 xmlsec 默认值',
+          values.get('ENABLE_ADFS_LOGIN') is True
+          and values.get('SAML_ATTRIBUTE_MAPPING', {}).get('email') == ['mail']
+          and values.get('SAML_XMLSEC_BINARY_PATH') == '/usr/bin/xmlsec1',
+          repr(values.get('SAML_ATTRIBUTE_MAPPING')))
+    check('Shibboleth 同时启用可信反向代理认证',
+          values.get('ENABLE_SHIB_LOGIN') is True
+          and values.get('ENABLE_REMOTE_USER_AUTHENTICATION') is True
+          and values.get('REMOTE_USER_HEADER') == 'HTTP_X_AUTH_REQUEST_EMAIL',
+          repr(values.get('REMOTE_USER_HEADER')))
+    check('用户和管理员角色策略保持对象结构',
+          values.get('ENABLED_ROLE_PERMISSIONS', {}).get('default', {}).get('can_add_repo') is False
+          and values.get('ENABLED_ADMIN_ROLE_PERMISSIONS', {}).get('daily_admin', {}).get('can_manage_group') is False,
+          repr(values.get('ENABLED_ROLE_PERMISSIONS')))
+    check('2FA 允许零天记住设备',
+          values.get('ENABLE_TWO_FACTOR_AUTH') is True
+          and values.get('TWO_FACTOR_DEVICE_REMEMBER_DAYS') == 0,
+          repr(values.get('TWO_FACTOR_DEVICE_REMEMBER_DAYS')))
+
+    env = {'CF_LDAP_ENABLED': 'true'}
+    try:
+        load('_settings_block_upstream', env)()
+        check('LDAP 缺少连接参数时启动失败', False, '被接受了')
+    except Exception:
+        check('LDAP 缺少连接参数时启动失败', True)
+
+    env = {
+        'CF_ADFS_ENABLED': 'true',
+        'CF_ADFS_REMOTE_METADATA_URL': 'https://idp.example.com/metadata',
+        'CF_ADFS_ATTRIBUTE_MAPPING_JSON': '[]',
+    }
+    try:
+        load('_settings_block_upstream', env)()
+        check('ADFS 属性映射不是对象时启动失败', False, '被接受了')
+    except Exception:
+        check('ADFS 属性映射不是对象时启动失败', True)
+
+    env = {'CF_TWO_FACTOR_ENABLED': 'true',
+           'CF_TWO_FACTOR_DEVICE_REMEMBER_DAYS': '-1'}
+    try:
+        load('_settings_block_upstream', env)()
+        check('2FA 负的记住天数时启动失败', False, '被接受了')
+    except Exception:
+        check('2FA 负的记住天数时启动失败', True)
+
+    # 修改说明（2026-09-22）：METADATA 已默认打开，要真正触发
+    # TAGS⇒METADATA 校验必须显式把 METADATA 置 false；否则该用例会因为
+    # 默认值变化而失去意义（仍旧全绿，但已不再测试任何东西）。
+    env = {'CF_ENABLE_TAGS': 'true', 'CF_ENABLE_METADATA': 'false'}
+    try:
+        load('_settings_block_upstream', env)()
+        check('标签未启用元数据时启动失败', False, '被接受了')
+    except Exception:
+        check('标签未启用元数据时启动失败', True)
+
+    env = {'CF_ENABLE_CONVERT_EXPORT': 'true'}
+    try:
+        load('_settings_block_upstream', env)()
+        check('转换导出未配置 JWT 密钥时启动失败', False, '被接受了')
+    except Exception:
+        check('转换导出未配置 JWT 密钥时启动失败', True)
+
+    env['JWT_PRIVATE_KEY'] = 'stable-test-key'
+    try:
+        load('_settings_block_upstream', env)()
+        check('转换导出配置 JWT 密钥后可以启动', True)
+    except Exception as e:
+        check('转换导出配置 JWT 密钥后可以启动', False, str(e))
+
+
+def test_search():
+    print('── _settings_block_search')
+    search = load('_settings_block_search', {})
+
+    # 开关关闭时该能力不生效：一个字节都不该写——CF_PROVIDER_SEARCH 留空
+    # 时的默认行为（走 SeaSearch）也不该被写死成某个值。
+    check('开关关闭时不写任何内容', search() == '', repr(search()))
+
+    env = {'CF_ENABLE_SEARCH': 'true'}
+    try:
+        values = evaluate(load('_settings_block_search', env)())
+    except Exception as e:
+        check('开关打开、留空 provider 时可以被加载', False,
+              '%s: %s' % (type(e).__name__, e))
+        return
+
+    check('开关打开、留空 provider 时可以被加载', True)
+    check('CF_PROVIDER_SEARCH 默认留空（SeaSearch/原生路径）',
+          values.get('CF_PROVIDER_SEARCH') == '',
+          repr(values.get('CF_PROVIDER_SEARCH')))
+    check('Meilisearch 连接信息即使未选用也写了默认值',
+          values.get('CF_MEILISEARCH_URL') == 'http://meilisearch:7700',
+          repr(values.get('CF_MEILISEARCH_URL')))
+    check('索引正文体积上限是整数而不是字符串',
+          values.get('CF_SEARCH_INDEX_TEXT_MAX_BYTES') == 1048576,
+          repr(values.get('CF_SEARCH_INDEX_TEXT_MAX_BYTES')))
+
+    env = {
+        'CF_ENABLE_SEARCH': 'true',
+        'CF_PROVIDER_SEARCH': 'meilisearch',
+        'CF_MEILISEARCH_URL': 'http://meilisearch.internal:7700',
+        # 带引号的 key 是真实存在的一类值,和 SSO 的 client secret 同一个理由。
+        'CF_MEILISEARCH_API_KEY': "it's a secret",
+        'CF_SEARCH_INDEX_INTERVAL': '30',
+    }
+    values = evaluate(load('_settings_block_search', env)())
+    check('选中 meilisearch 时逐项写入',
+          values.get('CF_PROVIDER_SEARCH') == 'meilisearch'
+          and values.get('CF_MEILISEARCH_URL') == 'http://meilisearch.internal:7700'
+          and values.get('CF_MEILISEARCH_API_KEY') == "it's a secret"
+          and values.get('CF_SEARCH_INDEX_INTERVAL') == 30,
+          repr(values))
+
+    env = {'CF_ENABLE_SEARCH': 'true', 'CF_SEARCH_INDEX_INTERVAL': 'soon'}
+    try:
+        load('_settings_block_search', env)()
+        check('索引间隔不是数字时启动失败', False, '被接受了')
+    except Exception:
+        check('索引间隔不是数字时启动失败', True)
+
+    env = {'CF_ENABLE_SEARCH': 'true', 'CF_SEARCH_INDEX_TEXT_MAX_BYTES': '0'}
+    try:
+        load('_settings_block_search', env)()
+        check('正文体积上限为 0 时启动失败', False, '被接受了')
+    except Exception:
+        check('正文体积上限为 0 时启动失败', True)
+
+
+def test_external_sources():
+    print('── _settings_block_external_sources')
+    block = load('_settings_block_external_sources', {})
+
+    check('开关关闭时不写任何内容', block() == '', repr(block()))
+
+    env = {'CF_ENABLE_EXTERNAL_SOURCES': 'true'}
+    try:
+        values = evaluate(load('_settings_block_external_sources', env)())
+    except Exception as e:
+        check('开关打开时可以被加载', False, '%s: %s' % (type(e).__name__, e))
+        return
+
+    check('开关打开时可以被加载', True)
+    # 这一项是这个能力的安全边界：默认必须是"只有那一个前缀"，不是"随便哪里"。
+    check('默认根前缀是列表且只含 /shared/external',
+          values.get('CF_EXTERNAL_SOURCES_ROOTS') == ['/shared/external'],
+          repr(values.get('CF_EXTERNAL_SOURCES_ROOTS')))
+    check('默认扫描配置均为正整数',
+          (values.get('CF_EXTERNAL_SCAN_INTERVAL'),
+           values.get('CF_EXTERNAL_SCAN_MAX_DIRS'),
+           values.get('CF_EXTERNAL_SCAN_MAX_FILES')) == (60, 20, 2000),
+          repr(values))
+
+    env = {'CF_ENABLE_EXTERNAL_SOURCES': 'true',
+           'CF_EXTERNAL_SOURCES_ROOTS': '/mnt/nas:/shared/external'}
+    values = evaluate(load('_settings_block_external_sources', env)())
+    check('冒号分隔的多个前缀逐项写入',
+          values.get('CF_EXTERNAL_SOURCES_ROOTS') == ['/mnt/nas',
+                                                      '/shared/external'],
+          repr(values.get('CF_EXTERNAL_SOURCES_ROOTS')))
+
+    for name, raw in [('扫描间隔不是数字时启动失败', 'soon'),
+                      ('目录批次为 0 时启动失败', '0')]:
+        key = 'CF_EXTERNAL_SCAN_INTERVAL' if '间隔' in name \
+            else 'CF_EXTERNAL_SCAN_MAX_DIRS'
+        env = {'CF_ENABLE_EXTERNAL_SOURCES': 'true', key: raw}
+        try:
+            load('_settings_block_external_sources', env)()
+            check(name, False, '%r 被接受了' % raw)
+        except Exception:
+            check(name, True)
+
+    # 下面三项都是"配置错了必须起不来"，而不是"回落到某个默认值"。
+    # 空值回落成默认是最坏的一种：运维以为自己限制了范围，实际没有；
+    # 而 '/' 通过则等于管理接口可以把整个容器文件系统登记成外部源。
+    for name, raw in [('留空时启动失败', ''),
+                      ('只有分隔符时启动失败', ':::'),
+                      ('包含 / 时启动失败', '/shared/external:/'),
+                      ('相对路径时启动失败', 'shared/external')]:
+        env = {'CF_ENABLE_EXTERNAL_SOURCES': 'true',
+               'CF_EXTERNAL_SOURCES_ROOTS': raw}
+        try:
+            load('_settings_block_external_sources', env)()
+            check(name, False, '%r 被接受了' % raw)
+        except Exception:
+            check(name, True)
+
+
+def test_fileop_seafile_conf():
+    """seafile.conf 的 [cloudfile] 段 —— C 侧读的那份。
+
+    这一段和 seahub_settings.py 那些不同：它不是 Python，所以 exec 不了，
+    只能按行断言。但价值一样——写入生命周期的测试 provider 能拒绝写入，
+    "以为关着其实开着"和"以为开着其实关着"都得是能被检查出来的。
+    """
+    print('── _seafile_conf_cloudfile_lines')
+    build = load('_seafile_conf_cloudfile_lines', {})
+
+    def lines(env):
+        return ''.join(load('_seafile_conf_cloudfile_lines', env)())
+
+    base = lines({})
+    # 修改逻辑（2026-09-22）：默认值改为“不依赖第三方的能力默认打开”，
+    # 本检查从“全部为 false”改为“默认打开集为 true、默认关闭集为 false”。
+    # 修改原因：继续断言“全为 false”会恒红；而只删断言又会让默认值被意外改动时
+    # 失去门禁。两组计数相加必须等于开关总数，漏写一个开关也会被发现。
+    default_on = build.__globals__['CF_DEFAULT_ON']
+    switches = build.__globals__['CF_FEATURE_SWITCHES']
+    check('默认打开集写入 true、默认关闭集写入 false',
+          base.count(' = true\n') == len(default_on)
+          and base.count(' = false\n') == len(switches) - len(default_on) + 1,
+          # Capabilities are read from bootstrap.py, never duplicated here.
+          # The one additional false line is the non-product fileop test provider.
+          repr(base))
+    check('每个开关都出现在生成的 seafile.conf 中',
+          all((name[len('CF_ENABLE_'):].lower() + '_enabled') in base
+              for name in switches),
+          repr(base))
+    check('测试 provider 默认关闭',
+          'fileop_test_provider_enabled = false' in base, repr(base))
+    check('关闭时不写标记与 journal',
+          'fileop_test_refuse_token' not in base
+          and 'fileop_test_journal' not in base, repr(base))
+
+    on = lines({'CF_FILEOP_TEST_PROVIDER': 'true'})
+    check('打开后写入三项',
+          'fileop_test_provider_enabled = true' in on
+          and 'fileop_test_refuse_token = cf-refuse' in on
+          and 'fileop_test_journal = /shared/cf-fileop-journal.log' in on,
+          repr(on))
+
+    # 观察模式：标记显式留空。这不是"没配"而是"配成不拒绝"，回落到默认值会让
+    # 门禁的阶段 1 在建夹具时就被拒——而那恰好是被测操作之一。
+    observe = lines({'CF_FILEOP_TEST_PROVIDER': 'true',
+                     'CF_FILEOP_TEST_REFUSE_TOKEN': ''})
+    check('标记显式留空时不回落到默认值',
+          'fileop_test_refuse_token = \n' in observe, repr(observe))
+
+    custom = lines({'CF_FILEOP_TEST_PROVIDER': 'true',
+                    'CF_FILEOP_TEST_REFUSE_TOKEN': 'blocked',
+                    'CF_FILEOP_TEST_JOURNAL': '/shared/j.log'})
+    check('标记与 journal 可覆盖',
+          'fileop_test_refuse_token = blocked' in custom
+          and 'fileop_test_journal = /shared/j.log' in custom, repr(custom))
+
+    # provider 按路径组件比较，给它一个路径而不是组件是配置错误，不是拒绝规则。
+    try:
+        lines({'CF_FILEOP_TEST_PROVIDER': 'true',
+               'CF_FILEOP_TEST_REFUSE_TOKEN': 'a/b'})
+        check('标记里带 / 时启动失败', False, '没有抛异常')
+    except Exception:
+        check('标记里带 / 时启动失败', True)
+
+    try:
+        lines({'CF_FILEOP_TEST_PROVIDER': 'true',
+               'CF_FILEOP_TEST_JOURNAL': 'relative.log'})
+        check('journal 是相对路径时启动失败', False, '没有抛异常')
+    except Exception:
+        check('journal 是相对路径时启动失败', True)
+
+    # 能力开关和它互不干扰：一个是产品能力，一个是门禁仪器。
+    both = lines({'CF_ENABLE_DIR_ACL': 'true',
+                  'CF_FILEOP_TEST_PROVIDER': 'true'})
+    check('能力开关与测试 provider 各自独立',
+          'dir_acl_enabled = true' in both
+          and 'fileop_test_provider_enabled = true' in both, repr(both))
+
+    lock = lines({'CF_ENABLE_FILE_LOCK': 'true'})
+    check('文件锁启用时固定选择 CE 锁后端',
+          'file_lock_enabled = true' in lock
+          and 'lock_backend = cloudfile' in lock, repr(lock))
+
+    try:
+        lines({'CF_ENABLE_FILE_LOCK': 'true', 'CF_LOCK_BACKEND': 'pro'})
+        check('CE 镜像拒绝 Pro 锁后端', False, '没有抛异常')
+    except Exception:
+        check('CE 镜像拒绝 Pro 锁后端', True)
+
+    del build
+
+
+def test_metadata_schema_compatibility():
+    """The upstream schema omission must be repaired only when needed."""
+    print('── apply_metadata_schema_compatibility')
+
+    class Cursor:
+        def __init__(self, responses):
+            self.responses = iter(responses)
+            self.statements = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *unused):
+            return False
+
+        def execute(self, statement, params=None):
+            self.statements.append((statement, params))
+
+        def fetchone(self):
+            return next(self.responses)
+
+    class Connection:
+        def __init__(self, cursor):
+            self.cursor_value = cursor
+            self.committed = False
+            self.closed = False
+
+        def cursor(self):
+            return self.cursor_value
+
+        def commit(self):
+            self.committed = True
+
+        def close(self):
+            self.closed = True
+
+    def run(env, responses):
+        migrate = load('apply_metadata_schema_compatibility', env)
+        cursor = Cursor(responses)
+        conn = Connection(cursor)
+        pymysql = types.SimpleNamespace(connect=lambda **kwargs: conn)
+        previous = sys.modules.get('pymysql')
+        sys.modules['pymysql'] = pymysql
+        migrate.__globals__['loginfo'] = lambda message: None
+        migrate.__globals__['logwarning'] = lambda message: None
+        try:
+            migrate()
+        finally:
+            if previous is None:
+                del sys.modules['pymysql']
+            else:
+                sys.modules['pymysql'] = previous
+        return conn, cursor
+
+    # The column is required regardless of the metadata switch (the upstream
+    # model reads it unconditionally), so a switch-off deployment with the
+    # upstream table present must still get the column.
+    env = {'SEAFILE_MYSQL_DB_SEAHUB_DB_NAME': 'metadata_hub'}
+    conn, cursor = run(env, [(1,), None])
+    sql = '\n'.join(statement for statement, unused in cursor.statements)
+    check('开关关闭但上游表存在时也补齐 summary_enabled',
+          'ADD COLUMN `summary_enabled` TINYINT(1) NOT NULL DEFAULT 0' in sql
+          and 'key_repo_metadata_summary_enabled' in sql, sql)
+    check('补齐后提交并关闭连接', conn.committed and conn.closed)
+
+    conn, cursor = run(env, [(1,), (1,)])
+    sql = '\n'.join(statement for statement, unused in cursor.statements)
+    check('已有列时不重复执行 ALTER', 'ALTER TABLE' not in sql, sql)
+    check('已有列时仍提交并关闭连接', conn.committed and conn.closed)
+
+    conn, cursor = run(env, [None])
+    check('缺少上游表时不执行 ALTER',
+          not any('ALTER TABLE' in statement for statement, unused in cursor.statements))
+    check('缺少上游表时关闭连接', conn.closed)
+
+
+def test_office():
+    """OnlyOffice startup contract.
+
+    OFFICE-01: enabling requires a matching non-empty JWT on Hub and Document
+    Server, plus the APIJS URL the renderer and the safe-download boundary both
+    need. Missing or incomplete config FAILS startup here -- while the operator
+    is watching -- rather than accepting unauthenticated callbacks. The
+    same-source secret (compose injects the same ONLYOFFICE_JWT_SECRET into both
+    services) is the runtime pairing proof; this test is the startup half.
+    """
+    print('── _settings_block_office')
+    try:
+        block = load('_settings_block_office', {})
+    except SystemExit as e:
+        check('bootstrap 实现了 _settings_block_office', False, str(e))
+        return
+
+    # 开关关闭时该能力不生效：一个字节都不该写。
+    check('开关关闭时不写任何内容', block() == '', repr(block()))
+
+    # 启用但缺 secret：必须起不来。空 secret 不允许回退成"兼容模式"——
+    # 那正是 OFFICE-01 要堵的洞（callback 在无签名时也返回 error 0）。
+    env = {'CF_ENABLE_ONLYOFFICE': 'true',
+           'ONLYOFFICE_APIJS_URL': 'https://docs.example.com/web-apps/apps/api/documents/api.js'}
+    try:
+        block = load('_settings_block_office', env)
+        block()
+        check('启用但缺 JWT secret 时启动失败', False, '被接受了')
+    except Exception:
+        check('启用但缺 JWT secret 时启动失败', True)
+
+    # 启用但缺 APIJS URL：没有它，Hub 无法构造编辑器入口，也无法验证
+    # 内部 origin（safe-download 的信任边界来自这一处源）。
+    env = {'CF_ENABLE_ONLYOFFICE': 'true',
+           'ONLYOFFICE_JWT_SECRET': 'same-source-secret'}
+    try:
+        block = load('_settings_block_office', env)
+        block()
+        check('启用但缺 APIJS URL 时启动失败', False, '被接受了')
+    except Exception:
+        check('启用但缺 APIJS URL 时启动失败', True)
+
+    # 启用但只有空白：等价于未配置，同样必须失败。
+    env = {'CF_ENABLE_ONLYOFFICE': 'true',
+           'ONLYOFFICE_JWT_SECRET': '   ',
+           'ONLYOFFICE_APIJS_URL': '  '}
+    try:
+        load('_settings_block_office', env)()
+        check('secret/APIJS 仅空白时启动失败', False, '被接受了')
+    except Exception:
+        check('secret/APIJS 仅空白时启动失败', True)
+
+    # 完整配置：写出 secret、APIJS URL，以及一个有安全默认的下载字节上限。
+    env = {'CF_ENABLE_ONLYOFFICE': 'true',
+           'ONLYOFFICE_JWT_SECRET': 'same-source-secret',
+           'ONLYOFFICE_APIJS_URL': 'https://docs.example.com/web-apps/apps/api/documents/api.js'}
+    try:
+        values = evaluate(load('_settings_block_office', env)())
+    except Exception as e:
+        check('完整配置可以被加载', False, '%s: %s' % (type(e).__name__, e))
+        return
+
+    check('完整配置可以被加载', True)
+    check('JWT secret 逐字写入（与 Document Server 同源）',
+          values.get('ONLYOFFICE_JWT_SECRET') == 'same-source-secret',
+          repr(values.get('ONLYOFFICE_JWT_SECRET')))
+    check('APIJS URL 逐字写入',
+          values.get('ONLYOFFICE_APIJS_URL')
+          == 'https://docs.example.com/web-apps/apps/api/documents/api.js',
+          repr(values.get('ONLYOFFICE_APIJS_URL')))
+    check('下载字节上限有安全默认',
+          isinstance(values.get('CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES'), int)
+          and values.get('CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES') > 0,
+          repr(values.get('CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES')))
+    check('允许信任的内部 origin 来自 APIJS 源',
+          isinstance(values.get('CF_ONLYOFFICE_TRUSTED_ORIGIN'), str)
+          and values.get('CF_ONLYOFFICE_TRUSTED_ORIGIN'),
+          repr(values.get('CF_ONLYOFFICE_TRUSTED_ORIGIN')))
+
+    # 运算符可覆盖下载上限，但不得越过安全下限。
+    env = dict(env, CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES='4194304')
+    values = evaluate(load('_settings_block_office', env)())
+    check('下载字节上限可覆盖为 4MiB',
+          values.get('CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES') == 4 * 1024 * 1024,
+          repr(values.get('CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES')))
+
+    env = dict(env, CF_ONLYOFFICE_DOWNLOAD_MAX_BYTES='0')
+    try:
+        load('_settings_block_office', env)()
+        check('下载上限为 0 时启动失败', False, '被接受了')
+    except Exception:
+        check('下载上限为 0 时启动失败', True)
+
+
+def main():
+    print(__doc__.splitlines()[0])
+    print()
+    test_sso()
+    test_search()
+    test_external_sources()
+    test_upstream_packages()
+    test_office()
+    test_fileop_seafile_conf()
+    test_metadata_schema_compatibility()
+    print()
+    if failures:
+        print('\033[31m%d 项失败\033[0m' % len(failures))
+        return 1
+    print('\033[32m全部通过\033[0m')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

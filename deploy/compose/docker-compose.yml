@@ -1,0 +1,638 @@
+# CloudFile deployment.
+#
+#   docker compose up -d                     core stack
+#   docker compose --profile search up -d    + SeaSearch, Meilisearch
+#   docker compose --profile office up -d    + OnlyOffice
+#   docker compose --profile convert up -d   + SeaDoc conversion/export
+#   docker compose --profile s3 up -d        + MinIO test backend
+#   docker compose --profile ai up -d        + seafile-ai (needs a self-supplied LLM backend)
+#   docker compose --profile full up -d      all application extensions
+#
+# Since 2026-09-22 the extended properties/tags service (cloudfile-metadata)
+# and the background worker (cf-worker) are part of the default stack: the
+# metadata/tag switches default to on, and the directory-ACL capability that
+# also defaults to on registers periodic tasks only the worker can run.
+# `--profile metadata` and `--profile worker` are accepted but start nothing extra.
+#
+# Copy .env.example to .env first. Defaults changed on 2026-09-22: the
+# capabilities that need no third party are on by default, so this stack is no
+# longer identical to native CE (that criterion was abolished the same day).
+# The metadata service moved from the metadata profile into the default stack.
+
+name: cloudfile
+
+services:
+
+  db:
+    image: mariadb:11.4
+    container_name: cloudfile-db
+    environment:
+      MARIADB_ROOT_PASSWORD: ${INIT_SEAFILE_MYSQL_ROOT_PASSWORD:?set INIT_SEAFILE_MYSQL_ROOT_PASSWORD in .env}
+      MARIADB_AUTO_UPGRADE: "1"
+    volumes:
+      - ./data/db:/var/lib/mysql
+    healthcheck:
+      # The server accepts connections well before it is ready to serve, and
+      # seafile's setup script fails hard on a half-open database.
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  cache:
+    image: redis:7-alpine
+    container_name: cloudfile-cache
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: cloudfile-minio
+    profiles: ["s3"]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-this-minio-password}
+    volumes:
+      - ./data/minio:/data
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: cloudfile-minio-init
+    profiles: ["s3"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        until mc alias set local http://minio:9000
+        "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do sleep 1; done;
+        mc mb --ignore-existing
+        "local/$${S3_COMMIT_BUCKET}"
+        "local/$${S3_FS_BUCKET}"
+        "local/$${S3_BLOCK_BUCKET}"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-this-minio-password}
+      S3_COMMIT_BUCKET: ${S3_COMMIT_BUCKET:-cloudfile-commits}
+      S3_FS_BUCKET: ${S3_FS_BUCKET:-cloudfile-fs}
+      S3_BLOCK_BUCKET: ${S3_BLOCK_BUCKET:-cloudfile-blocks}
+    depends_on:
+      - minio
+
+  cloudfile:
+    image: ${CLOUDFILE_IMAGE:-cloudfile/cloudfile:14.0.0-cf.0}
+    container_name: cloudfile
+    volumes:
+      - ./data/seafile:/shared
+    environment:
+      # -- database --
+      SEAFILE_MYSQL_DB_HOST: db
+      SEAFILE_MYSQL_DB_PORT: "3306"
+      SEAFILE_MYSQL_DB_USER: ${SEAFILE_MYSQL_DB_USER:-seafile}
+      SEAFILE_MYSQL_DB_PASSWORD: ${SEAFILE_MYSQL_DB_PASSWORD:?set SEAFILE_MYSQL_DB_PASSWORD in .env}
+      SEAFILE_MYSQL_DB_CCNET_DB_NAME: ${SEAFILE_MYSQL_DB_CCNET_DB_NAME:-ccnet_db}
+      SEAFILE_MYSQL_DB_SEAFILE_DB_NAME: ${SEAFILE_MYSQL_DB_SEAFILE_DB_NAME:-seafile_db}
+      SEAFILE_MYSQL_DB_SEAHUB_DB_NAME: ${SEAFILE_MYSQL_DB_SEAHUB_DB_NAME:-seahub_db}
+      INIT_SEAFILE_MYSQL_ROOT_PASSWORD: ${INIT_SEAFILE_MYSQL_ROOT_PASSWORD}
+      # -- cache --
+      CACHE_PROVIDER: redis
+      REDIS_HOST: cache
+      REDIS_PORT: "6379"
+      # -- server --
+      SEAFILE_SERVER_HOSTNAME: ${SEAFILE_SERVER_HOSTNAME:?set SEAFILE_SERVER_HOSTNAME in .env}
+      SEAFILE_SERVER_PROTOCOL: ${SEAFILE_SERVER_PROTOCOL:-https}
+      TIME_ZONE: ${TIME_ZONE:-Etc/UTC}
+      INIT_SEAFILE_ADMIN_EMAIL: ${INIT_SEAFILE_ADMIN_EMAIL:?set INIT_SEAFILE_ADMIN_EMAIL in .env}
+      INIT_SEAFILE_ADMIN_PASSWORD: ${INIT_SEAFILE_ADMIN_PASSWORD:?set INIT_SEAFILE_ADMIN_PASSWORD in .env}
+      NON_ROOT: ${NON_ROOT:-false}
+      # The worker reaches Seafile through this Unix-domain RPC socket. It
+      # must live in /shared so the main and worker containers see one socket.
+      SEAFILE_RPC_PIPE_PATH: /shared/seafile/runtime
+      # -- CloudFile switches --
+      # Read on every start, so flipping one and restarting takes effect.
+      CF_ENABLE_SSO: ${CF_ENABLE_SSO:-false}
+      CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-true}
+      CF_ENABLE_AUDIT: ${CF_ENABLE_AUDIT:-true}
+      # Write lifecycle gate instrument. Not a capability -- see
+      # cloudfile-server/common/cf-fileop-test.h.
+      CF_FILEOP_TEST_PROVIDER: ${CF_FILEOP_TEST_PROVIDER:-false}
+      # An explicitly empty token enables observe-only mode for the FileOp
+      # gate.  Use `-`, not `:-`, so Compose does not turn that empty value
+      # back into the refusal default.
+      CF_FILEOP_TEST_REFUSE_TOKEN: ${CF_FILEOP_TEST_REFUSE_TOKEN-cf-refuse}
+      CF_FILEOP_TEST_JOURNAL: ${CF_FILEOP_TEST_JOURNAL:-/shared/cf-fileop-journal.log}
+      CF_ENABLE_METADATA: ${CF_ENABLE_METADATA:-true}
+      CF_ENABLE_TAGS: ${CF_ENABLE_TAGS:-true}
+      CF_ENABLE_SEARCH: ${CF_ENABLE_SEARCH:-false}
+      CF_PROVIDER_SEARCH: ${CF_PROVIDER_SEARCH:-}
+      CF_SEASEARCH_TOKEN: ${CF_SEASEARCH_TOKEN:-}
+      CF_SEASEARCH_INTERVAL: ${CF_SEASEARCH_INTERVAL:-10m}
+      CF_MEILISEARCH_URL: ${CF_MEILISEARCH_URL:-http://meilisearch:7700}
+      CF_MEILISEARCH_API_KEY: ${MEILI_MASTER_KEY:-}
+      CF_SEARCH_INDEX_INTERVAL: ${CF_SEARCH_INDEX_INTERVAL:-60}
+      CF_SEARCH_INDEX_TEXT_MAX_BYTES: ${CF_SEARCH_INDEX_TEXT_MAX_BYTES:-1048576}
+      CF_ENABLE_ONLYOFFICE: ${CF_ENABLE_ONLYOFFICE:-false}
+      # Same-source OnlyOffice JWT + Document Server endpoint. Compose
+      # interpolates the whole file regardless of which profile is active, so
+      # neither value is marked required (':?'); bootstrap.py refuses to start
+      # when CF_ENABLE_ONLYOFFICE=true and either is empty, which is the
+      # startup gate OFFICE-01 requires. See scripts/scripts_14.0/bootstrap.py
+      # _settings_block_office().
+      ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-}
+      ONLYOFFICE_APIJS_URL: ${ONLYOFFICE_APIJS_URL:-}
+      ONLYOFFICE_FILE_SERVER_ROOT: ${ONLYOFFICE_FILE_SERVER_ROOT:-}
+      CF_ENABLE_FILE_PREVIEW: ${CF_ENABLE_FILE_PREVIEW:-true}
+      CF_ENABLE_FILE_LOCK: ${CF_ENABLE_FILE_LOCK:-true}
+      CF_ENABLE_WATCH: ${CF_ENABLE_WATCH:-true}
+      CF_ENABLE_CONVERT_EXPORT: ${CF_ENABLE_CONVERT_EXPORT:-false}
+      ENABLE_SEADOC: ${CF_ENABLE_CONVERT_EXPORT:-false}
+      SEADOC_SERVER_URL: ${SEAFILE_SERVER_PROTOCOL:-https}://${SEAFILE_SERVER_HOSTNAME:?set SEAFILE_SERVER_HOSTNAME in .env}/sdoc-server
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:-}
+      CF_LOCK_BACKEND: ${CF_LOCK_BACKEND:-cloudfile}
+      CF_ENABLE_CHECKOUT: ${CF_ENABLE_CHECKOUT:-true}
+      CF_ENABLE_LOCAL_APP: ${CF_ENABLE_LOCAL_APP:-false}
+      CF_ENABLE_S3_STORAGE: ${CF_ENABLE_S3_STORAGE:-false}
+      SEAF_SERVER_STORAGE_TYPE: ${SEAF_SERVER_STORAGE_TYPE:-}
+      S3_COMMIT_BUCKET: ${S3_COMMIT_BUCKET:-}
+      S3_FS_BUCKET: ${S3_FS_BUCKET:-}
+      S3_BLOCK_BUCKET: ${S3_BLOCK_BUCKET:-}
+      S3_KEY_ID: ${S3_KEY_ID:-}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-}
+      S3_HOST: ${S3_HOST:-}
+      S3_AWS_REGION: ${S3_AWS_REGION:-us-east-1}
+      S3_USE_HTTPS: ${S3_USE_HTTPS:-true}
+      S3_USE_V4_SIGNATURE: ${S3_USE_V4_SIGNATURE:-true}
+      S3_PATH_STYLE_REQUEST: ${S3_PATH_STYLE_REQUEST:-true}
+      CF_S3_CONNECTION_TIMEOUT: ${CF_S3_CONNECTION_TIMEOUT:-10}
+      CF_S3_REQUEST_TIMEOUT: ${CF_S3_REQUEST_TIMEOUT:-60}
+      CF_S3_MAX_RETRIES: ${CF_S3_MAX_RETRIES:-2}
+      CF_STORAGE_CLASSES_JSON: ${CF_STORAGE_CLASSES_JSON:-}
+      CF_ENABLE_EXTERNAL_SOURCES: ${CF_ENABLE_EXTERNAL_SOURCES:-false}
+      CF_EXTERNAL_SOURCES_ROOTS: ${CF_EXTERNAL_SOURCES_ROOTS:-/shared/external}
+      CF_EXTERNAL_SCAN_INTERVAL: ${CF_EXTERNAL_SCAN_INTERVAL:-60}
+      CF_EXTERNAL_SCAN_MAX_DIRS: ${CF_EXTERNAL_SCAN_MAX_DIRS:-20}
+      CF_EXTERNAL_SCAN_MAX_FILES: ${CF_EXTERNAL_SCAN_MAX_FILES:-2000}
+      CF_ENABLE_FILEOPS: ${CF_ENABLE_FILEOPS:-true}
+      # Copy/move unified precheck ceilings; 0 = unlimited (fileops docs).
+      CF_FILEOP_MAX_FILE_SIZE: ${CF_FILEOP_MAX_FILE_SIZE:-0}
+      CF_FILEOP_MAX_FOLDER_DEPTH: ${CF_FILEOP_MAX_FOLDER_DEPTH:-0}
+      CF_FILEOP_MAX_ITEM_COUNT: ${CF_FILEOP_MAX_ITEM_COUNT:-0}
+      CF_FILEOP_MAX_BATCH_SIZE: ${CF_FILEOP_MAX_BATCH_SIZE:-0}
+      CF_ENABLE_FAVORITES_ID: ${CF_ENABLE_FAVORITES_ID:-true}
+      CF_ENABLE_SHARE_RESTRICT: ${CF_ENABLE_SHARE_RESTRICT:-true}
+      # Upstream reads these at import time. They intentionally mirror the
+      # CloudFile switch rather than relying on a local settings assignment.
+      ENABLE_METADATA_MANAGEMENT: ${CF_ENABLE_METADATA:-true}
+      INNER_METADATA_SERVER_URL: ${CF_METADATA_SERVER_URL:-http://cloudfile-metadata:8084}
+      MD_FILE_COUNT_LIMIT: ${CF_METADATA_FILE_COUNT_LIMIT:-100000}
+      # -- AI (docs/features/seafile-ai.md: reuse Seafile AI; deployment layer) --
+      # Per https://manual.seafile.com/14.0/extension/seafile-ai/.
+      # ENABLE_SEAFILE_AI/SEAFILE_AI_SERVER_URL/SEAFILE_AI_SECRET_KEY and
+      # ENABLE_FACE_RECOGNITION are read straight from the process environment
+      # by seahub/settings.py (os.environ.get(...), not a seahub_settings.py
+      # assignment) -- unlike LDAP/ADFS/2FA there is nothing for bootstrap.py
+      # to write, this is the whole interface. Face recognition additionally
+      # needs ENABLE_METADATA_MANAGEMENT true (upstream ANDs the three flags
+      # together) since results land in file metadata.
+      ENABLE_SEAFILE_AI: ${CF_AI_ENABLED:-false}
+      SEAFILE_AI_SERVER_URL: ${CF_AI_SERVER_URL:-http://seafile-ai:8888}
+      SEAFILE_AI_SECRET_KEY: ${CF_AI_SECRET_KEY:-}
+      ENABLE_FACE_RECOGNITION: ${CF_AI_FACE_RECOGNITION_ENABLED:-false}
+      # Points seahub's own (optional) LLM_MODELS picker at the same conf
+      # directory the seafile-ai container reads seafile_ai_config.yaml from
+      # (both resolve to ./data/seafile/seafile/conf on the host -- see the
+      # seafile-ai service below). Harmless with no file present:
+      # seahub/config_parser.py logs a warning and returns {} rather than
+      # raising, so this is safe to set even with CF_AI_ENABLED=false.
+      SEAFILE_CENTRAL_CONF_DIR: /opt/seafile/conf
+      # -- SSO (inert unless CF_ENABLE_SSO is true) --
+      # No `:?` on any of these: compose interpolates the whole file whatever
+      # profile is active, so a required marker here would break a plain
+      # `docker compose up` for every deployment that does not use SSO.
+      CF_SSO_OAUTH_CLIENT_ID: ${CF_SSO_OAUTH_CLIENT_ID:-}
+      CF_SSO_OAUTH_CLIENT_SECRET: ${CF_SSO_OAUTH_CLIENT_SECRET:-}
+      CF_SSO_OAUTH_AUTHORIZATION_URL: ${CF_SSO_OAUTH_AUTHORIZATION_URL:-}
+      CF_SSO_OAUTH_TOKEN_URL: ${CF_SSO_OAUTH_TOKEN_URL:-}
+      CF_SSO_OAUTH_USER_INFO_URL: ${CF_SSO_OAUTH_USER_INFO_URL:-}
+      CF_SSO_OAUTH_LOGOUT_URL: ${CF_SSO_OAUTH_LOGOUT_URL:-}
+      CF_SSO_OAUTH_SCOPE: ${CF_SSO_OAUTH_SCOPE:-openid email profile}
+      CF_SSO_OAUTH_PROVIDER: ${CF_SSO_OAUTH_PROVIDER:-}
+      CF_SSO_OAUTH_UID_CLAIM: ${CF_SSO_OAUTH_UID_CLAIM:-sub}
+      CF_SSO_OAUTH_EMAIL_CLAIM: ${CF_SSO_OAUTH_EMAIL_CLAIM:-email}
+      CF_SSO_OAUTH_NAME_CLAIM: ${CF_SSO_OAUTH_NAME_CLAIM:-name}
+      CF_SSO_OAUTH_CREATE_UNKNOWN_USER: ${CF_SSO_OAUTH_CREATE_UNKNOWN_USER:-true}
+      CF_SSO_OAUTH_INSECURE: ${CF_SSO_OAUTH_INSECURE:-false}
+      CF_PROVIDER_SSO_DIRECTORY: ${CF_PROVIDER_SSO_DIRECTORY:-}
+      CF_SSO_GROUP_OWNER: ${CF_SSO_GROUP_OWNER:-}
+      CF_SSO_SYNC_INTERVAL: ${CF_SSO_SYNC_INTERVAL:-600}
+      CF_SSO_MAX_REMOVAL_RATIO: ${CF_SSO_MAX_REMOVAL_RATIO:-0.5}
+      CF_SSO_DIRECTORY_STATIC: ${CF_SSO_DIRECTORY_STATIC:-}
+      CF_SERVICE_SSO_DIRECTORY_URL: ${CF_SERVICE_SSO_DIRECTORY_URL:-}
+      CF_SERVICE_SSO_DIRECTORY_SECRET: ${CF_SERVICE_SSO_DIRECTORY_SECRET:-}
+      # -- packaged upstream CE capabilities (all disabled by default) --
+      CF_LDAP_ENABLED: ${CF_LDAP_ENABLED:-false}
+      CF_LDAP_SERVER_URL: ${CF_LDAP_SERVER_URL:-}
+      CF_LDAP_BASE_DN: ${CF_LDAP_BASE_DN:-}
+      CF_LDAP_ADMIN_DN: ${CF_LDAP_ADMIN_DN:-}
+      CF_LDAP_ADMIN_PASSWORD: ${CF_LDAP_ADMIN_PASSWORD:-}
+      CF_LDAP_LOGIN_ATTR: ${CF_LDAP_LOGIN_ATTR:-}
+      CF_LDAP_PROVIDER: ${CF_LDAP_PROVIDER:-ldap}
+      CF_LDAP_FILTER: ${CF_LDAP_FILTER:-}
+      CF_LDAP_CONTACT_EMAIL_ATTR: ${CF_LDAP_CONTACT_EMAIL_ATTR:-}
+      CF_ADFS_ENABLED: ${CF_ADFS_ENABLED:-false}
+      CF_ADFS_REMOTE_METADATA_URL: ${CF_ADFS_REMOTE_METADATA_URL:-}
+      CF_ADFS_ATTRIBUTE_MAPPING_JSON: ${CF_ADFS_ATTRIBUTE_MAPPING_JSON:-}
+      CF_ADFS_PROVIDER_IDENTIFIER: ${CF_ADFS_PROVIDER_IDENTIFIER:-saml}
+      CF_ADFS_XMLSEC_BINARY_PATH: ${CF_ADFS_XMLSEC_BINARY_PATH:-/usr/bin/xmlsec1}
+      CF_ADFS_CERTS_DIR: ${CF_ADFS_CERTS_DIR:-/opt/seafile/seahub-data/certs}
+      CF_SHIBBOLETH_ENABLED: ${CF_SHIBBOLETH_ENABLED:-false}
+      CF_SHIBBOLETH_REMOTE_USER_HEADER: ${CF_SHIBBOLETH_REMOTE_USER_HEADER:-HTTP_REMOTE_USER}
+      CF_SHIBBOLETH_ATTRIBUTE_MAP_JSON: ${CF_SHIBBOLETH_ATTRIBUTE_MAP_JSON:-}
+      CF_SHIBBOLETH_AFFILIATION_ROLE_MAP_JSON: ${CF_SHIBBOLETH_AFFILIATION_ROLE_MAP_JSON:-}
+      CF_SHIBBOLETH_LOGOUT_URL: ${CF_SHIBBOLETH_LOGOUT_URL:-}
+      CF_SHIBBOLETH_LOGOUT_RETURN: ${CF_SHIBBOLETH_LOGOUT_RETURN:-}
+      CF_ROLE_PERMISSIONS_JSON: ${CF_ROLE_PERMISSIONS_JSON:-}
+      CF_ADMIN_ROLE_PERMISSIONS_JSON: ${CF_ADMIN_ROLE_PERMISSIONS_JSON:-}
+      CF_TWO_FACTOR_ENABLED: ${CF_TWO_FACTOR_ENABLED:-false}
+      CF_TWO_FACTOR_DEVICE_REMEMBER_DAYS: ${CF_TWO_FACTOR_DEVICE_REMEMBER_DAYS:-90}
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+    healthcheck:
+      # The worker must not run a first sync until setup created the admin
+      # account and bootstrap wrote CloudFile's settings into the shared volume.
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/api2/ping/ | grep -qx '\"pong\"'"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+    restart: unless-stopped
+
+  proxy:
+    image: caddy:2-alpine
+    container_name: cloudfile-proxy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/caddy:/data
+      - ./data/caddy-config:/config
+    environment:
+      SEAFILE_SERVER_HOSTNAME: ${SEAFILE_SERVER_HOSTNAME}
+      CADDY_TLS: ${CADDY_TLS:-internal}
+      CF_ENABLE_CONVERT_EXPORT: ${CF_ENABLE_CONVERT_EXPORT:-false}
+    depends_on:
+      - cloudfile
+    restart: unless-stopped
+
+  seadoc:
+    image: ${SEADOC_IMAGE:-seafileltd/sdoc-server:2.0-latest}
+    container_name: cloudfile-seadoc
+    profiles: ["convert", "full"]
+    volumes:
+      - ./data/seadoc:/shared
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_USER: ${SEAFILE_MYSQL_DB_USER:-seafile}
+      DB_PASSWORD: ${SEAFILE_MYSQL_DB_PASSWORD:?set SEAFILE_MYSQL_DB_PASSWORD in .env}
+      DB_NAME: ${SEAFILE_MYSQL_DB_SEAHUB_DB_NAME:-seahub_db}
+      TIME_ZONE: ${TIME_ZONE:-Etc/UTC}
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:-}
+      NON_ROOT: ${NON_ROOT:-false}
+      SEAHUB_SERVICE_URL: http://cloudfile
+    depends_on:
+      db:
+        condition: service_healthy
+      cloudfile:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Background tasks: ACL rule migration/sync, search indexing, external-source
+  # scans, audit archiving.
+  #
+  # In the default stack since 2026-09-22: directory ACL defaults to on, and its
+  # acl-path-migration / acl-rule-sync periodic tasks exist only here -- without
+  # the worker, rules do not follow rename/move and the periodic reconcile never
+  # runs. Safe to start by default because it waits for cloudfile to be healthy
+  # and restarts, so it cannot race the RPC socket at boot.
+  cf-worker:
+    image: ${CLOUDFILE_IMAGE:-cloudfile/cloudfile:14.0.0-cf.0}
+    container_name: cloudfile-worker
+    command:
+      - /bin/bash
+      - -lc
+      - >
+        /scripts/create_data_links.sh &&
+        exec /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub.sh python-env
+        python3 /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub/manage.py cf_worker
+    volumes:
+      - ./data/seafile:/shared
+    environment:
+      SEAFILE_MYSQL_DB_HOST: db
+      SEAFILE_MYSQL_DB_PORT: "3306"
+      SEAFILE_MYSQL_DB_USER: ${SEAFILE_MYSQL_DB_USER:-seafile}
+      SEAFILE_MYSQL_DB_PASSWORD: ${SEAFILE_MYSQL_DB_PASSWORD:?set SEAFILE_MYSQL_DB_PASSWORD in .env}
+      SEAFILE_MYSQL_DB_CCNET_DB_NAME: ${SEAFILE_MYSQL_DB_CCNET_DB_NAME:-ccnet_db}
+      SEAFILE_MYSQL_DB_SEAFILE_DB_NAME: ${SEAFILE_MYSQL_DB_SEAFILE_DB_NAME:-seafile_db}
+      SEAFILE_MYSQL_DB_SEAHUB_DB_NAME: ${SEAFILE_MYSQL_DB_SEAHUB_DB_NAME:-seahub_db}
+      CACHE_PROVIDER: redis
+      REDIS_HOST: cache
+      REDIS_PORT: "6379"
+      TIME_ZONE: ${TIME_ZONE:-Etc/UTC}
+      SEAFILE_RPC_PIPE_PATH: /shared/seafile/runtime
+      # Keep the worker's task registry in sync with the application. New
+      # periodic extension tasks can therefore be enabled with the same .env.
+      CF_ENABLE_SSO: ${CF_ENABLE_SSO:-false}
+      CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-true}
+      CF_ENABLE_AUDIT: ${CF_ENABLE_AUDIT:-true}
+      # Write lifecycle gate instrument. Not a capability -- see
+      # cloudfile-server/common/cf-fileop-test.h.
+      CF_FILEOP_TEST_PROVIDER: ${CF_FILEOP_TEST_PROVIDER:-false}
+      CF_FILEOP_TEST_REFUSE_TOKEN: ${CF_FILEOP_TEST_REFUSE_TOKEN-cf-refuse}
+      CF_FILEOP_TEST_JOURNAL: ${CF_FILEOP_TEST_JOURNAL:-/shared/cf-fileop-journal.log}
+      CF_ENABLE_METADATA: ${CF_ENABLE_METADATA:-true}
+      CF_ENABLE_TAGS: ${CF_ENABLE_TAGS:-true}
+      CF_ENABLE_SEARCH: ${CF_ENABLE_SEARCH:-false}
+      CF_PROVIDER_SEARCH: ${CF_PROVIDER_SEARCH:-}
+      CF_SEASEARCH_TOKEN: ${CF_SEASEARCH_TOKEN:-}
+      CF_SEASEARCH_INTERVAL: ${CF_SEASEARCH_INTERVAL:-10m}
+      CF_MEILISEARCH_URL: ${CF_MEILISEARCH_URL:-http://meilisearch:7700}
+      CF_MEILISEARCH_API_KEY: ${MEILI_MASTER_KEY:-}
+      CF_SEARCH_INDEX_INTERVAL: ${CF_SEARCH_INDEX_INTERVAL:-60}
+      CF_SEARCH_INDEX_TEXT_MAX_BYTES: ${CF_SEARCH_INDEX_TEXT_MAX_BYTES:-1048576}
+      CF_ENABLE_ONLYOFFICE: ${CF_ENABLE_ONLYOFFICE:-false}
+      # Same-source OnlyOffice JWT + Document Server endpoint. Compose
+      # interpolates the whole file regardless of which profile is active, so
+      # neither value is marked required (':?'); bootstrap.py refuses to start
+      # when CF_ENABLE_ONLYOFFICE=true and either is empty, which is the
+      # startup gate OFFICE-01 requires. See scripts/scripts_14.0/bootstrap.py
+      # _settings_block_office().
+      ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-}
+      ONLYOFFICE_APIJS_URL: ${ONLYOFFICE_APIJS_URL:-}
+      ONLYOFFICE_FILE_SERVER_ROOT: ${ONLYOFFICE_FILE_SERVER_ROOT:-}
+      CF_ENABLE_FILE_PREVIEW: ${CF_ENABLE_FILE_PREVIEW:-true}
+      CF_ENABLE_FILE_LOCK: ${CF_ENABLE_FILE_LOCK:-true}
+      CF_ENABLE_WATCH: ${CF_ENABLE_WATCH:-true}
+      CF_ENABLE_CONVERT_EXPORT: ${CF_ENABLE_CONVERT_EXPORT:-false}
+      CF_LOCK_BACKEND: ${CF_LOCK_BACKEND:-cloudfile}
+      CF_ENABLE_CHECKOUT: ${CF_ENABLE_CHECKOUT:-true}
+      CF_ENABLE_LOCAL_APP: ${CF_ENABLE_LOCAL_APP:-false}
+      CF_ENABLE_S3_STORAGE: ${CF_ENABLE_S3_STORAGE:-false}
+      CF_ENABLE_EXTERNAL_SOURCES: ${CF_ENABLE_EXTERNAL_SOURCES:-false}
+      CF_EXTERNAL_SOURCES_ROOTS: ${CF_EXTERNAL_SOURCES_ROOTS:-/shared/external}
+      CF_EXTERNAL_SCAN_INTERVAL: ${CF_EXTERNAL_SCAN_INTERVAL:-60}
+      CF_EXTERNAL_SCAN_MAX_DIRS: ${CF_EXTERNAL_SCAN_MAX_DIRS:-20}
+      CF_EXTERNAL_SCAN_MAX_FILES: ${CF_EXTERNAL_SCAN_MAX_FILES:-2000}
+      # 补齐主应用已有、worker 侧此前漏列的三个开关：worker 的周期性任务
+      # 注册表要与应用一致，否则同一个开关在两边语义不同。
+      CF_ENABLE_FILEOPS: ${CF_ENABLE_FILEOPS:-true}
+      CF_ENABLE_FAVORITES_ID: ${CF_ENABLE_FAVORITES_ID:-true}
+      CF_ENABLE_SHARE_RESTRICT: ${CF_ENABLE_SHARE_RESTRICT:-true}
+      CF_SSO_OAUTH_CLIENT_ID: ${CF_SSO_OAUTH_CLIENT_ID:-}
+      CF_SSO_OAUTH_CLIENT_SECRET: ${CF_SSO_OAUTH_CLIENT_SECRET:-}
+      CF_SSO_OAUTH_AUTHORIZATION_URL: ${CF_SSO_OAUTH_AUTHORIZATION_URL:-}
+      CF_SSO_OAUTH_TOKEN_URL: ${CF_SSO_OAUTH_TOKEN_URL:-}
+      CF_SSO_OAUTH_USER_INFO_URL: ${CF_SSO_OAUTH_USER_INFO_URL:-}
+      CF_SSO_OAUTH_LOGOUT_URL: ${CF_SSO_OAUTH_LOGOUT_URL:-}
+      CF_SSO_OAUTH_SCOPE: ${CF_SSO_OAUTH_SCOPE:-openid email profile}
+      CF_SSO_OAUTH_PROVIDER: ${CF_SSO_OAUTH_PROVIDER:-}
+      CF_SSO_OAUTH_UID_CLAIM: ${CF_SSO_OAUTH_UID_CLAIM:-sub}
+      CF_SSO_OAUTH_EMAIL_CLAIM: ${CF_SSO_OAUTH_EMAIL_CLAIM:-email}
+      CF_SSO_OAUTH_NAME_CLAIM: ${CF_SSO_OAUTH_NAME_CLAIM:-name}
+      CF_SSO_OAUTH_CREATE_UNKNOWN_USER: ${CF_SSO_OAUTH_CREATE_UNKNOWN_USER:-true}
+      CF_SSO_OAUTH_INSECURE: ${CF_SSO_OAUTH_INSECURE:-false}
+      CF_PROVIDER_SSO_DIRECTORY: ${CF_PROVIDER_SSO_DIRECTORY:-}
+      CF_SSO_GROUP_OWNER: ${CF_SSO_GROUP_OWNER:-}
+      CF_SSO_SYNC_INTERVAL: ${CF_SSO_SYNC_INTERVAL:-600}
+      CF_SSO_MAX_REMOVAL_RATIO: ${CF_SSO_MAX_REMOVAL_RATIO:-0.5}
+      CF_SSO_DIRECTORY_STATIC: ${CF_SSO_DIRECTORY_STATIC:-}
+      CF_SERVICE_SSO_DIRECTORY_URL: ${CF_SERVICE_SSO_DIRECTORY_URL:-}
+      CF_SERVICE_SSO_DIRECTORY_SECRET: ${CF_SERVICE_SSO_DIRECTORY_SECRET:-}
+    depends_on:
+      cloudfile:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # One local staging directory maps to one existing library. The client has
+  # its own image/state and never shares cf-worker's periodic-task process.
+  cf-migration:
+    profiles: ["migration"]
+    platform: linux/amd64
+    build:
+      context: ../..
+      dockerfile: image/migration/Dockerfile
+    image: cloudfile/seaf-cli-migration:9.0.21
+    container_name: cloudfile-migration
+    environment:
+      CF_MIGRATION_SERVER_URL: ${CF_MIGRATION_SERVER_URL:-http://cloudfile}
+      CF_MIGRATION_REPO_ID: ${CF_MIGRATION_REPO_ID:-}
+      CF_MIGRATION_USER: ${CF_MIGRATION_USER:-}
+      CF_MIGRATION_SOURCE_HOST: ${CF_MIGRATION_SOURCE_DIR:-./data/migration/source}
+      CF_MIGRATION_STATUS_INTERVAL: ${CF_MIGRATION_STATUS_INTERVAL:-60}
+    volumes:
+      - ${CF_MIGRATION_SOURCE_DIR:-./data/migration/source}:/migration/source
+      - ${CF_MIGRATION_STATE_DIR:-./data/migration/state}:/migration/state
+      - ./data/migration/control:/migration/control
+    secrets:
+      - cf_migration_token
+    depends_on:
+      cloudfile:
+        condition: service_healthy
+    restart: "no"
+
+  # Default full-text backend (docs/search.md): upstream CE 14.0 already
+  # integrates SeaSearch end to end (indexing and querying both happen inside
+  # seafevents, driven by the [SEASEARCH] block cloudfile-docker's bootstrap
+  # writes from CF_ENABLE_SEARCH/CF_SEASEARCH_TOKEN) -- CloudFile's only job
+  # is unlocking the Pro-gated search API (cloudfile_ext.search). Under the
+  # `search`/`full` profile alongside meilisearch, not the default profile:
+  # CF_ENABLE_SEARCH stays off by default (native CE), and this container
+  # should not run unless an operator has opted into the search capability.
+  seasearch:
+    # Follow Seafile's published SeaSearch compose contract.  `latest` is a
+    # moving target, so use the compatible 1.0 line unless an operator opts
+    # into another tested image explicitly.
+    image: ${CF_SEASEARCH_IMAGE:-seafileltd/seasearch:1.0-latest}
+    container_name: cloudfile-seasearch
+    profiles: ["search", "full"]
+    environment:
+      # SeaSearch creates this account on its first start.  CF_SEASEARCH_TOKEN
+      # must be the base64 value of "user:password" and is written into
+      # seafevents.conf by the CloudFile bootstrap.
+      SS_FIRST_ADMIN_USER: ${INIT_SS_ADMIN_USER:-}
+      SS_FIRST_ADMIN_PASSWORD: ${INIT_SS_ADMIN_PASSWORD:-}
+      SS_MAX_OBJ_CACHE_SIZE: ${SS_MAX_OBJ_CACHE_SIZE:-10GB}
+      SS_STORAGE_TYPE: ${SS_STORAGE_TYPE:-disk}
+      SS_LOG_DIR: /opt/seasearch/data/log
+      SS_LOG_LEVEL: ${SS_LOG_LEVEL:-info}
+    volumes:
+      - ./data/seasearch:/opt/seasearch/data
+    restart: unless-stopped
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.53.2
+    container_name: cloudfile-meilisearch
+    profiles: ["search", "full"]
+    environment:
+      # Required by Meilisearch in production mode; set it in .env before
+      # starting the search profile. Not marked required here because compose
+      # interpolates every service regardless of which profiles are active.
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+      MEILI_NO_ANALYTICS: "true"
+      MEILI_ENV: production
+    volumes:
+      - ./data/meilisearch:/meili_data
+    restart: unless-stopped
+
+  # The only non-CE part of extended properties/tags.  The upstream Hub UI,
+  # APIs and seafevents ingestion pipeline already ship in CE; this official
+  # component is their metadata storage/query implementation.
+  #
+  # Removed from any profile on 2026-09-22 so it starts by default: the
+  # metadata and tag switches are on by default, and bootstrap enforces
+  # TAGS => METADATA. Leaving the service behind a profile would hand the
+  # default stack ENABLE_METADATA_MANAGEMENT=True with no backend to reach.
+  # Image pinning (checked against Docker Hub on 2026-09-22): the 14.x line of
+  # seafileltd/seafile-md-server publishes ONLY -testing tags -- no stable 14.x
+  # exists. 14.0.7-testing (2026-09-09, amd64 sha256:13cf9fa6...56f0b) is the
+  # newest and closest to our CE 14.0.8 anchor; 14.0.3-testing (2026-06-15) was
+  # three revisions behind. The 13.x line does have stable tags (13.0.28) but
+  # must NOT be mixed in: metadata-server shares its schema and API with the
+  # CE version, so a 13.x backend under a CE 14 stack is a mismatch.
+  # Pin CF_METADATA_IMAGE to a verified image before production.
+  cloudfile-metadata:
+    image: ${CF_METADATA_IMAGE:-seafileltd/seafile-md-server:14.0.7-testing}
+    container_name: cloudfile-metadata
+    command:
+      - /bin/bash
+      - -lc
+      - >
+        set -a && . /shared/seafile/conf/.env && set +a &&
+        exec /opt/scripts/entrypoint.sh
+    volumes:
+      - ./data/seafile:/shared
+    environment:
+      SEAFILE_MYSQL_DB_HOST: db
+      SEAFILE_MYSQL_DB_PORT: "3306"
+      SEAFILE_MYSQL_DB_USER: ${SEAFILE_MYSQL_DB_USER:-seafile}
+      SEAFILE_MYSQL_DB_PASSWORD: ${SEAFILE_MYSQL_DB_PASSWORD:?set SEAFILE_MYSQL_DB_PASSWORD in .env}
+      SEAFILE_MYSQL_DB_SEAFILE_DB_NAME: ${SEAFILE_MYSQL_DB_SEAFILE_DB_NAME:-seafile_db}
+      CACHE_PROVIDER: redis
+      REDIS_HOST: cache
+      REDIS_PORT: "6379"
+      TIME_ZONE: ${TIME_ZONE:-Etc/UTC}
+      MD_PORT: "8084"
+      MD_LOG_LEVEL: ${CF_METADATA_LOG_LEVEL:-info}
+      MD_MAX_CACHE_SIZE: ${CF_METADATA_MAX_CACHE_SIZE:-1GB}
+      MD_CHECK_UPDATE_INTERVAL: ${CF_METADATA_CHECK_UPDATE_INTERVAL:-30m}
+      MD_FILE_COUNT_LIMIT: ${CF_METADATA_FILE_COUNT_LIMIT:-100000}
+      SEAF_SERVER_STORAGE_TYPE: ${SEAF_SERVER_STORAGE_TYPE:-}
+      MD_STORAGE_TYPE: ${MD_STORAGE_TYPE:-disk}
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+      cloudfile:
+        condition: service_healthy
+    healthcheck:
+      # The Hub returns a misleading 500 when it races this port during the
+      # metadata-server's MySQL initialization.  Wait for the actual listener,
+      # not merely for the container process to exist.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8084'"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 5s
+    restart: unless-stopped
+
+  # docs/features/seafile-ai.md: reuse Seafile's on-demand tagging, summary,
+  # image caption and OCR integration, which is not Pro-gated
+  # (ENABLE_SEAFILE_AI). CloudFile does not build a parallel AI backend or
+  # automatic ingest pipeline; extend only after a verified requirement.
+  #
+  # Deployment shape per the official manual
+  # (https://manual.seafile.com/14.0/extension/seafile-ai/), not a guess from
+  # cloudfile-metadata's pattern as an earlier version of this file had it:
+  # image seafileltd/seafile-ai:14.0-latest, port 8888, needs the metadata
+  # server, Redis, MySQL, and a /shared mount (its own $SEAFILE_VOLUME) to
+  # read seafile_ai_config.yaml / seahub_settings.py and to pick up
+  # JWT_PRIVATE_KEY, which write_seafile_env() generates into
+  # /shared/seafile/conf/.env and which this container needs to share with
+  # the main one. Still unverified end to end (no pulled image to run against
+  # in this environment) -- specifically whether the image sources
+  # JWT_PRIVATE_KEY from that conf directory on its own the way it does for
+  # the two config files, or needs it passed as a plain environment variable
+  # instead; a capability gate (mirroring search-e2e.yml/acl-e2e.yml) is what
+  # would turn this from "matches the manual" into "confirmed to work".
+  seafile-ai:
+    image: ${CF_AI_IMAGE:-seafileltd/seafile-ai:14.0-latest}
+    container_name: cloudfile-seafile-ai
+    profiles: ["ai", "full"]
+    volumes:
+      - ./data/seafile:/shared
+    environment:
+      ENABLE_SEAFILE_AI: "true"
+      SEAFILE_VOLUME: /shared
+      # How seafile-ai reaches Seahub directly, bypassing the Caddy TLS
+      # front door -- same internal address the Caddyfile itself proxies to.
+      INNER_SEAHUB_SERVICE_URL: http://cloudfile:80
+      SEAFILE_MYSQL_DB_HOST: db
+      SEAFILE_MYSQL_DB_PORT: "3306"
+      SEAFILE_MYSQL_DB_USER: ${SEAFILE_MYSQL_DB_USER:-seafile}
+      SEAFILE_MYSQL_DB_PASSWORD: ${SEAFILE_MYSQL_DB_PASSWORD:?set SEAFILE_MYSQL_DB_PASSWORD in .env}
+      SEAFILE_MYSQL_DB_CCNET_DB_NAME: ${SEAFILE_MYSQL_DB_CCNET_DB_NAME:-ccnet_db}
+      SEAFILE_MYSQL_DB_SEAFILE_DB_NAME: ${SEAFILE_MYSQL_DB_SEAFILE_DB_NAME:-seafile_db}
+      SEAFILE_MYSQL_DB_SEAHUB_DB_NAME: ${SEAFILE_MYSQL_DB_SEAHUB_DB_NAME:-seahub_db}
+      CACHE_PROVIDER: redis
+      REDIS_HOST: cache
+      REDIS_PORT: "6379"
+      SEAFILE_AI_LOG_LEVEL: ${CF_AI_LOG_LEVEL:-info}
+      TIME_ZONE: ${TIME_ZONE:-Etc/UTC}
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+      cloudfile:
+        condition: service_healthy
+    restart: unless-stopped
+
+  onlyoffice:
+    image: onlyoffice/documentserver:8.2
+    container_name: cloudfile-onlyoffice
+    profiles: ["office", "full"]
+    environment:
+      JWT_ENABLED: "true"
+      # Set in .env before starting the office profile; see the note on
+      # MEILI_MASTER_KEY above for why this is not marked required.
+      JWT_SECRET: ${ONLYOFFICE_JWT_SECRET}
+    volumes:
+      - ./data/onlyoffice/data:/var/www/onlyoffice/Data
+      - ./data/onlyoffice/logs:/var/log/onlyoffice
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/healthcheck | grep -q true"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+    restart: unless-stopped
+
+secrets:
+  # A file-backed API token is passed only to the one-shot CLI container.
+  cf_migration_token:
+    file: ${CF_MIGRATION_TOKEN_FILE:-./data/migration/token}

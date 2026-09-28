@@ -18,7 +18,7 @@ from utils import (
     wait_for_mysql, setup_logging
 )
 from upgrade import check_upgrade
-from bootstrap import init_seafile_server
+from bootstrap import init_seafile_server, write_cloudfile_config
 from cloudfile import write_settings as write_cloudfile_settings
 from cloudfile import write_policy_worker_hooks
 
@@ -46,6 +46,9 @@ def watch_controller():
 def main():
     if not exists(shared_seafiledir):
         os.mkdir(shared_seafiledir)
+    rpc_pipe_dir = os.getenv('SEAFILE_RPC_PIPE_PATH')
+    if rpc_pipe_dir:
+        os.makedirs(rpc_pipe_dir, exist_ok=True)
     if not exists(generated_dir):
         os.makedirs(generated_dir)
 
@@ -60,6 +63,12 @@ def main():
     write_policy_worker_hooks(join(topdir, 'conf', 'gunicorn.conf.py'))
 
     check_upgrade()
+
+    # CloudFile config is rewritten on every start, after any upgrade has
+    # rearranged conf/, so flipping a CF_ENABLE_* switch in .env takes effect
+    # on restart rather than only at first bootstrap.
+    write_cloudfile_config()
+
     os.chdir(installdir)
 
     admin_pw = {

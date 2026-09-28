@@ -14,10 +14,13 @@ if [[ $# -eq 1 && "$1" != "${version}" ]]; then
     echo 'Version must match release.json' >&2
     exit 2
 fi
-case "$(uname -m)" in arm64|aarch64) native_arch=arm64 ;; x86_64|amd64) native_arch=amd64 ;;
-    *) echo 'Unsupported host architecture' >&2; exit 2 ;; esac
-platform=${CF_PLATFORM:-linux/${native_arch}}
-case "${platform}" in linux/arm64|linux/amd64) ;; *) echo 'Use linux/arm64 or linux/amd64' >&2; exit 2 ;; esac
+native_platform=$(python3 "${here}/image_platform.py" resolve native)
+platform=$(python3 "${here}/image_platform.py" resolve "${CF_PLATFORM:-native}")
+native_arch=${native_platform#linux/}
+package_suffix=
+if [[ -n "${CF_PLATFORM:-}" && "${CF_PLATFORM}" != "native" ]]; then
+    package_suffix=-${platform#linux/}
+fi
 base=${CF_BASE_IMAGE:-cloudfile-build-base:ce14-v2}
 base_arch=$(docker image inspect --format '{{.Architecture}}' "${base}")
 base_id=$(docker image inspect --format '{{.Id}}' "${base}")
@@ -62,5 +65,6 @@ docker run --rm -i --pull=never --platform "${platform}" \
     -e CCACHE_DIR=/cache/ccache -e CCACHE_COMPRESS=true -e CCACHE_MAXSIZE=5G \
     -e GOCACHE=/cache/gocache -e GOMODCACHE=/cache/gomodcache -e PIP_CACHE_DIR=/cache/pip \
     -e "CLOUDFILE_BUILD_BASE_ID=${base_id}" -e "CF_BUILD_JOBS=${jobs}" \
+    -e "CF_PACKAGE_SUFFIX=${package_suffix}" \
     -e "CF_FORCE_THIRDPART_REFRESH=${CF_FORCE_THIRDPART_REFRESH:-false}" \
     "${base_id}" bash -c 'set -e; test "${CLOUDFILE_BUILD_BASE:-}" = true; git config --global --add safe.directory /sources/cloudfile-server; git config --global --add safe.directory /sources/cloudfile-hub; git config --global --add safe.directory /work/build/seafile_14.0/src/libevhtp; for source in libsearpc seafile-server seafobj seafdav seafevents seahub; do git config --global --add safe.directory "/work/build/seafile_14.0/src/$source"; done; ./seafile-build.sh'

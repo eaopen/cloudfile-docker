@@ -6,7 +6,7 @@
 
 ```sh
 build/seafile_14.0/build-in-docker.sh
-build/seafile_14.0/build-local-image.sh cloudfile/cloudfile:14.0.8-v0.2-rc-work
+build/seafile_14.0/build-local-image.sh
 ```
 
 预制工具链入口跳过 APT，已有相同 SHA checkout 不重复 fetch。Python thirdpart 安装缓存只在需求清单、Python/架构及工具链 image ID 相同且完成标记存在时复用；改依赖或 `CF_FORCE_THIRDPART_REFRESH=true` 重装，失败保留上个完整目录。编译缓存持久化并不代表每个新临时构建目录均命中，具体命中率需实际构建统计；本轮不将语法/缓存单测冒充完整 native 增量构建提速实测。
@@ -15,9 +15,9 @@ build/seafile_14.0/build-local-image.sh cloudfile/cloudfile:14.0.8-v0.2-rc-work
 
 全部七个构建来源均锁定 40 位提交。构建开始时核对实际 checkout HEAD 与清单、拒绝修改或未跟踪文件；只在完整包成功生成后写入 `cloudfile-build.json`，记录清单、实际提交与全部安装文件/目录/执行权限/符号链接摘要。每次在新临时目录构建，成功校验后保留旧包并替换，失败不覆盖上一个包。
 
-源码包成功生成后，运行 `build/seafile_14.0/build-local-image.sh [镜像标签]`。脚本校验原包及复制后的临时 Docker context，缺来源记录、源码 pin 不符或内容改变均拒绝；不能给旧包补写新来源记录。镜像标签含产品版本、Seafile 版本、Hub/Server 精确提交和 `com.cloudfile.package.sha256`；它只构建本地镜像，不执行 push。
+源码包成功生成后，运行 `build/seafile_14.0/build-local-image.sh [镜像标签]`。默认标签保持 `cloudfile/cloudfile:14.0.8-v0.2-local`；显式指定 `CF_PLATFORM` 时才自动带架构后缀。依赖镜像共用，不按开发用途拆分。脚本校验原包及复制后的临时 Docker context，并确认原生二进制架构与目标平台一致；缺来源记录、源码 pin 不符或内容改变均拒绝。镜像元数据记录产品版本、Seafile 版本、Hub/Server 精确提交和 `com.cloudfile.package.sha256`；它只构建本地镜像，不执行 push。跨架构构建与缓存规则见 [Docker 构建方案](docs/docker-build.md)。
 
-运行依赖与应用镜像分层：`Dockerfile.runtime-base` 延续 CE14 的 Ubuntu/Python/系统依赖，`cloudfile/runtime-base:14.0.8-local` 首次需要时生成；日常应用 Dockerfile 只复制脚本和发行包，没有 APT/pip。记录基础镜像 ID，并用对应内容标识本地 tag 构建。`CLOUDFILE_RUNTIME_BASE` 可指定已经生成的同 CE 版本依赖镜像；`CLOUDFILE_REFRESH_RUNTIME_BASE=true` 显式重新运行基础镜像构建。该重新构建仍使用 BuildKit 缓存；维护依赖版本/安全更新时需明确更新基础定义并验证，不把这个参数当作自动更新所有通配版本依赖。
+运行依赖与应用镜像分层：`Dockerfile.runtime-base` 延续 CE14 的 Ubuntu/Python/系统依赖，默认继续使用 `cloudfile/runtime-base:14.0.8-local`；显式指定架构时使用 `14.0.8-<架构>-local`，已有同架构旧镜像可自动沿用。日常应用 Dockerfile 只复制脚本和发行包，没有 APT/pip。记录基础镜像 ID，并用对应内容标识本地 tag 构建。`CLOUDFILE_RUNTIME_BASE` 可指定已经生成的同 CE 版本、同架构依赖镜像；`CLOUDFILE_REFRESH_RUNTIME_BASE=true` 显式重新运行基础镜像构建。该重新构建仍使用 BuildKit 缓存；维护依赖版本/安全更新时需明确更新基础定义并验证，不把这个参数当作自动更新所有通配版本依赖。
 
 ## 隔离运行验收
 

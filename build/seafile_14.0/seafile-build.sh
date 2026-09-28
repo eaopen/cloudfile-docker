@@ -19,6 +19,8 @@ manifest_reader=$current_dir/source_manifest.py
 override_validator=$current_dir/source_override.py
 version=$(python3 "${manifest_reader}" "${manifest}" seafile_version) || exit 1
 product_version=$(python3 "${manifest_reader}" "${manifest}" product_version) || exit 1
+package_suffix=${CF_PACKAGE_SUFFIX:-}
+case "${package_suffix}" in ''|-arm64|-amd64) ;; *) echo 'Invalid CF_PACKAGE_SUFFIX' >&2; exit 2 ;; esac
 if [[ $# -eq 1 && "$1" != "${version}" ]]; then
     echo "Requested Seafile version $1 does not match release manifest ${version}" >&2
     exit 2
@@ -215,7 +217,7 @@ function build() {
         --srcdir="${code_path}" --thirdpartdir="${code_path}/thirdpartdir" \
         --mysql_config=/usr/bin/mariadb_config --jobs="${CF_BUILD_JOBS:-4}"
     python3 ./package_provenance.py "${build_output}/seafile-server-${version}" "${manifest}"
-    package="${current_dir}/seafile-server-${version}"
+    package="${current_dir}/seafile-server-${version}${package_suffix}"
     if [[ -e "${package}" || -L "${package}" ]]; then
         previous=$(mktemp -d "${current_dir}/seafile-server-${version}.previous.XXXXXX")
         mv "${package}" "${previous}/package"
@@ -248,5 +250,5 @@ wait
 build
 
 echo ''
-echo "Info: Successfully built seafile-server-${version}"
+echo "Info: Successfully built ${package}"
 echo ''

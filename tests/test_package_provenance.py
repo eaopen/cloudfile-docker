@@ -4,7 +4,9 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import platform
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -128,7 +130,8 @@ class PackageProvenanceTests(unittest.TestCase):
     def test_image_assembly_rejects_stale_package_before_docker_is_called(self):
         builder = self.root / "build/seafile_14.0"
         builder.mkdir(parents=True)
-        for name in ("build-local-image.sh", "source_manifest.py", "package_provenance.py", "release.json"):
+        for name in ("build-local-image.sh", "source_manifest.py", "package_provenance.py",
+                     "image_platform.py", "release.json"):
             shutil.copyfile(BUILD / name, builder / name)
         shutil.copytree(self.package, builder / "seafile-server-14.0.8", symlinks=True)
         binaries = self.root / "bin"
@@ -143,6 +146,48 @@ class PackageProvenanceTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(marker.exists())
         self.assertIn("Native package validation failed", result.stderr)
+
+    def test_image_assembly_uses_shared_base_and_original_local_tag(self):
+        native_arch = {"arm64": "arm64", "aarch64": "arm64",
+                       "x86_64": "amd64", "amd64": "amd64"}[platform.machine()]
+        header = bytearray(20)
+        header[:6] = b"\x7fELF\x02\x01"
+        header[18:20] = struct.pack("<H", 183 if native_arch == "arm64" else 62)
+        for name in ("seafile/bin/seaf-server", "seafile/bin/fileserver"):
+            (self.package / name).write_bytes(header)
+        self.stamp()
+        binary = self.root / "bin"
+        binary.mkdir()
+        calls = self.root / "docker-calls"
+        docker = binary / "docker"
+        docker.write_text('''#!/bin/sh
+printf '%s\\n' "$*" >> "$CF_DOCKER_CALLS"
+case "$*" in
+  *Architecture*) echo ''' + native_arch + ''' ;;
+  *com.cloudfile.runtime-base.version*) echo 14.0.8 ;;
+  *'{{.Id}}'*) echo sha256:fixture ;;
+esac
+''')
+        docker.chmod(0o755)
+        environment = {**os.environ, "PATH": str(binary) + os.pathsep + os.environ["PATH"],
+                       "CLOUDFILE_PACKAGE_DIR": str(self.package), "CF_DOCKER_CALLS": str(calls)}
+        environment.pop("CF_PLATFORM", None)
+        result = subprocess.run(["bash", str(BUILD / "build-local-image.sh")],
+            env=environment, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        recorded = calls.read_text()
+        self.assertIn("--platform linux/" + native_arch, recorded)
+        self.assertIn("cloudfile/runtime-base:14.0.8-local", recorded)
+        self.assertIn("cloudfile/cloudfile:14.0.8-v0.2-local", recorded)
+        self.assertNotIn("Dockerfile.runtime-base", recorded)
+        calls.write_text("")
+        environment["CF_PLATFORM"] = "linux/" + native_arch
+        result = subprocess.run(["bash", str(BUILD / "build-local-image.sh")],
+            env=environment, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        recorded = calls.read_text()
+        self.assertIn("cloudfile/cloudfile:14.0.8-v0.2-" + native_arch + "-local", recorded)
+        self.assertIn("cloudfile/runtime-base:14.0.8-" + native_arch + "-local", recorded)
 
 
 if __name__ == "__main__":

@@ -5,10 +5,17 @@ set -euo pipefail
 
 usage() {
     echo "Usage: $0 <version> [all|build|push]" >&2
-    echo "  all: pull, build, verify and push (default)" >&2
-    echo "  build: pull, build and verify" >&2
-    echo "  push: verify and push an existing local image" >&2
+    echo "  all: pull, reuse or build, verify and publish if needed (default)" >&2
+    echo "  build: pull, reuse or build and verify" >&2
+    echo "  push: verify and publish an existing local image if needed" >&2
 }
+
+if [[ ${1:-} == --help || ${1:-} == -h ]]; then
+    usage
+    echo "Environment: CF_NEXUS_REGISTRY, CF_FORCE_REBUILD, CF_BUILD_JOBS, PIP_INDEX_URL," >&2
+    echo "  npm_config_registry, npm_config_fetch_retries, GOPROXY" >&2
+    exit 0
+fi
 
 if [[ $# -lt 1 || $# -gt 2 || ! $1 =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
     usage
@@ -53,6 +60,39 @@ clean_at() {
     }
 }
 
+matches_local_sources() {
+    [[ -f $dist/cloudfile-build-info.txt ]] || return 1
+    local component path sha
+    for entry in "seafile-server:$server_repo" "seahub:$hub_repo"; do
+        component=${entry%%:*}
+        path=${entry#*:}
+        sha=$(git_at "$path" rev-parse HEAD)
+        grep -Fqx "$component: $sha" "$dist/cloudfile-build-info.txt" || return 1
+    done
+}
+
+matches_local_image() {
+    docker image inspect "$local_image" >/dev/null 2>&1 || return 1
+    [[ $(docker image inspect --format '{{.Architecture}}' "$local_image") == amd64 ]] || return 1
+    docker run --rm --network=none --entrypoint cat "$local_image" \
+        "/opt/seafile/seafile-server-$version/cloudfile-build-info.txt" \
+        | cmp -s "$dist/cloudfile-build-info.txt" -
+}
+
+can_reuse_build() {
+    matches_local_sources || return 1
+    local built_docker_sha
+    built_docker_sha=$(sed -n 's/^cloudfile-docker: //p' "$dist/cloudfile-build-info.txt")
+    [[ $built_docker_sha =~ ^[0-9a-f]{40}$ ]] || return 1
+    git_at "$repo_root" merge-base --is-ancestor "$built_docker_sha" HEAD || return 1
+    # Release tooling and documentation can change without changing the image.
+    git_at "$repo_root" diff --quiet "$built_docker_sha" HEAD -- \
+        release.yaml build/cloudfile_14.0 image/cloudfile_14.0/Dockerfile \
+        image/cloudfile_14.0/docker-build.sh scripts services tools/build-platform.sh || return 1
+    "$repo_root/tools/verify-release-artifact.sh" "$dist" >/dev/null || return 1
+    matches_local_image
+}
+
 if [[ $mode != push ]]; then
     for repo in "$repo_root" "$server_repo" "$hub_repo"; do
         clean_at "$repo"
@@ -70,22 +110,26 @@ if [[ $mode != push ]]; then
         echo "Local Server/Hub branches differ from release.yaml refs." >&2
         exit 2
     }
-    if ! docker image inspect "$base_image" >/dev/null 2>&1; then
-        echo "Building missing base image: $base_image"
+    if [[ ${CF_FORCE_REBUILD:-0} != 1 ]] && can_reuse_build; then
+        echo "Source and image unchanged; reusing $local_image"
+    else
+        if ! docker image inspect "$base_image" >/dev/null 2>&1; then
+            echo "Building missing base image: $base_image"
+            PIP_INDEX_URL=${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple} \
+                "$repo_root/image/cloudfile_14.0/base-build.sh"
+        fi
+        echo "Building distribution: $version"
         PIP_INDEX_URL=${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple} \
-            "$repo_root/image/cloudfile_14.0/base-build.sh"
+        npm_config_registry=${npm_config_registry:-https://registry.npmmirror.com} \
+        npm_config_fetch_retries=${npm_config_fetch_retries:-5} \
+        GOPROXY=${GOPROXY:-https://goproxy.cn,direct} \
+        CF_BUILD_JOBS=${CF_BUILD_JOBS:-16} \
+        CF_SERVER_URL=$server_repo CF_HUB_URL=$hub_repo \
+            "$repo_root/build/cloudfile_14.0/build-in-docker.sh" "$version"
+        "$repo_root/tools/verify-release-artifact.sh" "$dist"
+        echo "Building image: $local_image"
+        "$repo_root/image/cloudfile_14.0/docker-build.sh" "$version"
     fi
-    echo "Building distribution: $version"
-    PIP_INDEX_URL=${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple} \
-    npm_config_registry=${npm_config_registry:-https://registry.npmmirror.com} \
-    npm_config_fetch_retries=${npm_config_fetch_retries:-5} \
-    GOPROXY=${GOPROXY:-https://goproxy.cn,direct} \
-    CF_BUILD_JOBS=${CF_BUILD_JOBS:-16} \
-    CF_SERVER_URL=$server_repo CF_HUB_URL=$hub_repo \
-        "$repo_root/build/cloudfile_14.0/build-in-docker.sh" "$version"
-    "$repo_root/tools/verify-release-artifact.sh" "$dist"
-    echo "Building image: $local_image"
-    "$repo_root/image/cloudfile_14.0/docker-build.sh" "$version"
 fi
 
 [[ -f $dist/cloudfile-build-info.txt ]] || {
@@ -93,30 +137,24 @@ fi
     exit 1
 }
 "$repo_root/tools/verify-release-artifact.sh" "$dist"
-for entry in "seafile-server:$server_repo" "seahub:$hub_repo"; do
-    component=${entry%%:*}
-    path=${entry#*:}
-    sha=$(git_at "$path" rev-parse HEAD)
-    grep -Fqx "$component: $sha" "$dist/cloudfile-build-info.txt" || {
-        echo "Distribution $component commit differs from local checkout." >&2
-        exit 1
-    }
-done
-docker image inspect "$local_image" >/dev/null
-image_arch=$(docker image inspect --format '{{.Architecture}}' "$local_image")
-[[ $image_arch == amd64 ]] || { echo "Image is $image_arch, expected amd64." >&2; exit 1; }
-docker run --rm --network=none --entrypoint cat "$local_image" \
-    "/opt/seafile/seafile-server-$version/cloudfile-build-info.txt" \
-    | cmp -s "$dist/cloudfile-build-info.txt" - || {
-        echo "Image build info differs from the distribution." >&2
-        exit 1
-    }
+matches_local_sources || { echo "Distribution differs from local source commits." >&2; exit 1; }
+matches_local_image || { echo "Missing or mismatched amd64 image: $local_image" >&2; exit 1; }
 
 if [[ $mode == build ]]; then
     echo "Built and verified $local_image"
     exit 0
 fi
 
+image_id=$(docker image inspect --format '{{.Id}}' "$local_image")
+remote_manifest=$(DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect --insecure "$remote_image" 2>/dev/null) || remote_manifest=
+if [[ -n $remote_manifest ]]; then
+    remote_id=$(printf '%s' "$remote_manifest" | python3 -c \
+        'import json, sys; print(json.load(sys.stdin).get("config", {}).get("digest", ""))')
+    if [[ $remote_id == "$image_id" ]]; then
+        echo "Nexus already has $remote_image ($image_id); nothing to publish"
+        exit 0
+    fi
+fi
 echo "Publishing $remote_image"
 docker tag "$local_image" "$remote_image"
 docker push "$remote_image"

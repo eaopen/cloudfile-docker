@@ -32,7 +32,9 @@ docker-build）共享的架构唯一来源。默认跟随宿主、原生优先�
 在 dev162 的 `/data/workspace/cloudfile/cloudfile-docker` 运行；三个仓库需并排放置，
 且工作区无未提交改动。脚本按 `release.yaml` 核对 Server/Hub 分支，拉取最新提交，
 基础镜像缺失时在 Linux 主机生成，然后编译发行包、构建 amd64 应用镜像、验证产物，
-最后推送到 Nexus。版本由命令参数指定，不复用 `latest` 标签。
+最后推送到 Nexus。若三个仓库的相关源码、发行包及本地镜像均未变化，则复用已有
+构建；若 Nexus 上该标签指向相同镜像，则跳过推送。版本由命令参数指定，不复用
+`latest` 标签。
 
 ```bash
 ./tools/release-dev162.sh 14.0.0-cf.1
@@ -48,7 +50,7 @@ docker-build）共享的架构唯一来源。默认跟随宿主、原生优先�
 默认目标是 `10.12.1.138:8041/cloudfile/cloudfile:<版本>`，可用
 `CF_NEXUS_REGISTRY` 覆盖 Registry 地址。推送使用当前用户已有的 Docker 登录凭据；
 缺凭据时先在终端运行 `docker login 10.12.1.138:8041`，不要把密码写进脚本。
-脚本默认使用 dev162 已验证可访问的 Python、npm 和 Go 镜像源，分别可通过
+如需强制重新编译，设置 `CF_FORCE_REBUILD=1`。脚本默认使用 dev162 已验证可访问的 Python、npm 和 Go 镜像源，分别可通过
 `PIP_INDEX_URL`、`npm_config_registry`、`GOPROXY` 覆盖；`CF_BUILD_JOBS` 默认 16。
 构建产物留在 `build/cloudfile_14.0/`，由 Git 忽略，不提交到源码仓库。
 

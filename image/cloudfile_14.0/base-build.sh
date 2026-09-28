@@ -50,19 +50,51 @@ else
         echo "Docker without buildx can only build for $host_platform" >&2
         exit 2
     fi
-    # Classic Docker does not understand BuildKit cache mounts. Keep the same
-    # commands while dropping only the cache directives in a temporary file.
+    # Docker 18.09 cannot apply a seccomp override during build. Run the same
+    # commands in an isolated container with a per-container override.
     context=$(mktemp -d "$repo_root/build/cloudfile_14.0/.base-context.XXXXXX")
-    trap 'rm -rf "$context"' EXIT
-    cp -a "$repo_root/base_scripts" "$context/base_scripts"
+    container="cloudfile-base-build-$$"
+    trap 'docker rm -f "$container" >/dev/null 2>&1 || true; rm -rf "$context"' EXIT
     awk '
         /^RUN --mount=type=cache/ { sub(/^RUN --mount=[^ ]+ /, "RUN "); print; next }
         /^[[:space:]]+--mount=type=cache/ { next }
         { print }
     ' "$here/Dockerfile.base" > "$context/Dockerfile"
-    docker build --pull=false \
-        --build-arg UBUNTU_BASE="$ubuntu_base" \
-        --tag "$base_image" "$context"
+    python3 - "$context/Dockerfile" > "$context/run.sh" <<'PY'
+import sys
+
+lines = open(sys.argv[1]).readlines()
+print("#!/bin/bash\nset -e")
+command = ""
+for line in lines:
+    if line.startswith("RUN "):
+        command = line[4:]
+    elif command:
+        command += line
+    else:
+        continue
+    if command.rstrip().endswith("\\"):
+        command = command.rstrip()[:-1] + " "
+    else:
+        print(command.strip())
+        command = ""
+if command:
+    raise SystemExit("incomplete Dockerfile RUN instruction")
+PY
+    docker create --name "$container" --security-opt seccomp=unconfined \
+        -e DEBIAN_FRONTEND=noninteractive -e LANG=en_US.UTF-8 \
+        -e LANGUAGE=en_US:en -e LC_ALL=en_US.UTF-8 \
+        -e CLOUDFILE_BUILD_BASE=true -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
+        -e NODE_VERSION=20.20.2 -w /opt/cloudfile-build \
+        "$ubuntu_base" sleep infinity >/dev/null
+    docker cp "$repo_root/base_scripts" "$container:/bd_build"
+    docker cp "$context/run.sh" "$container:/tmp/cloudfile-base-build.sh"
+    docker start "$container" >/dev/null
+    docker exec "$container" bash /tmp/cloudfile-base-build.sh
+    docker commit \
+        --change 'ENV DEBIAN_FRONTEND=noninteractive LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8 CLOUDFILE_BUILD_BASE=true PIP_DISABLE_PIP_VERSION_CHECK=1' \
+        --change 'WORKDIR /opt/cloudfile-build' \
+        "$container" "$base_image" >/dev/null
 fi
 
 echo

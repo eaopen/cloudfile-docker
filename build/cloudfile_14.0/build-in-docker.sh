@@ -40,7 +40,14 @@ if [[ -z ${CF_PLATFORM:-} ]]; then
 else
     platform=$(cf_normalize_platform "$CF_PLATFORM") || exit 2
 fi
-platform_arg=(--platform "$platform")
+platform_arg=()
+if docker run --help 2>&1 | grep -q -- '--platform'; then
+    platform_arg=(--platform "$platform")
+fi
+pull_arg=()
+if docker run --help 2>&1 | grep -q -- '--pull'; then
+    pull_arg=(--pull=never)
+fi
 
 if [[ -n ${CF_BUILD_JOBS:-} && ! $CF_BUILD_JOBS =~ ^[1-9][0-9]*$ ]]; then
     echo "CF_BUILD_JOBS 必须是正整数，当前值：${CF_BUILD_JOBS}" >&2
@@ -156,7 +163,7 @@ cache_args=(
 
 # 挂载整个仓库：构建脚本要读 release.yaml，产物也要写回 build/cloudfile_14.0/。
 # git 需要把挂载进来的目录标记为 safe，否则会因 owner 不一致拒绝操作。
-docker run --rm -i --pull=never \
+docker run --rm -i "${pull_arg[@]}" \
     "${platform_arg[@]}" \
     "${env_args[@]}" \
     "${cache_args[@]}" \

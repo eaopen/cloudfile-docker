@@ -73,14 +73,31 @@ if [[ -n $image_arch && $image_arch != "$want_arch" ]]; then
     exit 2
 fi
 
-DOCKER_BUILDKIT=${DOCKER_BUILDKIT:-1} docker build --pull=false --network=none \
-    --platform "$platform" \
-    -f "$here/Dockerfile" \
-    --build-context cloudfile_dist="$dist" \
-    --build-arg CLOUDFILE_BASE="$base_image" \
-    --build-arg server_version="${version}" \
-    -t "${image}" \
-    "$repo_root"
+if docker build --help 2>&1 | grep -q -- '--build-context'; then
+    DOCKER_BUILDKIT=${DOCKER_BUILDKIT:-1} docker build --pull=false --network=none \
+        --platform "$platform" \
+        -f "$here/Dockerfile" \
+        --build-context cloudfile_dist="$dist" \
+        --build-arg CLOUDFILE_BASE="$base_image" \
+        --build-arg server_version="${version}" \
+        -t "${image}" \
+        "$repo_root"
+else
+    # Docker 18.09 has no named build contexts. Stage only the runtime assets
+    # and the selected distribution, then use an equivalent COPY instruction.
+    context=$(mktemp -d "$repo_root/build/cloudfile_14.0/.docker-context.XXXXXX")
+    trap 'rm -rf "$context"' EXIT
+    mkdir -p "$context/scripts"
+    cp -a "$repo_root/scripts/scripts_14.0" "$context/scripts/"
+    cp -a "$repo_root/services" "$context/services"
+    cp -a "$dist" "$context/cloudfile_dist"
+    sed 's|COPY --from=cloudfile_dist \. |COPY cloudfile_dist |' \
+        "$here/Dockerfile" > "$context/Dockerfile"
+    docker build --pull=false --network=none \
+        --build-arg CLOUDFILE_BASE="$base_image" \
+        --build-arg server_version="${version}" \
+        -t "$image" "$context"
+fi
 
 echo ''
 echo "Built ${image}"

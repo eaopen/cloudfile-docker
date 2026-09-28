@@ -45,8 +45,12 @@ python3 tests/smoke_ce14_runtime.py --image cloudfile/cloudfile:14.0.8-v0.2-rc-w
 - `CLOUDFILE_WEBDAV_ENABLED`：声明已配置启用 WebDAV，默认 `false`；它不代替 WebDAV 服务本身的启停配置。
 - `CLOUDFILE_AUTHORIZATION_ENABLED`：挂载内建 authorization v1 路由，默认 `false`；必须同时启用 post-fork policy worker，并配置真实目录、主体刷新和委托发行运行时。该开关不自动声明 capability 已交付。
 - `CLOUDFILE_POLICY_CONFIG_JSON`：严格 JSON 的可信 worker 配置；包含数据库、专属 Redis、Directory Adapter、C ACL 库、机器凭证范围、刷新 provider grant 与独立委托签名键。`CLOUDFILE_AUTHORIZATION_ENABLED=true` 时必须同时设置它和 `CLOUDFILE_POLICY_WORKER_HOOKS=true`，重复字段或不完整安全配置拒绝启动。
+- 建库的群组授权使用 `PUT /api/v2.1/cloudfile/libraries/{repo_id}/shares/desired/`，传 `policy_revision` 和完整 `shares:[{external_group_id,permission}]`；先执行 CloudFile schema 035，部门需有 `(etech,dept,directory,<id>)` 映射，角色 `role:<id>` 需有 `(etech,group,role,<id>)` 映射。当前新版没有可用的全量建组同步入口，新环境必须先完成受管群组及映射的受控预置/迁移；缺映射会逐条报错，TEAM/CONTROLLED 建库保持待完成状态，不会按名称猜测群组或撤销人工共享。原生共享与策略账本分属两处持久化，未完成的新增意图以 `PENDING` 记录供重试识别。
+- 目录授权总览使用 `GET /api/v2.1/cloudfile/extensions/authorization/v1/library-rules/?repo_id=...&limit=100&after=...`；schema 036 添加 `(repo_id,id)` 索引。每次最多返回 100 条规则，不枚举库内文件；新目录规则增删改使用同域的 `directory-rules/`，由当前 Seafile 会话终判库管理权。
 - `CLOUDFILE_LOCAL_EDIT_ENABLED`：挂载内建 local-edit URL，默认 `false`；只有同时配置 post-fork policy worker、资源生命周期读取器、本地编辑版本读取器和固定 HTTPS 实例 origin 后才可设为 `true`，该开关本身不声明能力已交付。
 - `CLOUDFILE_TRANSFER_ENABLED`：挂载 cookie-free 的 `transfer/v1/delegated-read-tickets/`，默认 `false`；必须同时设置 `ENABLE_GO_FILESERVER=true`、启用 post-fork policy worker，并由完整 `CLOUDFILE_POLICY_CONFIG_JSON` 构造独立委托验签键、共享撤销存储与 native ticket RPC。C 文件服务没有增强下载路由，选择它时拒绝启用委托传输。该开关在 OIDC 同时启用时也挂载受 CSRF 保护的会话读取/手动替换路由，不自动声明 `transfer.web` 已交付。
+- `CLOUDFILE_AUDIT_QUERY_ENABLED`：启用管理员审计日志查询与页面，默认 `false`；要求 OIDC、authorization 与 post-fork policy worker 已启用。
+- `CLOUDFILE_AUDIT_CURSOR_SECRET`：审计分页游标签名密钥，启用审计查询时至少 32 字节；从部署密钥环境注入，容器将其作为固定 bytes 写入 Seahub 配置，不应在文档或日志中填写实际值。
 
 部署 URLConf 不得占用 directory、authorization、library-policy、directory-acl、annotations、audit、search、locks、local-edit、migration、transfer、identity 核心域。自有能力由受信 Python 启动代码注册，配置 JSON 不能注册实现。
 
@@ -59,7 +63,7 @@ authorization/transfer 的 `CLOUDFILE_POLICY_CONFIG_JSON` 最小结构如下；�
   "provider":"etech",
   "native_schema":"ccnet_db",
   "identity_schema":"seahub_db",
-  "directory_url":"https://etech.example.com/eap/cloudDrive/directory/v2",
+  "directory_url":"https://etech.example.com/eap/cloudDrive/directory",
   "directory_bearer_token":"replace-me",
   "attribute_allowlist":[],
   "core_library":"/opt/seafile/seafile-server-latest/seafile/lib/libcloudfile_acl.so.1",
@@ -245,7 +249,7 @@ OIDC 与 transfer 同时启用时挂载 CSRF 保护的 `identity/v1/read-tickets
 
 `cf_managed_library` 只有 repo_id 与登记时间，状态为未登记/已登记；没有解除受管、历史版本或新生命周期系统。显式 schema 032 登记已有目录策略库；授权策略修改在同一事务登记；增强授权写入的登记与 native 发布同事务成功或失败，删掉最后一条 ACL 不删登记。
 
-一旦 extension ledger/登记表存在，普通 C 票据签发/消费、C 条件发布和 Go 发布自动要求该边界；`[cloudfile] managed_library_guard=true` 可提前要求存储就绪，false/省略不能解除已安装边界。缺表、错误结构、当前状态读取失败均拒绝；未安装扩展的本地管理员 CE 文件基线仍可用。受管读写使用已有增强票据与显式上传/替换；Go 普通文件/Range/预览字节与普通票据不能替代增强授权。当前运行验证采用实际数据库变量；RR/SERIALIZABLE 检查沿用既有 MySQL/MariaDB 兼容逻辑。
+一旦 extension ledger/登记表存在，普通 C 票据签发/消费、C 条件发布和 Go 发布自动要求该边界；`[cloudfile] managed_library_guard=true` 可提前要求存储就绪，false/省略不能解除已安装边界。缺表、错误结构、当前状态读取失败均拒绝；未安装扩展的本地管理员 CE 文件基线仍可用。受管读写使用已有增强票据与显式上传/替换。过渡期可在 Server 与 Go 文件服务共用的 `seafile.conf` `[cloudfile]` 段设置 `allow_legacy_managed_reads=true`，让受管库保留原生下载、Range、预览和分享链接；C 普通票据只对读取操作放行，Go 普通读取跳过受管库拦截。这会绕过 CloudFile 对这些读取的目录 ACL 终判，只保留原生 Seafile 票据权限检查，默认关闭；上传、替换和版本发布仍受保护。当前运行验证采用实际数据库变量；RR/SERIALIZABLE 检查沿用既有 MySQL/MariaDB 兼容逻辑。
 
 这是常用文件链限制，不宣称 Seafile 所有内部 RPC 或低频入口均已加固。库/目录列表过滤与 CE 页面接线仍待；分享/ZIP/历史/回收站/sync/WebDAV 不作为当前主流程开放，需要部署入口关闭或代理白名单。未取得这些限制证据时不宣称 RC；低频内部调用与极端竞争记录为 debt，不再扩 native 改造。
 

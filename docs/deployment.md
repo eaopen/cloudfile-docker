@@ -27,6 +27,31 @@ docker-build）共享的架构唯一来源。默认跟随宿主、原生优先�
 `CF_PLATFORM` 在任何脚本上覆盖自动检测（只收 `linux/amd64`/`linux/arm64`）。
 跨架构构建（mac 上出 amd64）走 QEMU 模拟，C 编译慢 5~10 倍，仅用于验证，不用于发布。
 
+## dev162 手工构建与推送 Nexus
+
+在 dev162 的 `/data/workspace/cloudfile/cloudfile-docker` 运行；三个仓库需并排放置，
+且工作区无未提交改动。脚本按 `release.yaml` 核对 Server/Hub 分支，拉取最新提交，
+基础镜像缺失时在 Linux 主机生成，然后编译发行包、构建 amd64 应用镜像、验证产物，
+最后推送到 Nexus。版本由命令参数指定，不复用 `latest` 标签。
+
+```bash
+./tools/release-dev162.sh 14.0.0-cf.1
+```
+
+已有同版本镜像只需推送时，可跳过拉取和编译；只编译、不推送则使用 `build`：
+
+```bash
+./tools/release-dev162.sh 14.0.0-cf.0 push
+./tools/release-dev162.sh 14.0.0-cf.1 build
+```
+
+默认目标是 `10.12.1.138:8041/cloudfile/cloudfile:<版本>`，可用
+`CF_NEXUS_REGISTRY` 覆盖 Registry 地址。推送使用当前用户已有的 Docker 登录凭据；
+缺凭据时先在终端运行 `docker login 10.12.1.138:8041`，不要把密码写进脚本。
+脚本默认使用 dev162 已验证可访问的 Python、npm 和 Go 镜像源，分别可通过
+`PIP_INDEX_URL`、`npm_config_registry`、`GOPROXY` 覆盖；`CF_BUILD_JOBS` 默认 16。
+构建产物留在 `build/cloudfile_14.0/`，由 Git 忽略，不提交到源码仓库。
+
 ## 启动核心栈
 
 ```bash

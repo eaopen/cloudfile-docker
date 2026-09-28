@@ -90,7 +90,11 @@ PY
     docker cp "$repo_root/base_scripts" "$container:/bd_build"
     docker cp "$context/run.sh" "$container:/tmp/cloudfile-base-build.sh"
     docker start "$container" >/dev/null
-    docker exec "$container" bash /tmp/cloudfile-base-build.sh
+    exec_env=()
+    if [[ -n ${PIP_INDEX_URL:-} ]]; then
+        exec_env=(-e "PIP_INDEX_URL=$PIP_INDEX_URL")
+    fi
+    docker exec "${exec_env[@]}" "$container" bash /tmp/cloudfile-base-build.sh
     docker commit \
         --change 'ENV DEBIAN_FRONTEND=noninteractive LANG=en_US.UTF-8 LANGUAGE=en_US:en LC_ALL=en_US.UTF-8 CLOUDFILE_BUILD_BASE=true PIP_DISABLE_PIP_VERSION_CHECK=1' \
         --change 'WORKDIR /opt/cloudfile-build' \

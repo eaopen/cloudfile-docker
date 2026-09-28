@@ -235,6 +235,12 @@ def render_settings(environment=None):
     authorization_enabled = _boolean(environment, "CLOUDFILE_AUTHORIZATION_ENABLED", False)
     local_edit_enabled = _boolean(environment, "CLOUDFILE_LOCAL_EDIT_ENABLED", False)
     transfer_enabled = _boolean(environment, "CLOUDFILE_TRANSFER_ENABLED", False)
+    audit_query_enabled = _boolean(environment, "CLOUDFILE_AUDIT_QUERY_ENABLED", False)
+    raw_audit_secret = environment.get("CLOUDFILE_AUDIT_CURSOR_SECRET", "")
+    audit_secret = raw_audit_secret.encode("utf-8") if audit_query_enabled and raw_audit_secret else None
+    if audit_query_enabled and (not oidc_enabled or not authorization_enabled
+            or audit_secret is None or len(audit_secret) < 32):
+        raise ValueError("audit query requires OIDC, authorization and a cursor secret of at least 32 bytes")
     if (authorization_enabled or transfer_enabled) and (policy_config is None
             or not _boolean(environment, "CLOUDFILE_POLICY_WORKER_HOOKS", False)):
         raise ValueError("enabled authorization or transfer requires policy config and worker hooks")
@@ -256,6 +262,9 @@ def render_settings(environment=None):
         f"CLOUDFILE_EXTENSION_URLCONFS = {pprint.pformat(urlconfs, sort_dicts=True)}",
         f"CLOUDFILE_CAPABILITIES = {pprint.pformat(capabilities, sort_dicts=True)}",
         f"CLOUDFILE_POLICY_CONFIG = {pprint.pformat(policy_config, sort_dicts=True)}",
+        # v0.1 already requires an explicit Seafile owner for managed groups.
+        f"CF_SSO_GROUP_OWNER = {environment.get('CF_SSO_GROUP_OWNER', '')!r}",
+        f"CF_SSO_MAX_REMOVAL_RATIO = {environment.get('CF_SSO_MAX_REMOVAL_RATIO', '0.5')!r}",
         f"CLOUDFILE_OIDC_ENABLED = {oidc_enabled!r}",
         f"CLOUDFILE_OIDC_CONFIG = {pprint.pformat(oidc_config, sort_dicts=True)}",
         f"CLOUDFILE_OIDC_JIT_ENABLED = {oidc_jit_enabled!r}",
@@ -264,6 +273,8 @@ def render_settings(environment=None):
         f"CLOUDFILE_AUTHORIZATION_ENABLED = {authorization_enabled!r}",
         f"CLOUDFILE_LOCAL_EDIT_ENABLED = {local_edit_enabled!r}",
         f"CLOUDFILE_TRANSFER_ENABLED = {transfer_enabled!r}",
+        f"CLOUDFILE_AUDIT_QUERY_ENABLED = {audit_query_enabled!r}",
+        f"CLOUDFILE_AUDIT_CURSOR_SECRET = {audit_secret!r}",
     ]
     lines.extend(
         f"{name} = {pprint.pformat(value, sort_dicts=True)}"

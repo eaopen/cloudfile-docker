@@ -251,6 +251,34 @@ class OIDCSettingsTest(unittest.TestCase):
                 authorization_url="https://idp.example/authorize/", token_url="https://idp.example/token/",
                 userinfo_url="https://idp.example/userinfo/", jwks_url="https://idp.example/jwks/"))}
 
+    def test_audit_query_requires_explicit_prerequisites_and_fixed_secret(self):
+        environment = self.environment()
+        environment.update(CLOUDFILE_AUTHORIZATION_ENABLED="true",
+            CLOUDFILE_AUDIT_QUERY_ENABLED="true",
+            CLOUDFILE_AUDIT_CURSOR_SECRET="fixed-audit-secret-" + "x" * 32)
+        namespace = {}
+        exec(CLOUDFILE.render_settings(environment), namespace)
+        self.assertTrue(namespace["CLOUDFILE_AUDIT_QUERY_ENABLED"])
+        self.assertEqual(namespace["CLOUDFILE_AUDIT_CURSOR_SECRET"],
+                         environment["CLOUDFILE_AUDIT_CURSOR_SECRET"].encode("utf-8"))
+        for key in ("CLOUDFILE_AUTHORIZATION_ENABLED", "CLOUDFILE_AUDIT_CURSOR_SECRET"):
+            invalid = dict(environment)
+            del invalid[key]
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                CLOUDFILE.render_settings(invalid)
+        invalid = dict(environment, CLOUDFILE_AUDIT_CURSOR_SECRET="short")
+        with self.assertRaises(ValueError):
+            CLOUDFILE.render_settings(invalid)
+
+    def test_managed_group_settings_follow_runtime_environment(self):
+        namespace = {}
+        exec(CLOUDFILE.render_settings({
+            "CF_SSO_GROUP_OWNER": "owner@example.com",
+            "CF_SSO_MAX_REMOVAL_RATIO": "0.25",
+        }), namespace)
+        self.assertEqual(namespace["CF_SSO_GROUP_OWNER"], "owner@example.com")
+        self.assertEqual(namespace["CF_SSO_MAX_REMOVAL_RATIO"], "0.25")
+
     def test_explicit_oidc_renders_primitives_without_claiming_capability(self):
         namespace = {}
         exec(CLOUDFILE.render_settings(self.environment()), namespace)

@@ -60,7 +60,8 @@ else
         /^[[:space:]]+--mount=type=cache/ { next }
         { print }
     ' "$here/Dockerfile.base" > "$context/Dockerfile"
-    docker build --pull=false \
+    # Docker 18.09's seccomp profile rejects Ubuntu 24.04 apt signature checks.
+    docker build --pull=false --security-opt seccomp=unconfined \
         --build-arg UBUNTU_BASE="$ubuntu_base" \
         --tag "$base_image" "$context"
 fi

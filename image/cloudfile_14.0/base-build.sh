@@ -35,14 +35,35 @@ if [[ ${GITHUB_ACTIONS:-false} == true ]]; then
     )
 fi
 
-docker buildx build \
-    --platform "$platform" \
-    --file "$here/Dockerfile.base" \
-    --build-arg UBUNTU_BASE="$ubuntu_base" \
-    --tag "$base_image" \
-    --load \
-    "${cache_args[@]}" \
-    "$repo_root"
+if docker buildx version >/dev/null 2>&1; then
+    docker buildx build \
+        --platform "$platform" \
+        --file "$here/Dockerfile.base" \
+        --build-arg UBUNTU_BASE="$ubuntu_base" \
+        --tag "$base_image" \
+        --load \
+        "${cache_args[@]}" \
+        "$repo_root"
+else
+    host_platform=$(cf_host_platform) || exit 2
+    if [[ $platform != "$host_platform" ]]; then
+        echo "Docker without buildx can only build for $host_platform" >&2
+        exit 2
+    fi
+    # Classic Docker does not understand BuildKit cache mounts. Keep the same
+    # commands while dropping only the cache directives in a temporary file.
+    context=$(mktemp -d "$repo_root/build/cloudfile_14.0/.base-context.XXXXXX")
+    trap 'rm -rf "$context"' EXIT
+    cp -a "$repo_root/base_scripts" "$context/base_scripts"
+    awk '
+        /^RUN --mount=type=cache/ { sub(/^RUN --mount=[^ ]+ /, "RUN "); print; next }
+        /^[[:space:]]+--mount=type=cache/ { next }
+        { print }
+    ' "$here/Dockerfile.base" > "$context/Dockerfile"
+    docker build --pull=false \
+        --build-arg UBUNTU_BASE="$ubuntu_base" \
+        --tag "$base_image" "$context"
+fi
 
 echo
 echo "Built and loaded $base_image ($platform)"

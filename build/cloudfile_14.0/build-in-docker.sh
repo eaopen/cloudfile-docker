@@ -48,6 +48,12 @@ pull_arg=()
 if docker run --help 2>&1 | grep -q -- '--pull'; then
     pull_arg=(--pull=never)
 fi
+security_arg=()
+docker_major=$(docker version --format '{{.Server.Version}}' | cut -d. -f1)
+if [[ $docker_major =~ ^[0-9]+$ && $docker_major -lt 20 ]]; then
+    # Docker 18/19's default seccomp profile rejects Ubuntu 24 thread creation.
+    security_arg=(--security-opt seccomp=unconfined)
+fi
 
 if [[ -n ${CF_BUILD_JOBS:-} && ! $CF_BUILD_JOBS =~ ^[1-9][0-9]*$ ]]; then
     echo "CF_BUILD_JOBS 必须是正整数，当前值：${CF_BUILD_JOBS}" >&2
@@ -165,6 +171,7 @@ cache_args=(
 # git 需要把挂载进来的目录标记为 safe，否则会因 owner 不一致拒绝操作。
 docker run --rm -i "${pull_arg[@]}" \
     "${platform_arg[@]}" \
+    "${security_arg[@]}" \
     "${env_args[@]}" \
     "${cache_args[@]}" \
     "${mount_args[@]+"${mount_args[@]}"}" \

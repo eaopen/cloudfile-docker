@@ -49,7 +49,7 @@ docker compose -p cloudfile-local-reference \
 | --- | --- | --- |
 | Authentik | `http://auth.localtest.me:9002/` | 完成 initial setup，或使用预置 `akadmin` 测试凭据 |
 | CloudFile | `http://cloudfile.localtest.me/` | 使用本地 `cfadmin` 登录并确认基础服务已就绪 |
-| Filestash | `http://filestash.localtest.me:8334/` | 完成初始管理设置；在管理页检查 `/about` 中实际编译的插件 |
+| Filestash | `http://localhost:8334/` | 完成初始管理设置；在管理页检查 `/about` 中实际编译的插件 |
 
 如 80 端口不可用，需同步更改 `HTTP_PORT`、本地 Caddyfile 监听端口、CloudFile OIDC redirect URI 及浏览器访问 URL。CloudFile 当前根据 hostname/protocol 推导回调地址，不会从 `HTTP_PORT` 推导非标准端口。
 
@@ -78,12 +78,20 @@ CloudFile 回调后以 Authentik 的 `sub` 绑定身份。保留 `cfadmin` 本�
 
 Filestash Provider：
 
-- Redirect URI：`http://filestash.localtest.me:8334/api/session/auth/`
-- OpenID Config URL：`http://auth.localtest.me:9002/application/o/filestash/.well-known/openid-configuration`
+- Redirect URI：`http://localhost:8334/api/session/auth/`（本机 HTTP 联调；正式环境使用 HTTPS）
+- Issuer：`http://auth.localhost:9002/application/o/filestash/`（`auth.localhost` 在宿主机解析到回环地址，在 Compose 网络中指向 Authentik）
 - Client 类型：Confidential；scope 至少 `openid email profile`
-- 在 Filestash 管理 UI 的 Authentication / OpenID 中配置 discovery URL、client ID 和 secret；然后检查其实际 Host/base URL 和 `/about` 插件清单。
+- 在 Filestash 管理 UI 的 Authentication / `oidc` 中配置 issuer、client ID、secret 和 redirect URI；然后检查其实际 Host/base URL 和 `/about` 插件清单。
+- 为单个共享只读库创建 `reference-project` 组并绑定 Filestash Application；配置 attribute mapping 为仅指向 `reference-sftp` 的固定只读凭据和 `/reference` 根。组外用户不应拿到授权码。
+- 将 Filestash `general.cookie_timeout` 设为不超过 15 分钟，关闭共享链接；插件拒绝超过 15 分钟的会话和直接存储登录。撤组不会即时撤销已签发会话，复登时才重新评估组准入。
 
-Filestash 官网将 OpenID 列为认证插件，同时把 OIDC/企业 SSO 归入特定发行能力；该服务不会假设所有社区镜像都含此插件。若本地镜像没有 OpenID 插件，可继续验证容器、挂载和只读边界，但 Authentik → Filestash 的 SSO 联调须使用具有对应插件授权的版本。参考：[Filestash 插件目录](https://www.filestash.app/docs/plugin/)、[Filestash OIDC 配置](https://www.filestash.app/setup-oidc.html)。
+Filestash 官网将 OpenID 列为认证插件，同时把官方 OIDC/企业 SSO 归入特定发行能力；社区镜像不保证包含它。本地优先使用独立开发的 [eaopen/filestash-auth-oidc](https://github.com/eaopen/filestash-auth-oidc)，插件源码采用 MIT 许可，组合镜像仍须遵守 Filestash 的 AGPL。仓库 Dockerfile 固定 Filestash 提交，可从插件仓库根目录构建：
+
+```sh
+docker build -t filestash-auth-oidc:local .
+```
+
+将 `.env.local-reference` 的 `FILESTASH_IMAGE` 设为 `filestash-auth-oidc:local`，再重建 `filestash` 服务并在 `/about` 确认 `oidc` 已注册。构建、注册和 Authentik 登录未实测通过前，仍不得声称 SSO 已验收。官方资料：[Filestash 插件目录](https://www.filestash.app/docs/plugin/)、[插件开发说明](https://www.filestash.app/docs/guide/plugin-development.html)。
 
 本次验证使用的社区镜像 `Filestash/v0.6.20260929` 不含 OpenID 插件。实际结果见 [本地验证记录](LOCAL-REFERENCE-VERIFICATION.md)。
 

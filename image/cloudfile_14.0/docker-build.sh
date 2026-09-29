@@ -35,6 +35,24 @@ if [[ ! -d $dist ]]; then
     exit 1
 fi
 
+"$repo_root/tools/verify-release-artifact.sh" "$dist"
+package_digest=$(python3 "$repo_root/build/cloudfile_14.0/stamp-current-package.py" "$dist" "$version")
+server_commit=$(sed -n 's/^seafile-server: //p' "$dist/cloudfile-build-info.txt")
+hub_commit=$(sed -n 's/^seahub: //p' "$dist/cloudfile-build-info.txt")
+docker_commit=$(sed -n 's/^cloudfile-docker: //p' "$dist/cloudfile-build-info.txt")
+ce_version=$(python3 "$repo_root/build/cloudfile_14.0/read-manifest.py" \
+    "$repo_root/release.yaml" ce_anchor.version)
+ce_version=${ce_version#v}
+ce_version=${ce_version%-server}
+label_args=(
+    --label "org.opencontainers.image.version=v0.2"
+    --label "com.cloudfile.seafile.version=${ce_version}"
+    --label "com.cloudfile.package.sha256=${package_digest}"
+    --label "com.cloudfile.source.seafile-server=${server_commit}"
+    --label "com.cloudfile.source.seahub=${hub_commit}"
+    --label "com.cloudfile.source.cloudfile-docker=${docker_commit}"
+)
+
 # 仓库名取自 manifest，标签**必须**用传入的版本号。
 #
 # 早先直接拿 manifest 的 image 整串当标签，于是构建 14.0.0-cf.0-local 也会打成
@@ -76,6 +94,7 @@ fi
 if docker build --help 2>&1 | grep -q -- '--build-context'; then
     DOCKER_BUILDKIT=${DOCKER_BUILDKIT:-1} docker build --pull=false --network=none \
         --platform "$platform" \
+        "${label_args[@]}" \
         -f "$here/Dockerfile" \
         --build-context cloudfile_dist="$dist" \
         --build-arg CLOUDFILE_BASE="$base_image" \
@@ -94,6 +113,7 @@ else
     sed 's|COPY --from=cloudfile_dist \. |COPY cloudfile_dist |' \
         "$here/Dockerfile" > "$context/Dockerfile"
     docker build --pull=false --network=none \
+        "${label_args[@]}" \
         --build-arg CLOUDFILE_BASE="$base_image" \
         --build-arg server_version="${version}" \
         -t "$image" "$context"

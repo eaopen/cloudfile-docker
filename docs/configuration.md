@@ -14,9 +14,10 @@
 | `scripts/scripts_14.0/bootstrap.py` | 生成 `seahub_settings.py`、`seafile.conf` 和持久化 `.env` |
 | `cloudfile-hub/cloudfile_ext/settings_defaults.py` | Hub 侧安全默认值 |
 
-默认值见下表（默认值分两组（产品决策 2026-09-22）：不依赖第三方/外部服务的能力默认打开
-（DIR_ACL、AUDIT、METADATA、TAGS、FILE_PREVIEW、FILE_LOCK、CHECKOUT、FAVORITES_ID、
-WATCH、FILEOPS、SHARE_RESTRICT）；依赖第三方服务、宿主机挂载或客户端安装的保持默认关闭
+默认值见下表。不依赖第三方/外部服务的旧能力通常默认打开
+（AUDIT、METADATA、TAGS、FILE_PREVIEW、FAVORITES_ID、WATCH、FILEOPS、SHARE_RESTRICT）；
+旧版 DIR_ACL、FILE_LOCK、CHECKOUT 与当前版本化表结构不兼容，默认关闭。
+依赖第三方服务、宿主机挂载或客户端安装的能力也默认关闭
 （SSO、SEARCH、ONLYOFFICE、CONVERT_EXPORT—S3_STORAGE、EXTERNAL_SOURCES、LOCAL_APP）。
 关闭 CloudFile 开关时，bootstrap 不应覆盖运维自行设置的同名上游能力；新增开关必须同时更新 `.env.example`、Compose、bootstrap 和 Hub 清单。
 
@@ -26,13 +27,13 @@ WATCH、FILEOPS、SHARE_RESTRICT）；依赖第三方服务、宿主机挂载或
 
 | 开关 | 默认值 | 默认开关的原因 / 默认关闭的依赖 |
 |---|---:|---|
-| `CF_ENABLE_DIR_ACL` | `true` | 目录级权限，网盘产品线核心需求（C 端终判 + Hub 咽喉）|
+| `CF_ENABLE_DIR_ACL` | `false` | 旧版 ACL 入口使用 v0.1 表结构；当前 ACL 由版本化迁移与授权服务承接 |
 | `CF_ENABLE_AUDIT` | `true` | 复用 seafevents `Activity`，无外部服务 |
 | `CF_ENABLE_METADATA` | `true` | 依赖官方 `seafile-md-server`；该服务已进默认 compose 栈 |
 | `CF_ENABLE_TAGS` | `true` | 与 METADATA 同一栈（bootstrap 强制 TAGS⇒METADATA）|
 | `CF_ENABLE_FILE_PREVIEW` | `true` | 复用 CE 原生预览渲染器 |
-| `CF_ENABLE_FILE_LOCK` | `true` | `cf-lock` 在 server 内实现，无外部依赖 |
-| `CF_ENABLE_CHECKOUT` | `true` | 签入签出复用同一锁 provider |
+| `CF_ENABLE_FILE_LOCK` | `false` | 旧版锁入口使用 v0.1 表结构；待 v0.3 当前锁链验收 |
+| `CF_ENABLE_CHECKOUT` | `false` | 旧版签入签出依赖旧锁和本地会话表 |
 | `CF_ENABLE_FAVORITES_ID` | `true` | `obj_id` 化收藏，纯 CE 表结构改造 |
 | `CF_ENABLE_WATCH` | `true` | 复用 CE monitored-repos、放开非 Pro gate |
 | `CF_ENABLE_FILEOPS` | `true` | 复制/移动统一预检查，Hub 影子端点 |

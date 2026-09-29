@@ -156,6 +156,24 @@ def run(image, native_regression=False, extensions_regression=False, identity_ru
         for key in ('auth.oidc', 'search.resources', 'file.lock'):
             assert not caps[key]['enabled']
         checks.append(stage)
+        stage = 'schema'
+        schema_code = '''
+import os, sys, pymysql
+package = '/opt/seafile/seafile-server-latest'
+sys.path.insert(0, package + '/seahub')
+from cloudfile_extensions.schema.runner import SchemaRunner
+db = pymysql.connect(host='db', user=os.environ['SEAFILE_MYSQL_DB_USER'],
+    password=os.environ['SEAFILE_MYSQL_DB_PASSWORD'], database='seafile_db',
+    autocommit=True, charset='utf8mb4')
+try:
+    runner = SchemaRunner(db)
+    runner.apply()
+    runner.require_current()
+finally:
+    db.close()
+'''
+        docker('exec', app, 'python3', '-c', schema_code, timeout=90)
+        checks.append(stage)
         stage = 'local_login'
         response = request('/api2/auth-token/', 'POST', urlencode({
             'username': 'admin@smoke.invalid', 'password': password}).encode(),
@@ -205,11 +223,13 @@ def run(image, native_regression=False, extensions_regression=False, identity_ru
                     ('update', {'target_file': '/probe.txt'}, content + b'Explicit manual update.\n')):
                 stage = operation
                 response = request(base + '/' + operation + '-link/?p=/', headers=auth)
-                assert response['status'] == 200
+                if response['status'] != 200:
+                    raise RuntimeError(operation + '_link_status=' + str(response['status']))
                 path = native_path(json.loads(response['body']), operation + '-api')
                 data, content_type = multipart(fields, payload)
                 response = request(path, 'POST', data, {'Content-Type': content_type})
-                assert response['status'] == 200
+                if response['status'] != 200:
+                    raise RuntimeError(operation + '_status=' + str(response['status']))
                 checks.append(stage)
                 stage = operation + '_download_bytes'
                 path = download()
@@ -379,7 +399,7 @@ print(json.dumps(report))
                 'source_server': labels.get('com.cloudfile.source.seafile-server'),
                 'checks': checks, 'extensions_regression': regression, 'identity_runtime': identity}
     except Exception as error:
-        detail = str(error) if str(error).startswith(('anonymous_file_status=', 'secure_read_status=', 'regression_tests=', 'native_import=', 'identity_stage=', 'migration_check=')) else type(error).__name__
+        detail = str(error) if str(error).startswith(('anonymous_file_status=', 'secure_read_status=', 'upload_status=', 'update_status=', 'upload_link_status=', 'update_link_status=', 'regression_tests=', 'native_import=', 'identity_stage=', 'migration_check=')) else type(error).__name__
         raise RuntimeError('Isolated runtime acceptance failed at stage: ' + stage + ' (' + detail + ')') from None
     finally:
         failures = []

@@ -65,13 +65,10 @@ def parse_args():
 # 修改说明（2026-09-22）：用普通 tuple 而非 frozenset，便于门禁用 ast.literal_eval
 # 读取这份默认值并与实现对齐（见 tools/test-bootstrap-settings.py）。
 CF_DEFAULT_ON = (
-    'CF_ENABLE_DIR_ACL',
     'CF_ENABLE_AUDIT',
     'CF_ENABLE_METADATA',
     'CF_ENABLE_TAGS',
     'CF_ENABLE_FILE_PREVIEW',
-    'CF_ENABLE_FILE_LOCK',
-    'CF_ENABLE_CHECKOUT',
     'CF_ENABLE_FAVORITES_ID',
     'CF_ENABLE_WATCH',
     'CF_ENABLE_FILEOPS',

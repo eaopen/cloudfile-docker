@@ -121,7 +121,7 @@ services:
       # -- CloudFile switches --
       # Read on every start, so flipping one and restarting takes effect.
       CF_ENABLE_SSO: ${CF_ENABLE_SSO:-false}
-      CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-true}
+      CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-false}
       CF_ENABLE_AUDIT: ${CF_ENABLE_AUDIT:-true}
       # Write lifecycle gate instrument. Not a capability -- see
       # cloudfile-server/common/cf-fileop-test.h.
@@ -152,14 +152,14 @@ services:
       ONLYOFFICE_APIJS_URL: ${ONLYOFFICE_APIJS_URL:-}
       ONLYOFFICE_FILE_SERVER_ROOT: ${ONLYOFFICE_FILE_SERVER_ROOT:-}
       CF_ENABLE_FILE_PREVIEW: ${CF_ENABLE_FILE_PREVIEW:-true}
-      CF_ENABLE_FILE_LOCK: ${CF_ENABLE_FILE_LOCK:-true}
+      CF_ENABLE_FILE_LOCK: ${CF_ENABLE_FILE_LOCK:-false}
       CF_ENABLE_WATCH: ${CF_ENABLE_WATCH:-true}
       CF_ENABLE_CONVERT_EXPORT: ${CF_ENABLE_CONVERT_EXPORT:-false}
       ENABLE_SEADOC: ${CF_ENABLE_CONVERT_EXPORT:-false}
       SEADOC_SERVER_URL: ${SEAFILE_SERVER_PROTOCOL:-https}://${SEAFILE_SERVER_HOSTNAME:?set SEAFILE_SERVER_HOSTNAME in .env}/sdoc-server
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:-}
       CF_LOCK_BACKEND: ${CF_LOCK_BACKEND:-cloudfile}
-      CF_ENABLE_CHECKOUT: ${CF_ENABLE_CHECKOUT:-true}
+      CF_ENABLE_CHECKOUT: ${CF_ENABLE_CHECKOUT:-false}
       CF_ENABLE_LOCAL_APP: ${CF_ENABLE_LOCAL_APP:-false}
       CF_ENABLE_S3_STORAGE: ${CF_ENABLE_S3_STORAGE:-false}
       SEAF_SERVER_STORAGE_TYPE: ${SEAF_SERVER_STORAGE_TYPE:-}
@@ -357,7 +357,7 @@ services:
       # Keep the worker's task registry in sync with the application. New
       # periodic extension tasks can therefore be enabled with the same .env.
       CF_ENABLE_SSO: ${CF_ENABLE_SSO:-false}
-      CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-true}
+      CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-false}
       CF_ENABLE_AUDIT: ${CF_ENABLE_AUDIT:-true}
       # Write lifecycle gate instrument. Not a capability -- see
       # cloudfile-server/common/cf-fileop-test.h.
@@ -385,11 +385,11 @@ services:
       ONLYOFFICE_APIJS_URL: ${ONLYOFFICE_APIJS_URL:-}
       ONLYOFFICE_FILE_SERVER_ROOT: ${ONLYOFFICE_FILE_SERVER_ROOT:-}
       CF_ENABLE_FILE_PREVIEW: ${CF_ENABLE_FILE_PREVIEW:-true}
-      CF_ENABLE_FILE_LOCK: ${CF_ENABLE_FILE_LOCK:-true}
+      CF_ENABLE_FILE_LOCK: ${CF_ENABLE_FILE_LOCK:-false}
       CF_ENABLE_WATCH: ${CF_ENABLE_WATCH:-true}
       CF_ENABLE_CONVERT_EXPORT: ${CF_ENABLE_CONVERT_EXPORT:-false}
       CF_LOCK_BACKEND: ${CF_LOCK_BACKEND:-cloudfile}
-      CF_ENABLE_CHECKOUT: ${CF_ENABLE_CHECKOUT:-true}
+      CF_ENABLE_CHECKOUT: ${CF_ENABLE_CHECKOUT:-false}
       CF_ENABLE_LOCAL_APP: ${CF_ENABLE_LOCAL_APP:-false}
       CF_ENABLE_S3_STORAGE: ${CF_ENABLE_S3_STORAGE:-false}
       CF_ENABLE_EXTERNAL_SOURCES: ${CF_ENABLE_EXTERNAL_SOURCES:-false}

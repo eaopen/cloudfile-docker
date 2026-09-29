@@ -239,6 +239,25 @@ class CloudFileSettingsTest(unittest.TestCase):
 
 
 class OIDCSettingsTest(unittest.TestCase):
+    def test_audit_export_defaults_off_and_requires_query_and_private_root(self):
+        namespace = {}
+        exec(CLOUDFILE.render_settings({}), namespace)
+        self.assertIs(namespace['CLOUDFILE_AUDIT_EXPORT_ENABLED'], False)
+        self.assertIsNone(namespace['CLOUDFILE_AUDIT_RESULT_ROOT'])
+        environment = self.environment()
+        environment.update(CLOUDFILE_AUTHORIZATION_ENABLED='true',
+            CLOUDFILE_AUDIT_QUERY_ENABLED='true', CLOUDFILE_AUDIT_EXPORT_ENABLED='true',
+            CLOUDFILE_AUDIT_CURSOR_SECRET='x' * 32,
+            CLOUDFILE_AUDIT_RESULT_ROOT='/private/audit')
+        exec(CLOUDFILE.render_settings(environment), namespace)
+        self.assertIs(namespace['CLOUDFILE_AUDIT_EXPORT_ENABLED'], True)
+        self.assertEqual(namespace['CLOUDFILE_AUDIT_RESULT_ROOT'], '/private/audit')
+        for root in ('', 'relative', '/invalid\x00'):
+            with self.assertRaises(ValueError):
+                CLOUDFILE.render_settings({**environment, 'CLOUDFILE_AUDIT_RESULT_ROOT': root})
+        with self.assertRaises(ValueError):
+            CLOUDFILE.render_settings({**environment, 'CLOUDFILE_AUDIT_QUERY_ENABLED': 'false'})
+
     @staticmethod
     def environment():
         import json

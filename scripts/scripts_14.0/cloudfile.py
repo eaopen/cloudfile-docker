@@ -236,6 +236,11 @@ def render_settings(environment=None):
     local_edit_enabled = _boolean(environment, "CLOUDFILE_LOCAL_EDIT_ENABLED", False)
     transfer_enabled = _boolean(environment, "CLOUDFILE_TRANSFER_ENABLED", False)
     audit_query_enabled = _boolean(environment, "CLOUDFILE_AUDIT_QUERY_ENABLED", False)
+    audit_export_enabled = _boolean(environment, "CLOUDFILE_AUDIT_EXPORT_ENABLED", False)
+    audit_result_root = environment.get("CLOUDFILE_AUDIT_RESULT_ROOT") if audit_export_enabled else None
+    if audit_export_enabled and (not audit_query_enabled or not isinstance(audit_result_root, str)
+            or not os.path.isabs(audit_result_root) or "\x00" in audit_result_root):
+        raise ValueError("audit export requires audit query and an absolute private result directory")
     raw_audit_secret = environment.get("CLOUDFILE_AUDIT_CURSOR_SECRET", "")
     audit_secret = raw_audit_secret.encode("utf-8") if audit_query_enabled and raw_audit_secret else None
     if audit_query_enabled and (not oidc_enabled or not authorization_enabled
@@ -274,6 +279,8 @@ def render_settings(environment=None):
         f"CLOUDFILE_LOCAL_EDIT_ENABLED = {local_edit_enabled!r}",
         f"CLOUDFILE_TRANSFER_ENABLED = {transfer_enabled!r}",
         f"CLOUDFILE_AUDIT_QUERY_ENABLED = {audit_query_enabled!r}",
+        f"CLOUDFILE_AUDIT_EXPORT_ENABLED = {audit_export_enabled!r}",
+        f"CLOUDFILE_AUDIT_RESULT_ROOT = {audit_result_root!r}",
         f"CLOUDFILE_AUDIT_CURSOR_SECRET = {audit_secret!r}",
     ]
     lines.extend(

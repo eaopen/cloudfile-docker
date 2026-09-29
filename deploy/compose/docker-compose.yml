@@ -435,7 +435,7 @@ services:
     build:
       context: ../..
       dockerfile: image/migration/Dockerfile
-    image: cloudfile/seaf-cli-migration:9.0.21
+    image: cloudfile/seaf-cli-migration:9.0.21-cf2
     container_name: cloudfile-migration
     environment:
       CF_MIGRATION_SERVER_URL: ${CF_MIGRATION_SERVER_URL:-http://cloudfile}

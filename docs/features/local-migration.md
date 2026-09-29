@@ -3,7 +3,8 @@
 ## v0.2 离线管理员单库导入
 
 CF02-07 MVP 复用 v0.1 `a963c177e9e6e5e122c2e088620b2cc2bb63c2b1` 的
-`image/migration/` 和已构建 `cloudfile/seaf-cli-migration:9.0.21`，不另建同步器。
+`image/migration/` 和已构建 `cloudfile/seaf-cli-migration:9.0.21`。当前目录映射封装
+使用 `cloudfile/seaf-cli-migration:9.0.21-cf2`，仍内含官方 CLI 9.0.21，须重新构建镜像。
 当前是维护操作，不是开放的 Web/eTech migration API。
 
 仅导入到新建、空、尚未开放给业务用户的 **UNMANAGED** 库。维护网络只允许管理员
@@ -25,8 +26,9 @@ WorkingCopyBuilder、WorkingCopyVerifier 生成和核验独立副本；CLI 是�
   `CF_MIGRATION_SOURCE_HOST`：管理员固定配置，不接受业务请求传入。
 
 运行时使用 `--platform linux/amd64`，上述四处分别 bind mount（token 只读），
-配置四个环境变量，再运行该镜像。已存在镜像无需 build；首次部署可按
-`docker build -f image/migration/Dockerfile -t cloudfile/seaf-cli-migration:9.0.21 .` 构建。
+配置四个环境变量，再运行该镜像。当前封装按
+`docker build -f image/migration/Dockerfile -t cloudfile/seaf-cli-migration:9.0.21-cf2 .` 构建；
+旧 `9.0.21` 镜像不识别准备树，不能用于目录映射导入。
 受控维护地址的 TLS/网络限制在部署验收中落实，夹具 HTTP 仅在 Docker internal 网络。
 
 中断使用 Docker stop（脚本捕获 SIGTERM，停止 daemon，退出 143）；恢复沿用同一
@@ -66,6 +68,48 @@ python3 tests/verify.py docker
 - `CF_MIGRATION_USER`：有目标资料库写权限的账户邮箱；
 - `CF_MIGRATION_TOKEN_FILE`：该账户的 Seafile API token 文件，禁止提交到 Git；
 - `CF_MIGRATION_SERVER_URL`：容器可访问的 CloudFile 地址，默认 `http://cloudfile`。
+
+### 指定目录与库内路径
+
+若只导入部分目录，先在冻结、只读的源副本上创建映射文件。`source` 相对
+`--source-root`，`target` 是目标库内的绝对目录；下面只导入两个目录，并分别放入
+`/历史资料/设计` 和 `/历史资料/合同`。目标库仍须是新建空库：映射仅改变 CLI 暂存树，
+不改变 Seafile CLI 的双向同步语义。
+
+```json
+{"version":1,"mappings":[
+  {"source":"设计/2024","target":"/历史资料/设计"},
+  {"source":"合同/归档","target":"/历史资料/合同"}
+]}
+```
+
+```bash
+python3 tools/prepare-migration.py \
+  --source-root /srv/frozen-source \
+  --mapping-file /srv/migration-map.json \
+  --output-root /srv/migration-attempt-001
+```
+
+命令在相邻临时目录中准备完成后才发布新的 `output-root`，从不覆盖已有暂存。
+`output-root/data/` 是独立可写 CLI 工作树；`.cf-migration/` 保存源/目标映射、
+逐文件 SHA-256 清单和选择 ID，
+不进入资料库。把 `CF_MIGRATION_SOURCE_DIR` 设为 **`/srv/migration-attempt-001`**，
+不要设为其 `data/`：容器会校验清单并只将 `data/` 交给 CLI。恢复时保持原路径、
+状态目录与映射结果不变；不同选择 ID 会被拒绝。选择 ID 绑定准备时的清单，
+容器启动时不重读 80 万个文件来证明工作树内容仍相同；暂存除专用 CLI 外必须保持冻结，
+目标内容仍需最终核验。
+
+准备失败会留下 `*.incomplete-*` 取证目录，不会发布可导入的 `output-root`。
+准备工具逐文件只读一次源并在复制时计算摘要，不会再完整扫描、哈希同一原目录。
+默认逐文件 `fsync`；大量小文件且使用独立 Linux 暂存卷时，可实测
+`--durability volume`，它在发布完整选择前以一次 `syncfs` 刷新该文件系统，
+减少逐文件刷盘次数。该选项会刷新同卷的其他脏数据，须计入资源预算。
+大量小文件和大小文件混合场景应分别记录
+准备耗时、CLI 索引/上传速率、状态盘 I/O 与目标核验耗时，再针对实际瓶颈调优。
+目标验收仍按映射后的库内路径核对清单、大小和必要的内容摘要；CLI 状态不代替核验。
+首次绑定前容器通过只读 API 检查目标库根目录为空，读取失败或非空均拒绝；
+检查和随后 CLI 绑定并非同一个事务，维护期间仍须禁止其他写入。
+当前工具不自动宣布导入完成，也不支持导入既有业务库。
 
 推荐先用一个小资料库试运行。`data/migration/control` 中的锁会拒绝第二个并行实例；
 已有状态也会拒绝绑定不同 UUID 或目录。依次运行：

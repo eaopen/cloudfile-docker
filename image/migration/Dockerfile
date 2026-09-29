@@ -21,6 +21,8 @@ ENV APPDIR=/opt/seaf-cli \
     PATH=/usr/local/sbin:/usr/local/bin:/opt/seaf-cli/usr/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 COPY image/migration/entrypoint.sh /usr/local/bin/cf-migration
+COPY image/migration/selection.py /usr/local/bin/cf-migration-selection
+COPY image/migration/preflight.py /usr/local/bin/cf-migration-preflight
 RUN chmod +x /usr/local/bin/cf-migration
 
 ENTRYPOINT ["/usr/local/bin/cf-migration"]

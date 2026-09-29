@@ -8,6 +8,13 @@ state_dir=/migration/state
 control_dir=/migration/control
 conf_dir="${state_dir}/ccnet"
 token_file=/run/secrets/cf_migration_token
+selection_id=
+
+if [[ -e "${source_dir}/.cf-migration" || -L "${source_dir}/.cf-migration" ]]; then
+    selection_id="$(python3 /usr/local/bin/cf-migration-selection "$source_dir")"
+    source_dir="${source_dir}/data"
+fi
+export CF_MIGRATION_WORKTREE="$source_dir"
 
 for name in CF_MIGRATION_SERVER_URL CF_MIGRATION_REPO_ID CF_MIGRATION_USER CF_MIGRATION_SOURCE_HOST; do
     if [[ -z "${!name:-}" ]]; then
@@ -66,6 +73,14 @@ fi
 if [[ ! -e "$source_file" ]]; then
     printf '%s\n' "$CF_MIGRATION_SOURCE_HOST" > "$source_file"
 fi
+selection_file="${state_dir}/selection-id"
+if [[ -e "$selection_file" && "$(<"$selection_file")" != "$selection_id" ]]; then
+    echo 'State belongs to a different directory selection' >&2
+    exit 2
+fi
+if [[ ! -e "$selection_file" ]]; then
+    printf '%s\n' "$selection_id" > "$selection_file"
+fi
 
 if [[ ! -f "${conf_dir}/seafile.ini" ]]; then
     if [[ -e "$conf_dir" ]]; then
@@ -91,7 +106,7 @@ python3 -c '
 import json, os, sys
 repos = json.loads(sys.argv[1])
 repo_id = os.environ["CF_MIGRATION_REPO_ID"]
-source = os.path.realpath("/migration/source")
+source = os.path.realpath(os.environ["CF_MIGRATION_WORKTREE"])
 if len(repos) > 1 or any(r["id"] != repo_id or os.path.realpath(r["path"]) != source for r in repos):
     print("Client state contains another repository or worktree", file=sys.stderr)
     sys.exit(2)
@@ -101,6 +116,7 @@ if [[ "$link_status" -eq 2 ]]; then
     exit 2
 fi
 if [[ "$link_status" -eq 1 ]]; then
+    python3 /usr/local/bin/cf-migration-preflight
     # A token argument is required by seaf-cli. It is read from a mounted
     # secret and never written to Compose, the image, or the logs.
     token="$(<"$token_file")"

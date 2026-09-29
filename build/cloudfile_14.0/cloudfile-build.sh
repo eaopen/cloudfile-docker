@@ -459,7 +459,12 @@ function apply_patches() {
 # Record what actually went into this build. Reproducing a report against
 # "main" is impossible without it, since the forks are pinned by branch.
 function write_build_info() {
-    local out="${current_dir}/seafile-server-${version}/cloudfile-build-info.txt"
+    local package_dir="${current_dir}/seafile-server-${version}"
+    local out="${package_dir}/cloudfile-build-info.txt"
+    # A cached distribution may already carry a provenance record from an
+    # earlier recipe commit. Rewriting build-info invalidates that record;
+    # the image builder must verify and stamp the current bytes again.
+    rm -f "${package_dir}/cloudfile-build.json"
     {
         echo "product: ${version}"
         echo "architecture: $(uname -m)"

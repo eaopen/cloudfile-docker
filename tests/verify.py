@@ -268,7 +268,13 @@ def run_components(modules, image, warm):
                 '-w', '/workspace/cloudfile-hub']
         # latest is created by the real CE entrypoint; this lightweight runner
         # intentionally starts neither initialization nor Seahub/native services.
-        package = '/opt/seafile/seafile-server-' + version
+        installed = command(['docker', 'run', '--rm', '--entrypoint', 'sh', image_id,
+            '-c', 'printf "%s\\n" /opt/seafile/seafile-server-*'])
+        packages = installed.stdout.strip().splitlines()
+        if (installed.returncode or len(packages) != 1 or
+                not re.fullmatch(r'/opt/seafile/seafile-server-' + re.escape(version) + r'(?:-[a-zA-Z0-9.-]+)?', packages[0])):
+            raise RuntimeError('Component image has no unique CE package directory')
+        package = packages[0]
         for key, value in dict(PYTHONDONTWRITEBYTECODE='1',
             PYTHONPATH=':'.join(['/workspace/cloudfile-hub', package + '/seahub/thirdpart',
                                package + '/seafile/lib/python3/site-packages', package + '/pro/python']),

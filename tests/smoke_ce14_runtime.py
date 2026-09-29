@@ -285,7 +285,7 @@ print(json.dumps({'tests': result.testsRun, 'skipped': len(result.skipped)}))
             version = labels.get('com.cloudfile.seafile.version', '')
             if not re.fullmatch(r'\d+\.\d+\.\d+', version):
                 raise RuntimeError('Invalid CE version label')
-            fixture_dir = '/opt/seafile/seafile-server-' + version + '/eap-cloudfile/contracts'
+            fixture_dir = '/opt/seafile/seafile-server-latest/eap-cloudfile/contracts'
             docker('exec', app, 'mkdir', '-p', fixture_dir)
             contracts = Path(__file__).resolve().parents[2] / 'eap-cloudfile/contracts'
             for name in ('acceptance-vectors.json', 'schema-examples.json'):
@@ -296,7 +296,7 @@ print(json.dumps({'tests': result.testsRun, 'skipped': len(result.skipped)}))
                   ['/var/lib/mysql:rw,size=1g'])
             start('test-redis', 'test-redis', 'redis:7-alpine', {}, ['/data:rw,size=64m'])
             code = '''
-import io, json, os, sys, time, unittest
+import io, json, os, re, sys, time, unittest
 package = '/opt/seafile/seafile-server-latest'
 os.chdir(package + '/seahub')
 sys.path[:0] = [package + '/seahub', package + '/seahub/thirdpart',
@@ -334,9 +334,16 @@ assert sum(test.id() == actor_id for test in all_tests) == 1
 suite = unittest.TestSuite(test for test in all_tests if test.id() != actor_id)
 output = io.StringIO()
 result = unittest.TextTestRunner(stream=output, verbosity=2).run(suite)
+def failure_shape(items):
+    return {test.id(): {'type': trace.strip().splitlines()[-1].split(':', 1)[0],
+        'reason': trace.strip().splitlines()[-1][:240] if 'Model class ' in trace.strip().splitlines()[-1] else '',
+        'frames': [(path.rsplit('/', 1)[-1], int(line), name) for path, line, name
+            in re.findall(r'File "([^"]+)", line ([0-9]+), in (.+)', trace)[-3:]]}
+        for test, trace in items}
 report = {'tests': result.testsRun, 'native_tests_separate': 1, 'skipped': len(result.skipped),
           'failures': [test.id().split(" (", 1)[0] for test, trace in result.failures],
-          'errors': [test.id().split(" (", 1)[0] for test, trace in result.errors]}
+          'errors': [test.id().split(" (", 1)[0] for test, trace in result.errors],
+          'diagnostics': {**failure_shape(result.failures), **failure_shape(result.errors)}}
 print(json.dumps(report))
 '''
             regression = json.loads(docker('exec', app, 'python3', '-c', code, timeout=600))

@@ -302,8 +302,11 @@ class Target:
                 raise ImportErrorSafe("target path is occupied by a file")
             if self.head() != expected_head:
                 raise ImportErrorSafe("repository changed outside this import job")
-            response = self.api("POST", f"/api2/repos/{self.repo}/dir/?p={quote(built, safe='/')}",
-                                data={"operation": "mkdir"}, expected=(200, 201))
+            try:
+                response = self.api("POST", f"/api2/repos/{self.repo}/dir/?p={quote(built, safe='/')}",
+                                    data={"operation": "mkdir"}, expected=(200, 201))
+            except ImportErrorSafe as exc:
+                raise ImportErrorSafe("target directory creation failed: " + str(exc)) from exc
             response.close()
             if self.dir_entries(built) is None:
                 raise ImportErrorSafe("created directory is not visible")
@@ -333,15 +336,22 @@ class Target:
                    f"filename=\"{quoted_name}\"\r\nContent-Type: application/octet-stream\r\n\r\n").encode()
         suffix = f"\r\n--{boundary}--\r\n".encode()
 
-        def body():
-            yield prefix
-            while data := stream.read(CHUNK):
-                yield data
-            yield suffix
+        class MultipartBody:
+            def __len__(self):
+                return len(prefix) + size + len(suffix)
 
-        response = request(self.session, "POST", url, token=self.token, expected=(200, 201),
-                           data=body(), headers={"Content-Type": f"multipart/form-data; boundary={boundary}",
-                                                 "Content-Length": str(len(prefix) + size + len(suffix))})
+            def __iter__(self):
+                yield prefix
+                while data := stream.read(CHUNK):
+                    yield data
+                yield suffix
+
+        try:
+            response = request(self.session, "POST", url, token=self.token, expected=(200, 201),
+                               data=MultipartBody(), headers={"Content-Type": f"multipart/form-data; boundary={boundary}",
+                                                             "Content-Length": str(len(prefix) + size + len(suffix))})
+        except ImportErrorSafe as exc:
+            raise ImportErrorSafe("target file upload failed: " + str(exc)) from exc
         response.close()
 
     def verify_file(self, path, expected_size, expected_hash):

@@ -64,7 +64,8 @@ def multipart(fields, content):
 
 
 def run(image, native_regression=False, extensions_regression=False, identity_runtime=False,
-        identity_scenario='prebound', development_worker_overlay=False, migration_runtime=False, annotations_runtime=False):
+        identity_scenario='prebound', development_worker_overlay=False, migration_runtime=False, annotations_runtime=False,
+        cf_import_runtime=False):
     if not __debug__:
         raise RuntimeError('Acceptance requires Python assertions enabled')
     prefix = 'cf02-smoke-' + secrets.token_hex(6)
@@ -210,6 +211,12 @@ finally:
                 containers=containers, request=request, auth=auth, repo=repo)
             return dict(result='passed', scope='isolated offline small-library import/resume only',
                 image_id=metadata['Id'], package_sha256=digest, checks=checks + [stage], migration=migration)
+        if cf_import_runtime:
+            stage = 'cf_import_runtime'
+            from cf_import_runtime import exercise
+            imported = exercise(docker=docker, app=app, request=request, auth=auth, repo=repo)
+            return dict(result='passed', scope='isolated one-way cf-import HTTP acceptance',
+                image_id=metadata['Id'], package_sha256=digest, checks=checks + [stage], cf_import=imported)
         if identity_scenario != 'annotations':
             content = b'CloudFile CE14 native upload, download and Range acceptance.\n' * 4
 
@@ -422,7 +429,7 @@ print(json.dumps(report))
                 'source_server': labels.get('com.cloudfile.source.seafile-server'),
                 'checks': checks, 'extensions_regression': regression, 'identity_runtime': identity}
     except Exception as error:
-        detail = str(error) if str(error).startswith(('anonymous_file_status=', 'secure_read_status=', 'upload_status=', 'update_status=', 'upload_link_status=', 'update_link_status=', 'regression_tests=', 'native_import=', 'identity_stage=', 'migration_check=')) else type(error).__name__
+        detail = str(error) if str(error).startswith(('anonymous_file_status=', 'secure_read_status=', 'upload_status=', 'update_status=', 'upload_link_status=', 'update_link_status=', 'regression_tests=', 'native_import=', 'identity_stage=', 'migration_check=', 'cf_import_probe=')) else type(error).__name__
         raise RuntimeError('Isolated runtime acceptance failed at stage: ' + stage + ' (' + detail + ')') from None
     finally:
         failures = []
@@ -452,6 +459,8 @@ if __name__ == '__main__':
     parser.add_argument('--development-worker-overlay', action='store_true',
                         help='JIT development only: use host worker script; not packaged release evidence')
     parser.add_argument('--migration-runtime', action='store_true', help='Reuse v0.1 CLI for offline small-directory import and resume only')
+    parser.add_argument('--cf-import-runtime', action='store_true', help='Exercise standalone cf-import against a disposable CE14 repository')
     args = parser.parse_args()
     print(json.dumps(run(args.image, args.native_regression, args.extensions_regression,
-                         args.identity_runtime, args.identity_scenario, args.development_worker_overlay, args.migration_runtime), indent=2))
+                         args.identity_runtime, args.identity_scenario, args.development_worker_overlay,
+                         args.migration_runtime, cf_import_runtime=args.cf_import_runtime), indent=2))

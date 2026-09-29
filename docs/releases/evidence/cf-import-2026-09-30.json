@@ -1,0 +1,43 @@
+{
+  "date": "2026-09-30",
+  "component": "standalone cf-import",
+  "result": "passed_with_limits",
+  "unit": {
+    "command": "python3 -m unittest discover -s tests -p test_cf_import.py -q",
+    "passed": 5,
+    "checks": [
+      "local source mapping and incremental plan",
+      "delete candidate retained",
+      "remote HEAD conflict stops apply",
+      "Filestash ls/cat adapter with simulated API",
+      "multipart request has Content-Length without chunked transfer",
+      "resume after failure before remote commit",
+      "stop after unknown remote commit"
+    ]
+  },
+  "native_runtime": {
+    "command": "python3 tests/smoke_ce14_runtime.py --image cloudfile/cloudfile:14.0.8-cf.0-current --cf-import-runtime",
+    "result": "passed",
+    "scope": "disposable CE14 repository, native HTTP API and Go fileserver",
+    "image_id": "sha256:dc8a26ef89b8220f7d97af7d03145b26112a702b21e7a9a9dee11172d6a912f8",
+    "package_sha256": "09fb0b5633955017bda7e0619ea4d3763916e0fb5d1a71641456117f29e31c9a",
+    "native_download_checks": 5,
+    "checks": [
+      "selected local directory mapped under /History/Selected",
+      "empty directory preserved",
+      "unselected source excluded",
+      "uploaded bytes verified by native downloads",
+      "unchanged check empty",
+      "incremental add and modify",
+      "source deletion reported but target retained",
+      "external target commit blocks subsequent check"
+    ]
+  },
+  "not_verified": [
+    "live Filestash instance or heterogeneous backend",
+    "800000 file throughput",
+    "production reverse proxy",
+    "concurrent target writers",
+    "hard-kill recovery at all publication points"
+  ]
+}

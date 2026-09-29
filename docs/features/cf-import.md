@@ -64,3 +64,18 @@ URL 中的目录是 Filestash 会话可见的绝对目录。FileStash API 只保
 其他导入任务交叉。对百万文件、数百 GB 或混合大小文件的首次导入，仍使用
 `cf-migration`；当前 `cf-import` 的逐文件 API 上传与逐文件下载核验尚无该规模
 的吞吐或恢复验收，不把它标为替代通道。
+
+## 2026-09-30 验证范围
+
+运行 `python3 -m unittest discover -s tests -p test_cf_import.py -q`：5 项通过，
+覆盖本地映射和增量、FileStash `ls/cat` 模拟接口、分块 multipart 编码、
+中断前未提交时续跑，以及目标已提交但响应丢失时拒绝盲目重试。
+
+运行 `python3 tests/smoke_ce14_runtime.py --image cloudfile/cloudfile:14.0.8-cf.0-current --cf-import-runtime`：
+在可销毁 CE14 库中通过真实 API/Go fileserver 导入。验证了选中目录映射、空目录、
+排除非选中来源、原生下载内容、新增、修改、删除候选保留和目标 HEAD 漂移拒绝。
+运行后容器与网络由夹具清理；结果记录在[验收证据](../releases/evidence/cf-import-2026-09-30.json)。
+
+这次不构成 FileStash 实例与真实 SMB/NFS/SFTP 后端验收；FileStash 来源仅有接口模拟
+测试。未进行百万文件、TB 数据、强杀恢复、并发写入或生产反向代理验证。普通业务写入
+目标库、自动删除、冲突合并和无元数据变化的内容检测均不在当前适用范围内。

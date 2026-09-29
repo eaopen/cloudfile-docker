@@ -114,8 +114,15 @@ services:
       - "127.0.0.1:${FILESTASH_HTTP_PORT:-8334}:8334"
     volumes:
       - ./data/local-reference/filestash:/app/data/state
-      - ./data/local-reference/reference:/reference:ro
     networks:
       default:
         aliases: [filestash.localtest.me]
+    restart: unless-stopped
+
+  reference-sftp:
+    image: ${REFERENCE_SFTP_IMAGE:-atmoz/sftp:latest}
+    profiles: ["reference-lab"]
+    command: "reference:${REFERENCE_SFTP_PASSWORD:-local-only-change-this-password}:1000"
+    volumes:
+      - ./data/local-reference/reference:/home/reference/reference:ro
     restart: unless-stopped

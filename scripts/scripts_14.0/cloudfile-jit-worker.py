@@ -7,6 +7,7 @@ from pathlib import Path
 import signal
 import sys
 import threading
+import traceback
 from uuid import uuid4
 
 
@@ -47,14 +48,29 @@ def main(argv=None, *, logout=False):
             raise ValueError('invalid worker limits')
         bootstrap()
         from django.conf import settings
+        from cloudfile_extensions.identity.configuration import configure_oidc_host
         from cloudfile_extensions.authorization import gunicorn
         from cloudfile_extensions.identity.background import ProvisioningBackground
         from cloudfile_extensions.identity.logout_background import LogoutBackground
         require_enabled(settings, logout=logout)
+        configure_oidc_host(settings)
         hooks = gunicorn
         # Own a fresh process host; never close an existing caller's host.
         if hooks._host is not None:
             raise ValueError('standalone process required')
+        if os.environ.get('CF_DISPOSABLE_IDENTITY_PROBE') == 'true':
+            original_host = hooks.PolicyHost
+            def diagnosed_host(*args, **kwargs):
+                try:
+                    return original_host(*args, **kwargs)
+                except Exception as error:
+                    print('CF_HOST_DIAGNOSTIC=' + json.dumps({
+                        'type': type(error).__name__,
+                        'frames': [(frame.filename.rsplit('/', 1)[-1], frame.name, frame.lineno)
+                            for frame in traceback.extract_tb(error.__traceback__)[-5:]],
+                    }), file=sys.stderr)
+                    raise
+            hooks.PolicyHost = diagnosed_host
         hooks.post_worker_init(None)
         initialized = True
         stop = threading.Event()
@@ -68,7 +84,13 @@ def main(argv=None, *, logout=False):
             with worker:
                 worker.run(stop, poll_seconds=arguments.poll_seconds, once=arguments.once,
                     emit=lambda value: print(json.dumps(value), flush=True))
-    except Exception:
+    except Exception as error:
+        if os.environ.get('CF_DISPOSABLE_IDENTITY_PROBE') == 'true':
+            print('CF_WORKER_DIAGNOSTIC=' + json.dumps({
+                'type': type(error).__name__,
+                'frames': [(frame.filename.rsplit('/', 1)[-1], frame.name, frame.lineno)
+                    for frame in traceback.extract_tb(error.__traceback__)[-5:]],
+            }), file=sys.stderr)
         print('CloudFile identity worker failed; check explicit enablement, configuration, schema and worker state',
               file=sys.stderr)
         result = 1

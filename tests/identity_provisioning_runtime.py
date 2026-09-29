@@ -5,6 +5,7 @@ def exercise(*, db, fixture, origin, prefix, initiate, complete, require, groups
     from dataclasses import asdict
     import json
     import os
+    import re
     from pathlib import Path
     import subprocess
     import sys
@@ -77,7 +78,16 @@ def exercise(*, db, fixture, origin, prefix, initiate, complete, require, groups
     def worker(job_id, status):
         result = subprocess.run([sys.executable, worker_script, '--once'],
             env=environment, capture_output=True, text=True, timeout=30)
-        require(result.returncode == 0, 'standalone_worker_exit_' + str(result.returncode))
+        if result.returncode != 0:
+            lines = result.stderr.strip().splitlines()
+            kind = lines[-1].split(':', 1)[0] if lines else 'no_stderr'
+            frames = re.findall(r'File "([^"]+)", line ([0-9]+)', result.stderr)
+            location = (frames[-1][0].rsplit('/', 1)[-1] + ':' + frames[-1][1]) if frames else 'no_frame'
+            diagnostic = next((line.removeprefix('CF_WORKER_DIAGNOSTIC=')
+                for line in lines if line.startswith('CF_WORKER_DIAGNOSTIC=')), '')
+            host_diagnostic = next((line.removeprefix('CF_HOST_DIAGNOSTIC=')
+                for line in lines if line.startswith('CF_HOST_DIAGNOSTIC=')), '')
+            require(False, 'standalone_worker_exit_' + str(result.returncode) + '_' + kind + '_' + location + '_' + diagnostic + '_' + host_diagnostic)
         events = [json.loads(line) for line in result.stdout.splitlines()]
         require(events == [{'state': 'ready'}, {'state': 'job_processed', 'job_id': job_id},
             {'state': 'stopped'}], 'standalone_worker_lifecycle')

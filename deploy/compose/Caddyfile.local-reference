@@ -1,0 +1,15 @@
+# Local reference lab only. This deliberately serves HTTP so local OIDC
+# callbacks work without creating/trusting development certificates.
+:80 {
+	request_body {
+		max_size 0
+	}
+
+	handle {
+		reverse_proxy cloudfile:80 {
+			header_up X-Forwarded-Proto http
+			header_up X-Forwarded-For {remote_host}
+			header_up Host {host}
+		}
+	}
+}

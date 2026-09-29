@@ -1,0 +1,121 @@
+# Local integration lab overlay. Start only with the instructions in
+# LOCAL-REFERENCE-LAB.md; it isolates all persistent data from the base stack.
+
+services:
+  db:
+    container_name: !reset null
+    volumes:
+      - ./data/local-reference/db:/var/lib/mysql
+
+  cache:
+    container_name: !reset null
+    volumes:
+      - ./data/local-reference/redis:/data
+
+  cloudfile:
+    container_name: !reset null
+    volumes:
+      - ./data/local-reference/seafile:/shared
+    environment:
+      CF_ENABLE_SSO: ${CF_ENABLE_SSO:-true}
+      CF_SSO_OAUTH_CLIENT_ID: ${CF_SSO_OAUTH_CLIENT_ID:-}
+      CF_SSO_OAUTH_CLIENT_SECRET: ${CF_SSO_OAUTH_CLIENT_SECRET:-}
+      CF_SSO_OAUTH_AUTHORIZATION_URL: ${CF_SSO_OAUTH_AUTHORIZATION_URL:-http://auth.localtest.me:9002/application/o/authorize/}
+      CF_SSO_OAUTH_TOKEN_URL: ${CF_SSO_OAUTH_TOKEN_URL:-http://auth.localtest.me:9002/application/o/token/}
+      CF_SSO_OAUTH_USER_INFO_URL: ${CF_SSO_OAUTH_USER_INFO_URL:-http://auth.localtest.me:9002/application/o/userinfo/}
+      CF_SSO_OAUTH_LOGOUT_URL: ${CF_SSO_OAUTH_LOGOUT_URL:-http://auth.localtest.me:9002/application/o/cloudfile/end-session/}
+      CF_SSO_OAUTH_PROVIDER: ${CF_SSO_OAUTH_PROVIDER:-authentik:cloudfile}
+      CF_SSO_OAUTH_SCOPE: ${CF_SSO_OAUTH_SCOPE:-openid email profile}
+      CF_SSO_OAUTH_UID_CLAIM: ${CF_SSO_OAUTH_UID_CLAIM:-sub}
+      CF_SSO_OAUTH_EMAIL_CLAIM: ${CF_SSO_OAUTH_EMAIL_CLAIM:-email}
+      CF_SSO_OAUTH_NAME_CLAIM: ${CF_SSO_OAUTH_NAME_CLAIM:-name}
+      CF_SSO_OAUTH_INSECURE: ${CF_SSO_OAUTH_INSECURE:-true}
+
+  cf-worker:
+    container_name: !reset null
+    volumes:
+      - ./data/local-reference/seafile:/shared
+
+  cloudfile-metadata:
+    container_name: !reset null
+    volumes:
+      - ./data/local-reference/seafile:/shared
+
+  proxy:
+    container_name: !reset null
+    ports: !override
+      - "127.0.0.1:${HTTP_PORT:-80}:80"
+    volumes:
+      - ./Caddyfile.local-reference:/etc/caddy/Caddyfile:ro
+      - ./data/local-reference/caddy:/data
+      - ./data/local-reference/caddy-config:/config
+
+  authentik-postgresql:
+    image: postgres:16-alpine
+    profiles: ["reference-lab"]
+    environment:
+      POSTGRES_DB: ${AUTHENTIK_PG_DB:-authentik}
+      POSTGRES_USER: ${AUTHENTIK_PG_USER:-authentik}
+      POSTGRES_PASSWORD: ${AUTHENTIK_PG_PASS:-local-only-change-this-password}
+    volumes:
+      - ./data/local-reference/authentik-postgresql:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  authentik-server:
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.7}
+    command: server
+    profiles: ["reference-lab"]
+    depends_on:
+      authentik-postgresql:
+        condition: service_healthy
+    environment: &authentik-environment
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:-local-only-generate-a-unique-secret-key-before-start}
+      AUTHENTIK_LISTEN__HTTP: "[::]:${AUTHENTIK_HTTP_PORT:-9002}"
+      AUTHENTIK_POSTGRESQL__HOST: authentik-postgresql
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_PG_DB:-authentik}
+      AUTHENTIK_POSTGRESQL__USER: ${AUTHENTIK_PG_USER:-authentik}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_PG_PASS:-local-only-change-this-password}
+    ports:
+      - "127.0.0.1:${AUTHENTIK_HTTP_PORT:-9002}:${AUTHENTIK_HTTP_PORT:-9002}"
+    volumes:
+      - ./data/local-reference/authentik:/data
+    networks:
+      default:
+        aliases: [auth.localtest.me]
+    shm_size: 512mb
+    restart: unless-stopped
+
+  authentik-worker:
+    image: ${AUTHENTIK_IMAGE:-ghcr.io/goauthentik/server}:${AUTHENTIK_TAG:-2026.5.7}
+    command: worker
+    profiles: ["reference-lab"]
+    depends_on:
+      authentik-postgresql:
+        condition: service_healthy
+    environment:
+      <<: *authentik-environment
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD:-}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:-}
+    volumes:
+      - ./data/local-reference/authentik:/data
+    shm_size: 512mb
+    restart: unless-stopped
+
+  filestash:
+    image: ${FILESTASH_IMAGE:-machines/filestash:latest}
+    profiles: ["reference-lab"]
+    ports:
+      - "127.0.0.1:${FILESTASH_HTTP_PORT:-8334}:8334"
+    volumes:
+      - ./data/local-reference/filestash:/app/data/state
+      - ./data/local-reference/reference:/reference:ro
+    networks:
+      default:
+        aliases: [filestash.localtest.me]
+    restart: unless-stopped

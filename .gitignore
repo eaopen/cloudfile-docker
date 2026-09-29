@@ -30,6 +30,7 @@ build/*/cloudfile-frontend/
 # Deployment secrets and data. .env holds database and admin passwords, and
 # data/ is the live deployment -- neither belongs in the repo.
 deploy/compose/.env
+deploy/compose/.env.local-reference
 deploy/compose/data/
 
 # Local verification overrides contain test credentials and machine-local volumes.

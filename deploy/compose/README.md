@@ -30,7 +30,7 @@ WebDAV 读路径（PROPFIND 列举/GET/资源解析）已由
 
 ## 快速开始
 
-1. 复制配置并修改主机名、管理员密码和两个数据库密码：
+1. 复制配置并修改主机名、管理员邮箱、管理员密码和两个数据库密码。默认管理员使用独立的 `cfadmin` 账号；eTech dev 设置为 `cfadmin@etech.com`，与业务系统的 `admin` 区分：
 
    ```bash
    cd deploy/compose
@@ -90,6 +90,10 @@ docker compose up -d
 `scripts/scripts_14.0/start.py` 每次启动都会调用配置写入逻辑，将带 `CF_BEGIN`/`CF_END` 标记的区块幂等写入 Seafile 配置，区块外的人工配置不应被覆盖。
 
 ## 常用能力
+
+### Authentik + CloudFile + Filestash 本地联调
+
+隔离的本地 OIDC/只读参考库测试环境见[本地测试环境指南](LOCAL-REFERENCE-LAB.md)。该环境通过 Compose overlay 启动 Authentik 与 Filestash，单独保存测试数据，并将参考目录只读挂载到 Filestash。
 
 ### 目录 ACL
 

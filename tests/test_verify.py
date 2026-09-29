@@ -26,7 +26,7 @@ class SelectionTests(unittest.TestCase):
     def test_probe_edit_selects_docker_and_identity_but_no_full_rebuild(self):
         selected = verify.plan(['cloudfile-docker/tests/probe_identity_runtime.py'])
         self.assertEqual(selected['groups'], ['docker'])
-        self.assertEqual(selected['required_gates'], ['identity-runtime'])
+        self.assertEqual(selected['required_gates'], ['audit-runtime', 'identity-runtime'])
 
     def test_worker_or_jit_fixture_edit_requires_actual_provisioning_gate(self):
         for path in ('scripts/scripts_14.0/cloudfile-jit-worker.py', 'tests/identity_provisioning_runtime.py'):
@@ -41,6 +41,10 @@ class SelectionTests(unittest.TestCase):
     def test_backchannel_worker_and_fixture_require_actual_notification_gate(self):
         for path in ('tests/identity_backchannel_runtime.py', 'scripts/scripts_14.0/cloudfile-logout-worker.py'):
             self.assertEqual(verify.plan(['cloudfile-docker/' + path])['required_gates'], ['identity-backchannel'])
+
+    def test_audit_worker_and_fixture_require_actual_export_gate(self):
+        for path in ('tests/audit_export_runtime.py', 'scripts/scripts_14.0/cloudfile-audit-worker.py'):
+            self.assertEqual(verify.plan(['cloudfile-docker/' + path])['required_gates'], ['audit-runtime'])
 
     def test_reverse_imports_include_transitive_consumers_and_relative_imports(self):
         with tempfile.TemporaryDirectory() as directory:

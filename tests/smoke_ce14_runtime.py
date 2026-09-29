@@ -379,6 +379,21 @@ print(json.dumps(report))
             elif identity_scenario in {'transfer', 'web'}:
                 fixture = Path(__file__).with_name('delegated_transfer_runtime.py')
                 docker('cp', str(fixture), app + ':/tmp/delegated_transfer_runtime.py')
+            elif identity_scenario == 'audit':
+                fixture = Path(__file__).with_name('audit_export_runtime.py')
+                docker('cp', str(fixture), app + ':/tmp/audit_export_runtime.py')
+                worker = Path(__file__).resolve().parents[1] / 'scripts/scripts_14.0/cloudfile-audit-worker.py'
+                worker_path = '/scripts/cloudfile-audit-worker.py'
+                if development_worker_overlay:
+                    # The audit script bootstraps its adjacent JIT script.
+                    # Overlay only inside this disposable container.
+                    docker('cp', str(worker), app + ':' + worker_path)
+                expected = hashlib.sha256(worker.read_bytes()).hexdigest()
+                actual = docker('exec', app, 'python3', '-c',
+                    'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())',
+                    worker_path)
+                if actual != expected:
+                    raise RuntimeError('Audit worker image is stale; rebuild the application image')
             elif identity_scenario == 'logout':
                 fixture = Path(__file__).with_name('identity_logout_runtime.py')
                 docker('cp', str(fixture), app + ':/tmp/identity_logout_runtime.py')
@@ -395,6 +410,7 @@ print(json.dumps(report))
             identity = json.loads(docker('exec', '-e', 'CF_DISPOSABLE_IDENTITY_PROBE=true',
                 '-e', 'CF_IDENTITY_SCENARIO=' + identity_scenario,
                 '-e', 'CF_JIT_WORKER_SCRIPT=' + worker_path,
+                '-e', 'CF_AUDIT_WORKER_SCRIPT=' + worker_path,
                 app, 'python3', '/tmp/probe_identity_runtime.py', timeout=90))
             if worker_sha:
                 identity.update(worker_sha256=worker_sha,
@@ -432,7 +448,7 @@ if __name__ == '__main__':
                         help='Run extensions with a separate disposable SQL/Redis fixture')
     parser.add_argument('--identity-runtime', action='store_true',
                         help='Probe real TLS fixture OIDC/directory with actual CE accounts and SQL')
-    parser.add_argument('--identity-scenario', choices=['prebound', 'provisioning', 'logout', 'backchannel', 'transfer', 'web'], default='prebound')
+    parser.add_argument('--identity-scenario', choices=['prebound', 'provisioning', 'logout', 'backchannel', 'transfer', 'web', 'audit'], default='prebound')
     parser.add_argument('--development-worker-overlay', action='store_true',
                         help='JIT development only: use host worker script; not packaged release evidence')
     parser.add_argument('--migration-runtime', action='store_true', help='Reuse v0.1 CLI for offline small-directory import and resume only')

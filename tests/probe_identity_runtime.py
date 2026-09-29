@@ -29,7 +29,7 @@ def require(condition, label):
 def run():
     require(os.environ.get('CF_DISPOSABLE_IDENTITY_PROBE') == 'true', 'disposable_marker')
     scenario = os.environ.get('CF_IDENTITY_SCENARIO', 'prebound')
-    require(scenario in {'prebound', 'provisioning', 'logout', 'backchannel', 'transfer', 'web', 'annotations'}, 'identity_scenario')
+    require(scenario in {'prebound', 'provisioning', 'logout', 'backchannel', 'transfer', 'web', 'annotations', 'audit'}, 'identity_scenario')
     package = '/opt/seafile/seafile-server-latest'
     os.chdir(package + '/seahub')
     sys.path[:0] = [package + '/seahub', package + '/seahub/thirdpart',
@@ -268,7 +268,7 @@ def run():
             settings.CLOUDFILE_OIDC_BACKCHANNEL_ENABLED = scenario == 'backchannel'
             settings.ENABLE_OAUTH = False
             configure_oidc_host(settings)
-            if scenario in {'transfer', 'web'}:
+            if scenario in {'transfer', 'web', 'audit'}:
                 machine_secret, delegation_secret = secrets.token_hex(32), secrets.token_hex(32)
                 settings.CLOUDFILE_POLICY_CONFIG.update(
                     service_credentials={'login-v1': {'service_id': 'etech-login',
@@ -278,7 +278,7 @@ def run():
                     delegation_signing_keys={'etech-login': {'kid': 'delegation-v1',
                         'issuer': 'cloudfile', 'audience': 'cloudfile-download', 'secret': delegation_secret}})
                 settings.CLOUDFILE_AUTHORIZATION_ENABLED = True
-                settings.CLOUDFILE_TRANSFER_ENABLED = True
+                settings.CLOUDFILE_TRANSFER_ENABLED = scenario in {'transfer', 'web'}
             if scenario == 'annotations':
                 from seaserv import seafile_api
                 from cloudfile_extensions.resources.native import NativeResourceReader
@@ -295,6 +295,14 @@ def run():
                     provider='etech', namespaces=['etech:project'])}
                 settings.CLOUDFILE_RESOURCE_SECRET = secrets.token_bytes(32)
                 settings.CLOUDFILE_RESOURCE_LIFECYCLE_READER = NativeResourceReader(seafile_api)
+            if scenario == 'audit':
+                result_root = Path(temporary) / 'audit-results'
+                result_root.mkdir(mode=0o700)
+                settings.CLOUDFILE_AUTHORIZATION_ENABLED = True
+                settings.CLOUDFILE_AUDIT_QUERY_ENABLED = True
+                settings.CLOUDFILE_AUDIT_EXPORT_ENABLED = True
+                settings.CLOUDFILE_AUDIT_CURSOR_SECRET = secrets.token_bytes(32)
+                settings.CLOUDFILE_AUDIT_RESULT_ROOT = str(result_root)
             gunicorn.post_worker_init(None)
             clear_url_caches()
             management = IdentityManagement(db, native_schema='ccnet_db', identity_schema='seahub_db',
@@ -332,6 +340,14 @@ def run():
                     initiate=initiate, complete=complete, require=require))
                 return dict(result='passed', checks=checks,
                     scope='Actual OIDC TLS fixture/session, shared native qualification/C Policy Core, native resource history and HTTP/SQL; no external eTech or deployment acceptance')
+
+            if scenario == 'audit':
+                stage = 'audit_export_http'
+                from audit_export_runtime import exercise
+                checks.extend(exercise(db=db, user=user, initiate=initiate, complete=complete,
+                    require=require, configuration_dir=temporary))
+                return dict(result='passed', checks=checks,
+                    scope='Controlled OIDC/native policy, audit HTTP, standalone worker and private CSV delivery; no external eTech or browser acceptance')
 
             if scenario == 'provisioning':
                 stage = 'jit_provisioning'

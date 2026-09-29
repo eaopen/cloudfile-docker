@@ -2,11 +2,13 @@
 """Standalone bounded audit exports and expiry cleanup; no web-process thread."""
 import argparse
 import json
+import os
 from pathlib import Path
 import runpy
 import signal
 import sys
 import threading
+import traceback
 from uuid import uuid4
 
 
@@ -38,9 +40,13 @@ def main(argv=None):
         bootstrap()
         from django.conf import settings
         from cloudfile_extensions.authorization import gunicorn
+        from cloudfile_extensions.identity.configuration import configure_oidc_host
         from cloudfile_extensions.events.background import AuditBackground
         from cloudfile_extensions.events.configuration import require_export_configuration
         require_export_configuration(settings)
+        # The standalone process has raw Django settings, unlike a web worker
+        # that already passed OIDC host normalization during startup.
+        configure_oidc_host(settings)
         hooks = gunicorn
         if hooks._host is not None:
             raise ValueError('standalone process required')
@@ -54,7 +60,14 @@ def main(argv=None):
                 owner='audit-' + uuid4().hex, lease_seconds=arguments.lease_seconds) as worker:
             worker.run(stop, poll_seconds=arguments.poll_seconds, once=arguments.once,
                 emit=lambda value: print(json.dumps(value), flush=True))
-    except Exception:
+    except Exception as error:
+        if os.environ.get('CF_DISPOSABLE_IDENTITY_PROBE') == 'true':
+            # Disposable fixture only: names and stack locations, never settings or tokens.
+            print('CF_AUDIT_WORKER_DIAGNOSTIC=' + json.dumps({
+                'type': type(error).__name__,
+                'frames': [(frame.filename.rsplit('/', 1)[-1], frame.name, frame.lineno)
+                    for frame in traceback.extract_tb(error.__traceback__)[-5:]],
+            }), file=sys.stderr)
         print('CloudFile audit worker failed; check enablement, private results, schema and authority',
               file=sys.stderr)
         result = 1

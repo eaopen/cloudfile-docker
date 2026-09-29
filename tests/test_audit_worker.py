@@ -24,11 +24,14 @@ class AuditWorkerTests(unittest.TestCase):
             if fail:
                 runtime.run.side_effect = RuntimeError('sensitive diagnostic')
             background = Mock(return_value=runtime)
+            configure_oidc = Mock()
             modules = {}
             for name, attributes in {
                 'django': {}, 'django.conf': {'settings': settings},
                 'cloudfile_extensions': {},
                 'cloudfile_extensions.authorization': {'gunicorn': hooks},
+                'cloudfile_extensions.identity': {},
+                'cloudfile_extensions.identity.configuration': {'configure_oidc_host': configure_oidc},
                 'cloudfile_extensions.events': {},
                 'cloudfile_extensions.events.background': {'AuditBackground': background},
                 'cloudfile_extensions.events.configuration': {'require_export_configuration': Mock()},
@@ -39,6 +42,7 @@ class AuditWorkerTests(unittest.TestCase):
                     patch.object(worker.signal, 'signal') as signals, patch('sys.stderr') as stderr:
                 self.assertEqual(worker.main(['--once']), int(fail))
                 hooks.post_worker_init.assert_called_once_with(None)
+                configure_oidc.assert_called_once_with(settings)
                 hooks.worker_exit.assert_called_once_with(None, None)
                 runtime.__exit__.assert_called_once()
                 self.assertTrue(runtime.run.call_args.kwargs['once'])

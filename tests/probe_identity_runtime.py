@@ -69,8 +69,19 @@ def run():
         autocommit=True, charset='utf8mb4')
     cache = redis.Redis(host='identity-redis', port=6379, socket_timeout=2)
     server = None
+    schema_failure = None
     try:
-        SchemaRunner(db).apply()
+        runner = SchemaRunner(db)
+        original_query = runner._query
+        def diagnostic_query(sql, parameters=()):
+            nonlocal schema_failure
+            try:
+                return original_query(sql, parameters)
+            except Exception as failure:
+                schema_failure = (type(failure).__name__, failure.args[0] if failure.args and isinstance(failure.args[0], int) else None)
+                raise
+        runner._query = diagnostic_query
+        runner.apply()
         SchemaRunner(db).require_current()
         checks.append(stage)
         stage = 'native_fixture'
@@ -424,6 +435,14 @@ def run():
                 'scope': 'TLS test IdP/directory; actual CE SQL/RPC and Django client, no Authentik/eTech or ingress claim'}
     except Exception as error:
         label = str(error) if str(error).startswith('identity_check=') else (type(error).__name__ + ';frames=' + json.dumps([(item.filename.rsplit('/', 1)[-1], item.name, item.lineno) for item in traceback.extract_tb(error.__traceback__)]))
+        if stage == 'schema':
+            label += ';sql_failure=' + json.dumps(schema_failure)
+            try:
+                label += ';ledger=' + json.dumps([
+                    {key: row[key] for key in ('version', 'state', 'step', 'error_code')}
+                    for row in SchemaRunner(db).status() if row['state'] != 'applied'])
+            except Exception:
+                label += ';ledger_unavailable'
         raise RuntimeError('identity_stage=' + stage + ';' + label) from None
     finally:
         if gunicorn._host is not None:

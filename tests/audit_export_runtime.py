@@ -87,4 +87,20 @@ def exercise(*, db, user, initiate, complete, require, configuration_dir):
     denied = browser.get(metadata['result_url'], **headers)
     require(denied.status_code in {401, 403, 503}, 'audit_disabled_owner_denied')
     checks.append('native_disabled_owner_cannot_redownload')
+
+    # The same packaged worker must eventually remove an expired result, not
+    # just deny its HTTP URL. This disposable job is the only row changed.
+    job = JobStore(db).get(job_id)
+    artifact = Path(settings.CLOUDFILE_AUDIT_RESULT_ROOT) / (job_id + '.' + str(job['lease_epoch']) + '.csv')
+    require(artifact.is_file(), 'audit_result_exists_before_expiry')
+    checkpoint = dict(job['checkpoint'], expires_at=(now - timedelta(seconds=1)).timestamp())
+    with db.cursor() as cursor:
+        cursor.execute('UPDATE cf_background_job SET checkpoint=%s WHERE job_id=%s AND status=%s',
+            (json.dumps(checkpoint, sort_keys=True), job_id, 'succeeded'))
+        require(cursor.rowcount == 1, 'audit_expiry_fixture_updated')
+    cleanup = subprocess.run([sys.executable, os.environ['CF_AUDIT_WORKER_SCRIPT'], '--once'],
+        env=environment, capture_output=True, text=True, timeout=45)
+    require(cleanup.returncode == 0 and not artifact.exists(), 'audit_expired_result_removed')
+    require(JobStore(db).get(job_id)['status'] == 'succeeded', 'audit_job_facts_retained')
+    checks.append('expired_private_csv_removed_without_deleting_job')
     return checks

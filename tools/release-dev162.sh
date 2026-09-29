@@ -13,7 +13,7 @@ usage() {
 if [[ ${1:-} == --help || ${1:-} == -h ]]; then
     usage
     echo "Environment: CF_NEXUS_REGISTRY, CF_FORCE_REBUILD, CF_BUILD_JOBS, PIP_INDEX_URL," >&2
-    echo "  npm_config_registry, npm_config_fetch_retries, GOPROXY" >&2
+    echo "  npm_config_registry, npm_config_fetch_retries, GOPROXY, CF_NEXUS_BASE_IMAGE" >&2
     exit 0
 fi
 
@@ -42,6 +42,7 @@ registry=${CF_NEXUS_REGISTRY:-10.12.1.138:8041}
 registry=${registry%/}
 remote_image=$registry/$local_image
 base_image=$(python3 "$reader" "$manifest" build_base_image)
+remote_base_image=${CF_NEXUS_BASE_IMAGE:-$registry/cloudfile/build-base:${base_image##*:}}
 
 if [[ $(uname -s) != Linux || $(uname -m) != x86_64 ]]; then
     echo "This release script requires a Linux x86_64 build host." >&2
@@ -114,9 +115,17 @@ if [[ $mode != push ]]; then
         echo "Source and image unchanged; reusing $local_image"
     else
         if ! docker image inspect "$base_image" >/dev/null 2>&1; then
-            echo "Building missing base image: $base_image"
-            PIP_INDEX_URL=${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple} \
-                "$repo_root/image/cloudfile_14.0/base-build.sh"
+            echo "Restoring missing base image from Nexus: $remote_base_image"
+            docker pull "$remote_base_image" || {
+                echo "Base image unavailable: $remote_base_image" >&2
+                echo "Publish the base image before building the application." >&2
+                exit 1
+            }
+            [[ $(docker image inspect --format '{{.Architecture}}' "$remote_base_image") == amd64 ]] || {
+                echo "Base image architecture is not amd64: $remote_base_image" >&2
+                exit 1
+            }
+            docker tag "$remote_base_image" "$base_image"
         fi
         echo "Building distribution: $version"
         PIP_INDEX_URL=${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple} \

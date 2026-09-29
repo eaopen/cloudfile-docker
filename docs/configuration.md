@@ -32,8 +32,8 @@
 | `CF_ENABLE_METADATA` | `true` | 依赖官方 `seafile-md-server`；该服务已进默认 compose 栈 |
 | `CF_ENABLE_TAGS` | `true` | 与 METADATA 同一栈（bootstrap 强制 TAGS⇒METADATA）|
 | `CF_ENABLE_FILE_PREVIEW` | `true` | 复用 CE 原生预览渲染器 |
-| `CF_ENABLE_FILE_LOCK` | `false` | 旧版锁入口使用 v0.1 表结构；待 v0.3 当前锁链验收 |
-| `CF_ENABLE_CHECKOUT` | `false` | 旧版签入签出依赖旧锁和本地会话表 |
+| `CF_ENABLE_FILE_LOCK` | `false` | 原生基础已验收；当前部署完整写入口与产品联验待完成 |
+| `CF_ENABLE_CHECKOUT` | `false` | 单文件受控发布仍需端到端验收 |
 | `CF_ENABLE_FAVORITES_ID` | `true` | `obj_id` 化收藏，纯 CE 表结构改造 |
 | `CF_ENABLE_WATCH` | `true` | 复用 CE monitored-repos、放开非 Pro gate |
 | `CF_ENABLE_FILEOPS` | `true` | 复制/移动统一预检查，Hub 影子端点 |
@@ -45,6 +45,8 @@
 | `CF_ENABLE_S3_STORAGE` | `false` | 依赖第三方 S3/MinIO 端点 |
 | `CF_ENABLE_EXTERNAL_SOURCES` | `false` | 依赖宿主机挂载的本地目录（v1 只读；协议转换归运维）|
 | `CF_ENABLE_LOCAL_APP` | `false` | 依赖用户机 Chrome 扩展 + Local Agent |
+
+`CLOUDFILE_EDITING_ENABLED` 是统一 Checkout API 的独立宿主开关，默认 `false`；启用要求 OIDC、资源权限运行时、版本化编辑表、`CF_ENABLE_FILE_LOCK=true` 和 `CF_LOCK_BACKEND=cloudfile` 同时就绪。当前仅提供单文件人工 Checkout、手动上传 Commit/Checkin，其他编辑模式保持关闭。
 
 > 修改说明（2026-09-22）：原表只列了 15 个开关（漏 `FAVORITES_ID`/`FILEOPS`/`SHARE_RESTRICT`）
 > 且未给出默认值。现以 `bootstrap.py` 的 `CF_FEATURE_SWITCHES` 为准逐项列出。

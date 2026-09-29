@@ -146,7 +146,6 @@ CAPABILITIES=(
     # AIUsageStatistics 聚合（smoke 在账号信息读取时 500），而 seafile-ai 镜像
     # CE 不发布——开开关必坏原生冒烟，缺镜像必坏 AI 端点。挂载为运行级技术负债。
     "fileop|CF_FILEOP_TEST_PROVIDER|tests/e2e/fileop_matrix.py"
-    "lock|CF_ENABLE_FILE_LOCK CF_ENABLE_CHECKOUT|tests/e2e/lock_matrix.py"
     "local-edit|CF_ENABLE_FILE_LOCK CF_ENABLE_LOCAL_APP|tests/e2e/local_edit_matrix.py"
     "office|CF_ENABLE_ONLYOFFICE|tests/e2e/office_matrix.py"
     "review-tree||tests/e2e/review_tree_matrix.py"
@@ -346,30 +345,6 @@ cap_fileop_run() {
         --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" \
         --journal "$journal" \
         --state-file "$STAGE_DIR/fileop-matrix-state.json" || return 1
-}
-
-# 锁门禁先开锁/签入签出跑跨协议矩阵，再关开关证明该能力不生效。
-# 矩阵自己只发 HTTP，配置切换与重启在这里做。
-cap_lock_run() {
-    local base=$1
-
-    say "锁提供器确实注册"
-    compose exec -T cloudfile grep -n 'file_lock_enabled = true' \
-        /shared/seafile/conf/seafile.conf || return 1
-
-    say "锁与签入签出跨协议矩阵"
-    python3 "$repo/tests/e2e/lock_matrix.py" --url "$base" --insecure \
-        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
-
-    say "关闭后该能力不生效"
-    sed -i.bak -e "s|^CF_ENABLE_FILE_LOCK=.*|CF_ENABLE_FILE_LOCK=false|" \
-               -e "s|^CF_ENABLE_CHECKOUT=.*|CF_ENABLE_CHECKOUT=false|" "$STAGE_DIR/.env" \
-        && rm -f "$STAGE_DIR/.env.bak"
-    compose up -d --wait --wait-timeout 120 cloudfile || return 1
-    compose exec -T cloudfile grep -n 'file_lock_enabled = false' \
-        /shared/seafile/conf/seafile.conf || return 1
-    python3 "$repo/tests/e2e/smoke.py" --url "$base" --insecure \
-        --admin "$ADMIN_EMAIL" --admin-password "$ADMIN_PASSWORD" || return 1
 }
 
 # review-search 的标签/创建人筛选只在 Meilisearch provider 下可断言（矩阵

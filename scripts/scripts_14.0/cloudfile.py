@@ -234,6 +234,15 @@ def render_settings(environment=None):
     webdav_enabled = _boolean(environment, "CLOUDFILE_WEBDAV_ENABLED", False)
     authorization_enabled = _boolean(environment, "CLOUDFILE_AUTHORIZATION_ENABLED", False)
     local_edit_enabled = _boolean(environment, "CLOUDFILE_LOCAL_EDIT_ENABLED", False)
+    editing_enabled = _boolean(environment, "CLOUDFILE_EDITING_ENABLED", False)
+    editing_secret = environment.get("CLOUDFILE_RESOURCE_SECRET", "")
+    if editing_enabled and (not oidc_enabled or policy_config is None or
+            not _boolean(environment, "CLOUDFILE_POLICY_WORKER_HOOKS", False) or
+            len(editing_secret.encode("utf-8")) < 32):
+        raise ValueError("editing requires native OIDC, policy worker and a stable resource secret")
+    if editing_enabled and (not _boolean(environment, "CF_ENABLE_FILE_LOCK", False) or
+            environment.get("CF_LOCK_BACKEND", "cloudfile").lower() != "cloudfile"):
+        raise ValueError("editing requires the CloudFile native file-lock barrier")
     transfer_enabled = _boolean(environment, "CLOUDFILE_TRANSFER_ENABLED", False)
     audit_query_enabled = _boolean(environment, "CLOUDFILE_AUDIT_QUERY_ENABLED", False)
     audit_export_enabled = _boolean(environment, "CLOUDFILE_AUDIT_EXPORT_ENABLED", False)
@@ -277,6 +286,11 @@ def render_settings(environment=None):
         f"CLOUDFILE_WEBDAV_SERVICE_ENABLED = {webdav_enabled!r}",
         f"CLOUDFILE_AUTHORIZATION_ENABLED = {authorization_enabled!r}",
         f"CLOUDFILE_LOCAL_EDIT_ENABLED = {local_edit_enabled!r}",
+        f"CLOUDFILE_EDITING_ENABLED = {editing_enabled!r}",
+        f"CLOUDFILE_RESOURCE_SECRET = {editing_secret.encode('utf-8')!r}" if editing_enabled else
+            "CLOUDFILE_RESOURCE_SECRET = None",
+        "from cloudfile_extensions.resources.native import NativeResourceReader\nfrom seaserv import seafile_api\nCLOUDFILE_RESOURCE_LIFECYCLE_READER = NativeResourceReader(seafile_api)" if editing_enabled else
+            "CLOUDFILE_RESOURCE_LIFECYCLE_READER = None",
         f"CLOUDFILE_TRANSFER_ENABLED = {transfer_enabled!r}",
         f"CLOUDFILE_AUDIT_QUERY_ENABLED = {audit_query_enabled!r}",
         f"CLOUDFILE_AUDIT_EXPORT_ENABLED = {audit_export_enabled!r}",

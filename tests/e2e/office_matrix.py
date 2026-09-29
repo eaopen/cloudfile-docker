@@ -7,7 +7,7 @@ convert 端点真的从 Document Server 拿回转换结果、回调影子端点�
 拒绝、对带签名的 status 2 保存回调只落一次版本（幂等）。
 
 锁协同（file_actions 在打开渲染器前建立共享 OnlyOffice 租约）与签入签出
-由 lock_matrix 覆盖；这里只测 OnlyOffice 自己的通路。
+尚未完成原生发布适配，保持关闭；这里只测 OnlyOffice 自己的通路。
 """
 
 import http.cookiejar

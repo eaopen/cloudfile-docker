@@ -175,6 +175,25 @@ class CloudFileSettingsTest(unittest.TestCase):
             exec(CLOUDFILE.render_settings(environment), namespace)
             self.assertEqual(namespace["CLOUDFILE_LOCAL_EDIT_ENABLED"], expected)
 
+    def test_editing_requires_stable_resource_secret_and_native_oidc(self):
+        namespace = {}
+        exec(CLOUDFILE.render_settings({}), namespace)
+        self.assertIs(namespace["CLOUDFILE_EDITING_ENABLED"], False)
+        self.assertIsNone(namespace["CLOUDFILE_RESOURCE_LIFECYCLE_READER"])
+        with self.assertRaisesRegex(ValueError, "editing requires"):
+            CLOUDFILE.render_settings({"CLOUDFILE_EDITING_ENABLED": "true"})
+        environment = OIDCSettingsTest.environment()
+        environment["CLOUDFILE_EDITING_ENABLED"] = "true"
+        with self.assertRaisesRegex(ValueError, "resource secret"):
+            CLOUDFILE.render_settings(environment)
+        environment["CLOUDFILE_RESOURCE_SECRET"] = "s" * 32
+        with self.assertRaisesRegex(ValueError, "file-lock barrier"):
+            CLOUDFILE.render_settings(environment)
+        environment["CF_ENABLE_FILE_LOCK"] = "true"
+        rendered = CLOUDFILE.render_settings(environment)
+        self.assertIn("CLOUDFILE_EDITING_ENABLED = True", rendered)
+        self.assertIn("CLOUDFILE_RESOURCE_LIFECYCLE_READER = NativeResourceReader(seafile_api)", rendered)
+
     def test_authorization_routes_require_explicit_deployment_flag(self):
         policy = '{"database":{},"redis":{}}'
         for value, expected in ((None, False), ("true", True), ("false", False)):

@@ -1,4 +1,7 @@
 # cloudfile-hub 允许修改的上游文件。
+# CI audit regression gate and opt-in interactive debugging; see BRANCHING.md.
+.github/workflows/test.yml
+tests/seahub/views/file/test_file.py
 #
 # 当前登记 61 个。加新能力**通常不需要**再动上游：路由用 registry.register_urls()，
 # 权限用 register_permission_check()，检索后端用 register_search_provider()，

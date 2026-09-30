@@ -16,11 +16,14 @@
 依赖第三方服务/宿主机挂载/客户端安装的保持默认关闭；逐项见 [`configuration.md`](configuration.md)。
 本表“当前状态”描述能力成熟度，与默认值无关。
 
+2026-09-30 编辑基础合并：FILE_LOCK、CHECKOUT 与 `CLOUDFILE_EDITING_ENABLED` 当前均默认关闭，以 [`configuration.md`](configuration.md) 为准，取代早期默认打开记录。统一 Editing Core 的原生单文件事务已验收；.NET 原有设备/读取契约与 Go 编辑适配共存验证通过，完整浏览器/设备/Windows 产品链仍待验收。合并范围与证据见[开发合并记录](../tests/e2e/EDITING_DEV_MERGE_20260930.md)。
+
 实现策略是先复用 Seafile 已有可用模块，再用可关闭扩展补齐缺口。每项能力先形成覆盖
 权限、数据、配置、故障和验证的完整 MVP，再持续改进界面、兼容范围和运维自动化。
 
 | 功能名称 | 当前状态 | 代码来源 | 改动范围 | 产品定位 | 主要依赖 | 证据 | 上游策略 | 重要说明 |
 |---|---|---|---|---|---|---|---|---|
+| 统一锁/Checkout 与人工提交基础 | 部分完成 | 本项目新增唯一 Editing Core；复用 Seafile 原生 Branch/RPC | Hub、C/Go 数据面、客户端适配 | 单文件受控编辑基础 | OIDC、资源权限、版本化编辑表；Agent2 后续接线 | [原生验收](../tests/e2e/EDITING_NATIVE_ACCEPTANCE.md)、[合并回归](../tests/e2e/EDITING_DEV_MERGE_20260930.md)、[Agent 兼容边界](../../cloudfile-hub/docs/AGENT-COMPATIBILITY.md) | 不适合 PR | 唯一 guard/intent、条件发布、持久回执与恢复；保留 .NET `local-edit/v1/agent/`，Go 适配 `editing/v1/`。仅合并开发源码，默认关闭；不增加 .NET 回写功能，不宣称 Agent2 完整设备身份链或 Windows 实机验收已完成。未上线，本次不提供旧编辑表历史迁移。 |
 | cf-import 独立单向导入 | 验证中 | 本项目新增管理员 CLI | 工具、任务状态、来源适配 | 定向和增量导入 | Python requests、CloudFile/Seafile 上传 API；可选 Filestash | [`cf-import.md`](features/cf-import.md)、[`cf-import-2026-09-30.json`](releases/evidence/cf-import-2026-09-30.json) | 独立工具，不改 seaf-cli/daemon | 本地来源的单映射任务、增量新增/修改和目标核验已在可销毁 CE14 库通过；删除仅报告。Filestash 来源只通过模拟接口测试，百万文件吞吐与真实后端未验收；目标需独占写入，原 `cf-migration` 保持现状。 |
 | CE 14 源码构建与扩展基线 | 已完成 | 复用 Seafile CE；本项目新增构建/配置 | 部署、配置、构建 | CE 补强 | Docker、离线基础镜像、锁定的上游提交 | [`release.yaml`](../release.yaml)、[`Dockerfile.base`](../image/cloudfile_14.0/Dockerfile.base)、[`base-build.sh`](../image/cloudfile_14.0/base-build.sh)、[`build-platform.sh`](../tools/build-platform.sh)、[`prod.yml`](../.github/workflows/prod.yml)、[`smoke.py`](../tests/e2e/smoke.py)、[`cloudfile-build.sh`](../build/cloudfile_14.0/cloudfile-build.sh) | 拆分后 PR | 日常应用镜像要求本地或内网基础镜像，并禁止拉取和构建期联网；首次发行包源码/项目依赖仍需预置或缓存。生产发布只手动触发并明确区分两条路径：`full` 保留原有 CE 全量发行包流程作为兼容基准，`incremental` 按提交内容分别复用 Backend/Frontend 产物，在独立 runner 编译后轻量组装，避免小改全量构建和前后端内存峰值叠加。C/Go 走 ccache，Python thirdpart、Go、npm/pip 与 loader 均持久缓存，缓存戳按架构/SOABI 区分。基础镜像按宿主机自动探测原生平台，`CF_PLATFORM` 可覆盖且只接受 amd64/arm64。当前无正式 CE 14 镜像；不能把上游预览功能算作扩展版交付。 |
 | 扩展注册与功能开关 | 已完成 | 扩展版既有代码；少量上游注入点 | 前端、后端、配置 | CE 补强 | Django、seafile-server RPC | [`cloudfile_ext/apps.py`](../../cloudfile-hub/cloudfile_ext/apps.py)、[`cf-ext.c`](../../cloudfile-server/common/cf-ext.c)、[`baseline.py`](../tests/e2e/baseline.py) | 拆分后 PR | 无 provider 时必须透传 CE；可提取通用 hook/registry 设计，CloudFile 命名和产品开关不提交。 |

@@ -2,6 +2,8 @@
 
 2026-09-30：真实单文件原生闭环通过，建议 **Editing Core Foundation = READY TO FREEZE**。这是原生事务基础的验收结论；本地编辑功能仍默认关闭，不代表可以正式开放完整产品功能。
 
+同日开发合并前使用当前 Hub 工作区重复执行原生回归，通过结果及 Agent 兼容边界见[开发合并回归](EDITING_DEV_MERGE_20260930.md)。原生 Server 构建快照与本次 Server 源码内容一致，报告后续引用的首次跑次仍保留为历史证据。
+
 ## 1. 修改文件
 
 本轮继续阶段修复根目标拼接、固定 native owner、补 Checkout 的已有 managed-library 最终门禁，并建立独立原生验收脚本。与并行本地编辑任务共享其 snapshot/size 和历史 checked_in 回执改动，没有重新设计 Editing Core 或新增生产表。

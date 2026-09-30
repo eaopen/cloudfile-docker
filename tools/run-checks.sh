@@ -18,6 +18,17 @@ workspace=$(dirname "$docker_repo")
 hub=$workspace/cloudfile-hub
 server=$workspace/cloudfile-server
 
+# Keep local and CI checks on the same isolated dependency set. Never install
+# into the developer's system Python or silently skip HTTP/auth tests.
+if ! python3 -c 'import pytest, django, requests, jwt, cryptography, pymysql, requests_oauthlib, redis, rest_framework' >/dev/null 2>&1; then
+    if [[ "${CF_CHECK_ENV_READY:-0}" != 1 ]] && command -v uv >/dev/null 2>&1; then
+        exec env CF_CHECK_ENV_READY=1 uv run --no-project \
+            --with-requirements "$here/check-requirements.txt" bash "$0" "$@"
+    fi
+    echo "Check dependencies unavailable; run with uv or install tools/check-requirements.txt in a virtual environment." >&2
+    exit 1
+fi
+
 failed=()
 skipped=()
 
@@ -77,6 +88,10 @@ if [[ -d $hub ]]; then
     # 正常状态，不该判为失败——但真正的失败（退出码 1）仍然要红。
     run "Hub 扩展测试 (Python)" bash -c \
         "cd '$hub' && python3 -m pytest cloudfile_ext/ -q; rc=\$?; [ \$rc -eq 0 ] || [ \$rc -eq 5 ]"
+    # Current contracts use isolated SQL fixtures and minimal Django settings,
+    # not Seahub's native runtime or its upstream integration test settings.
+    run "Hub 当前契约与 Agent 路由" bash -c \
+        "python3 '$docker_repo/tools/check-hub-contracts.py'"
 else
     skip "Hub 扩展测试" "找不到 $hub"
 fi
@@ -171,7 +186,7 @@ run "脚本语法" bash -c "
     done
 "
 
-# 7. 构建脚本副本与上游的偏离没有变大
+# 7. 构建脚本副本与清单锁定的真实上游提交相比，偏离没有变大
 #
 # build/cloudfile_14.0/cloudfile-build.py 是上游 seafile-build.py 的副本，预期
 # 改了六处：放宽版本号校验以接受 14.0.0-cf.0；在 copy_scripts_and_libs() 的
@@ -184,7 +199,14 @@ run "脚本语法" bash -c "
 # 上游更新那个文件时，我们的副本会**静默变旧**——和上游改动登记一样的问题，
 # 所以同样用脚本卡住。
 run "构建脚本副本偏离" bash -c "
-    upstream='$docker_repo/build/seafile_14.0/seafile-build.py'
+    set -e
+    upstream_ref=\$(python3 '$docker_repo/build/cloudfile_14.0/read-manifest.py' \
+        '$docker_repo/release.yaml' upstream.seafile_docker)
+    upstream=\$(mktemp)
+    trap 'rm -f \"\$upstream\"' EXIT
+    # The checked-out upstream recipe has local provenance/ACL packaging patches.
+    # Compare to immutable upstream bytes, not that modified recipe.
+    git -C '$docker_repo' show \"\$upstream_ref:build/seafile_14.0/seafile-build.py\" > \"\$upstream\"
     ours='$docker_repo/build/cloudfile_14.0/cloudfile-build.py'
     hunks=\$(diff -u \"\$upstream\" \"\$ours\" | grep -c '^@@' || true)
     if [ \"\$hunks\" != '6' ]; then

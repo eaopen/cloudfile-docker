@@ -186,6 +186,11 @@ docker run --rm -i "${pull_arg[@]}" \
         ccache --zero-stats
         trap 'ccache --show-stats || true' EXIT
         ./cloudfile-build.sh '$version'
+        # Exported files are consumed by the invoking host user for provenance
+        # stamping and image assembly, even when this builder runs as root.
+        if test -d 'seafile-server-$version'; then
+            chown -hR '$(id -u):$(id -g)' 'seafile-server-$version'
+        fi
     "
 
 echo

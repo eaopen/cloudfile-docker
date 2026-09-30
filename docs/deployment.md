@@ -54,7 +54,7 @@ docker-build）共享的架构唯一来源。默认跟随宿主、原生优先�
 `PIP_INDEX_URL`、`npm_config_registry`、`GOPROXY` 覆盖；`CF_BUILD_JOBS` 默认 16。
 构建产物留在 `build/cloudfile_14.0/`，由 Git 忽略，不提交到源码仓库。
 
-dev 镜像的产物校验按 `release.yaml` 当前输入解算实际 commit，并把独立的不可变源码清单与包内字节摘要写入 `cloudfile-build.json`；上游 annotated tag 解算到其 commit。既有 `build/seafile_14.0/release.json` 保留原发布证据，不限制 dev 必须复用旧源码，也不因 dev 构建而被更新。源码不符或包内字节变化仍拒绝组装；Git 校验使用工作目录参数，兼容 dev162 的 Git 1.8。
+dev 镜像的产物校验按 `release.yaml` 当前输入解算实际 commit，并把独立的不可变源码清单与包内字节摘要写入 `cloudfile-build.json`；上游 annotated tag 解算到其 commit。既有 `build/seafile_14.0/release.json` 保留原发布证据，不限制 dev 必须复用旧源码，也不因 dev 构建而被更新。源码不符或包内字节变化仍拒绝组装；Git 校验使用工作目录参数，兼容 dev162 的 Git 1.8。容器编译完成后仅将所选发行包的属主交回调用用户，确保非 root 用户也能写入 provenance；构建缓存与其它版本发行包不受影响。
 
 ## 启动核心栈
 

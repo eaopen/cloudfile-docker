@@ -397,6 +397,12 @@ print(json.dumps(report))
                 fixture = Path(__file__).with_name('delegated_transfer_runtime.py')
                 docker('cp', str(fixture), app + ':/tmp/delegated_transfer_runtime.py')
             elif identity_scenario == 'search':
+                if development_worker_overlay:
+                    # Exercise compatibility permission reads only in the
+                    # disposable container; this is never a dev deployment.
+                    hub = Path(__file__).resolve().parents[2] / 'cloudfile-hub'
+                    docker('cp', str(hub / 'cloudfile_ext/search') + '/.',
+                        app + ':/opt/seafile/seafile-server-latest/seahub/cloudfile_ext/search/')
                 worker = Path(__file__).resolve().parents[1] / 'scripts/scripts_14.0/cloudfile-search-worker.py'
                 docker('cp', str(worker), app + ':/scripts/cloudfile-search-worker.py')
                 docker('cp', str(Path(__file__).with_name('search_runtime.py')), app + ':/tmp/search_runtime.py')

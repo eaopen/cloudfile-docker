@@ -13,7 +13,7 @@ from pathlib import Path
 def exercise(*, db, user, manager, initiate, complete, require, configuration_dir):
     from django.conf import settings
     from django.test import Client
-    from seaserv import seafile_api
+    from seaserv import ccnet_api, seafile_api
     from cloudfile_extensions.authorization import gunicorn
     checks = []
     browser = Client(enforce_csrf_checks=True)
@@ -122,6 +122,52 @@ def exercise(*, db, user, manager, initiate, complete, require, configuration_di
     require([item['reference']['path'] for item in special['items']] == [special_dir + '/scopeditem.prt'],
         'search_literal_directory_filter')
     checks.append('directory_and_kind_filters_before_pagination_with_sibling_boundary_and_literal_names')
+    from django.test import override_settings
+    from rest_framework.test import APIRequestFactory, force_authenticate
+    from cloudfile_ext.search.bounded_view import BoundedSearch
+    factory = APIRequestFactory()
+    def compatibility(q, path='/', cursor=None):
+        parameters = dict(repo_id=repo, q=q, path=path, limit=50)
+        if cursor: parameters['cursor'] = cursor
+        request = factory.get('/api/v2.1/cloudfile/search/', parameters)
+        # Transport login is covered separately. This exercises real account,
+        # share, membership, native folder SQL and path RPC with a native user.
+        force_authenticate(request, user=user)
+        with override_settings(CF_ENABLE_DIR_ACL=False, CF_PROVIDER_SEARCH=''):
+            return BoundedSearch.as_view()(request)
+    fallback = compatibility('scopeditem', '/a')
+    require(fallback.status_code == 200 and fallback.data['fallback'] is True and
+        sorted(item['path'] for item in fallback.data['data']) == ['/a/scopeditem-folder', '/a/scopeditem.prt'],
+        'compatibility_fresh_native_authority_and_direct_file_folder_fallback')
+    require(not any('/a/b/' in item['path'] for item in fallback.data['data']),
+        'compatibility_fallback_never_enters_descendants')
+    group_id = ccnet_api.create_group('Disposable search visibility', manager.username)
+    ccnet_api.group_add_member(group_id, manager.username, user.username)
+    with db.cursor() as sql:
+        sql.execute('INSERT INTO FolderGroupPerm(repo_id,path,group_id,permission) VALUES(%s,%s,%s,%s)',
+            (repo, '/a/scopeditem-folder', group_id, 'invisible'))
+        sql.execute('INSERT INTO FolderUserPerm(repo_id,path,user,permission) VALUES(%s,%s,%s,%s)',
+            (repo, '/a/scopeditem-folder', user.username, 'r'))
+    visible = compatibility('scopeditem', '/a')
+    require(visible.status_code == 200 and len(visible.data['data']) == 2,
+        'compatibility_personal_read_overrides_native_group_invisible')
+    with db.cursor() as sql:
+        sql.execute('DELETE FROM FolderUserPerm WHERE repo_id=%s AND path=%s AND user=%s',
+            (repo, '/a/scopeditem-folder', user.username))
+    hidden = compatibility('scopeditem', '/a')
+    require(hidden.status_code == 200 and [item['path'] for item in hidden.data['data']] == ['/a/scopeditem.prt'],
+        'compatibility_current_group_invisible_hidden_without_ttl_grant_cache')
+    with db.cursor() as sql:
+        sql.execute('DELETE FROM FolderGroupPerm WHERE repo_id=%s AND path=%s AND group_id=%s',
+            (repo, '/a/scopeditem-folder', group_id))
+    checks.append('compatibility_personal_read_vs_native_group_invisible_and_fresh_revocation')
+    # Readonly library status must not synthesize read qualification for a user
+    # whose native share has been revoked.
+    seafile_api.remove_share(repo, manager.username, user.username)
+    require(compatibility('scopeditem', '/a').status_code in {403, 503},
+        'compatibility_revoked_native_library_qualification_closed')
+    seafile_api.share_repo(repo, manager.username, user.username, 'rw')
+    checks.append('compatibility_fresh_native_sql_rpc_permissions_direct_name_fallback_and_share_revocation')
     require(post('search/v1/query/', query, HTTP_X_CLOUDFILE_EXPECTED_SUBJECT=
         base64.urlsafe_b64encode(b'wrong-subject').decode().rstrip('=')).status_code == 403, 'search_subject_mismatch')
     require(post('search/v1/query/', query, HTTP_X_CSRFTOKEN='').status_code == 403, 'search_csrf')

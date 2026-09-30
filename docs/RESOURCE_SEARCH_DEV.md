@@ -62,6 +62,8 @@ python3 tests/smoke_ce14_runtime.py --image <已验证CE14镜像> --identity-run
 
 ### 当前 eTech 搜索检查（2026-09-30）
 
-本轮兼容修复源码新增 Hub `GET /api/v2.1/cloudfile/search/`（仍受 `CF_ENABLE_SEARCH` 控制），优先旧 Meili 文件索引，故障仅读一页当前目录文件名，不使用递归原生搜索。eTech 新界面经 `GET /libraries/{repoId}/search/page` 接分页/降级信息，旧 `/search` 保留列表响应并拒绝无法表达的范围缩小，旧标签路由改为索引查询并拒绝名称降级。部署顺序为 Hub → Java → Web；这些兼容修复不代表新 OIDC 资源搜索已开启，也不解决旧索引覆盖缺失。新资源索引路径优化仍按独立 generation 重建。
+本轮兼容修复源码新增 Hub `GET /api/v2.1/cloudfile/search/`（仍受 `CF_ENABLE_SEARCH` 控制），优先旧 Meili 文件索引，故障仅读一页当前目录的直属文件和文件夹名称，不使用递归原生搜索。eTech 新界面经 `GET /libraries/{repoId}/search/page` 接分页/降级信息，旧 `/search` 保留列表响应并拒绝无法表达的范围缩小，旧标签路由改为索引查询并拒绝名称降级。部署顺序为 Hub → Java → Web；这些兼容修复不代表新 OIDC 资源搜索已开启，也不解决旧索引覆盖缺失。新资源索引路径优化仍按独立 generation 重建。
 
 `etech01` 名称查询实际代理原生 `api/v2.1/search-file/`，英文/中文/无匹配与 PDF 预览通过，但耗时 6.8–13.3 秒。标签查询代理 `cloudDrive/tags/search`，逐资源调用 CloudFile 标签接口，两个查询均约 60 秒后 504；超时后仍可观察到标签读取。旧 Meili Activity 游标虽追平，90 个真实文件有界抽查仍缺失 75 个索引文档，不能直接切换至旧索引。新资源查询与 OIDC 能力未开启，仍需当前制品和契约接入；本次只使用 admin，不算权限隔离验收。详见 EAP 的 [实测证据](../../eap-cloudfile/docs/releases/evidence/cf03-search-etech-dev-2026-09-30.json)。
+
+2026-09-30 保守权限优化：兼容搜索读取有界的新鲜主体、CF 与原生文件夹权限快照，分别解算权限，检查配置过的祖先边界及每个候选本身；不把 invisible 配置当作全局前缀黑名单。允许结果仅在请求内复用，返回前复核账号、库资格、成员、规则与已允许路径；变化或读取失败拒绝整页，游标绑定权限快照。不递归补满结果。隔离 CE14 + 原生 SQL/RPC + Meili 运行验证已覆盖个人 r 覆盖群组 invisible、撤销个人授权后隐藏及库共享撤权；使用 development overlay，不代表 dev 已部署或字节事件桥已完成。

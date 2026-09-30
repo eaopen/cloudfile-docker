@@ -26,7 +26,7 @@ class SelectionTests(unittest.TestCase):
     def test_probe_edit_selects_docker_and_identity_but_no_full_rebuild(self):
         selected = verify.plan(['cloudfile-docker/tests/probe_identity_runtime.py'])
         self.assertEqual(selected['groups'], ['docker'])
-        self.assertEqual(selected['required_gates'], ['audit-runtime', 'identity-runtime'])
+        self.assertEqual(selected['required_gates'], ['audit-runtime', 'identity-runtime', 'search-runtime'])
 
     def test_worker_or_jit_fixture_edit_requires_actual_provisioning_gate(self):
         for path in ('scripts/scripts_14.0/cloudfile-jit-worker.py', 'tests/identity_provisioning_runtime.py'):
@@ -96,3 +96,9 @@ class OwnershipTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SearchGateTests(unittest.TestCase):
+    def test_search_worker_and_real_fixture_require_search_runtime_gate(self):
+        for path in ('scripts/scripts_14.0/cloudfile-search-worker.py', 'tests/search_runtime.py'):
+            self.assertEqual(verify.plan(['cloudfile-docker/' + path])['required_gates'], ['search-runtime'])

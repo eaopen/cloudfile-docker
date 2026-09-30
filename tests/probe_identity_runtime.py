@@ -29,7 +29,7 @@ def require(condition, label):
 def run():
     require(os.environ.get('CF_DISPOSABLE_IDENTITY_PROBE') == 'true', 'disposable_marker')
     scenario = os.environ.get('CF_IDENTITY_SCENARIO', 'prebound')
-    require(scenario in {'prebound', 'provisioning', 'logout', 'backchannel', 'transfer', 'web', 'annotations', 'audit'}, 'identity_scenario')
+    require(scenario in {'prebound', 'provisioning', 'logout', 'backchannel', 'transfer', 'web', 'annotations', 'audit', 'search'}, 'identity_scenario')
     package = '/opt/seafile/seafile-server-latest'
     os.chdir(package + '/seahub')
     sys.path[:0] = [package + '/seahub', package + '/seahub/thirdpart',
@@ -268,7 +268,7 @@ def run():
             settings.CLOUDFILE_OIDC_BACKCHANNEL_ENABLED = scenario == 'backchannel'
             settings.ENABLE_OAUTH = False
             configure_oidc_host(settings)
-            if scenario in {'transfer', 'web', 'audit'}:
+            if scenario in {'transfer', 'web', 'audit', 'search'}:
                 machine_secret, delegation_secret = secrets.token_hex(32), secrets.token_hex(32)
                 settings.CLOUDFILE_POLICY_CONFIG.update(
                     service_credentials={'login-v1': {'service_id': 'etech-login',
@@ -279,7 +279,7 @@ def run():
                         'issuer': 'cloudfile', 'audience': 'cloudfile-download', 'secret': delegation_secret}})
                 settings.CLOUDFILE_AUTHORIZATION_ENABLED = True
                 settings.CLOUDFILE_TRANSFER_ENABLED = scenario in {'transfer', 'web'}
-            if scenario == 'annotations':
+            if scenario in {'annotations', 'search'}:
                 from seaserv import seafile_api
                 from cloudfile_extensions.resources.native import NativeResourceReader
                 settings.CLOUDFILE_ANNOTATIONS_ENABLED = True
@@ -295,6 +295,11 @@ def run():
                     provider='etech', namespaces=['etech:project'])}
                 settings.CLOUDFILE_RESOURCE_SECRET = secrets.token_bytes(32)
                 settings.CLOUDFILE_RESOURCE_LIFECYCLE_READER = NativeResourceReader(seafile_api)
+            if scenario == 'search':
+                settings.CLOUDFILE_RESOURCE_SEARCH_ENABLED = True
+                settings.CLOUDFILE_RESOURCE_SEARCH_CONFIG = dict(endpoint='http://meilisearch:7700',
+                    index='fixture_resources', generation='fixture-generation', read_key=os.environ['CF_SEARCH_FIXTURE_KEY'],
+                    write_key=os.environ['CF_SEARCH_FIXTURE_KEY'], cursor_secret=secrets.token_bytes(32))
             if scenario == 'audit':
                 result_root = Path(temporary) / 'audit-results'
                 result_root.mkdir(mode=0o700)
@@ -340,6 +345,13 @@ def run():
                     initiate=initiate, complete=complete, require=require))
                 return dict(result='passed', checks=checks,
                     scope='Actual OIDC TLS fixture/session, shared native qualification/C Policy Core, native resource history and HTTP/SQL; no external eTech or deployment acceptance')
+
+            if scenario == 'search':
+                stage = 'search_http'
+                from search_runtime import exercise
+                checks.extend(exercise(db=db, user=user, manager=manager, initiate=initiate, complete=complete, require=require, configuration_dir=temporary))
+                return dict(result='passed', checks=checks,
+                    scope='Controlled real Meili, CE14 native SQL/RPC, OIDC/C authorization and HTTP; development overlay, no external dev deployment or byte-event bridge claim')
 
             if scenario == 'audit':
                 stage = 'audit_export_http'

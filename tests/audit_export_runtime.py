@@ -7,6 +7,9 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
+import csv
+import io
 from uuid import UUID
 
 
@@ -23,6 +26,15 @@ def exercise(*, db, user, initiate, complete, require, configuration_dir):
     # Actual CE ownership and C root policy, rather than an injected authorization callback.
     repo = seafile_api.create_repo('Disposable audit', 'runtime export fixture', user.username)
     require(str(UUID(repo)) == repo, 'audit_native_repo')
+    with tempfile.NamedTemporaryFile() as uploaded:
+        uploaded.write(b'audit upload fixture'); uploaded.flush()
+        seafile_api.post_file(repo, uploaded.name, '/', 'audit.txt', user.username)
+    from cloudfile_extensions.authorization import gunicorn
+    from cloudfile_extensions.identity.transfer_audit import record_transfer
+    reference = dict(repo_id=repo, path='/audit.txt', kind='file')
+    for action, result in [('file.upload', 'succeeded'), ('file.update', 'denied')]:
+        record_transfer(gunicorn._host.deployment.factory.resources, 'fixture-user-1', reference,
+            'audit-source-' + action, action, result, client_ip='127.0.0.1')
     prefix = '/api/v2.1/cloudfile/extensions/audit/v1/exports/'
     subject = base64.urlsafe_b64encode(b'fixture-user-1').decode().rstrip('=')
     headers = dict(secure=True, HTTP_HOST='cloudfile-smoke.invalid',
@@ -31,6 +43,29 @@ def exercise(*, db, user, initiate, complete, require, configuration_dir):
     request = dict(repo_id=repo,
         start=(now - timedelta(days=1)).isoformat().replace('+00:00', 'Z'),
         end=(now + timedelta(days=1)).isoformat().replace('+00:00', 'Z'))
+    from urllib.parse import urlencode
+    audit_prefix = '/api/v2.1/cloudfile/extensions/audit/v1/events/library/'
+    trace = []
+    def diagnostic(frame, event, argument):
+        if event == 'exception' and '/cloudfile_extensions/events/' in frame.f_code.co_filename:
+            name = argument[0].__name__
+            if name not in {'StopIteration', 'GeneratorExit'}:
+                trace.append(frame.f_code.co_filename.rsplit('/', 1)[-1] + ':' + str(frame.f_lineno) + ':' + name)
+        return diagnostic
+    sys.settrace(diagnostic)
+    try:
+        queried = browser.get(audit_prefix + 'updates/?' + urlencode(request), **headers)
+    finally:
+        sys.settrace(None)
+    if queried.status_code == 503:
+        require(False, 'audit_trace_' + '_'.join(trace[-12:]))
+    require(queried.status_code == 200, 'audit_updates_query_' + str(queried.status_code) + '_' + json.loads(queried.content).get('code', 'unknown'))
+    rows = json.loads(queried.content)['items']
+    require({row['operation'] for row in rows} == {'file.upload', 'file.update'} and
+        {row['result'] for row in rows} == {'succeeded', 'denied'}, 'audit_updates_nonempty_facts')
+    accessed = browser.get(audit_prefix + 'access/?' + urlencode(request), **headers)
+    require(accessed.status_code == 200 and json.loads(accessed.content)['items'] == [], 'audit_access_separated')
+    checks.append('actual_transfer_audit_writer_and_nonempty_query_category_filters')
     response = browser.post(prefix, data=json.dumps(request), content_type='application/json',
         HTTP_ORIGIN='https://cloudfile-smoke.invalid',
         HTTP_X_CSRFTOKEN=browser.cookies[settings.CSRF_COOKIE_NAME].value,
@@ -76,6 +111,10 @@ def exercise(*, db, user, initiate, complete, require, configuration_dir):
     downloaded = browser.get(metadata['result_url'], **headers)
     require(downloaded.status_code == 200 and downloaded['Content-Type'].startswith('text/csv') and
         downloaded.content.startswith(b'"id","event_id"'), 'audit_result_delivery')
+    exported = list(csv.DictReader(io.StringIO(downloaded.content.decode('utf-8-sig'))))
+    require(len([row for row in exported if row['operation'] in {'file.upload', 'file.update'}]) == 2 and
+        {'file.upload', 'file.update'} <= {row['operation'] for row in exported},
+        'audit_csv_contains_actual_query_facts')
     with db.cursor() as cursor:
         cursor.execute('SELECT COUNT(*) FROM cf_audit_event WHERE operation=%s AND repo_id=%s AND result=%s',
             ('audit.export.download', repo, 'attempted'))

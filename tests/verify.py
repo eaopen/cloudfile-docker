@@ -131,6 +131,10 @@ def plan(files):
                         seeds.add(path[:-3].replace('/', '.').removesuffix('.__init__'))
                 else:
                     gates.add('full-regression')
+            if domain == 'search':
+                gates.add('search-runtime')
+            if domain == 'events':
+                gates.add('audit-runtime')
             if domain == 'identity':
                 gates.add('identity-runtime')
                 if any(name in path for name in ('manual_update', 'read_ticket', 'hosted_routes', 'configuration', '/urls.py')):
@@ -142,6 +146,8 @@ def plan(files):
             groups.add('docker')
             if path == 'scripts/scripts_14.0/cloudfile-jit-worker.py':
                 gates.update(('identity-provisioning', 'identity-backchannel'))
+            elif path in ('scripts/scripts_14.0/cloudfile-search-worker.py', 'tests/search_runtime.py'):
+                gates.add('search-runtime')
             elif path in ('scripts/scripts_14.0/cloudfile-audit-worker.py', 'tests/audit_export_runtime.py'):
                 gates.add('audit-runtime')
             elif path == 'tests/delegated_transfer_runtime.py':
@@ -155,7 +161,7 @@ def plan(files):
             elif path.startswith(('image/', 'build/', 'scripts/')):
                 gates.add('native-runtime')
             elif path == 'tests/probe_identity_runtime.py':
-                gates.update(('identity-runtime', 'audit-runtime'))
+                gates.update(('identity-runtime', 'audit-runtime', 'search-runtime'))
             elif path == 'tests/smoke_ce14_runtime.py':
                 gates.add('native-runtime')
         elif repo == 'eap-cloudfile':
@@ -302,7 +308,7 @@ def run_components(modules, image, warm):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('scope', choices=['changed', *GROUPS, 'docker', 'full', 'runtime', 'identity-runtime', 'identity-provisioning', 'identity-logout', 'identity-backchannel', 'transfer-runtime', 'web-runtime', 'audit-runtime', 'warm'])
+    parser.add_argument('scope', choices=['changed', *GROUPS, 'docker', 'full', 'runtime', 'identity-runtime', 'identity-provisioning', 'identity-logout', 'identity-backchannel', 'transfer-runtime', 'web-runtime', 'audit-runtime', 'search-runtime', 'warm'])
     parser.add_argument('--base', help='Explicit common Git ref for committed diff in all four repositories')
     parser.add_argument('--changed-file', action='append', help='Repository/path; replaces Git change discovery')
     parser.add_argument('--plan', action='store_true', help='Show selection without running services/tests')
@@ -332,7 +338,7 @@ def main():
     if args.plan:
         print(json.dumps(selection, indent=2))
         return
-    if args.scope in ('full', 'runtime', 'identity-runtime', 'identity-provisioning', 'identity-logout', 'identity-backchannel', 'transfer-runtime', 'web-runtime', 'audit-runtime'):
+    if args.scope in ('full', 'runtime', 'identity-runtime', 'identity-provisioning', 'identity-logout', 'identity-backchannel', 'transfer-runtime', 'web-runtime', 'audit-runtime', 'search-runtime'):
         # Full gate tests the packaged artifact, never the development overlay.
         if args.scope == 'full':
             if not all(item['passed'] for item in baseline_checks(args.contract_python).values()):
@@ -343,12 +349,13 @@ def main():
                     raise RuntimeError('Full gate requires clean source matching packaged image: ' + repo)
         from smoke_ce14_runtime import run
         report = run(args.image, annotations_runtime=args.annotations_probe, extensions_regression=args.scope == 'full',
-                     identity_runtime=args.scope in ('full', 'identity-runtime', 'identity-provisioning', 'identity-logout', 'identity-backchannel', 'transfer-runtime', 'web-runtime', 'audit-runtime'),
+                     identity_runtime=args.scope in ('full', 'identity-runtime', 'identity-provisioning', 'identity-logout', 'identity-backchannel', 'transfer-runtime', 'web-runtime', 'audit-runtime', 'search-runtime'),
                      identity_scenario='annotations' if args.annotations_http_probe else 'provisioning' if args.scope == 'identity-provisioning' else
                          'logout' if args.scope == 'identity-logout' else
                          'backchannel' if args.scope == 'identity-backchannel' else
                          'transfer' if args.scope == 'transfer-runtime' else
                          'audit' if args.scope == 'audit-runtime' else
+                         'search' if args.scope == 'search-runtime' else
                          'web' if args.scope == 'web-runtime' else 'prebound')
         if args.scope == 'full':
             report['provisioning_runtime'] = run(args.image, identity_runtime=True,

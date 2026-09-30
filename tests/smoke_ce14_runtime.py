@@ -361,6 +361,16 @@ print(json.dumps(report))
         if identity_runtime:
             stage = 'identity_runtime'
             start('identity-redis', 'identity-redis', 'redis:7-alpine', {}, ['/data:rw,size=64m'])
+            search_key = ''
+            if identity_scenario == 'search':
+                search_key = secrets.token_hex(32)
+                start('meilisearch', 'meilisearch', 'getmeili/meilisearch:v1.53.2',
+                    {'MEILI_MASTER_KEY': search_key, 'MEILI_ENV': 'production', 'MEILI_NO_ANALYTICS': 'true'},
+                    ['/meili_data:rw,size=256m'])
+            if identity_scenario in {'search', 'audit'} and development_worker_overlay:
+                hub = Path(__file__).resolve().parents[2] / 'cloudfile-hub'
+                docker('cp', str(hub / 'cloudfile_extensions') + '/.',
+                    app + ':/opt/seafile/seafile-server-latest/seahub/cloudfile_extensions/')
             fixture = Path(__file__).with_name('probe_identity_runtime.py')
             docker('cp', str(fixture), app + ':/tmp/probe_identity_runtime.py')
             worker_path = '/scripts/cloudfile-jit-worker.py'
@@ -386,6 +396,10 @@ print(json.dumps(report))
             elif identity_scenario in {'transfer', 'web'}:
                 fixture = Path(__file__).with_name('delegated_transfer_runtime.py')
                 docker('cp', str(fixture), app + ':/tmp/delegated_transfer_runtime.py')
+            elif identity_scenario == 'search':
+                worker = Path(__file__).resolve().parents[1] / 'scripts/scripts_14.0/cloudfile-search-worker.py'
+                docker('cp', str(worker), app + ':/scripts/cloudfile-search-worker.py')
+                docker('cp', str(Path(__file__).with_name('search_runtime.py')), app + ':/tmp/search_runtime.py')
             elif identity_scenario == 'audit':
                 fixture = Path(__file__).with_name('audit_export_runtime.py')
                 docker('cp', str(fixture), app + ':/tmp/audit_export_runtime.py')
@@ -416,6 +430,7 @@ print(json.dumps(report))
                         raise RuntimeError('Logout worker image is stale; rebuild the application image')
             identity = json.loads(docker('exec', '-e', 'CF_DISPOSABLE_IDENTITY_PROBE=true',
                 '-e', 'CF_IDENTITY_SCENARIO=' + identity_scenario,
+                '-e', 'CF_SEARCH_FIXTURE_KEY=' + search_key,
                 '-e', 'CF_JIT_WORKER_SCRIPT=' + worker_path,
                 '-e', 'CF_AUDIT_WORKER_SCRIPT=' + worker_path,
                 app, 'python3', '/tmp/probe_identity_runtime.py', timeout=90))
@@ -455,7 +470,7 @@ if __name__ == '__main__':
                         help='Run extensions with a separate disposable SQL/Redis fixture')
     parser.add_argument('--identity-runtime', action='store_true',
                         help='Probe real TLS fixture OIDC/directory with actual CE accounts and SQL')
-    parser.add_argument('--identity-scenario', choices=['prebound', 'provisioning', 'logout', 'backchannel', 'transfer', 'web', 'audit'], default='prebound')
+    parser.add_argument('--identity-scenario', choices=['prebound', 'provisioning', 'logout', 'backchannel', 'transfer', 'web', 'annotations', 'audit', 'search'], default='prebound')
     parser.add_argument('--development-worker-overlay', action='store_true',
                         help='JIT development only: use host worker script; not packaged release evidence')
     parser.add_argument('--migration-runtime', action='store_true', help='Reuse v0.1 CLI for offline small-directory import and resume only')

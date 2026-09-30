@@ -193,3 +193,11 @@ CloudFile 回调守卫另外要求配置 JWT secret 并绑定受签正文；强�
 既有上游登记文件；不是新增一组上游扩展点。删除旧本地独占自动写回和重复 Hub
 接口，不保留旧表迁移/兼容逻辑。原生发布闭环已通过独立实库验收；完整产品
 身份、浏览器和 Agent 联验尚未完成，相关入口继续默认关闭。
+
+## Legacy Search Permission Transport（2026-09-30）
+
+复用已登记的 Server RPC/header/registration/Python binding/Makefile 接缝，新增
+`common/cf-permission-many.*` 与内部 `cf_check_permissions_many`。接缝仅委托有界 JSON
+适配器调用原 scalar engine；第一轮和发布前第二轮均保留，未修改权限 writer 或规则。
+不新增上游修改路径。契约、结构计数和非 lease 边界见
+[`docs/legacy-search-permission-many.md`](docs/legacy-search-permission-many.md)。

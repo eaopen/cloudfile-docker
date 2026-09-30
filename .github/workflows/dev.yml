@@ -31,12 +31,6 @@ jobs:
           path: cloudfile-hub
           fetch-depth: 0
 
-      - uses: actions/checkout@v4
-        with:
-          repository: eaopen/eap-cloudfile
-          ref: dev
-          path: eap-cloudfile
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

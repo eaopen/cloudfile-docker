@@ -1,0 +1,522 @@
+[
+  {
+    "name": "partial-hidden",
+    "total": 10,
+    "limit": 3,
+    "hidden": [
+      0
+    ],
+    "pages": [
+      {
+        "start": 0,
+        "scanned_count": 3,
+        "visible": [
+          1,
+          2
+        ],
+        "scan_exhausted": false,
+        "next_scan_position": 3
+      },
+      {
+        "start": 3,
+        "scanned_count": 3,
+        "visible": [
+          3,
+          4,
+          5
+        ],
+        "scan_exhausted": false,
+        "next_scan_position": 6
+      },
+      {
+        "start": 6,
+        "scanned_count": 3,
+        "visible": [
+          6,
+          7,
+          8
+        ],
+        "scan_exhausted": false,
+        "next_scan_position": 9
+      },
+      {
+        "start": 9,
+        "scanned_count": 1,
+        "visible": [
+          9
+        ],
+        "scan_exhausted": true,
+        "next_scan_position": null
+      }
+    ]
+  },
+  {
+    "name": "empty-intermediate",
+    "total": 10,
+    "limit": 3,
+    "hidden": [
+      0,
+      1,
+      2
+    ],
+    "pages": [
+      {
+        "start": 0,
+        "scanned_count": 3,
+        "visible": [],
+        "scan_exhausted": false,
+        "next_scan_position": 3
+      },
+      {
+        "start": 3,
+        "scanned_count": 3,
+        "visible": [
+          3,
+          4,
+          5
+        ],
+        "scan_exhausted": false,
+        "next_scan_position": 6
+      },
+      {
+        "start": 6,
+        "scanned_count": 3,
+        "visible": [
+          6,
+          7,
+          8
+        ],
+        "scan_exhausted": false,
+        "next_scan_position": 9
+      },
+      {
+        "start": 9,
+        "scanned_count": 1,
+        "visible": [
+          9
+        ],
+        "scan_exhausted": true,
+        "next_scan_position": null
+      }
+    ]
+  },
+  {
+    "name": "short-final",
+    "total": 8,
+    "limit": 3,
+    "hidden": [],
+    "pages": [
+      {
+        "start": 0,
+        "scanned_count": 3,
+        "visible": [
+          0,
+          1,
+          2
+        ],
+        "scan_exhausted": false,
+        "next_scan_position": 3
+      },
+      {
+        "start": 3,
+        "scanned_count": 3,
+        "visible": [
+          3,
+          4,
+          5
+        ],
+        "scan_exhausted": false,
+        "next_scan_position": 6
+      },
+      {
+        "start": 6,
+        "scanned_count": 2,
+        "visible": [
+          6,
+          7
+        ],
+        "scan_exhausted": true,
+        "next_scan_position": null
+      }
+    ]
+  },
+  {
+    "name": "exact-final",
+    "total": 9,
+    "limit": 3,
+    "hidden": [],
+    "pages": [
+      {
+        "start": 0,
+        "scanned_count": 3,
+        "visible": [
+          0,
+          1,
+          2
+        ],
+        "scan_exhausted": false,
+        "next_scan_position": 3
+      },
+      {
+        "start": 3,
+        "scanned_count": 3,
+        "visible": [
+          3,
+          4,
+          5
+        ],
+        "scan_exhausted": false,
+        "next_scan_position": 6
+      },
+      {
+        "start": 6,
+        "scanned_count": 3,
+        "visible": [
+          6,
+          7,
+          8
+        ],
+        "scan_exhausted": true,
+        "next_scan_position": null
+      }
+    ]
+  },
+  {
+    "name": "hidden-final",
+    "total": 6,
+    "limit": 3,
+    "hidden": [
+      3,
+      4,
+      5
+    ],
+    "pages": [
+      {
+        "start": 0,
+        "scanned_count": 3,
+        "visible": [
+          0,
+          1,
+          2
+        ],
+        "scan_exhausted": false,
+        "next_scan_position": 3
+      },
+      {
+        "start": 3,
+        "scanned_count": 3,
+        "visible": [],
+        "scan_exhausted": true,
+        "next_scan_position": null
+      }
+    ]
+  },
+  {
+    "name": "size-one",
+    "total": 5,
+    "limit": 1,
+    "hidden": [
+      0,
+      2,
+      4
+    ],
+    "pages": [
+      {
+        "start": 0,
+        "scanned_count": 1,
+        "visible": [],
+        "scan_exhausted": false,
+        "next_scan_position": 1
+      },
+      {
+        "start": 1,
+        "scanned_count": 1,
+        "visible": [
+          1
+        ],
+        "scan_exhausted": false,
+        "next_scan_position": 2
+      },
+      {
+        "start": 2,
+        "scanned_count": 1,
+        "visible": [],
+        "scan_exhausted": false,
+        "next_scan_position": 3
+      },
+      {
+        "start": 3,
+        "scanned_count": 1,
+        "visible": [
+          3
+        ],
+        "scan_exhausted": false,
+        "next_scan_position": 4
+      },
+      {
+        "start": 4,
+        "scanned_count": 1,
+        "visible": [],
+        "scan_exhausted": true,
+        "next_scan_position": null
+      }
+    ]
+  },
+  {
+    "name": "all-hidden",
+    "total": 7,
+    "limit": 3,
+    "hidden": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "pages": [
+      {
+        "start": 0,
+        "scanned_count": 3,
+        "visible": [],
+        "scan_exhausted": false,
+        "next_scan_position": 3
+      },
+      {
+        "start": 3,
+        "scanned_count": 3,
+        "visible": [],
+        "scan_exhausted": false,
+        "next_scan_position": 6
+      },
+      {
+        "start": 6,
+        "scanned_count": 1,
+        "visible": [],
+        "scan_exhausted": true,
+        "next_scan_position": null
+      }
+    ]
+  },
+  {
+    "name": "empty-directory",
+    "total": 0,
+    "limit": 3,
+    "hidden": [],
+    "pages": [
+      {
+        "start": 0,
+        "scanned_count": 0,
+        "visible": [],
+        "scan_exhausted": true,
+        "next_scan_position": null
+      }
+    ]
+  },
+  {
+    "name": "deep-pages",
+    "total": 1003,
+    "limit": 3,
+    "hidden": [
+      0,
+      7,
+      14,
+      21,
+      28,
+      35,
+      42,
+      49,
+      56,
+      63,
+      70,
+      77,
+      84,
+      91,
+      98,
+      105,
+      112,
+      119,
+      126,
+      133,
+      140,
+      147,
+      154,
+      161,
+      168,
+      175,
+      182,
+      189,
+      196,
+      203,
+      210,
+      217,
+      224,
+      231,
+      238,
+      245,
+      252,
+      259,
+      266,
+      273,
+      280,
+      287,
+      294,
+      301,
+      308,
+      315,
+      322,
+      329,
+      336,
+      343,
+      350,
+      357,
+      364,
+      371,
+      378,
+      385,
+      392,
+      399,
+      406,
+      413,
+      420,
+      427,
+      434,
+      441,
+      448,
+      455,
+      462,
+      469,
+      476,
+      483,
+      490,
+      497,
+      504,
+      511,
+      518,
+      525,
+      532,
+      539,
+      546,
+      553,
+      560,
+      567,
+      574,
+      581,
+      588,
+      595,
+      602,
+      609,
+      616,
+      623,
+      630,
+      637,
+      644,
+      651,
+      658,
+      665,
+      672,
+      679,
+      686,
+      693,
+      700,
+      707,
+      714,
+      721,
+      728,
+      735,
+      742,
+      749,
+      756,
+      763,
+      770,
+      777,
+      784,
+      791,
+      798,
+      805,
+      812,
+      819,
+      826,
+      833,
+      840,
+      847,
+      854,
+      861,
+      868,
+      875,
+      882,
+      889,
+      896,
+      903,
+      910,
+      917,
+      924,
+      931,
+      938,
+      945,
+      952,
+      959,
+      966,
+      973,
+      980,
+      987,
+      994,
+      1001
+    ],
+    "pages": [
+      {
+        "start": 990,
+        "scanned_count": 3,
+        "visible": [
+          990,
+          991,
+          992
+        ],
+        "scan_exhausted": false,
+        "next_scan_position": 993
+      },
+      {
+        "start": 993,
+        "scanned_count": 3,
+        "visible": [
+          993,
+          995
+        ],
+        "scan_exhausted": false,
+        "next_scan_position": 996
+      },
+      {
+        "start": 996,
+        "scanned_count": 3,
+        "visible": [
+          996,
+          997,
+          998
+        ],
+        "scan_exhausted": false,
+        "next_scan_position": 999
+      },
+      {
+        "start": 999,
+        "scanned_count": 3,
+        "visible": [
+          999,
+          1000
+        ],
+        "scan_exhausted": false,
+        "next_scan_position": 1002
+      },
+      {
+        "start": 1002,
+        "scanned_count": 1,
+        "visible": [
+          1002
+        ],
+        "scan_exhausted": true,
+        "next_scan_position": null
+      }
+    ],
+    "initial_start": 990
+  }
+]

@@ -194,6 +194,10 @@ CloudFile 回调守卫另外要求配置 JWT secret 并绑定受签正文；强�
 接口，不保留旧表迁移/兼容逻辑。原生发布闭环已通过独立实库验收；完整产品
 身份、浏览器和 Agent 联验尚未完成，相关入口继续默认关闭。
 
+## 目录分页扫描状态补丁（2026-09-30）
+
+新增登记 `cloudfile-server/server/repo-perm.c`：在原始窗口扫描循环中记录消费数量和耗尽状态，旧函数保留包装。RPC 之后的列表已丢失被过滤项，扩展文件无法恢复扫描位置，因此需要在这一底层循环采集；不改变目录读取、排序或权限规则。契约与共享用例见 `docs/directory-pagination.md`。
+
 ## Legacy Search Permission Transport（2026-09-30）
 
 复用已登记的 Server RPC/header/registration/Python binding/Makefile 接缝，新增

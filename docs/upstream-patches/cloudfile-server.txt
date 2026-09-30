@@ -47,6 +47,7 @@ server/gc/seafserv-gc.c
 server/repo-mgr.c
 server/repo-mgr.h
 server/repo-op.c
+server/repo-perm.c
 server/seaf-server.c
 server/seafile-session.c
 tests/test_upload/readme.md

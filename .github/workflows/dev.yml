@@ -43,8 +43,8 @@ jobs:
       - name: Install C test dependencies
         run: |
           sudo apt-get update -qq
-          # Bounded native JSON transport tests require jansson.
-          sudo apt-get install -y -qq libglib2.0-dev libjansson-dev pkg-config
+          # Native directory paging tests compile the real Vala objects and JSON RPC.
+          sudo apt-get install -y -qq libglib2.0-dev libjansson-dev valac pkg-config
 
       - name: Install isolated check dependencies
         run: pip install --quiet -r cloudfile-docker/tools/check-requirements.txt

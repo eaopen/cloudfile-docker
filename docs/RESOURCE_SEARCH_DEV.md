@@ -45,7 +45,7 @@ python3 /scripts/cloudfile-search-worker.py consume
 
 ## Dev 交付核对
 
-先在 Linux 构建并记录此次 Hub/Server/Docker 的实际源码 SHA、镜像 digest，再更新 dev 的镜像引用与配置；发布 manifest 保持原已验版本，不能用 Python overlay 更新其验证状态。当前仅定位到 dev162 构建机，CloudFile dev 运行地址/部署目录尚待提供。
+先在 Linux 构建并记录此次 Hub/Server/Docker 的实际源码 SHA、镜像 digest，再更新 dev 的镜像引用与配置；发布 manifest 保持原已验版本，不能用 Python overlay 更新其验证状态。现已定位：minio157 的 `/data/etech-infra/cloudfile-dev`，应用/worker 为 `cloudfile-dev` / `cloudfile-worker-dev`，用户入口为 `http://10.9.8.162:6111/`（dev162 eTech-EAP）。2026-09-30 实测运行镜像 `14.0.0-cf.20260930` 的 Hub/Server 仍为 `c7ff8afb` / `6a79b265`，未包含独立 search worker，不能按镜像日期判断当前源码已部署。
 
 dev 验证需使用两个真实业务用户：名称/描述/标签命中、撤销共享或隐藏 ACL 后裁剪、错误主体/CSRF 拒绝、属性/标签事件消费、文件更新后明确拒绝旧代次及新代次重建；审计检查非空分类查询、非空 CSV、导出下载撤权拒绝和过期文件实际清理。记录部署前后镜像 digest、源码 SHA、启用项及测试结果，不能只记录开关已开启。
 
@@ -57,3 +57,7 @@ python3 tests/smoke_ce14_runtime.py --image <已验证CE14镜像> --identity-run
 ```
 
 上述命令使用独立临时容器、真实 Meili/SQL/CE14 与 OIDC fixture；开发 overlay 不等于 dev 部署、外部 IdP/eTech 联验或当前发布制品验收。
+
+### 当前 eTech 搜索检查（2026-09-30）
+
+`etech01` 名称查询实际代理原生 `api/v2.1/search-file/`，英文/中文/无匹配与 PDF 预览通过，但耗时 6.8–13.3 秒。标签查询代理 `cloudDrive/tags/search`，逐资源调用 CloudFile 标签接口，两个查询均约 60 秒后 504；超时后仍可观察到标签读取。旧 Meili Activity 游标虽追平，90 个真实文件有界抽查仍缺失 75 个索引文档，不能直接切换至旧索引。新资源查询与 OIDC 能力未开启，仍需当前制品和契约接入；本次只使用 admin，不算权限隔离验收。详见 EAP 的 [实测证据](../../eap-cloudfile/docs/releases/evidence/cf03-search-etech-dev-2026-09-30.json)。

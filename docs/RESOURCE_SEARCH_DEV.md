@@ -47,7 +47,7 @@ python3 /scripts/cloudfile-search-worker.py consume
 
 ## Dev 交付核对
 
-先在 Linux 构建并记录此次 Hub/Server/Docker 的实际源码 SHA、镜像 digest，再更新 dev 的镜像引用与配置；发布 manifest 保持原已验版本，不能用 Python overlay 更新其验证状态。现已定位：minio157 的 `/data/etech-infra/cloudfile-dev`，应用/worker 为 `cloudfile-dev` / `cloudfile-worker-dev`，用户入口为 `http://10.9.8.162:6111/`（dev162 eTech-EAP）。2026-09-30 实测运行镜像 `14.0.0-cf.20260930` 的 Hub/Server 仍为 `c7ff8afb` / `6a79b265`，未包含独立 search worker，不能按镜像日期判断当前源码已部署。
+先在 Linux 构建并记录此次 Hub/Server/Docker 的实际源码 SHA、镜像 digest，再更新 dev 的镜像引用与配置；发布 manifest 保持原已验版本，不能用 Python overlay 更新其验证状态。现已定位：minio157 的 `/data/etech-infra/cloudfile-dev`，应用/worker 为 `cloudfile-dev` / `cloudfile-worker-dev`，用户入口为 `http://10.9.8.162:6111/`（dev162 eTech-EAP）。2026-09-30 发布前实测运行镜像 `14.0.0-cf.20260930` 的 Hub/Server 仍为 `c7ff8afb` / `6a79b265`，未包含独立 search worker，不能按镜像日期判断当前源码已部署。
 
 dev 验证需使用两个真实业务用户：名称/描述/标签命中、撤销共享或隐藏 ACL 后裁剪、错误主体/CSRF 拒绝、属性/标签事件消费、文件更新后明确拒绝旧代次及新代次重建；审计检查非空分类查询、非空 CSV、导出下载撤权拒绝和过期文件实际清理。记录部署前后镜像 digest、源码 SHA、启用项及测试结果，不能只记录开关已开启。
 
@@ -67,3 +67,9 @@ python3 tests/smoke_ce14_runtime.py --image <已验证CE14镜像> --identity-run
 `etech01` 名称查询实际代理原生 `api/v2.1/search-file/`，英文/中文/无匹配与 PDF 预览通过，但耗时 6.8–13.3 秒。标签查询代理 `cloudDrive/tags/search`，逐资源调用 CloudFile 标签接口，两个查询均约 60 秒后 504；超时后仍可观察到标签读取。旧 Meili Activity 游标虽追平，90 个真实文件有界抽查仍缺失 75 个索引文档，不能直接切换至旧索引。新资源查询与 OIDC 能力未开启，仍需当前制品和契约接入；本次只使用 admin，不算权限隔离验收。详见 EAP 的 [实测证据](../../eap-cloudfile/docs/releases/evidence/cf03-search-etech-dev-2026-09-30.json)。
 
 2026-09-30 保守权限优化：兼容搜索读取有界的新鲜主体、CF 与原生文件夹权限快照，分别解算权限，检查配置过的祖先边界及每个候选本身；不把 invisible 配置当作全局前缀黑名单。允许结果仅在请求内复用，返回前复核账号、库资格、成员、规则与已允许路径；变化或读取失败拒绝整页，游标绑定权限快照。不递归补满结果。隔离 CE14 + 原生 SQL/RPC + Meili 运行验证已覆盖个人 r 覆盖群组 invisible、撤销个人授权后隐藏及库共享撤权；使用 development overlay，不代表 dev 已部署或字节事件桥已完成。
+
+## 2026-09-30 Dev 镜像发布完成
+
+dev162 的 `tools/release-dev162.sh 14.0.0-cf.20260930-search1 all` 已完成完整编译、产物字节校验和 Nexus 推送；镜像 digest 为 `sha256:ffdeec23b8097c578ed997c5e5761a884a058b631daa5d9aa56d5efa3a786107`。minio157 的 `cloudfile-dev` 与 `cloudfile-worker-dev` 同时更新到该制品，应用 healthy、worker running、重启计数均为 0；源码为 Hub `a9c16167c`、Server `d104150b`、Docker `08ccdff`。未使用开发 overlay。
+
+实际 `etech01` 兼容入口的只读验证通过：新鲜账号/权限快照，Meili 查询 200 且非降级，强制直属名称降级 200，匿名入口与 HTTP 请求均 403。使用既有原生库拥有者，不代表普通业务用户权限隔离验收或 eTech 浏览器联验；Java/Web 本次未部署，旧索引覆盖缺口和公共新资源能力继续保留原发布门槛。配置、旧镜像信息、schema/ACL 备份及更新日志保留在 dev 的 `rollback-20260930-search1/`；完整 [发布证据](../../eap-cloudfile/docs/releases/evidence/cf-dev-deployment-2026-09-30.json) 记录制品和验证边界。

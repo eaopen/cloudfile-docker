@@ -43,6 +43,12 @@ git merge upstream/master
 
 允许修改的上游文件以 [`docs/upstream-patches/`](docs/upstream-patches/) 三份清单为准。脚本报告新增文件时，先确认无法用新增文件或现有扩展点实现，再更新清单和本文件；不能直接补登记来绕过审查。
 
+2026-09-30 CI 修复登记 Hub 的 `tests/seahub/views/file/test_file.py` 与
+`.github/workflows/test.yml`：已有审计回归必须改用 `FILE_AUDIT_ENABLED`，否则它们仍
+mock 已移除的 Pro 判定并在运行断言前失败；自动调试步骤必须在现有工作流中改为
+显式开启 runner debug 后才运行，并限制等待时间。新增测试或另建工作流不能修复
+这两处原入口，生产审计端点的行为不变。
+
 `release.yaml` 还有第二个锚点：`ce_anchor`。CloudFile 跟的是 `upstream/master`（同步频繁、
 冲突小），但产品自称 CE 14，基线就必须是上游 CE 14 **正式发布的超集**。上游打新的
 `v14.0.N-server` 时，把 `ce_anchor` 更新到那次发布的**源码提交**，`./tools/check-ce-anchor.sh`

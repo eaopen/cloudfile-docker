@@ -2,9 +2,12 @@
 """Bind a CE14 dev distribution to its actual built source commits and bytes."""
 
 import argparse
+import importlib.util
+import json
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -12,6 +15,10 @@ sys.path.insert(0, str(ROOT / "build/seafile_14.0"))
 from package_provenance import (  # noqa: E402
     RECORD_NAME, load_manifest, verify_package, write_provenance,
 )
+
+READER_SPEC = importlib.util.spec_from_file_location("cloudfile_yaml_reader", ROOT / "build/cloudfile_14.0/read-manifest.py")
+READER = importlib.util.module_from_spec(READER_SPEC)
+READER_SPEC.loader.exec_module(READER)
 
 SOURCE_NAMES = ("seafile-server", "seahub", "seafobj", "seafdav", "seafevents",
                 "libsearpc", "libevhtp")
@@ -34,26 +41,51 @@ def build_sources(package, version):
     if set(SOURCE_NAMES) - set(values) or not all(COMMIT.fullmatch(values[key]) for key in SOURCE_NAMES):
         raise ValueError("incomplete build source commits")
     docker_commit = subprocess.check_output(
-        ["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip()
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     if values.get("cloudfile-docker") != docker_commit:
         raise ValueError("distribution was built with a different Docker recipe commit")
     return {key: values[key] for key in SOURCE_NAMES}
 
 
+def current_manifest(sources):
+    """Resolve release.yaml inputs without changing the locked release record."""
+    configured = READER.load(ROOT / "release.yaml")
+    manifest = load_manifest(ROOT / "build/seafile_14.0/release.json")
+    manifest["seafile_version"] = configured["ce_anchor.version"][1:].split("-server")[0]
+    for name, commit in sources.items():
+        fork = {"seafile-server": "cloudfile_server", "seahub": "cloudfile_hub"}.get(name)
+        if fork:
+            checkout = ROOT.parent / name.replace("seafile-server", "cloudfile-server").replace("seahub", "cloudfile-hub")
+            ref = configured["forks." + fork + ".ref"]
+            manifest["sources"][name]["url"] = configured["forks." + fork + ".url"]
+        else:
+            checkout = ROOT / "build/cloudfile_14.0/src" / name
+            ref = configured["upstream." + name]
+        # An upstream pin can identify an annotated tag object. Compare its
+        # resolved commit, never accept whichever HEAD happens to be cached.
+        expected = subprocess.check_output(["git", "rev-parse", ref + "^{commit}"],
+            cwd=checkout, text=True).strip()
+        if expected != commit:
+            raise ValueError("distribution differs from release.yaml input: " + name)
+        manifest["sources"][name]["ref"] = commit
+    return manifest
+
+
 def stamp(package, version):
     package = Path(package)
-    manifest_path = ROOT / "build/seafile_14.0/release.json"
-    manifest = load_manifest(manifest_path)
     sources = build_sources(package, version)
-    for name, commit in sources.items():
-        if manifest["sources"][name]["ref"] != commit:
-            raise ValueError("distribution differs from the locked release source: " + name)
-    record = package / RECORD_NAME
-    if record.exists() or record.is_symlink():
-        result = verify_package(package, manifest_path)
-    else:
-        result = write_provenance(package, {"schema": 1, "manifest": manifest,
-            "source_commits": sources}, manifest_path)
+    manifest = current_manifest(sources)
+    # The locked release.json remains release evidence. This dev build gets
+    # an independent immutable manifest and the same package-byte validation.
+    with tempfile.TemporaryDirectory(prefix="cloudfile-provenance-") as temporary:
+        manifest_path = Path(temporary) / "release.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        record = package / RECORD_NAME
+        if record.exists() or record.is_symlink():
+            result = verify_package(package, manifest_path)
+        else:
+            result = write_provenance(package, {"schema": 1, "manifest": manifest,
+                "source_commits": sources}, manifest_path)
     return result["package_sha256"]
 
 

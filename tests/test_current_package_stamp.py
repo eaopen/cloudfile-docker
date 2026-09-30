@@ -19,10 +19,11 @@ class CurrentPackageSourceTest(unittest.TestCase):
             'cloudfile-docker: ' + commit, *entries]) + '\n'
         with tempfile.TemporaryDirectory() as temporary:
             info = Path(temporary) / 'cloudfile-build-info.txt'
-            with patch.object(STAMP.subprocess, 'check_output', return_value=commit + '\n'):
+            with patch.object(STAMP.subprocess, 'check_output', return_value=commit + '\n') as git:
                 info.write_text(base)
                 self.assertEqual(STAMP.build_sources(temporary, '14.0.8-cf.0-test'),
                     dict.fromkeys(STAMP.SOURCE_NAMES, commit))
+                git.assert_called_with(['git', 'rev-parse', 'HEAD'], cwd=STAMP.ROOT, text=True)
                 for invalid in (base + entries[0] + '\n',
                                 base.replace(entries[0] + '\n', ''),
                                 base.replace('cloudfile-docker: ' + commit,
@@ -30,3 +31,20 @@ class CurrentPackageSourceTest(unittest.TestCase):
                     info.write_text(invalid)
                     with self.assertRaises(ValueError):
                         STAMP.build_sources(temporary, '14.0.8-cf.0-test')
+
+
+    def test_dev_manifest_uses_current_inputs_without_changing_locked_release(self):
+        locked = STAMP.ROOT / 'build/seafile_14.0/release.json'
+        before = locked.read_bytes()
+        commit = 'a' * 40
+        sources = dict.fromkeys(STAMP.SOURCE_NAMES, commit)
+        with patch.object(STAMP.subprocess, 'check_output', return_value=commit + '\n'):
+            manifest = STAMP.current_manifest(sources)
+        self.assertEqual({name: item['ref'] for name, item in manifest['sources'].items()}, sources)
+        self.assertEqual(locked.read_bytes(), before)
+
+    def test_dev_manifest_rejects_cached_source_different_from_selected_input(self):
+        sources = dict.fromkeys(STAMP.SOURCE_NAMES, 'a' * 40)
+        with patch.object(STAMP.subprocess, 'check_output', return_value='b' * 40 + '\n'):
+            with self.assertRaisesRegex(ValueError, 'release.yaml input'):
+                STAMP.current_manifest(sources)

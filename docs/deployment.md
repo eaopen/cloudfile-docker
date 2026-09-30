@@ -31,7 +31,7 @@ docker-build）共享的架构唯一来源。默认跟随宿主、原生优先�
 
 在 dev162 的 `/data/workspace/cloudfile/cloudfile-docker` 运行；三个仓库需并排放置，
 且工作区无未提交改动。脚本按 `release.yaml` 核对 Server/Hub 分支，拉取最新提交，
-基础镜像缺失时在 Linux 主机生成，然后编译发行包、构建 amd64 应用镜像、验证产物，
+基础镜像缺失时从 Nexus 恢复，然后编译发行包、构建 amd64 应用镜像、验证产物，
 最后推送到 Nexus。若三个仓库的相关源码、发行包及本地镜像均未变化，则复用已有
 构建；若 Nexus 上该标签指向相同镜像，则跳过推送。版本由命令参数指定，不复用
 `latest` 标签。
@@ -53,6 +53,8 @@ docker-build）共享的架构唯一来源。默认跟随宿主、原生优先�
 如需强制重新编译，设置 `CF_FORCE_REBUILD=1`。脚本默认使用 dev162 已验证可访问的 Python、npm 和 Go 镜像源，分别可通过
 `PIP_INDEX_URL`、`npm_config_registry`、`GOPROXY` 覆盖；`CF_BUILD_JOBS` 默认 16。
 构建产物留在 `build/cloudfile_14.0/`，由 Git 忽略，不提交到源码仓库。
+
+dev 镜像的产物校验按 `release.yaml` 当前输入解算实际 commit，并把独立的不可变源码清单与包内字节摘要写入 `cloudfile-build.json`；上游 annotated tag 解算到其 commit。既有 `build/seafile_14.0/release.json` 保留原发布证据，不限制 dev 必须复用旧源码，也不因 dev 构建而被更新。源码不符或包内字节变化仍拒绝组装；Git 校验使用工作目录参数，兼容 dev162 的 Git 1.8。
 
 ## 启动核心栈
 

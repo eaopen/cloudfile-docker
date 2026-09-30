@@ -211,3 +211,28 @@ CloudFile 回调守卫另外要求配置 JWT secret 并绑定受签正文；强�
 适配器调用原 scalar engine；第一轮和发布前第二轮均保留，未修改权限 writer 或规则。
 不新增上游修改路径。契约、结构计数和非 lease 边界见
 [`docs/legacy-search-permission-many.md`](docs/legacy-search-permission-many.md)。
+
+## Hub 上游同步（2026-09-30）
+
+Hub 从 `957c7c500` 同步至 `6d2452ba95f52fb99388bae22ba957f1ff764b16`，
+纳入 54 个上游提交，包括只读库权限、Wiki 写鉴权和目录统计 SQL 参数化修复。
+`check_folder_permission` 先校验原生访问权限，再降为只读，最后执行 CloudFile
+权限钩子；两个历史页面迁移到原生 API 后保留下载和恢复权限控制。
+
+跟随上游将构建、基础镜像（含旧 Docker 回退路径）与 Hub 测试 CI 对齐至
+Node 24，容器固定 `24.21.0`。日历、SDoc 编辑器及锁文件采用上游版本
+`1.0.33`、`3.0.250`；生产构建通过。部署前须重建基础镜像，以免复用旧 Node 20。
+
+新增登记两处测试兼容补丁：`frontend/package.json` 的 Jest 资源转换规则排除
+`.cjs`，避免把 Axios 的 CommonJS 入口转换成文件名；
+`frontend/src/components/search/search.test.js` 隔离 Webpack 图标加载与编辑器展示
+依赖，仅验证真实的访问记录逻辑。Jest 配置和原测试依赖无法通过运行时扩展点
+修复，因此在原位置修改；后续上游修复同类测试时复核并移除补丁。
+
+验证：Hub 扩展 635 passed / 5 skipped（含新增只读权限回归 13 项），当前契约
+534 passed / 295 skipped / 229 subtests，前端 8 suites / 42 tests、全量 lint、
+生产构建通过。本机快速检查的两项 C 测试受缺少 `valac` 与脚本执行位影响；
+在隔离 Linux 基础镜像中经 `bash` 执行，并为 Vala 指定源码基目录后，目录分页
+8 项、Hub 联动 20 项、批量权限 6 项全部通过，未修改 Server 源码。
+其余快速检查通过；未运行完整运行时栈 E2E，未配置外部 S3 测试端点。
+补丁登记中的其他既有告警保持可见，本次不批量补登记。

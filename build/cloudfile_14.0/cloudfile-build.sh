@@ -210,12 +210,12 @@ function install_dependencies() {
 # Ubuntu 24.04 的 apt nodejs 是 18.19.1，而 seahub 前端要 20+：
 # css-minimizer 依赖全局 crypto，Node 19 才把它变成全局，18 上构建会以
 # "ReferenceError: crypto is not defined" 失败。上游 seahub 的 CI 也是明确
-# 用 setup-node@v3 node-version 20.x。
+# 用 setup-node@v3 node-version 24.x；构建工具链跟随同一大版本。
 #
 # GitHub runner 预装了 Node 20+ 且排在 PATH 前面，所以 CI 上碰巧能过——
 # 也就是说这个构建其实不可复现：任何人在干净容器里构建都会失败。固定版本
 # 之后，CI 与本地拿到的是同一个 Node。
-NODE_VERSION=${CF_NODE_VERSION:-20.20.2}
+NODE_VERSION=${CF_NODE_VERSION:-24.21.0}
 
 function install_nodejs() {
     local arch

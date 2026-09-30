@@ -33,6 +33,7 @@
 .gitignore
 AGENTS.md
 frontend/config/webpack.entry.js
+frontend/package.json
 frontend/src/api/seafile-api.js
 frontend/src/components/dialog/move-dirent-dialog.js
 frontend/src/components/dirent-detail/dirent-details/file-details/index.js
@@ -43,6 +44,7 @@ frontend/src/components/repo-info-bar/index.css
 frontend/src/components/repo-info-bar/index.js
 frontend/src/components/search/search-result-item.js
 frontend/src/components/search/search.js
+frontend/src/components/search/search.test.js
 frontend/src/features/library-view/dir-grid-view/index.js
 frontend/src/features/library-view/dir-others/index.js
 frontend/src/features/metadata/components/cell-formatter/file-tags/index.js

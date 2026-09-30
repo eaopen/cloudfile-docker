@@ -85,7 +85,7 @@ PY
         -e DEBIAN_FRONTEND=noninteractive -e LANG=en_US.UTF-8 \
         -e LANGUAGE=en_US:en -e LC_ALL=en_US.UTF-8 \
         -e CLOUDFILE_BUILD_BASE=true -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
-        -e NODE_VERSION=20.20.2 -w /opt/cloudfile-build \
+        -e NODE_VERSION=24.21.0 -w /opt/cloudfile-build \
         "$ubuntu_base" sleep infinity >/dev/null
     docker cp "$repo_root/base_scripts" "$container:/bd_build"
     docker cp "$context/run.sh" "$container:/tmp/cloudfile-base-build.sh"

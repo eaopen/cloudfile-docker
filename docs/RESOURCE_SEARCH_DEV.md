@@ -23,6 +23,8 @@ CLOUDFILE_RESOURCE_SEARCH_CONFIG = {
 
 ## 独立 Worker
 
+2026-09-30 范围优化：新资源索引新增 `dirs` 祖先目录过滤字段，path/kind 在候选排名与分页前生效。必须使用新 generation/物理 index 并全量重建；仅更新设置后复用旧文档会遗漏目录内命中，不能作为 ready。旧兼容索引已有 dirs，与新资源索引不混用。范围、非递归降级和后续底层路径直查方案见 [补充设计](../../eap-cloudfile/docs/features/search-path-prefix.md)。
+
 在已初始化的应用容器内、以相同服务账号运行以下入口；它读取同一受信 Django 配置、同库 SQL/Redis 和原生 RPC socket。不是 Web 进程内线程，不自动注册周期任务或启动 supervisor。
 
 ```sh
@@ -59,5 +61,7 @@ python3 tests/smoke_ce14_runtime.py --image <已验证CE14镜像> --identity-run
 上述命令使用独立临时容器、真实 Meili/SQL/CE14 与 OIDC fixture；开发 overlay 不等于 dev 部署、外部 IdP/eTech 联验或当前发布制品验收。
 
 ### 当前 eTech 搜索检查（2026-09-30）
+
+本轮兼容修复源码新增 Hub `GET /api/v2.1/cloudfile/search/`（仍受 `CF_ENABLE_SEARCH` 控制），优先旧 Meili 文件索引，故障仅读一页当前目录文件名，不使用递归原生搜索。eTech 新界面经 `GET /libraries/{repoId}/search/page` 接分页/降级信息，旧 `/search` 保留列表响应并拒绝无法表达的范围缩小，旧标签路由改为索引查询并拒绝名称降级。部署顺序为 Hub → Java → Web；这些兼容修复不代表新 OIDC 资源搜索已开启，也不解决旧索引覆盖缺失。新资源索引路径优化仍按独立 generation 重建。
 
 `etech01` 名称查询实际代理原生 `api/v2.1/search-file/`，英文/中文/无匹配与 PDF 预览通过，但耗时 6.8–13.3 秒。标签查询代理 `cloudDrive/tags/search`，逐资源调用 CloudFile 标签接口，两个查询均约 60 秒后 504；超时后仍可观察到标签读取。旧 Meili Activity 游标虽追平，90 个真实文件有界抽查仍缺失 75 个索引文档，不能直接切换至旧索引。新资源查询与 OIDC 能力未开启，仍需当前制品和契约接入；本次只使用 admin，不算权限隔离验收。详见 EAP 的 [实测证据](../../eap-cloudfile/docs/releases/evidence/cf03-search-etech-dev-2026-09-30.json)。

@@ -21,10 +21,18 @@ def exercise(*, db, user, manager, initiate, complete, require, configuration_di
     require(complete(browser, initiate(browser)).status_code == 302, 'search_oidc_login')
     repo = seafile_api.create_repo('Disposable resource search', 'fixture', manager.username)
     seafile_api.share_repo(repo, manager.username, user.username, 'rw')
+    # Sibling and nested directories prove range filtering occurs before a
+    # one-candidate page, rather than discarding a whole-library page later.
+    special_dir = '/中文%2F+_"'
+    for parent, name in (('/', 'a'), ('/', 'ab'), ('/a', 'b'),
+            ('/a', 'scopeditem-folder'), ('/', special_dir[1:])):
+        seafile_api.post_dir(repo, parent, name, manager.username)
     with tempfile.NamedTemporaryFile() as file:
         file.write(b'not fulltext indexed'); file.flush()
         seafile_api.post_file(repo, file.name, '/', 'drawing.prt', manager.username)
         seafile_api.post_file(repo, file.name, '/', 'plain.txt', manager.username)
+        for parent in ('/', '/a', '/a/b', '/ab', special_dir):
+            seafile_api.post_file(repo, file.name, parent, 'scopeditem.prt', manager.username)
     # Enroll only this fixture's new library in the real native managed guard.
     with db.cursor() as sql:
         sql.execute('INSERT INTO cf_managed_library(repo_id,created_at) VALUES(%s,UTC_TIMESTAMP(6))', (repo,))
@@ -101,6 +109,19 @@ def exercise(*, db, user, manager, initiate, complete, require, configuration_di
     require(ok(post('search/v1/query/', dict(q='plain', repo_id=repo)))['items'][0]['annotation']['uid'] is None,
         'search_unannotated_native_resource')
     checks.append('native_full_snapshot_initialization_publication_name_description_and_sparse_search')
+    scoped_query = dict(q='scopeditem', repo_id=repo, path='/a/', kind='file', limit=1)
+    scoped_paths, cursor = [], None
+    for _ in range(4):
+        page = ok(post('search/v1/query/', {**scoped_query, **({'cursor': cursor} if cursor else {})}))
+        scoped_paths.extend(item['reference']['path'] for item in page['items'])
+        cursor = page['next_cursor']
+        if cursor is None: break
+    require(cursor is None and sorted(scoped_paths) == ['/a/b/scopeditem.prt', '/a/scopeditem.prt'],
+        'search_directory_range_before_one_hit_pagination')
+    special = ok(post('search/v1/query/', dict(q='scopeditem', repo_id=repo, path=special_dir, kind='file')))
+    require([item['reference']['path'] for item in special['items']] == [special_dir + '/scopeditem.prt'],
+        'search_literal_directory_filter')
+    checks.append('directory_and_kind_filters_before_pagination_with_sibling_boundary_and_literal_names')
     require(post('search/v1/query/', query, HTTP_X_CLOUDFILE_EXPECTED_SUBJECT=
         base64.urlsafe_b64encode(b'wrong-subject').decode().rstrip('=')).status_code == 403, 'search_subject_mismatch')
     require(post('search/v1/query/', query, HTTP_X_CSRFTOKEN='').status_code == 403, 'search_csrf')

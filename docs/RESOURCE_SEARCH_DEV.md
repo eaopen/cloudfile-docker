@@ -79,7 +79,7 @@ dev162 的 `tools/release-dev162.sh 14.0.0-cf.20260930-search1 all` 已完成完
 在 minio157 对 dev 栈做只读核查（未改配置、未重启、未重跑索引）：
 
 - dev 运行镜像为 `10.12.1.138:8041/cloudfile/cloudfile:14.0.0-cf.20260930-9f77a3b`，image id `sha256:adff8690…`，来源 Server `d104150b` / Hub `447e00e0b` / Docker `9f77a3b`，容器 `cloudfile-dev`（healthy）、`cloudfile-worker-dev`（running）。
-- 兼容索引 `cloudfile_files` 共 **410,993** 文档 = 409,324 `file` + **1,669 `dir`**。目录量级与既有观察（约 1,668–1,669）一致，**目录回填按现状已基本完成**。
+- 兼容索引 `cloudfile_files` 共 **410,993** 文档 = 409,324 `file` + **1,669 `dir`**。**09-30 的目录回填并未跑完**：检查点停在 `pages=1694 / directories=1668 / pending=79 / complete=False`，索引里的 1,669 条只是已处理部分。
 - 但 `etech01`（`4f09f8a8-40c0-4ded-bec9-6c42691034f5`）原生 `RepoFileCount` 为 **862,177**，索引文档仅 **410,937**，覆盖约 **47.7%**。另有 5 个测试库（一机一档/THome/STP资料库/STWC资料库/角色权限资料库）共 56 个文档。
 - 新资源搜索仍未在本机初始化：`cf_search_generation` 等 generation 表不存在，Meili 中也没有 `resources_*` 索引；`search.resources` 保持关闭。`cf_search_index_state` 的 `meilisearch` 水位为 140390。
 - dev 上 eTech 两端已部署：`dev-etech-eap`（`etech-eap:2.1-dev`）与 `dev-eap-web`（`etech-web:dev`，入口 6111）。

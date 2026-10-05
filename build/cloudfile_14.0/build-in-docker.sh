@@ -106,7 +106,7 @@ for v in CF_SERVER_REF CF_HUB_REF CF_SERVER_URL CF_HUB_URL \
          CF_LIBSEARPC_REF CF_LIBEVHTP_REF CF_FORCE_REBUILD \
          CF_FORCE_FRONTEND_REBUILD CF_FORCE_DIST_REBUILD CF_BUILD_JOBS \
          CF_BUILD_TARGET NODE_OPTIONS PIP_INDEX_URL npm_config_registry \
-         npm_config_fetch_retries GOPROXY; do
+         npm_config_fetch_retries GOPROXY CF_NODE_VERSION CF_NODE_MIRROR; do
     [[ -n ${!v:-} ]] && env_args+=(-e "$v=${!v}")
 done
 

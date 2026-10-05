@@ -132,6 +132,7 @@ if [[ $mode != push ]]; then
         npm_config_registry=${npm_config_registry:-https://registry.npmmirror.com} \
         npm_config_fetch_retries=${npm_config_fetch_retries:-5} \
         GOPROXY=${GOPROXY:-https://goproxy.cn,direct} \
+        CF_NODE_MIRROR=${CF_NODE_MIRROR:-https://npmmirror.com/mirrors/node} \
         CF_BUILD_JOBS=${CF_BUILD_JOBS:-16} \
         CF_SERVER_URL=$server_repo CF_HUB_URL=$hub_repo \
             "$repo_root/build/cloudfile_14.0/build-in-docker.sh" "$version"

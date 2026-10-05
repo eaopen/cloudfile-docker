@@ -217,6 +217,14 @@ function install_dependencies() {
 # 之后，CI 与本地拿到的是同一个 Node。
 NODE_VERSION=${CF_NODE_VERSION:-24.21.0}
 
+# Node 发行包下载源。默认官方站；受限网络（例如只放行国内镜像的环境）
+# 用 CF_NODE_MIRROR 指向可用镜像，例如：
+#   CF_NODE_MIRROR=https://npmmirror.com/mirrors/node
+# 与 PIP_INDEX_URL / npm_config_registry / GOPROXY 一样，只影响从哪里取包，
+# 不改变被固定校验的版本与产物内容。
+NODE_MIRROR=${CF_NODE_MIRROR:-https://nodejs.org/dist}
+NODE_MIRROR=${NODE_MIRROR%/}
+
 function install_nodejs() {
     local arch
     case "$(uname -m)" in
@@ -236,9 +244,9 @@ function install_nodejs() {
         return
     fi
 
-    echo "Installing Node ${NODE_VERSION} (${arch})"
+    echo "Installing Node ${NODE_VERSION} (${arch}) from ${NODE_MIRROR}"
     mkdir -p "$prefix"
-    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/${name}.tar.xz" \
+    curl -fsSL "${NODE_MIRROR}/v${NODE_VERSION}/${name}.tar.xz" \
         | tar -xJ -C "$prefix"
 
     export PATH="${prefix}/${name}/bin:${PATH}"

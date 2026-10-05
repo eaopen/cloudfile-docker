@@ -4,6 +4,7 @@ import argparse
 import base64
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import secrets
@@ -297,13 +298,34 @@ print(json.dumps({'tests': result.testsRun, 'skipped': len(result.skipped)}))
             contracts = Path(__file__).resolve().parents[2] / 'eap-cloudfile/contracts'
             for name in ('acceptance-vectors.json', 'schema-examples.json'):
                 docker('cp', str(contracts / name), app + ':' + fixture_dir + '/' + name)
+            # The editing regression reads production C SQL literals from paths
+            # relative to the installed package root, so the sibling server
+            # checkout has to sit next to the packaged extensions in the container.
+            server = Path(__file__).resolve().parents[2] / 'cloudfile-server'
+            if not server.is_dir():
+                raise RuntimeError('cloudfile-server checkout is required at ' + str(server))
+            docker('cp', str(server), app + ':/opt/seafile/seafile-server-latest/cloudfile-server')
             # The existing SQL tests create/drop random schemas as root. Give
             # them their own server, never the initialized application's DB.
             start('test-db', 'test-db', 'mysql:8', {'MYSQL_ALLOW_EMPTY_PASSWORD': 'yes'},
                   ['/var/lib/mysql:rw,size=1g'])
             start('test-redis', 'test-redis', 'redis:7-alpine', {}, ['/data:rw,size=64m'])
-            code = '''
-import io, json, os, re, sys, time, unittest
+            # Part of the suite is pytest-style and the runtime image ships no
+            # pytest, so the gate brings its own runner. The acceptance network is
+            # internal, so the index is only reachable while the app is attached to
+            # the default bridge; the suite itself runs back on the internal net.
+            pip_index = os.environ.get('CF_GATE_PIP_INDEX_URL', 'https://pypi.tuna.tsinghua.edu.cn/simple')
+            docker('network', 'connect', 'bridge', app)
+            try:
+                docker('exec', app, 'pip3', 'install', '-q', '--disable-pip-version-check',
+                       '-i', pip_index, 'pytest')
+            finally:
+                docker('network', 'disconnect', 'bridge', app)
+            code = r'''
+import contextlib, importlib.util, io, json, os, re, sys, time
+from pathlib import Path
+import xml.etree.ElementTree as ET
+import pytest
 package = '/opt/seafile/seafile-server-latest'
 os.chdir(package + '/seahub')
 sys.path[:0] = [package + '/seahub', package + '/seahub/thirdpart',
@@ -326,31 +348,61 @@ while True:
         if time.monotonic() > deadline:
             raise SystemExit(1)
         time.sleep(2)
-suite = unittest.defaultTestLoader.discover('cloudfile_extensions/tests', top_level_dir='.')
 # This actor needs actual native Django apps; it already ran in its own
 # configured process. HTTP unit fixtures intentionally use minimal settings.
 actor_id = 'cloudfile_extensions.tests.test_download_actor.DownloadActorTests.test_native_type_and_session_identity_required_before_reload'
-def flatten(items):
-    for item in items:
-        if isinstance(item, unittest.TestSuite):
-            yield from flatten(item)
-        else:
-            yield item
-all_tests = list(flatten(suite))
-assert sum(test.id() == actor_id for test in all_tests) == 1
-suite = unittest.TestSuite(test for test in all_tests if test.id() != actor_id)
-output = io.StringIO()
-result = unittest.TextTestRunner(stream=output, verbosity=2).run(suite)
+# pytest node ids are '::'-separated and relative to the rootdir, so the dotted
+# unittest id never matches --deselect; derive the node id pytest will use.
+module_name, class_name, method_name = actor_id.rsplit('.', 2)
+actor_origin = Path(importlib.util.find_spec(module_name).origin).resolve()
+actor_node = '{}::{}::{}'.format(actor_origin.relative_to(Path.cwd()).as_posix(),
+                                 class_name, method_name)
+junit_path = '/tmp/cf-extensions-junit.xml'
+# pytest-django would impose its own settings/DB handling; the unittest path had
+# none. Collection errors must fail the gate, but they must not stop the suite.
+# Unit fixtures deliberately keep capturing off, so route all runner chatter away
+# from stdout: only the JSON report below may be printed there.
+with contextlib.redirect_stdout(io.StringIO()):
+    pytest.main(['cloudfile_extensions/tests', '--rootdir=' + os.getcwd(), '-p', 'no:django',
+        '--continue-on-collection-errors', '--deselect', actor_node,
+        '--junitxml=' + junit_path])
+cases = [case for suite in ET.parse(junit_path).getroot() for case in suite
+         if case.tag == 'testcase']
+def test_id(case):
+    classname = case.get('classname') or ''
+    name = case.get('name') or ''
+    return classname + '.' + name if classname else name
+def frames(text):
+    matches = re.findall(r'^\s*(?:E\s+)?([^\s:][^\s]*\.py):([0-9]+): (.+)$', text, re.M)
+    if not matches:
+        matches = re.findall(r'File "([^"]+)", line ([0-9]+), in (.+)', text)
+    return [(path.rsplit('/', 1)[-1], int(line), name) for path, line, name in matches[-3:]]
 def failure_shape(items):
-    return {test.id(): {'type': trace.strip().splitlines()[-1].split(':', 1)[0],
-        'reason': trace.strip().splitlines()[-1][:240] if 'Model class ' in trace.strip().splitlines()[-1] else '',
-        'frames': [(path.rsplit('/', 1)[-1], int(line), name) for path, line, name
-            in re.findall(r'File "([^"]+)", line ([0-9]+), in (.+)', trace)[-3:]]}
-        for test, trace in items}
-report = {'tests': result.testsRun, 'native_tests_separate': 1, 'skipped': len(result.skipped),
-          'failures': [test.id().split(" (", 1)[0] for test, trace in result.failures],
-          'errors': [test.id().split(" (", 1)[0] for test, trace in result.errors],
-          'diagnostics': {**failure_shape(result.failures), **failure_shape(result.errors)}}
+    shape = {}
+    for case, entry in items:
+        text = entry.text or ''
+        lines = [line.rstrip() for line in text.splitlines() if line.strip()]
+        last = lines[-1].strip() if lines else ''
+        summary = (entry.get('message') or '').strip()
+        if not summary or summary == 'collection failure':
+            summary = re.sub(r'^E\s+', '', last)
+        shape[test_id(case)] = {'type': summary.split(':', 1)[0].strip(),
+            'reason': last[:240] if 'Model class ' in last else '',
+            'frames': frames(text)}
+    return shape
+failed = [(case, case.find('failure')) for case in cases if case.find('failure') is not None]
+errored = [(case, case.find('error')) for case in cases if case.find('error') is not None]
+report = {'tests': len(cases), 'native_tests_separate': 1,
+          'skipped': sum(1 for case in cases if case.find('skipped') is not None),
+          'failures': [test_id(case) for case, _ in failed],
+          'errors': [test_id(case) for case, _ in errored],
+          'diagnostics': {**failure_shape(failed), **failure_shape(errored)}}
+# A wrong --deselect or an empty collection shrinks the suite without any
+# failure; both have to fail the gate instead of passing silently.
+if any(test_id(case) == actor_id for case in cases):
+    report['errors'].append('gate.extensions_regression.actor_not_deselected:' + actor_id)
+if not cases:
+    report['errors'].append('gate.extensions_regression.no_tests_collected')
 print(json.dumps(report))
 '''
             regression = json.loads(docker('exec', app, 'python3', '-c', code, timeout=600))

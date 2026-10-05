@@ -84,5 +84,18 @@ dev162 的 `tools/release-dev162.sh 14.0.0-cf.20260930-search1 all` 已完成完
 - 新资源搜索仍未在本机初始化：`cf_search_generation` 等 generation 表不存在，Meili 中也没有 `resources_*` 索引；`search.resources` 保持关闭。`cf_search_index_state` 的 `meilisearch` 水位为 140390。
 - dev 上 eTech 两端已部署：`dev-etech-eap`（`etech-eap:2.1-dev`）与 `dev-eap-web`（`etech-web:dev`，入口 6111）。
 
-结论：**目录完成不等于文件覆盖完成**，兼容索引的文件覆盖是本版首要技术阻塞。下一步必须先定位历史文件未入索引的根因（Activity 事件覆盖 vs 全量扫描），再建立文件级全量核验与补索引，最后才谈切换新资源索引。证据见 [环境实测记录](../../eap-cloudfile/docs/releases/evidence/cf-environments-2026-10-06.json)。
+结论：**目录完成不等于文件覆盖完成**。根因是 ~452,845 个文件从未产生 seafevents Activity 行，只修补索引器无法闭合；补齐需要原生树文件级回填。
+
+### 2026-10-06 回填完成
+
+在 dev（镜像 `14.0.0-cf.20261006-rc5`，Hub `6bfb6f3c0`）对 `etech01` 完成 `--kinds all` 回填，以三个互不重叠的子树 worker 并行执行，各自 `complete=True`：
+
+| 指标 | 前 | 后 |
+| --- | --- | --- |
+| 索引文档总数 | 410,993 | 899,804 |
+| file | 409,324 | 862,233 |
+| dir | 1,669 | 37,571 |
+| `etech01` 文件覆盖 | 47.7% | ≈100%（862,233/862,177），抽样 124/124 命中 |
+
+速率优化过程（真实测量驱动）：逐页写入 70 文档/分钟 → 跨页批量写入（`--flush-docs`）→ 标签一次预加载 → 原生目录项构建文档（免逐文件 RPC）→ 三 worker 并行，聚合 152–229 文件/秒；剩余上限是 Meilisearch 单次写入任务约 10 秒的固定开销。按名检索与 `object_type = dir` 目录检索均已实测返回结果。**这只修复 legacy 兼容索引**；`search.resources`、新 generation、字节提交事件桥与对账命令仍待交付，真实用户权限矩阵与浏览器验收也仍属项目侧。证据：[完成记录](../../eap-cloudfile/docs/releases/evidence/cf-search-backfill-completion-2026-10-06.json)。
 

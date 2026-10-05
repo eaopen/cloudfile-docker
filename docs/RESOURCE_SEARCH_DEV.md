@@ -73,3 +73,16 @@ python3 tests/smoke_ce14_runtime.py --image <已验证CE14镜像> --identity-run
 dev162 的 `tools/release-dev162.sh 14.0.0-cf.20260930-search1 all` 已完成完整编译、产物字节校验和 Nexus 推送；镜像 digest 为 `sha256:ffdeec23b8097c578ed997c5e5761a884a058b631daa5d9aa56d5efa3a786107`。minio157 的 `cloudfile-dev` 与 `cloudfile-worker-dev` 同时更新到该制品，应用 healthy、worker running、重启计数均为 0；源码为 Hub `a9c16167c`、Server `d104150b`、Docker `08ccdff`。未使用开发 overlay。
 
 实际 `etech01` 兼容入口的只读验证通过：新鲜账号/权限快照，Meili 查询 200 且非降级，强制直属名称降级 200，匿名入口与 HTTP 请求均 403。使用既有原生库拥有者，不代表普通业务用户权限隔离验收或 eTech 浏览器联验；Java/Web 本次未部署，旧索引覆盖缺口和公共新资源能力继续保留原发布门槛。配置、旧镜像信息、schema/ACL 备份及更新日志保留在 dev 的 `rollback-20260930-search1/`；完整 [发布证据](../../eap-cloudfile/docs/releases/evidence/cf-dev-deployment-2026-09-30.json) 记录制品和验证边界。
+
+## 2026-10-06 Dev 运行环境只读复核
+
+在 minio157 对 dev 栈做只读核查（未改配置、未重启、未重跑索引）：
+
+- dev 运行镜像为 `10.12.1.138:8041/cloudfile/cloudfile:14.0.0-cf.20260930-9f77a3b`，image id `sha256:adff8690…`，来源 Server `d104150b` / Hub `447e00e0b` / Docker `9f77a3b`，容器 `cloudfile-dev`（healthy）、`cloudfile-worker-dev`（running）。
+- 兼容索引 `cloudfile_files` 共 **410,993** 文档 = 409,324 `file` + **1,669 `dir`**。目录量级与既有观察（约 1,668–1,669）一致，**目录回填按现状已基本完成**。
+- 但 `etech01`（`4f09f8a8-40c0-4ded-bec9-6c42691034f5`）原生 `RepoFileCount` 为 **862,177**，索引文档仅 **410,937**，覆盖约 **47.7%**。另有 5 个测试库（一机一档/THome/STP资料库/STWC资料库/角色权限资料库）共 56 个文档。
+- 新资源搜索仍未在本机初始化：`cf_search_generation` 等 generation 表不存在，Meili 中也没有 `resources_*` 索引；`search.resources` 保持关闭。`cf_search_index_state` 的 `meilisearch` 水位为 140390。
+- dev 上 eTech 两端已部署：`dev-etech-eap`（`etech-eap:2.1-dev`）与 `dev-eap-web`（`etech-web:dev`，入口 6111）。
+
+结论：**目录完成不等于文件覆盖完成**，兼容索引的文件覆盖是本版首要技术阻塞。下一步必须先定位历史文件未入索引的根因（Activity 事件覆盖 vs 全量扫描），再建立文件级全量核验与补索引，最后才谈切换新资源索引。证据见 [环境实测记录](../../eap-cloudfile/docs/releases/evidence/cf-environments-2026-10-06.json)。
+

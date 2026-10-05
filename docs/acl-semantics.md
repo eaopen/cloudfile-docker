@@ -13,13 +13,14 @@
 > 目录级委托管理（V2）已实现（§7.2）。
 >
 > **决策（2026-08-28，方案 v3 —— Seafile Pro 兼容语义）**：按
-> `eap-cloudfile/docs/review/cloudfile_decision_20260827.md` §7，求解顺序改为：
+> `eap-cloudfile/docs/features/permissions.md`「确定的解算顺序」，求解顺序改为：
 > ① 个人规则在整个祖先链上优先于部门/群组规则（跨层，不只同层）；
 > ② 目录规则可把库级 `r` 在具体路径**提升**为 `rw`（撤销 v2 的"只能收紧"上限）；
 > ③ 个人显式可见权限可覆盖群组 `invisible`；
 > ④ `none`/`invisible` 仍一票否决，个人 `none`/`invisible` 压过任何群组授予。
 > v2 的"最深路径任意类型规则无条件覆盖 + 目录规则永不高于库权限"作废。
-> 与目标 Seafile Pro 版本的差异以黑盒基准为准（决策文档 §7.2 第 8 条）；
+> 与目标 Seafile Pro 版本的差异（含多群组冲突合并、`online-read-only`/`online-read-write`
+> 等扩展值）以黑盒基准为准；
 > 规格、`acl-cases.json` **v3**（29 cases / 70 checks）与 C/Python 实现三处同步修改。
 
 本文件是 **规范**。求解逻辑只有 **两份实现**，必须与它逐字一致：

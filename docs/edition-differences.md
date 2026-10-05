@@ -124,7 +124,7 @@ grep -n "CF_ENABLE" cloudfile-hub/cloudfile_ext/features.py
 4. **git 证据**：`PubRepos` 类、`base/accounts.py`、`role_permissions/settings.py`、
    `api2/endpoints/shared_repos.py` 与 upstream/master diff 全部为空（命令见第四节）。
 5. **前端一致**：公共资料库页"新建"按钮由 `canAddPublicRepo` 控制渲染
-   ([`pages/shared-with-all/index.js`](../../cloudfile-hub/frontend/src/pages/shared-with-all/index.js)，
+   ([`pages/app/main-panel/shared-with-all/index.js`](../../cloudfile-hub/frontend/src/pages/app/main-panel/shared-with-all/index.js)，
    值来自 `seahub/views/__init__.py` 注入的 `pageOptions`)。权限关闭时入口整个不出现。
 
 ### 两种真实原因与处理

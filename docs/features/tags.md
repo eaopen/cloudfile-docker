@@ -40,14 +40,14 @@ CE 14 中同时保留两类标签数据通路：
 | 展示顺序 | `GET /repo-tags/` 先用户标签后系统标签（`order_by('is_system', 'id')`） |
 | 开关 | 全部逻辑以 `CF_ENABLE_TAGS` 为门；关闭时行为与原生 CE 一致（见 `seahub/api2/endpoints/repo_tags.py`） |
 
-权限口径沿用 [roles-semantics.md](roles-semantics.md) §6：系统标签 = 仅 `admin`，用户标签 = `rw` 及以上，
+权限口径沿用 [roles-semantics.md](../roles-semantics.md) §6：系统标签 = 仅 `admin`，用户标签 = `rw` 及以上，
 不引入五级角色。
 
-可执行验收是 [`review-tags-cases.json`](review-tags-cases.json) 与
-[`review_tags_matrix.py`](../tests/e2e/review_tags_matrix.py)（api 用例 tags-001～tags-005），
+可执行验收是 [`review-tags-cases.json`](../review-tags-cases.json) 与
+[`review_tags_matrix.py`](../../tests/e2e/review_tags_matrix.py)（api 用例 tags-001～tags-005），
 由 `./tools/verify-local.sh cap review-tags` 在开启 `CF_ENABLE_TAGS` 的
 容器门禁中执行（2026-08-20 在 `14.0.0-cf.0-incverify` 镜像上复验：冒烟 12/12 + tags-001～005 全绿）。
-浏览器用例（channel: `ui`）由 [`review_ui_tags.py`](../tests/e2e/review_ui_tags.py)
+浏览器用例（channel: `ui`）由 [`review_ui_tags.py`](../../tests/e2e/review_ui_tags.py)
 （Playwright）覆盖，2026-08-20 在同一镜像、开启
 `CF_ENABLE_METADATA + CF_ENABLE_TAGS` + metadata-server 的栈上 5/5 通过
 （tags-006 锁形、tags-007 用户在前、tags-008 折叠、tags-009 点击仅选中，

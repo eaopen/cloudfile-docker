@@ -129,11 +129,13 @@ Seahub 当前 `OAuth2Session` 调用没有生成或发送 `code_challenge`、`co
 | CloudFile 变量 | 默认 claim | Seahub 用途 | 要求 |
 |---|---|---|---|
 | `CF_SSO_OAUTH_UID_CLAIM` | `sub` | 外部稳定用户 ID | 必须跨登录稳定，不能使用会变化的邮箱、用户名或显示名 |
-| `CF_SSO_OAUTH_EMAIL_CLAIM` | `email` | 联系邮箱与创建用户回退值 | 当前映射标记为必需 |
+| `CF_SSO_OAUTH_EMAIL_CLAIM` | `email` | 可选联系邮箱 | 可选；缺失不阻断登录 |
 | `CF_SSO_OAUTH_NAME_CLAIM` | `name` | 显示名称 | 可选 |
 | `CF_SSO_OAUTH_PROVIDER` | 无 | `SocialAuthUser.provider` | 部署后不应更改，否则既有绑定会失联 |
 
-当 UID claim 与 email claim 同名时，bootstrap 只生成一个 email 映射，避免 Python 字典
+`CF_SSO_OAUTH_UID_CLAIM` 是登录身份主键并被标记为必需；email 只作为可选联系资料。没有
+email 的账号仍由稳定 `sub` 建立 OAuth 绑定，CloudFile 使用内部虚拟 ID 保存本地用户。
+当 UID claim 与 email claim 同名时，bootstrap 只保留 required uid 映射，避免 Python 字典
 键覆盖。Authentik 应保证 `sub` 不因邮箱、用户名或显示名修改而改变。
 
 ## 登出

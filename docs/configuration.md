@@ -85,7 +85,8 @@ CF_SSO_OAUTH_NAME_CLAIM=name
 CF_SSO_OAUTH_CREATE_UNKNOWN_USER=true
 ```
 
-回调地址由站点协议和主机名生成：`<scheme>://<host>/oauth/callback/`。完整字段映射、
+`CF_SSO_OAUTH_UID_CLAIM` 是必需的稳定身份主键；`CF_SSO_OAUTH_EMAIL_CLAIM` 仅是可选联系资料，
+没有邮箱的账号也可通过稳定 UID 登录。回调地址由站点协议和主机名生成：`<scheme>://<host>/oauth/callback/`。完整字段映射、
 首次登录和恢复边界见 [Authentik 与企业认证](features/sso-authentik.md)。配置 client ID 后，
 secret、三个 OAuth 端点和 provider 均为启动必填项；默认仅接受 HTTPS。`LOGOUT_URL` 为
 可选的 RP 发起登出端点，`CREATE_UNKNOWN_USER=false` 要求管理员预先创建用户。

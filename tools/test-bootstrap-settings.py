@@ -143,20 +143,31 @@ def test_sso():
     check('首次 OAuth 用户创建策略可显式关闭',
           values.get('OAUTH_CREATE_UNKNOWN_USER') is False,
           repr(values.get('OAUTH_CREATE_UNKNOWN_USER')))
-    check('email claim 是必需项',
-          values.get('OAUTH_ATTRIBUTE_MAP', {}).get('email') == (True, 'email'),
+    check('sub claim 是必需稳定 uid',
+          values.get('OAUTH_ATTRIBUTE_MAP', {}).get('sub') == (True, 'uid'),
+          repr(values.get('OAUTH_ATTRIBUTE_MAP')))
+    check('email claim 是可选联系邮箱',
+          values.get('OAUTH_ATTRIBUTE_MAP', {}).get('email')
+          == (False, 'contact_email'),
           repr(values.get('OAUTH_ATTRIBUTE_MAP')))
     check('static 目录被解析成结构',
           values.get('CF_SSO_DIRECTORY_STATIC', [{}])[0].get('external_id') == 'eng',
           repr(values.get('CF_SSO_DIRECTORY_STATIC')))
 
-    # uid 与 email 取同一个 claim 的 IdP 是存在的。字典会吃掉其中一个，
-    # 吃掉哪个取决于插入顺序——如果吃掉的是 email，登录会因"必需属性缺失"
-    # 被拒，而报错里完全看不出是 .env 里两行配成了同一个值。
+    # uid 与 email 取同一个 claim 时，身份语义优先：同一个 claim 只能
+    # 映射一次，因此保持 required uid，不再把它同时当成联系邮箱。
     env = dict(BASE_ENV, CF_SSO_OAUTH_UID_CLAIM='email')
     values = evaluate(load('_settings_block_sso', env)())
-    check('uid 与 email 同名时 email 仍是必需项',
-          values.get('OAUTH_ATTRIBUTE_MAP', {}).get('email') == (True, 'email'),
+    check('uid 与 email 同名时仍作为必需 uid',
+          values.get('OAUTH_ATTRIBUTE_MAP', {}).get('email') == (True, 'uid'),
+          repr(values.get('OAUTH_ATTRIBUTE_MAP')))
+
+    # email 是可选资料；IdP 不提供 email claim 时仍可只靠稳定 sub 登录。
+    env = dict(BASE_ENV, CF_SSO_OAUTH_EMAIL_CLAIM='')
+    values = evaluate(load('_settings_block_sso', env)())
+    check('没有 email claim 仍生成 uid-only OAuth 映射',
+          values.get('OAUTH_ATTRIBUTE_MAP', {}).get('sub') == (True, 'uid')
+          and 'email' not in values.get('OAUTH_ATTRIBUTE_MAP', {}),
           repr(values.get('OAUTH_ATTRIBUTE_MAP')))
 
     # 只要组织映射、登录仍走 LDAP/SAML 的部署：不能因此打开 OAuth。

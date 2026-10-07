@@ -300,24 +300,19 @@ def _settings_block_sso():
         email_claim = get_conf('CF_SSO_OAUTH_EMAIL_CLAIM', 'email').strip()
         name_claim = get_conf('CF_SSO_OAUTH_NAME_CLAIM', 'name').strip()
         login_id_claim = get_conf('CF_SSO_OAUTH_LOGIN_ID_CLAIM', 'login_id').strip()
-        if not uid_claim or not email_claim:
-            raise Exception('CF_SSO_OAUTH_UID_CLAIM and '
-                            'CF_SSO_OAUTH_EMAIL_CLAIM must not be empty')
+        if not uid_claim:
+            raise Exception('CF_SSO_OAUTH_UID_CLAIM must not be empty')
 
-        # Upstream's shape is {claim: (required, seahub_attr)}. The email claim
-        # is the required one: seahub/oauth/views.py falls back to it when no
-        # uid is mapped, and refuses the login when neither is present.
+        # Upstream's shape is {claim: (required, seahub_attr)}. The stable
+        # external subject is the identity key, so require uid/sub. Seahub can
+        # provision an OAuth user without email (create_oauth_user creates an
+        # internal virtual id); a real email, when present, is profile metadata.
         attribute_map = {
-            email_claim: (True, 'email'),
-            uid_claim: (False, 'uid'),
+            uid_claim: (True, 'uid'),
             name_claim: (False, 'name'),
         }
-        # A provider that puts the subject in `email` would otherwise lose one
-        # of the two entries to the dict, and which one it loses depends on
-        # insertion order.
-        if uid_claim == email_claim:
-            attribute_map = {email_claim: (True, 'email'),
-                             name_claim: (False, 'name')}
+        if email_claim and email_claim != uid_claim:
+            attribute_map[email_claim] = (False, 'contact_email')
 
         if login_id_claim and login_id_claim not in attribute_map:
             attribute_map[login_id_claim] = (False, 'login_id')

@@ -160,6 +160,9 @@ def test_sso():
                CF_SERVICE_SSO_DIRECTORY_KEY_ID='dev-key-1',
                CF_SERVICE_SSO_DIRECTORY_SERVICE_ID='cloudfile')
     values = evaluate(load('_settings_block_sso', env)())
+    check('增量 UID 默认只预览且不能撤员',
+          values.get('CF_SSO_UID_DELTA_APPLY_ENABLED') == 'false'
+          and values.get('CF_SSO_UID_DELTA_MAX_REMOVALS') == '0')
     check('EAP 目录 v2 机器协议透传到 Seahub settings',
           (values.get('CF_SERVICE_SSO_DIRECTORY_AUTH_MODE') == 'v2'
            and values.get('CF_SERVICE_SSO_DIRECTORY_KEY_ID') == 'dev-key-1'

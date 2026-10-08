@@ -359,6 +359,10 @@ def _settings_block_sso():
         % get_conf('CF_SERVICE_SSO_DIRECTORY_KEY_ID', ''),
         'CF_SERVICE_SSO_DIRECTORY_SERVICE_ID = %r'
         % get_conf('CF_SERVICE_SSO_DIRECTORY_SERVICE_ID', 'cloudfile'),
+        'CF_SSO_UID_DELTA_APPLY_ENABLED = %r'
+        % get_conf('CF_SSO_UID_DELTA_APPLY_ENABLED', 'false'),
+        'CF_SSO_UID_DELTA_MAX_REMOVALS = %r'
+        % get_conf('CF_SSO_UID_DELTA_MAX_REMOVALS', '0'),
     ]
 
     static = get_conf('CF_SSO_DIRECTORY_STATIC', '')

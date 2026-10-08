@@ -1,0 +1,104 @@
+diff --git a/seafobj/objstore_factory.py b/seafobj/objstore_factory.py
+index c7f4219..f960e44 100644
+--- a/seafobj/objstore_factory.py
++++ b/seafobj/objstore_factory.py
+@@ -4,7 +4,7 @@ import binascii
+ import logging
+ import json
+
+-from sqlalchemy import select
++from sqlalchemy import select, text
+
+ from seafobj.exceptions import InvalidConfigError
+ from seafobj.backends.filesystem import SeafObjStoreFS
+@@ -638,7 +638,16 @@ class SeafObjStoreFactory(object):
+         except KeyError:
+             raise RuntimeError('unknown obj_type ' + obj_type)
+
++        # Construct the lazy mapping before managers capture this dictionary;
++        # patching it at Django AppConfig.ready() would be too late for seafobj.
++        from seafobj.auto_local import AutoLocalStores, auto_template
++        parent = auto_template(self.seafile_cfg.multi_backend_cfg)
++        if parent is not None:
++            self.obj_stores[obj_type] = AutoLocalStores(parent, obj_type, self.seafile_cfg.crypto)
++
+         for bend in self.seafile_cfg.multi_backend_cfg:
++            if bend.get('is_auto') is True:
++                continue
+             storage_id = bend['storage_id']
+
+             crypto = self.seafile_cfg.crypto
+@@ -715,8 +724,12 @@ def get_repo_storage_id(repo_id):
+         RepoStorageId = Base.classes.RepoStorageId
+         storage_id = None
+         session = scoped_session(objstore_factory.session)
+-        r = session.scalars(select(RepoStorageId).where(RepoStorageId.repo_id == repo_id).limit(1)).first()
+-        storage_id = r.storage_id if r else None
++        # Virtual libraries share origin objects; match the native C/Go query
++        # rather than silently sending a virtual UUID to the legacy backend.
++        storage_id = session.scalar(text(
++            'SELECT storage_id FROM RepoStorageId WHERE repo_id = COALESCE('
++            '(SELECT origin_repo FROM VirtualRepo WHERE repo_id = :repo), :repo) LIMIT 1'),
++            {'repo': repo_id})
+         repo_storage_id[repo_id] = storage_id
+         session.remove()
+         return storage_id
+diff --git a/seafobj/auto_local.py b/seafobj/auto_local.py
+new file mode 100644
+--- /dev/null
++++ b/seafobj/auto_local.py
+@@ -0,0 +1,54 @@
++"""Lazy per-library filesystem stores for CloudFile's one mounted parent.
++
++Keep the ID grammar in sync with cf-auto-storage.h, Go, and shared fixtures.
++This module has no Django dependency, so GC/index readers use the same layout.
++"""
++import os
++import re
++import stat
++
++
++def local_key(storage_id):
++    if not isinstance(storage_id, str) or not storage_id.startswith('auto-local:'):
++        raise KeyError(storage_id)
++    key = storage_id[len('auto-local:'):]
++    if not 1 <= len(key) <= 80 or not re.fullmatch(r'[a-z0-9](?:[a-z0-9-]*[a-z0-9])?', key):
++        raise KeyError(storage_id)
++    return key
++
++
++class AutoLocalStores(dict):
++    def __init__(self, parent, object_type, crypto):
++        super().__init__()
++        self.parent, self.object_type, self.crypto = parent, object_type, crypto
++
++    def __missing__(self, storage_id):
++        key = local_key(storage_id)
++        # A mounted parent and a real key directory are required. Do not let a
++        # symlink redirect worker object reads to another library or disk.
++        if not os.path.isabs(self.parent) or not stat.S_ISDIR(os.lstat(self.parent).st_mode):
++            raise ValueError('Automatic local parent is not a directory')
++        root = os.path.join(self.parent, key)
++        if not stat.S_ISDIR(os.lstat(root).st_mode):
++            raise ValueError('Automatic local key is not a directory')
++        from seafobj.objstore_factory import SeafObjStoreFS
++        store = SeafObjStoreFS(self.object_type == 'fs',
++                              os.path.join(root, 'storage', self.object_type), self.crypto)
++        self[storage_id] = store
++        return store
++
++
++def auto_template(classes):
++    templates = [item for item in classes if item.get('is_auto') is True]
++    if not templates:
++        return None
++    if len(templates) != 1:
++        raise ValueError('Only one automatic local template is allowed')
++    item = templates[0]
++    root = item.get('commits', {}).get('dir', '')
++    if item.get('storage_id') != 'auto-local' or item.get('is_default') or not os.path.isabs(root):
++        raise ValueError('Invalid automatic local template')
++    for kind in ('commits', 'fs', 'blocks'):
++        if item.get(kind) != {'backend': 'fs', 'dir': root}:
++            raise ValueError('Automatic local template requires one filesystem root')
++    return root

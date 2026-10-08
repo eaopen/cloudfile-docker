@@ -1,0 +1,18 @@
+[
+  {"key":"stp-tech-mgmt-prepstd","valid":true},
+  {"key":"a","valid":true},
+  {"key":"a1-b2","valid":true},
+  {"key":"c2ea4bbf-24ac-4d7c-94c2-b36fdbd3ad1d","valid":true},
+  {"key":"","valid":false},
+  {"key":"../outside","valid":false},
+  {"key":"a/b","valid":false},
+  {"key":"a\\b","valid":false},
+  {"key":"-a","valid":false},
+  {"key":"a-","valid":false},
+  {"key":"A","valid":false},
+  {"key":"中文","valid":false},
+  {"key":"a_b","valid":false},
+  {"key":"a:b","valid":false},
+  {"key":"a\n","valid":false},
+  {"key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","valid":false}
+]

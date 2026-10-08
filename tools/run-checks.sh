@@ -81,6 +81,8 @@ run "构建缓存契约" "$docker_repo/tests/tools/test-build-cache-contract.sh"
 run "增量发布工作流契约" "$docker_repo/tests/tools/test-production-workflow.sh"
 run "前端产物完整性契约" "$docker_repo/tests/tools/test-production-artifact.sh"
 run "最终发布包完整性契约" "$docker_repo/tests/tools/test-release-artifact.sh"
+# Validate the exact dependency patch payload, not an unrelated local checkout.
+run "自动本地存储 Python 策略" python3 -m pytest "$docker_repo/tests/test_automatic_local_storage.py" -q
 
 # 2. Hub 侧扩展测试（能力分支上还包括与 C 端共用用例集的求解器测试）
 if [[ -d $hub ]]; then
@@ -116,7 +118,9 @@ elif ! pkg-config --exists glib-2.0 2>/dev/null; then
     skip "Server 能力测试" "没有 glib-2.0（apt install libglib2.0-dev）"
 else
     for t in "${server_cap_tests[@]}"; do
-        run "Server 能力测试 $(basename "$(dirname "$t")")" "$t"
+        # Some tracked shell fixtures lack the executable bit. Invoke their
+        # declared Bash runtime so CI still executes and checks the test body.
+        run "Server 能力测试 $(basename "$(dirname "$t")")" bash "$t"
     done
 fi
 
@@ -133,6 +137,9 @@ else
     # MySQL，在这条秒级门禁里必然失败，而一个总是红的检查等于没有检查。
     run "Go fileserver 契约测试" bash -c \
         "cd '$server/fileserver' && go test -count=1 -run 'Cf[A-Z]' ."
+    # Object routing lives in a subpackage and is not covered by tests of '.'.
+    run "Go 对象存储路由" bash -c \
+        "cd '$server/fileserver' && go test -count=1 ./objstore"
 fi
 
 # 5. Compose 配置与 profile

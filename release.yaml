@@ -72,6 +72,8 @@ ce_anchor:
 # 1 -> 2 (2026-08-17): added cf_dir_admin (directory-level delegated manage).
 # Additive, IF NOT EXISTS, auto-applied by the bootstrap on every start -- no
 # manual migration step.
-database_schema: 2
+# 2 -> 3 (2026-10-08): reserve automatic library keys in cf_library_storage_key.
+# Additive bootstrap table; retain reservations for cold GC and key uniqueness.
+database_schema: 3
 # Bump when cloudfile_ext.registry hook signatures change.
 extension_api: 1

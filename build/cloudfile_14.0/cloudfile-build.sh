@@ -426,6 +426,8 @@ function fetch() {
     checkout_ref seafile-server "$cloudfile_server_ref"
     checkout_ref seahub         "$cloudfile_hub_ref"
 
+    # Python readers must resolve the same automatic per-key roots as C/Go.
+    apply_patches seafobj
     apply_patches seafdav
     apply_patches seafevents
 }
@@ -457,8 +459,7 @@ function apply_patches() {
         if ! git -C "${code_path}/${component}" apply "$patch"; then
             echo "failed to apply $(basename "$patch") to ${component}" >&2
             echo "the pinned ref may have moved -- rebase the patch against" >&2
-            echo "the new ref. Do not skip it: this one closes a hole in" >&2
-            echo "WebDAV read-side permission enforcement." >&2
+            echo "the new ref. Do not skip component compatibility/security patches." >&2
             exit 1
         fi
     done

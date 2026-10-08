@@ -154,6 +154,20 @@ def test_sso():
           values.get('CF_SSO_DIRECTORY_STATIC', [{}])[0].get('external_id') == 'eng',
           repr(values.get('CF_SSO_DIRECTORY_STATIC')))
 
+    # CloudFile v2 must survive bootstrap: only passing compose env is not enough.
+    env = dict(BASE_ENV,
+               CF_SERVICE_SSO_DIRECTORY_AUTH_MODE='v2',
+               CF_SERVICE_SSO_DIRECTORY_KEY_ID='dev-key-1',
+               CF_SERVICE_SSO_DIRECTORY_SERVICE_ID='cloudfile')
+    values = evaluate(load('_settings_block_sso', env)())
+    check('EAP 目录 v2 机器协议透传到 Seahub settings',
+          (values.get('CF_SERVICE_SSO_DIRECTORY_AUTH_MODE') == 'v2'
+           and values.get('CF_SERVICE_SSO_DIRECTORY_KEY_ID') == 'dev-key-1'
+           and values.get('CF_SERVICE_SSO_DIRECTORY_SERVICE_ID') == 'cloudfile'))
+    values = evaluate(load('_settings_block_sso', BASE_ENV)())
+    check('旧配置保持 migration legacy 默认，显式 v2 才切换',
+          values.get('CF_SERVICE_SSO_DIRECTORY_AUTH_MODE') == 'legacy')
+
     # uid 与 email 取同一个 claim 时，身份语义优先：同一个 claim 只能
     # 映射一次，因此保持 required uid，不再把它同时当成联系邮箱。
     env = dict(BASE_ENV, CF_SSO_OAUTH_UID_CLAIM='email')

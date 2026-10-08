@@ -353,6 +353,12 @@ def _settings_block_sso():
         % get_conf('CF_SERVICE_SSO_DIRECTORY_URL', ''),
         'CF_SERVICE_SSO_DIRECTORY_SECRET = %r'
         % get_conf('CF_SERVICE_SSO_DIRECTORY_SECRET', ''),
+        'CF_SERVICE_SSO_DIRECTORY_AUTH_MODE = %r'
+        % get_conf('CF_SERVICE_SSO_DIRECTORY_AUTH_MODE', 'legacy'),
+        'CF_SERVICE_SSO_DIRECTORY_KEY_ID = %r'
+        % get_conf('CF_SERVICE_SSO_DIRECTORY_KEY_ID', ''),
+        'CF_SERVICE_SSO_DIRECTORY_SERVICE_ID = %r'
+        % get_conf('CF_SERVICE_SSO_DIRECTORY_SERVICE_ID', 'cloudfile'),
     ]
 
     static = get_conf('CF_SSO_DIRECTORY_STATIC', '')

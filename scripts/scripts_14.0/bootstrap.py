@@ -317,6 +317,20 @@ def _settings_block_sso():
         if login_id_claim and login_id_claim not in attribute_map:
             attribute_map[login_id_claim] = (False, 'login_id')
 
+        # EAP uses a verified business UID, not the employee number, in Profile.
+        # Keep the bridge opt-in because generic OAuth providers lack this claim.
+        eap_identity = boolean('CF_SSO_EAP_PROFILE_IDENTITY', 'false')
+        if eap_identity:
+            if uid_claim != 'sub' or login_id_claim != 'userId' or 'openid' not in scope:
+                raise Exception('EAP identity requires sub, userId and openid')
+            attribute_map['userId'] = (True, 'login_id')
+            attribute_map['preferred_username'] = (True, 'employee_no')
+            lines += [
+                'CF_SSO_EAP_OIDC_ISSUER = %r' % endpoint('CF_SSO_EAP_OIDC_ISSUER'),
+                'CF_SSO_EAP_OIDC_JWKS_URL = %r' % endpoint('CF_SSO_EAP_OIDC_JWKS_URL'),
+            ]
+        lines.append('CF_SSO_EAP_PROFILE_IDENTITY = %r' % eap_identity)
+
         lines += [
             'ENABLE_OAUTH = True',
             'OAUTH_ENABLE_INSECURE_TRANSPORT = %r'

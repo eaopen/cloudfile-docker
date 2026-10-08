@@ -364,6 +364,30 @@ def test_upstream_packages():
         check('转换导出配置 JWT 密钥后可以启动', False, str(e))
 
 
+def test_eap_identity():
+    # Exercise generated settings: a compose flag alone must not silently enable
+    # a callback whose provider lacks the UID or signature verification URLs.
+    env = dict(BASE_ENV, CF_SSO_EAP_PROFILE_IDENTITY='true',
+               CF_SSO_OAUTH_LOGIN_ID_CLAIM='userId',
+               CF_SSO_EAP_OIDC_ISSUER='https://idp.example.com/application/o/cloudfile/',
+               CF_SSO_EAP_OIDC_JWKS_URL='https://idp.example.com/application/o/cloudfile/jwks/')
+    values = evaluate(load('_settings_block_sso', env)())
+    check('EAP bridge explicitly enabled', values['CF_SSO_EAP_PROFILE_IDENTITY'] is True)
+    check('EAP uses UID and employee as separate claims',
+          values['OAUTH_ATTRIBUTE_MAP']['userId'] == (True, 'login_id')
+          and values['OAUTH_ATTRIBUTE_MAP']['preferred_username'] == (True, 'employee_no'))
+    for key, invalid in [('CF_SSO_OAUTH_LOGIN_ID_CLAIM', 'login_id'),
+                         ('CF_SSO_OAUTH_UID_CLAIM', 'email'),
+                         ('CF_SSO_EAP_OIDC_JWKS_URL', ''),
+                         ('CF_SSO_EAP_OIDC_ISSUER', '')]:
+        try:
+            load('_settings_block_sso', dict(env, **{key: invalid}))()
+        except Exception:
+            check('EAP rejects invalid ' + key, True)
+        else:
+            check('EAP rejects invalid ' + key, False)
+
+
 def test_search():
     print('── _settings_block_search')
     search = load('_settings_block_search', {})
@@ -748,6 +772,7 @@ def main():
     print(__doc__.splitlines()[0])
     print()
     test_sso()
+    test_eap_identity()
     test_search()
     test_external_sources()
     test_upstream_packages()

@@ -552,6 +552,40 @@ def status(args):
                           "plan": plan_summary(db)}, ensure_ascii=False))
 
 
+
+def report(args):
+    """Read-only operator handoff: never pretend that an unknown write is safe."""
+    from datetime import datetime, timezone
+    with read_job(args.job_dir) as (config, db):
+        summary = plan_summary(db)
+        actions = {}
+        for name, info in summary["actions"].items():
+            actions[name] = {
+                "entries": info["entries"], "bytes": info["bytes"],
+                "completed": info["done"], "remaining": info["entries"] - info["done"],
+            }
+        plan_state = summary["status"]
+        pending = sum(item["remaining"] for name, item in actions.items()
+                      if name != "delete_candidate")
+        result = {
+            "schema": "cloudfile.import-report.v1",
+            "collected_at": datetime.now(timezone.utc).isoformat(),
+            "source_type": config["source_type"],
+            "repo": config["repo"], "target": config["target"],
+            "plan_status": plan_state,
+            "last_applied_head": get_meta(db, "applied_head"),
+            "plan_head": summary["head"],
+            "actions": actions, "pending_operations": pending,
+            "delete_candidates_retained": actions.get("delete_candidate", {}).get("entries", 0),
+            "has_conflicts": actions.get("conflict", {}).get("entries", 0) > 0,
+            "operator_attention": plan_state == "running" or bool(
+                actions.get("conflict", {}).get("entries", 0)),
+            "note": ("Running state might include a remote upload with an unknown "
+                     "result. A HEAD mismatch must be reviewed, never blindly retried.")
+        }
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+
+
 def apply(args):
     if not args.exclusive:
         raise ImportErrorSafe("apply requires --exclusive: reserve the target library against other writers")
@@ -629,7 +663,7 @@ def main(argv=None):
     new.add_argument("--filestash-url")
     new.add_argument("--filestash-token-file")
     new.set_defaults(func=create)
-    for name, callback in (("check", check), ("plan", plan), ("apply", apply), ("status", status)):
+    for name, callback in (("check", check), ("plan", plan), ("apply", apply), ("status", status), ("report", report)):
         command = commands.add_parser(name)
         command.add_argument("job_dir")
         if name == "plan":

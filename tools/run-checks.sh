@@ -83,6 +83,12 @@ run "前端产物完整性契约" "$docker_repo/tests/tools/test-production-arti
 run "最终发布包完整性契约" "$docker_repo/tests/tools/test-release-artifact.sh"
 # Validate the exact dependency patch payload, not an unrelated local checkout.
 run "自动本地存储 Python 策略" python3 -m pytest "$docker_repo/tests/test_automatic_local_storage.py" -q
+# CloudFile v0.5 W1-W3 standalone checks, no live Docker/DB dependencies.
+run "V05-05 离线备份/恢复测试" python3 -m unittest discover -s "$docker_repo/tests" -p test_cf_recovery.py -q
+run "V05-03 原导入回归" python3 -m unittest discover -s "$docker_repo/tests" -p test_cf_import.py -q
+run "V05-03 导入报告测试" python3 -m unittest discover -s "$docker_repo/tests" -p test_cf_import_report_v05.py -q
+run "V05-01 只读容量诊断测试" python3 -m unittest discover -s "$hub/tests" -p test_cf_capacity_report.py -q
+
 
 # 2. Hub 侧扩展测试（能力分支上还包括与 C 端共用用例集的求解器测试）
 if [[ -d $hub ]]; then

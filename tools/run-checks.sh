@@ -233,6 +233,7 @@ run "构建脚本副本偏离" bash -c "
 # 与当年那次一样：seahub 吞掉异常，**整个文件的 CloudFile 配置一起丢**，而服务
 # 看起来是好的。
 run "配置生成" python3 "$docker_repo/tools/test-bootstrap-settings.py"
+run "v0.4 预览与正式库入口配置" python3 "$docker_repo/tools/test-v04-preview-config.py"
 
 # 9. release.yaml 可解析且关键键齐全
 run "发布清单" bash -c "

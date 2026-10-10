@@ -127,3 +127,13 @@ rm .env
 
 仓库门禁还会比较三处开关清单、执行 bootstrap 配置生成测试，并检查 profile 引用。
 修改变量时同步更新本页引用的功能文档；不要在多处复制完整变量表。
+
+
+## v0.4 preview and formal library repo-root embedding
+
+- CF_PREVIEW_PROVIDER=eap-fileview selects external preview when configured; native preserves CE native preview.
+- CF_PREVIEW_PUBLIC_URL is empty until independent eap-fileview is available. Private example: https://files.example.net/fileview
+- CF_FORMAL_EMBED_RESOURCES={} maps resource keys to trusted repo roots. Example JSON: {"research":{"repo_id":"11111111-1111-4111-8111-111111111111","root_path":"/"}}
+- Initial embed supports only repository root /, not arbitrary subtree confinement. A plain iframe is not a file access security boundary.
+- Source URLs are per-user Seafile read tokens; the viewer must reach fileserver and restrict trusted source hosts and logs.
+- These settings do not deploy the viewer or Filestash. Filestash stays optional.

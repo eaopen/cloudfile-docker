@@ -189,6 +189,7 @@ def write_cloudfile_settings():
 
     body += _settings_block_sso()
     body += _settings_block_search()
+    body += _settings_block_v04_preview_embed()
     body += _settings_block_external_sources()
     body += _settings_block_office()
     body += _settings_block_fileops()
@@ -427,6 +428,25 @@ def _settings_block_search():
         % positive_int('CF_SEARCH_INDEX_TEXT_MAX_BYTES', 1024 * 1024),
     ]
     return '\n'.join(lines) + '\n'
+
+
+def _settings_block_v04_preview_embed():
+    """Expose only configured viewer base and explicitly trusted repo roots."""
+    provider = get_conf('CF_PREVIEW_PROVIDER', 'eap-fileview')
+    if provider not in ('eap-fileview', 'native'):
+        raise ValueError('CF_PREVIEW_PROVIDER must be eap-fileview or native')
+    public_url = get_conf('CF_PREVIEW_PUBLIC_URL', '').strip()
+    raw = get_conf('CF_FORMAL_EMBED_RESOURCES', '{}') or '{}'
+    try:
+        mapping = json.loads(raw)
+    except (ValueError, TypeError) as exc:
+        raise ValueError('CF_FORMAL_EMBED_RESOURCES must be a JSON object') from exc
+    if not isinstance(mapping, dict):
+        raise ValueError('CF_FORMAL_EMBED_RESOURCES must be an object')
+    return ('CF_PREVIEW_PROVIDER = %r\n'
+            'CF_PREVIEW_PUBLIC_URL = %r\n'
+            'CF_FORMAL_EMBED_RESOURCES = %r\n'
+            ) % (provider, public_url, mapping)
 
 
 def _settings_block_external_sources():

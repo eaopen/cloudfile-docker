@@ -37,11 +37,34 @@ class CurrentPackageSourceTest(unittest.TestCase):
         locked = STAMP.ROOT / 'build/seafile_14.0/release.json'
         before = locked.read_bytes()
         commit = 'a' * 40
-        sources = dict.fromkeys(STAMP.SOURCE_NAMES, commit)
-        with patch.object(STAMP.subprocess, 'check_output', return_value=commit + '\n'):
-            manifest = STAMP.current_manifest(sources)
+        configured = STAMP.READER.load(STAMP.ROOT / 'release.yaml')
+        sources = {name: (commit if name in ('seafile-server', 'seahub')
+                          else configured['upstream.' + name])
+                   for name in STAMP.SOURCE_NAMES}
+        # Incremental CI only has plan-locked Server/Hub SHAs, not their Git
+        # directories or upstream checkouts, when stamping the final image.
+        with patch.dict(STAMP.os.environ, {'CF_SERVER_REF': commit, 'CF_HUB_REF': commit}):
+            with patch.object(STAMP.subprocess, 'check_output',
+                              side_effect=AssertionError('unnecessary source checkout')):
+                manifest = STAMP.current_manifest(sources)
         self.assertEqual({name: item['ref'] for name, item in manifest['sources'].items()}, sources)
         self.assertEqual(locked.read_bytes(), before)
+
+    def test_rejects_mismatched_immutable_ci_plan_and_upstream(self):
+        config = STAMP.READER.load(STAMP.ROOT / 'release.yaml')
+        actual = {name: ('a' * 40 if name in ('seafile-server', 'seahub')
+                         else config['upstream.' + name])
+                  for name in STAMP.SOURCE_NAMES}
+        with patch.dict(STAMP.os.environ, {'CF_SERVER_REF': 'b' * 40,
+                                           'CF_HUB_REF': 'a' * 40}):
+            with self.assertRaisesRegex(ValueError, 'release.yaml input: seafile-server'):
+                STAMP.current_manifest(actual)
+        altered = dict(actual, libevhtp='c' * 40)
+        with patch.dict(STAMP.os.environ, {'CF_SERVER_REF': 'a' * 40,
+                                           'CF_HUB_REF': 'a' * 40}):
+            with self.assertRaisesRegex(ValueError, 'release.yaml input: libevhtp'):
+                STAMP.current_manifest(altered)
+
 
     def test_dev_manifest_rejects_cached_source_different_from_selected_input(self):
         sources = dict.fromkeys(STAMP.SOURCE_NAMES, 'a' * 40)

@@ -49,7 +49,7 @@ upstream:
   seafdav: 1ce0b05ea7d04495a1ca9121fc58c30d63b71e36
   seafevents: d07b9e885de866454b5c42bed5834ca82959f303
   libsearpc: 23d5df62815fb3b7825bf4e1a28b29af701e8cb2
-  libevhtp: 291aedae9dda722976cf0dcece66105c93758729
+  libevhtp: 91071e2f20749cd469b87ac2ef1c158dc2a6806f # annotated v1.1.6 tag object 291aedae peeled to this source commit
 
 # The upstream CE 14 release CloudFile claims compatibility with. CloudFile
 # tracks upstream/master (syncs stay small) but must never fall behind the CE

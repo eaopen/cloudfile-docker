@@ -4,6 +4,7 @@
 import argparse
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -58,13 +59,22 @@ def current_manifest(sources):
             checkout = ROOT.parent / name.replace("seafile-server", "cloudfile-server").replace("seahub", "cloudfile-hub")
             ref = configured["forks." + fork + ".ref"]
             manifest["sources"][name]["url"] = configured["forks." + fork + ".url"]
+            # Incremental package CI has immutable inputs from the plan job,
+            # but no matching checkout of each build source.
+            plan_key = "CF_SERVER_REF" if name == "seafile-server" else "CF_HUB_REF"
+            expected = os.environ.get(plan_key, "")
+            if expected and not COMMIT.fullmatch(expected):
+                raise ValueError("invalid immutable plan source: " + name)
         else:
             checkout = ROOT / "build/cloudfile_14.0/src" / name
             ref = configured["upstream." + name]
-        # An upstream pin can identify an annotated tag object. Compare its
-        # resolved commit, never accept whichever HEAD happens to be cached.
-        expected = subprocess.check_output(["git", "rev-parse", ref + "^{commit}"],
-            cwd=checkout, text=True).strip()
+            expected = ref if COMMIT.fullmatch(ref) else ""
+        if not expected:
+            # Preserve local-building support for moving refs, but require
+            # exact SHA equality when an immutable plan pin is supplied.
+            expected = subprocess.check_output(
+                ["git", "rev-parse", ref + "^{commit}"],
+                cwd=checkout, text=True).strip()
         if expected != commit:
             raise ValueError("distribution differs from release.yaml input: " + name)
         manifest["sources"][name]["ref"] = commit

@@ -231,7 +231,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: cloudfile-frontend.tar.gz
-          key: cf-frontend-${{ needs.plan.outputs.frontend_key }}
+          # The frontend artifact records the exact Hub SHA; a matching asset-tree
+          # cache from a different Hub commit must not pass package provenance.
+          key: cf-frontend-${{ needs.plan.outputs.frontend_key }}-${{ needs.plan.outputs.hub_sha }}
 
       - name: Free disk space
         if: steps.frontend-artifact.outputs.cache-hit != 'true'

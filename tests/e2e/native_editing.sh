@@ -64,4 +64,12 @@ done
 test "$ready" = true
 cp "$backend/build-info.txt" "$lab/build-info.txt"
 docker exec "$runtime" python3 /tests/native_device_editing_e2e.py | tee "$lab/test.log"
+if [[ "${CF_NATIVE_MANUAL_BASELINE_E2E:-0}" = 1 ]]; then
+    docker exec "$runtime" python3 /tests/native_local_edit_baseline_e2e.py | tee "$lab/manual-baseline-test.log"
+    printf 'Native baseline evidence: %s/native-local-edit-result.json\n' "$lab"
+fi
+if [[ "${CF_NATIVE_CDC_E2E:-0}" = 1 ]]; then
+    docker exec "$runtime" python3 /tests/native_cdc_editing_e2e.py | tee "$lab/cdc-test.log"
+    printf 'Guarded CDC evidence: %s/native-cdc-result.json\n' "$lab"
+fi
 printf 'Native evidence: %s/native-result.json\nDevice evidence: %s/native-device-result.json\n' "$lab" "$lab"

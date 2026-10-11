@@ -16,21 +16,31 @@ def cdc_id(parts):
     ) + '], "size": ' + str(sum(map(len, parts))) + ', "type": 1, "version": 1}'
     return hashlib.sha1(raw.encode()).hexdigest()
 
+# The same ordinary edit session now supports another deliberate cloud save.
+# Native Branch must atomically advance its base File ID and session revision.
 with lab.tx() as sql:
-    newsnap = dict(snap, base_version=published)
-    newer = sessions.create(sql, **owner, snapshot=newsnap)
-    arguments = dict(**owner, session_id=newer.session_id, ticket=newer.ticket,
-                     current_snapshot=newsnap, instance=origin)
-    challenge = sessions.challenge(sql, **arguments)
-    sessions.claim(sql, **arguments, challenge=challenge, signature=sign(challenge))
-    newerrow = sessions._row(sql, **owner, session_id=newer.session_id)
-    cdc_intent = str(uuid4())
+    sql.execute("SELECT JSON_UNQUOTE(JSON_EXTRACT(snapshot,'$.base_version')),revision "
+                "FROM cf_edit_session WHERE session_id=%s",(issued.session_id,))
+    advanced_base,advanced_revision=sql.fetchone()
+    assert advanced_base==published and int(advanced_revision)>int(row[9]), (
+        advanced_base,advanced_revision,published,row[9])
+    sql.execute("SELECT JSON_UNQUOTE(JSON_EXTRACT(s.snapshot,'$.resource_revision')),"
+                "CAST(r.revision AS CHAR) FROM cf_edit_session s "
+                "JOIN cf_resource r ON r.uid=%s "
+                "WHERE s.session_id=%s",(uid,issued.session_id))
+    stored_resource_revision,current_resource_revision=sql.fetchone()
+    assert stored_resource_revision==current_resource_revision, (
+        stored_resource_revision,current_resource_revision)
+    newer=issued
+    newerrow=sessions._row(sql,**owner,session_id=issued.session_id)
+    cdc_intent=str(uuid4())
     sql.execute("INSERT INTO cf_optimistic_upload_intent "
         "(intent_id,session_id,device_id,repo_id,base_file_id,content_digest,"
         "snapshot_size,state,created_at) "
         "VALUES(%s,%s,%s,%s,%s,%s,%s,'prepared',UTC_TIMESTAMP(6))",
-        (cdc_intent, newer.session_id, device, repo, published,
-         hashlib.sha256(large).hexdigest(), len(large)))
+        (cdc_intent,newer.session_id,device,repo,published,
+         hashlib.sha256(large).hexdigest(),len(large)))
+print("PASS ordinary edit session base/revision advanced after prior save",flush=True)
 
 for part, blockid in zip(blocks, ids):
     snapshot_file = Path("/lab/optimistic-cdc-" + blockid)

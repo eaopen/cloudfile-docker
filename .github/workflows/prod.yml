@@ -101,6 +101,7 @@ jobs:
     outputs:
       server_sha: ${{ steps.plan.outputs.server_sha }}
       hub_sha: ${{ steps.plan.outputs.hub_sha }}
+      hub_tree: ${{ steps.plan.outputs.hub_tree }}
       docker_sha: ${{ steps.plan.outputs.docker_sha }}
       backend_key: ${{ steps.plan.outputs.backend_key }}
       frontend_key: ${{ steps.plan.outputs.frontend_key }}
@@ -233,7 +234,7 @@ jobs:
           path: cloudfile-frontend.tar.gz
           # The frontend artifact records the exact Hub SHA; a matching asset-tree
           # cache from a different Hub commit must not pass package provenance.
-          key: cf-frontend-${{ needs.plan.outputs.frontend_key }}-${{ needs.plan.outputs.hub_sha }}
+          key: cf-frontend-${{ needs.plan.outputs.frontend_key }}-${{ needs.plan.outputs.hub_tree }}
 
       - name: Free disk space
         if: steps.frontend-artifact.outputs.cache-hit != 'true'

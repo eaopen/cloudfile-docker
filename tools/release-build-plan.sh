@@ -24,6 +24,7 @@ reader=$repo_root/build/cloudfile_14.0/read-manifest.py
 
 server_sha=$(git -C "$server_dir" rev-parse 'HEAD^{commit}')
 hub_sha=$(git -C "$hub_dir" rev-parse 'HEAD^{commit}')
+hub_tree=$(git -C "$hub_dir" rev-parse 'HEAD^{tree}')
 docker_sha=$(git -C "$repo_root" rev-parse 'HEAD^{commit}')
 server_python_tree=$(git -C "$server_dir" rev-parse 'HEAD:python')
 libsearpc_ref=$(python3 "$reader" "$manifest" upstream.libsearpc)
@@ -158,6 +159,7 @@ fi
 cat <<EOF
 server_sha=$server_sha
 hub_sha=$hub_sha
+hub_tree=$hub_tree
 docker_sha=$docker_sha
 backend_key=$backend_key
 frontend_key=$frontend_key

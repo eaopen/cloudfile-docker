@@ -146,6 +146,22 @@ grep -Fqx THIRDPARTY \
     "$seahub/thirdpart/example/locale/zh_CN/LC_MESSAGES/django.mo" || {
     echo "frontend import removed third-party translations" >&2; exit 1; }
 
+# A metadata-only Hub commit must be reusable when its entire checked-out
+# content tree is unchanged. A content change must still reject the cache.
+old_hub_commit=$(git -C "$seahub" rev-parse HEAD)
+git -C "$seahub" commit --allow-empty -qm metadata-only
+[[ $(git -C "$seahub" rev-parse HEAD) != "$old_hub_commit" ]]
+import_frontend_artifact
+printf 'real source change\n' >> "$seahub/frontend/webpack-stats.pro.json"
+git -C "$seahub" add frontend/webpack-stats.pro.json
+git -C "$seahub" commit -qm changed-source
+if ( import_frontend_artifact ) >/dev/null 2>&1; then
+    echo "changed Hub content tree passed frontend provenance" >&2
+    exit 1
+fi
+git -C "$seahub" reset --hard -q HEAD~1
+import_frontend_artifact
+
 for p in "${required_paths[@]}"; do
     case $p in
         frontend/*) dest=$fixture/seahub/frontend/${p#frontend/} ;;

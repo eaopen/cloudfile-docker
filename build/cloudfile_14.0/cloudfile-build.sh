@@ -857,6 +857,7 @@ function export_frontend_artifact() {
         | tar --null -cf - -T -) | tar -xf - -C "$out/locale"
     {
         echo "hub: $(git -C "$seahub" rev-parse HEAD)"
+        echo "hub-tree: $(git -C "$seahub" rev-parse 'HEAD^{tree}')"
         echo "server-python: $(git -C "${code_path}/seafile-server" rev-parse HEAD:python)"
     } > "$out/build-info.txt"
     (cd "$out" && find frontend media locale build-info.txt -type f -print0 \
@@ -877,11 +878,16 @@ function import_frontend_artifact() {
         echo "frontend artifact checksum verification failed" >&2
         exit 1
     }
-    grep -Fqx "hub: $(git -C "$seahub" rev-parse HEAD)" \
-        "$artifact/build-info.txt" || {
-        echo "frontend artifact Hub commit does not match package sources" >&2
+    # Build output depends on checked-out content, not commit metadata.
+    # Full tracked Hub tree is deliberately conservative: changed content
+    # never bypasses provenance, while equivalent commits may reuse assets.
+    grep -Fqx "hub-tree: $(git -C "$seahub" rev-parse 'HEAD^{tree}')"         "$artifact/build-info.txt" || {
+        echo "frontend artifact Hub source tree differs from package sources" >&2
         exit 1
     }
+    if ! grep -Fqx "hub: $(git -C "$seahub" rev-parse HEAD)"         "$artifact/build-info.txt"; then
+        echo "[cache] Hub commit differs; identical source tree verified" >&2
+    fi
     grep -Fqx \
         "server-python: $(git -C "${code_path}/seafile-server" rev-parse HEAD:python)" \
         "$artifact/build-info.txt" || {

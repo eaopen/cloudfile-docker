@@ -30,8 +30,9 @@ class StorageDefaultTests(unittest.TestCase):
         data = json.loads(proc.stdout)
         server = data["services"]["cloudfile"]
         worker = data["services"]["cf-worker"]
-        self.assertEqual("multiple", server["environment"]["SEAF_SERVER_STORAGE_TYPE"])
-        self.assertEqual("true", str(server["environment"]["CF_ENABLE_S3_STORAGE"]).lower())
+        for process in (server, worker):
+            self.assertEqual("multiple", process["environment"]["SEAF_SERVER_STORAGE_TYPE"])
+            self.assertEqual("true", str(process["environment"]["CF_ENABLE_S3_STORAGE"]).lower())
         classes = json.loads(server["environment"]["CF_STORAGE_CLASSES_JSON"])
         self.assertEqual(["legacy-default", "auto-local"], [c["storage_id"] for c in classes])
         self.assertTrue(classes[0]["is_default"])

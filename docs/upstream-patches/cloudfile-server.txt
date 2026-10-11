@@ -51,3 +51,5 @@ server/repo-perm.c
 server/seaf-server.c
 server/seafile-session.c
 tests/test_upload/readme.md
+
+common/branch-mgr.c

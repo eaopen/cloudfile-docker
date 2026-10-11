@@ -44,7 +44,7 @@ for attempt in $(seq 1 90); do
     sleep 1
 done
 test "$ready" = true
-docker exec "$runtime" python3 -m pip install --break-system-packages redis django==4.2.24 requests-oauthlib > "$lab/dependencies.log" 2>&1
+docker exec "$runtime" python3 -m pip install --break-system-packages redis django==4.2.24 requests-oauthlib cryptography > "$lab/dependencies.log" 2>&1
 docker exec "$runtime" python3 /tests/native_editing_bootstrap.py
 docker exec -d "$runtime" /backend/seafile-server/seafile/bin/seaf-server \
     -c /lab/ccnet -d /lab/seafile-data -F /lab/conf -f -l /lab/seafile.log -p /lab/seafile-data
@@ -63,5 +63,5 @@ for attempt in $(seq 1 30); do
 done
 test "$ready" = true
 cp "$backend/build-info.txt" "$lab/build-info.txt"
-docker exec "$runtime" python3 /tests/native_editing_e2e.py | tee "$lab/test.log"
-printf 'Native evidence: %s/native-result.json\n' "$lab"
+docker exec "$runtime" python3 /tests/native_device_editing_e2e.py | tee "$lab/test.log"
+printf 'Native evidence: %s/native-result.json\nDevice evidence: %s/native-device-result.json\n' "$lab" "$lab"

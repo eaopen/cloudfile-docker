@@ -137,3 +137,25 @@ rm .env
 - Initial embed supports only repository root /, not arbitrary subtree confinement. A plain iframe is not a file access security boundary.
 - Source URLs are per-user Seafile read tokens; the viewer must reach fileserver and restrict trusted source hosts and logs.
 - These settings do not deploy the viewer or Filestash. Filestash stays optional.
+
+
+## HTTP / HTTPS — intranet CloudFile standard compatibility (v0.7)
+
+CloudFile supports both HTTP and HTTPS for business access, OIDC browser
+redirects, signed pairing/claim, Web upload, Agent full/CDC, Checkout,
+native guarded file reads, and cryptographically signed update sources.
+No separate HTTP enable flag or server-origin allowlist is needed.
+The canonical Scheme/Host/Port must match the browser, OIDC redirect,
+and paired Agent; there is never automatic TLS downgrade.
+
+For intranet HTTP, set public origin and CLOUDFILE_OIDC_CONFIG_JSON to the
+actual registered HTTP URLs. On HTTP the OIDC session and CSRF cookies use
+Secure=false and browser binding cookies omit the __Host- prefix; on HTTPS
+the original Secure/__Host- attributes remain. Device P-256 proof,
+one-use tickets, current ACL, CSRF, baseline file IDs, Branch CAS and
+Checkout fencing all remain mandatory.
+
+HTTP transmits sessions, credentials and document bytes in cleartext.
+Restrict it to appropriately secured internal networks/VPNs and use HTTPS
+where feasible. External IdPs may independently require HTTPS callbacks.
+Do not open a new Chrome native operation to foreign page origins.

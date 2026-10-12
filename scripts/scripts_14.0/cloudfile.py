@@ -120,16 +120,16 @@ def _oidc_config(raw_value):
             continue
         url = value[name]
         if not isinstance(url, str) or any(ord(char) < 33 for char in url):
-            raise ValueError("OIDC endpoints require trusted HTTPS URLs")
+            raise ValueError("OIDC endpoints require fixed HTTP or HTTPS URLs")
         try:
             parsed = urlparse(url)
-            valid = (parsed.scheme == "https" and parsed.hostname and not parsed.username
+            valid = (parsed.scheme in ("http", "https") and parsed.hostname and not parsed.username
                      and not parsed.password and not parsed.fragment)
             parsed.port
         except ValueError:
             valid = False
         if not valid:
-            raise ValueError("OIDC endpoints require trusted HTTPS URLs")
+            raise ValueError("OIDC endpoints require fixed HTTP or HTTPS URLs")
     if (value.get("end_session_url") is None) != (value.get("post_logout_redirect_uri") is None):
         raise ValueError("OIDC logout endpoint and return URI must be configured together")
     return value

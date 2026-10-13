@@ -330,6 +330,17 @@ def _settings_block_sso():
                 'CF_SSO_EAP_OIDC_ISSUER = %r' % endpoint('CF_SSO_EAP_OIDC_ISSUER'),
                 'CF_SSO_EAP_OIDC_JWKS_URL = %r' % endpoint('CF_SSO_EAP_OIDC_JWKS_URL'),
             ]
+        else:
+            # 2026-10-13：EAP 的会话校验（AuthentikSupport.verifyCloudFileIdentity /
+            # verifyCookieIdentity）要求 Profile.login_id == EAP 业务 UID。未启用桥接时
+            # 该字段取自下面配置的 login_id claim（取值由 IdP 决定）或根本没有来源，
+            # 两者都无法保证是业务 UID —— 口径不齐会让 SSO 旁路静默失败。
+            # 这里只告警不改生成结果：非 EAP 的通用 OIDC 部署仍可照常运行。
+            logwarning('CF_SSO_EAP_PROFILE_IDENTITY is off: Profile.login_id is %s, which cannot be '
+                       'guaranteed to be the EAP business UID. Enable the EAP identity bridge '
+                       'for EAP deployments.'
+                       % ('taken from the %r claim' % login_id_claim if login_id_claim
+                          else 'left unset'))
         lines.append('CF_SSO_EAP_PROFILE_IDENTITY = %r' % eap_identity)
 
         lines += [

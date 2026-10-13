@@ -1,3 +1,5 @@
+[CloudFile product home / 产品总入口](https://github.com/eaopen/cloudfile) · [English](https://github.com/eaopen/cloudfile/blob/main/README.md) · [简体中文](https://github.com/eaopen/cloudfile/blob/main/README.zh-CN.md)
+
 <!-- generated-by: gsd-doc-writer -->
 # CloudFile Docker
 
@@ -7,7 +9,8 @@
 
 CloudFile Docker 面向需要在 Seafile CE 14 基础上部署企业扩展能力的开发和运维团队；本仓不承载 Seahub 或 seaf-server 业务实现，而是负责把三个 CloudFile 仓库构建、打包并部署为可验证的系统。
 
-本仓同时是 CloudFile 跨仓项目文档的权威入口。当前架构、部署、配置、能力状态、路线图和
+CloudFile 面向客户和使用者的产品总入口为 [eaopen/cloudfile](https://github.com/eaopen/cloudfile)。
+本仓是构建、部署、发布与跨仓技术规格的维护位置。当前架构、部署、配置、能力状态、路线图和
 上游贡献建议统一维护在 [`docs/`](docs/README.md)；代码、配置、测试与 `release.yaml` 的证据
 优先于规划文档，历史稿不作为当前功能说明。
 
@@ -28,7 +31,7 @@ CloudFile Docker 面向需要在 Seafile CE 14 基础上部署企业扩展能力
 - **CloudFile 新增**：扩展注册、目录 ACL、组织映射、审计、可替换检索、多存储、外部资料源、写入生命周期，以及对应构建和门禁。
 - **外部组件**：MariaDB、Redis、Caddy、SeaSearch、Meilisearch、Metadata Server、seafile-ai、OnlyOffice、SeaDoc 和对象/文件存储；其许可证、容量、备份和可用性由部署方负责。
 
-上游未发布 CE 14 分支、tag 或镜像，因此 CloudFile 按 [`release.yaml`](release.yaml) 锁定源码并自建 CE 14 发行包和镜像。当前结论见 [`docs/overview.md`](docs/overview.md)，完整决策过程已归档。
+CloudFile 包含自有服务端扩展，因此按 [`release.yaml`](release.yaml) 锁定源码并自建 CE 14 发行包和镜像。当前结论见 [`docs/overview.md`](docs/overview.md)，完整决策过程已归档。
 
 ## 快速部署
 
@@ -46,7 +49,7 @@ docker compose up -d
 docker compose logs -f cloudfile
 ```
 
-所有 `CF_ENABLE_*` 默认关闭。可选 profile、能力开关、TLS、数据目录和备份边界见 [`deploy/compose/README.md`](deploy/compose/README.md)。
+新增能力开关默认关闭；各项默认值以所选发行版本配置为准。可选 profile、能力开关、TLS、数据目录和备份边界见 [`deploy/compose/README.md`](deploy/compose/README.md)。
 
 ## 从源码构建
 

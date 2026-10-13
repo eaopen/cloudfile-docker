@@ -10,9 +10,9 @@ CloudFile 是 Seafile Community Edition（CE）扩展版。项目复用 Seafile 
 
 ## 版本基线
 
-`release.yaml` 锁定各上游组件提交和 CloudFile fork 的发布引用。当前上游没有可直接
-消费的 Seafile CE 14 正式镜像或 `seafile-server` 14.0 CE tag，因此 CloudFile 从
-源码构建 14.0 参考基线。该选择记录在[历史决策索引](history/README.md)。
+`release.yaml` 锁定各上游组件提交和 CloudFile fork 的发布引用。CloudFile 包含自有
+服务端扩展，因此从源码构建；当前 CE 发布锚点以清单为准。历史上的上游发行可用性
+判断不作为当前安装依据，旧决策见[历史决策索引](history/README.md)。
 
 Seafile 14.0 官方预览提及 AI 对话、Web UI、图片查看器、视频预览、回收站和历史页面等
 变化。它们只是上游参考信息；除非[功能矩阵](feature-matrix.md)给出本仓代码、配置或测试

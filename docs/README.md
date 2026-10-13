@@ -1,3 +1,5 @@
+[Product home / 面向使用者的产品入口](https://github.com/eaopen/cloudfile)
+
 # CloudFile 文档
 
 > 用途：当前文档入口与阅读顺序
@@ -19,7 +21,7 @@
 | 文档 | 当前状态 |
 |---|---|
 | [Authentik 与企业认证](features/sso-authentik.md) | 部分完成；通用 OIDC 与组织映射已有，Authentik 端到端待验证 |
-| [多存储与 S3 兼容存储](features/storage-backends.md) | 已完成；优先验证 MinIO |
+| [多存储与 S3 兼容存储](features/storage-backends.md) | 部署与兼容性说明；具体后端支持以发行版本为准 |
 | [外部资料联邦与虚拟目录挂载](features/external-directory-mount.md) | 规划；拟拆分为独立项目，为 AI 和 CloudFile 提供不同消费接口；**不属于虚拟目录 v1** |
 | [Seafile AI 与外接 LLM](features/seafile-ai.md) | 验证中；复用官方 Seafile AI，外接配置模型 |
 | [目录 ACL 语义](acl-semantics.md) | 验证中；active-authority 故障与修订契约尚待跨层实现 |

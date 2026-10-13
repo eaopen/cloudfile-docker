@@ -192,7 +192,7 @@ class CloudFileSettingsTest(unittest.TestCase):
         environment["CF_ENABLE_FILE_LOCK"] = "true"
         rendered = CLOUDFILE.render_settings(environment)
         self.assertIn("CLOUDFILE_EDITING_ENABLED = True", rendered)
-        self.assertIn("CLOUDFILE_RESOURCE_LIFECYCLE_READER = NativeResourceReader(seafile_api)", rendered)
+        self.assertIn("return NativeResourceReader(seafile_api)(cursor, reference)", rendered)
 
     def test_authorization_routes_require_explicit_deployment_flag(self):
         policy = '{"database":{},"redis":{}}'
@@ -205,6 +205,8 @@ class CloudFileSettingsTest(unittest.TestCase):
             namespace = {}
             exec(CLOUDFILE.render_settings(environment), namespace)
             self.assertEqual(namespace["CLOUDFILE_AUTHORIZATION_ENABLED"], expected)
+            self.assertEqual(callable(namespace["CLOUDFILE_RESOURCE_LIFECYCLE_READER"]), expected)
+            self.assertFalse(namespace["CLOUDFILE_EDITING_ENABLED"])
 
     def test_transfer_routes_require_explicit_deployment_flag(self):
         policy = '{"database":{},"redis":{}}'

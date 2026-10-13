@@ -1,6 +1,6 @@
 # v0.9 目录管理与地址接口
 
-状态：Hub 服务、HTTP 路由和管理页面已实现；原生文件浏览、字节传输和写入终判尚未完成接线，不作为 v0.9 发布验收依据。权限语义见 [目录资格契约](directory-access-v09.md)。
+状态：目录管理、发现、地址解析和目录分页 API 已实现，Web 下载/上传预检查与原生 scoped 终判已接通；本批不开发 Hub 界面。完整发布验收仍需真实身份 HTTP 及制品验证。权限语义见 [目录资格契约](directory-access-v09.md)。
 
 ## 接口
 
@@ -16,6 +16,9 @@
 | `directory-shares/{id}/` | DELETE | 撤销共享，不删除 ACL |
 | `shared-directories/` | GET | 当前身份的共享目录分页列表 |
 | `directory-address/` | GET | 当前身份的目录位置解析及有效浏览根 |
+| `directory-entries/` | GET | 当前权限过滤后的原生目录分页 |
+| `directory-scope/list/` | POST | 管理范围内的 ACL、共享或管理员记录分页 |
+| `directory-scope/revoke/` | POST | 对显式记录集合按版本原子撤销 |
 
 管理查询参数为 `repo_id`、`path`、`kind=dir`，可选 `limit`（1–100，默认 50）、`after`。列表返回 `items`、`next_after`；ACL/共享列表同时返回服务端配置的 `subject_provider`，用于管理页构造接收者标识。接收者使用 `type/provider/namespace/external_id`；用户 namespace 固定 `user`，部门/角色必须使用目录提供方定义的命名空间。
 
@@ -57,4 +60,34 @@
 - `400`：非法字段、重复参数、游标或幂等 key；`403`：无管理/内容资格；`409`：key 与原请求内容冲突；`412`：版本冲突；`428`：缺少版本条件；`503`：身份、生命周期或运行时依赖不可用。
 - 配置工厂需要可信原生生命周期 reader，并已应用 040/041 schema；未装配时新增目录接口失败关闭。此为技术依赖，不是库级共享策略或存量数据激活开关。
 - 管理页使用同一套新 ACL/共享接口、条件修改及稳定请求 key；不再把目录 ACL 写入旧接口。共享默认只读，不写 ACL；删除后重试旧创建请求不会恢复共享。
-- 当前证据：真实隔离 MariaDB 与 C 核心测试、HTTP 路由/参数/CSRF回归、前端交互测试及 ACL 生产 bundle 编译。身份与生命周期仍含测试夹具，真实会话及 Linux 原生读写联验未完成。
+- 当前证据：隔离 MariaDB/C 核心、HTTP 参数/路由/CSRF 测试，以及 Linux Server 构建和真实 RPC/文件字节联验通过。原生联验使用真实目录历史，但身份、主体与会话为可信夹具；真实 OIDC HTTP 和制品验收仍未完成。
+
+## 目录分页与范围撤销
+
+`directory-entries/` 参数与地址解析一致，另接收 `limit=1..100`、`after`。返回 `items[{reference,name,permission}]`、`head_id`、`next_after`。游标绑定不可变 commit；目录版本变化返回 409，调用方重新开始分页。不可见项不泄露名称，空页可能有后续游标。共享入口每次带 `shared_root`，服务端复核当前共享；URL 或分页游标本身不授予资格。
+
+范围查询 POST 示例：
+
+```json
+{"reference":{"repo_id":"00000000-0000-4000-8000-000000000001","path":"/项目A","kind":"dir"},"domain":"shares","limit":50}
+```
+
+`domain` 仅允许 `shares`、`acl`、`admins`。查询覆盖目标及路径分隔符下的后代，返回 `items`、`next_after`；续页在 body 带 `after`。要求覆盖整个范围的管理权，避免精确管理权扩大为子树管理。POST 查询也要求 CSRF，但不需要幂等 key。
+
+撤销在同一 reference/domain 上提交 `items:[{"id":"实际记录UUID","etag":"\"实际版本UUID\""}]`（1–100 项）及 `Idempotency-Key`。客户端先分页展示影响记录，再明确选择撤销项；没有隐式全删或授权链级联。任一版本不匹配返回 412，越界返回 403，整个批次回滚。成功逐项记录审计，重试原请求返回相同结果；撤销 shares 永远不删 ACL。目录管理员不能借批量接口删除自己或上级的管理授权。
+
+Web 取流票据和单文件上传/更新继续使用现有接口；现在以目录资格预检查，并在原生票据签发、消费和 Branch 发布时重新裁决。共享只提供 r，单文件创建还必须有父目录写权限。结构性 mkdir/delete/rename/move/copy 尚未开放受控发布 API，旧入口保持管理库拒绝；不能把 rw 理解为这些操作已交付。
+
+## 原生回归运行
+
+在隔离 Linux 环境构建当前 Server 后执行：
+
+```sh
+CF_NATIVE_SERVER_BINARY=/absolute/path/to/seaf-server \
+CF_NATIVE_ACL_LIB_DIR=/absolute/path/to/server/.libs \
+bash tests/e2e/native_directory.sh
+```
+
+脚本仅启动专用数据库、Redis、Server 和 fileserver，退出时销毁测试容器，日志与 JSON 证据保留在报告目录。`CF_NATIVE_BACKEND` 可指定本地依赖制品，`CF_NATIVE_REPORT_DIR` 可指定证据路径。原生身份映射及会话是测试夹具，不能作为真实登录验收。
+
+详细测试结果及限制见 [本批验证记录](directory-access-v09-validation.md)。

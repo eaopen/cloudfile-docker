@@ -289,7 +289,11 @@ def render_settings(environment=None):
         f"CLOUDFILE_EDITING_ENABLED = {editing_enabled!r}",
         f"CLOUDFILE_RESOURCE_SECRET = {editing_secret.encode('utf-8')!r}" if editing_enabled else
             "CLOUDFILE_RESOURCE_SECRET = None",
-        "from cloudfile_extensions.resources.native import NativeResourceReader\nfrom seaserv import seafile_api\nCLOUDFILE_RESOURCE_LIFECYCLE_READER = NativeResourceReader(seafile_api)" if editing_enabled else
+        ("def CLOUDFILE_RESOURCE_LIFECYCLE_READER(cursor, reference):\n"
+         "    from cloudfile_extensions.resources.native import NativeResourceReader\n"
+         "    from seaserv import seafile_api\n"
+         "    return NativeResourceReader(seafile_api)(cursor, reference)")
+        if (editing_enabled or authorization_enabled or transfer_enabled or oidc_enabled) else
             "CLOUDFILE_RESOURCE_LIFECYCLE_READER = None",
         f"CLOUDFILE_TRANSFER_ENABLED = {transfer_enabled!r}",
         f"CLOUDFILE_AUDIT_QUERY_ENABLED = {audit_query_enabled!r}",

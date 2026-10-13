@@ -242,3 +242,7 @@ Node 24，容器固定 `24.21.0`。日历、SDoc 编辑器及锁文件采用上�
 扩展既有 `common/branch-mgr.c` 条件发布接缝：设备 `local_commit` 与网页登录
 `oidc_session` 分开校验；重复当前设备/会话/Checkout 检查，Branch、Intent 回执、
 签出及会话基线同事务更新。读用 `local_session` 仍拒绝写入。没有新增 HTTP 上游接缝。
+
+### 2026-10-13 v0.9 目录资格原生接线
+
+扩展既有 `common/branch-mgr.c` 读与条件发布接缝：原生资格 0 表示有效非库成员，继续交由 scoped 策略判断；负值仍拒绝。账户、身份、撤销屏障和目标校验不变。`server/cloudfile-policy.c` 在最终事务内装载祖先共享、校验真实目录出生历史和库只读状态，再调用 scoped C 核心；不伪造全库资格。Hub Web 票据及单文件写入使用同一目录资格预检查。新增独立原生回归脚本，不改用户运行中部署。

@@ -26,3 +26,15 @@
 ## 未完成验收
 
 结构操作 mkdir/delete/rename/move/copy 的受控原子发布及源/目标联合鉴权、ACL/管理授权生命周期联动、撤权并发和传输中停止边界、真实身份 HTTP、镜像/升级及完整跨入口回归尚未完成。当前旧结构入口对管理库保持拒绝，不以新 rw 权限宣称这些操作已开放。共享 stale birth 测试覆盖不匹配证据，但不替代真实目录删除/重建联验。
+
+## 入口隔离修改与验证（2026-10-13）
+
+最新决定：管理 API 机制及正常库用户 API 保持原行为，目录共享/地址访问通过独立用户入口接入同一后台权限机制。
+
+- 既有 PolicyServiceFactory 恢复 DirectoryManagement；新增显式 directory factory，不再由 lifecycle_reader 是否存在切换既有管理权限。
+- 旧 OIDC 下载/上传/更新恢复 ContentReadAuthority/ContentMetadataWriteAuthority；新增 identity/v1/directory-access/read-tickets、manual-upload、manual-update 路由。请求不能选择内部权限模式。
+- 原生旧入口继续要求库资格；新增入口允许当前目录资格。RPC 条件解析、签发/消费和 Branch 终判保持路径/身份/屏障校验。普通 local_session 入口恢复原库资格要求。
+- 本批 HTTP/票据/路由/能力测试 47 项通过，真实隔离 SQL/C 目录测试 38 项通过，Linux Server 构建通过。原生文件字节与入口对照 16 项通过，其中新增旧入口无库拒绝、正常库成员读取及库撤权、旧写入入口无库拒绝；新目录入口仍通过 ACL/共享裁决。
+- 本机证据：`/tmp/cloudfile-v09-entry-native-final/directory-result.json` 和 `/tmp/cloudfile-v09-native-build/entry-build.log`。身份与 OIDC 会话仍为可信夹具；未部署制品，完整真实登录 HTTP 验收仍待完成。
+
+本批代码提交：Hub `b05356702`、Server `44f7745`。另补原有 resource/delegation/local-edit host 生命周期回归 14 项通过；仅验证入口隔离与本批受控访问，不将 v0.9 全部标记完成。

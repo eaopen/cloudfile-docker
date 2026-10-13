@@ -1,6 +1,6 @@
 # v0.9 目录管理与地址接口
 
-状态：目录管理、发现、地址解析和目录分页 API 已实现，Web 下载/上传预检查与原生 scoped 终判已接通；本批不开发 Hub 界面。完整发布验收仍需真实身份 HTTP 及制品验证。权限语义见 [目录资格契约](directory-access-v09.md)。
+状态：目录管理、发现、地址解析和目录分页 API 已实现，新增目录访问下载/上传预检查与原生 scoped 终判已接通；本批不开发 Hub 界面。完整发布验收仍需真实身份 HTTP 及制品验证。权限语义见 [目录资格契约](directory-access-v09.md)。
 
 ## 接口
 
@@ -76,7 +76,7 @@
 
 撤销在同一 reference/domain 上提交 `items:[{"id":"实际记录UUID","etag":"\"实际版本UUID\""}]`（1–100 项）及 `Idempotency-Key`。客户端先分页展示影响记录，再明确选择撤销项；没有隐式全删或授权链级联。任一版本不匹配返回 412，越界返回 403，整个批次回滚。成功逐项记录审计，重试原请求返回相同结果；撤销 shares 永远不删 ACL。目录管理员不能借批量接口删除自己或上级的管理授权。
 
-Web 取流票据和单文件上传/更新继续使用现有接口；现在以目录资格预检查，并在原生票据签发、消费和 Branch 发布时重新裁决。共享只提供 r，单文件创建还必须有父目录写权限。结构性 mkdir/delete/rename/move/copy 尚未开放受控发布 API，旧入口保持管理库拒绝；不能把 rw 理解为这些操作已交付。
+正常库取流票据和单文件上传/更新接口保持原有库资格预检查。新增目录访问接口复用取流与发布实现，以目录资格预检查，并在原生票据签发、消费和 Branch 发布时重新裁决。共享只提供 r，单文件创建还必须有父目录写权限。结构性 mkdir/delete/rename/move/copy 尚未开放受控发布 API，旧入口保持管理库拒绝；不能把 rw 理解为这些操作已交付。
 
 ## 原生回归运行
 
@@ -91,3 +91,21 @@ bash tests/e2e/native_directory.sh
 脚本仅启动专用数据库、Redis、Server 和 fileserver，退出时销毁测试容器，日志与 JSON 证据保留在报告目录。`CF_NATIVE_BACKEND` 可指定本地依赖制品，`CF_NATIVE_REPORT_DIR` 可指定证据路径。原生身份映射及会话是测试夹具，不能作为真实登录验收。
 
 详细测试结果及限制见 [本批验证记录](directory-access-v09-validation.md)。
+
+## 入口隔离（2026-10-13）
+
+既有管理接口 `directory-rules/`、`library-rules/`、`effective-permission/` 使用原有 DirectoryManagement/DirectoryPolicyService；是否装配生命周期 reader 不再切换既有管理机制。v0.9 新增管理和目录访问路由显式选择 DirectoryService。既有用户委托及普通浏览/资源 API 保持原机制。
+
+正常库入口要求库资格；共享目录入口和目录地址入口允许有效目录 ACL 或共享资格。两类入口最终复用同一套 ACL 核心、账户、屏障、当前身份、路径、库只读和撤权检查；共享记录不生成 ACL。
+
+取流与单文件写入前缀为 `/api/v2.1/cloudfile/extensions/identity/v1/`：
+
+| 正常库访问（保持原行为） | 新增目录访问 | 方法 |
+| --- | --- | --- |
+| `read-tickets/` | `directory-access/read-tickets/` | POST JSON，operation=view/download |
+| `manual-upload/` | `directory-access/manual-upload/` | POST multipart，单文件创建 |
+| `manual-update/` | `directory-access/manual-update/` | POST multipart，单文件更新 |
+
+新旧接口的业务参数、会话、CSRF、配额、版本与审计要求相同。客户端通过路由选择入口，不能在旧接口 body 中加入权限模式字段。仅新增入口由可信服务器装配原生 `directory_access=true` 条件；这是内部入口区分，不是共享配置或授权事实。原生条件本身不授予权限，仍必须当前有效的 ACL/共享资格。普通本地会话、用户委托和 Agent 接入不因此开放无库权限。
+
+共享入口先请求 shared-directories，再以返回目录为 shared_root 调用 directory-address/directory-entries；后续文件读取/写入使用新增 directory-access 路由。目录地址直达也可使用新增路由，URL 本身不生成资格。每个文件请求均按目标路径复核权限，不能访问未授权父目录或兄弟目录。

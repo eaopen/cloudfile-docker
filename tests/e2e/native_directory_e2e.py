@@ -57,7 +57,7 @@ with tx() as q:
     share, _ = shares.create(q, ref, dict(path='/folder', subject=recipient_subject), actor='fixture-admin')
 
 def condition(path=None):
-    value = dict(head_id=rpc.get_repo(repo).head_cmmt_id, context=dict(provider='fixture',userId='employee',epoch='d'*32), scopes=[dict(type='provider',provider='fixture',external_id='fixture'),dict(type='provider',provider='cf_oidc_'+scope[:24],external_id='cf_oidc_'+scope[:24]),dict(type='user',provider='fixture',external_id='employee'),dict(type='repo',provider='cloudfile',external_id=repo)], oidc_session=dict(scope_hash=scope,session_key=session,subject_hash=subject,sid_hash=None,authenticated_at=now))
+    value = dict(directory_access=True, head_id=rpc.get_repo(repo).head_cmmt_id, context=dict(provider='fixture',userId='employee',epoch='d'*32), scopes=[dict(type='provider',provider='fixture',external_id='fixture'),dict(type='provider',provider='cf_oidc_'+scope[:24],external_id='cf_oidc_'+scope[:24]),dict(type='user',provider='fixture',external_id='employee'),dict(type='repo',provider='cloudfile',external_id=repo)], oidc_session=dict(scope_hash=scope,session_key=session,subject_hash=subject,sid_hash=None,authenticated_at=now))
     if path is not None:
         value['path'] = path
     return value
@@ -97,6 +97,23 @@ original=ticket()
 r=fetch(original)
 assert r.status_code==200 and r.content==tmp.read_bytes(), (r.status_code,r.text)
 passed('share alone reads real bytes without library membership')
+normal = condition('/folder/file.txt')
+normal.pop('directory_access')
+denied(lambda: rpc.seafile_cloudfile_issue_read_ticket(repo, '/folder/file.txt',
+    rpc.get_repo(repo).head_cmmt_id, rpc.get_file_id_by_path(repo, '/folder/file.txt'),
+    'download', recipient, json.dumps(normal)))
+passed('normal library ticket entry still requires library membership')
+with tx() as q:
+    q.execute('INSERT INTO SharedRepo(repo_id,from_email,to_email,permission) VALUES(%s,%s,%s,%s)',
+        (repo, owner, recipient, 'r'))
+normal_token = rpc.seafile_cloudfile_issue_read_ticket(repo, '/folder/file.txt',
+    rpc.get_repo(repo).head_cmmt_id, rpc.get_file_id_by_path(repo, '/folder/file.txt'),
+    'download', recipient, json.dumps(normal))
+assert fetch(normal_token).content == tmp.read_bytes()
+with tx() as q:
+    q.execute('DELETE FROM SharedRepo WHERE repo_id=%s AND to_email=%s', (repo, recipient))
+assert fetch(normal_token).status_code != 200
+passed('normal library member reads normally and loses access after library revocation')
 denied(lambda: ticket('/outside.txt'))
 passed('sibling file denied')
 head=rpc.get_repo(repo).head_cmmt_id
@@ -108,6 +125,13 @@ tmp.write_bytes(b'directory ACL updated bytes\n')
 write()
 assert fetch(ticket()).content==tmp.read_bytes()
 passed('directory rw ACL publishes real bytes without library membership')
+normal_write = condition()
+normal_write.pop('directory_access')
+normal_head = rpc.get_repo(repo).head_cmmt_id
+denied(lambda: rpc.cloudfile_put_file_with_barriers(repo, str(tmp), '/folder', 'file.txt',
+    recipient, json.dumps(normal_write)))
+assert rpc.get_repo(repo).head_cmmt_id == normal_head
+passed('normal library publication entry still requires library membership')
 write('created.txt')
 assert fetch(ticket('/folder/created.txt')).content == tmp.read_bytes()
 passed('directory rw ACL creates a new file with parent authorization')

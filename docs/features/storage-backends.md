@@ -2,7 +2,7 @@
 
 > 用途：说明 Seafile 原生数据的存储后端、存储类、迁移和运维限制
 > 适用版本：Seafile CE 14 参考基线
-> 当前状态：多存储后端、按资料库映射和离线迁移 MVP 已完成；新建资料库的自助选择入口持续改进；S3 兼容性只验证 MinIO
+> 当前状态：多存储后端、按资料库映射和离线迁移 MVP 已完成；新建资料库的自助选择入口持续改进；RustFS/MinIO 后端测试通过；RustFS 完整业务 E2E 待验收
 
 本能力存储 Seafile 原生 commit、FS object 和 block。它与面向外部文件系统的
 [虚拟目录挂载](external-directory-mount.md)无关。
@@ -11,6 +11,8 @@
 `RepoStorageId`，只为锁定的 CE 14 代码中缺失的后端、配置与运维链路增加扩展。MVP
 必须先闭合配置、路由、按库分配、迁移、校验与恢复，再在不改变数据模型的前提下持续
 改进管理界面和分配策略。
+
+RustFS 默认部署、MinIO 共存及增量存储类配置见 [集成说明](rustfs-storage.md)。
 
 ## 与上游能力的边界
 
@@ -33,7 +35,7 @@ Seafile 的数据模型和 `RepoStorageId` 归为 CloudFile 发明。
 | 模式 | 当前范围 | 状态 |
 |---|---|---|
 | 本地文件系统 | CE 默认 commit/FS/block 后端 | 已完成 |
-| 单一 S3 兼容存储 | 三个 bucket，C 与 Go fileserver 路径 | 已完成；MinIO 优先验证 |
+| 单一 S3 兼容存储 | 三个 bucket，C 与 Go fileserver 路径 | 默认 RustFS，兼容 MinIO |
 | 多存储 | 每个存储类可分别定义 commit、FS、block 的 `fs` 或 `s3` 后端 | 已完成后端路由与离线迁移 |
 | 按资料库选择存储方案 | 通过 `RepoStorageId` 与迁移工具为不同资料库指定 `storage_id` | 已完成管理员分配路径；新建库自助入口待改进 |
 | 用户选择/角色/Repo ID 自动分配 UI | Seahub 代码存在但仍受 Pro 判断；CloudFile 未解除或替换 | 未实现，不影响管理员按库分配 |
@@ -49,14 +51,14 @@ S3_FS_BUCKET=cloudfile-fs
 S3_BLOCK_BUCKET=cloudfile-blocks
 S3_KEY_ID=<access-key>
 S3_SECRET_KEY=<secret-key>
-S3_HOST=minio.example.internal:9000
+S3_HOST=rustfs.example.internal:9000
 S3_AWS_REGION=us-east-1
 S3_USE_HTTPS=true
 S3_USE_V4_SIGNATURE=true
 S3_PATH_STYLE_REQUEST=true
 ```
 
-生产 bucket 必须预先创建。`s3` profile 的 `minio-init` 只用于本地验证，不应被描述为
+生产 bucket 必须预先创建。`s3` profile 的 `rustfs-init` 只用于本地验证，不应被描述为
 通用生产 bucket 生命周期管理。
 
 ## 多存储配置与映射

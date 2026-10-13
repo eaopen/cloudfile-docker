@@ -52,10 +52,55 @@ services:
       retries: 6
     restart: unless-stopped
 
+  rustfs:
+    image: ${RUSTFS_IMAGE:-rustfs/rustfs:1.0.1}
+    container_name: cloudfile-rustfs
+    profiles: ["s3"]
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-change-this-rustfs-password}
+    volumes:
+      - ./data/rustfs:/data
+    ports:
+      - "${RUSTFS_API_PORT:-9000}:9000"
+      - "${RUSTFS_CONSOLE_PORT:-9001}:9001"
+    restart: unless-stopped
+
+  rustfs-init:
+    image: ${RUSTFS_IMAGE:-rustfs/rustfs:1.0.1}
+    container_name: cloudfile-rustfs-init
+    profiles: ["s3"]
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - >
+        for bucket in "$${S3_COMMIT_BUCKET}" "$${S3_FS_BUCKET}" "$${S3_BLOCK_BUCKET}"; do
+        attempts=0;
+        until curl -fsS --connect-timeout 3 --max-time 10 --aws-sigv4 aws:amz:us-east-1:s3
+        --user "$${RUSTFS_ACCESS_KEY}:$${RUSTFS_SECRET_KEY}"
+        --head "http://rustfs:9000/$$bucket" >/dev/null; do
+        attempts=$$((attempts + 1));
+        if [ "$$attempts" -ge 60 ]; then echo "Bucket initialization failed: $$bucket" >&2; exit 1; fi;
+        curl -fsS --connect-timeout 3 --max-time 10 --aws-sigv4 aws:amz:us-east-1:s3
+        --user "$${RUSTFS_ACCESS_KEY}:$${RUSTFS_SECRET_KEY}"
+        -X PUT "http://rustfs:9000/$$bucket" || true;
+        sleep 2; done; done
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:-change-this-rustfs-password}
+      S3_COMMIT_BUCKET: ${S3_COMMIT_BUCKET:-cloudfile-commits}
+      S3_FS_BUCKET: ${S3_FS_BUCKET:-cloudfile-fs}
+      S3_BLOCK_BUCKET: ${S3_BLOCK_BUCKET:-cloudfile-blocks}
+    depends_on:
+      - rustfs
+
   minio:
     image: minio/minio:latest
     container_name: cloudfile-minio
-    profiles: ["s3"]
+    profiles: ["minio"]
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
@@ -70,7 +115,7 @@ services:
   minio-init:
     image: minio/mc:latest
     container_name: cloudfile-minio-init
-    profiles: ["s3"]
+    profiles: ["minio"]
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >

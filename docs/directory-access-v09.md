@@ -4,6 +4,8 @@
 
 cf_dir_share 是独立资格事实，默认只读、覆盖非根目录及子树，不存 permission、不增删 cf_dir_acl。有效目录正向 ACL 可独立提供访问资格，遵守 inherit。库根 ACL 不产生无库资格的整库入口。默认资格进入同一 ACL 裁决，rw 可提升，none/invisible 按现有主体与继承优先级限制；硬只读与身份/撤权屏障不变。
 
+三表统一使用原生 seafile 数据库和 Hub 版本化迁移，不由 EAP 或 Django 建表；旧版空表升级、结构校验与发布命令见 [目录表结构升级](directory-schema-upgrade.md)。结构一致性指公共字段与迁移机制一致，不要求共享表增加 ACL 的 permission/inherit 字段。
+
 资格只覆盖目标路径。调用方提供完整且当前有效的祖先 ACL 与已校验资源生命周期的共享记录；纯核心匹配主体和路径但不验证数据库、会话、资源身份或签发传输凭据。祖先无资格不等于祖先 invisible；后者继续阻止子目录直达。多个不相交目录的资格不能合并成父目录资格。
 
 新纯核心使用独立 cf_acl_evaluate_scoped 符号与 scoped ABI 版本，保持旧 Context/Rule/Result 布局和 cf_acl_evaluate 行为。库资格存在时保留原权限基线，无库资格时共享提供 r 基线，否则由有效目录正向规则建立资格。非法输入、缺失上下文、停用与屏障均拒绝。

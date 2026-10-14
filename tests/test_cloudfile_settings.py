@@ -104,6 +104,13 @@ class CloudFileSettingsTest(unittest.TestCase):
             self.assertIn("before = True", rendered)
             self.assertIn("after = True", rendered)
 
+    def test_administrator_policy_defaults_off_and_requires_native_route_ownership(self):
+        values = {}
+        exec(CLOUDFILE.render_settings({}), values)
+        self.assertIs(values['CLOUDFILE_ADMIN_POLICY_ENABLED'], False)
+        with self.assertRaisesRegex(ValueError, 'administrator policy'):
+            CLOUDFILE.render_settings({'CLOUDFILE_ADMIN_POLICY_ENABLED':'true'})
+
     def test_native_block_follows_legacy_defaults_and_preserves_both_apps(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "seahub_settings.py"

@@ -54,3 +54,15 @@ native login, policy, resource, device, session and read-ticket adapters assembl
 A requested capability in settings cannot manufacture runtime readiness.
 This capability does not itself prove external IdP acceptance or a successful
 file publication; those remain deployment acceptance checks.
+
+## 管理员发布与本地编辑并用
+
+`CLOUDFILE_ADMIN_POLICY_ENABLED` 默认关闭。显式开启后，系统管理员可用既有
+Seahub 管理员 Token 调用新版目录 ACL 与目录共享发布接口。它要求原生 OIDC、
+策略 worker 和稳定资源密钥；不能与 `CLOUDFILE_AUTHORIZATION_ENABLED` 同时
+占用相同路由。普通用户和资料库管理员 Token 不能取得该系统管理员发布权限。
+
+发布写入统一 `cf_dir_acl`，复用事务锁、共享生命周期、If-Match、原请求重试记录
+及审计。原生管理员按 `native-account:` 服务主体记录，不伪造业务用户会话或目录
+快照。账号停用、降权、库删除、虚拟库或正在迁移的库均拒绝请求；目录共享撤回
+只撤回共享模式，保留已授权的库成员 ACL。该开关不开放普通用户的策略会话接口。

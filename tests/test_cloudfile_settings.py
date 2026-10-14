@@ -384,6 +384,7 @@ class OIDCSettingsTest(unittest.TestCase):
         self.assertEqual(namespace["CLOUDFILE_OIDC_CONFIG"]["client_id"], "cloudfile")
         self.assertFalse(namespace["CLOUDFILE_CAPABILITIES"]["auth.oidc"]["enabled"])
         self.assertIs(namespace["ENABLE_OAUTH"], False)
+        self.assertEqual(namespace["LOGIN_URL"], "/api/v2.1/cloudfile/extensions/identity/v1/begin/")
         self.assertFalse(namespace["CLOUDFILE_LOCAL_EDIT_ENABLED"])
 
     def test_missing_runtime_or_worker_hooks_rejected(self):

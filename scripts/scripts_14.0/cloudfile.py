@@ -346,6 +346,10 @@ def render_settings(environment=None):
     )
     if oidc_enabled:
         lines.append("ENABLE_OAUTH = False")
+        callback_path = urlparse(oidc_config["redirect_uri"]).path
+        if not callback_path.endswith("callback/"):
+            raise ValueError("native OIDC requires its registered callback path")
+        lines.append(f"LOGIN_URL = {callback_path[:-len('callback/')] + 'begin/'!r}")
     lines.extend((END_MARKER, ""))
     return "\n".join(lines)
 

@@ -104,6 +104,18 @@ class CloudFileSettingsTest(unittest.TestCase):
             self.assertIn("before = True", rendered)
             self.assertIn("after = True", rendered)
 
+    def test_native_block_follows_legacy_defaults_and_preserves_both_apps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "seahub_settings.py"
+            path.write_text(CLOUDFILE.render_settings({}) +
+                            "EXTRA_INSTALLED_APPS = ['cloudfile_ext']\n")
+            CLOUDFILE.write_settings(path, {})
+            namespace = {}
+            exec(path.read_text(), namespace)
+            self.assertEqual(namespace['EXTRA_INSTALLED_APPS'],
+                             ['cloudfile_ext', 'cloudfile_extensions'])
+            self.assertFalse(CLOUDFILE.write_settings(path, {}))
+
     def test_invalid_configuration_is_rejected(self):
         with self.assertRaises(ValueError):
             CLOUDFILE.render_settings({"CLOUDFILE_EXTENSION_APPS": "../bad"})
@@ -371,7 +383,7 @@ class OIDCSettingsTest(unittest.TestCase):
         self.assertFalse(namespace["CLOUDFILE_OIDC_JIT_ENABLED"])
         self.assertEqual(namespace["CLOUDFILE_OIDC_CONFIG"]["client_id"], "cloudfile")
         self.assertFalse(namespace["CLOUDFILE_CAPABILITIES"]["auth.oidc"]["enabled"])
-        self.assertNotIn("ENABLE_OAUTH", namespace)
+        self.assertIs(namespace["ENABLE_OAUTH"], False)
         self.assertFalse(namespace["CLOUDFILE_LOCAL_EDIT_ENABLED"])
 
     def test_missing_runtime_or_worker_hooks_rejected(self):

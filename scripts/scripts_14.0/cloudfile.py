@@ -300,7 +300,7 @@ def render_settings(environment=None):
 
     lines = [
         BEGIN_MARKER,
-        f"EXTRA_INSTALLED_APPS = {pprint.pformat(['cloudfile_extensions', *extension_apps], sort_dicts=True)}",
+        f"EXTRA_INSTALLED_APPS = list(dict.fromkeys(globals().get('EXTRA_INSTALLED_APPS', []) + {pprint.pformat(['cloudfile_extensions', *extension_apps], sort_dicts=True)}))",
         "SITE_ROOT_URLCONF = 'cloudfile_extensions.root_urls'",
         f"CLOUDFILE_EXTENSION_URLCONFS = {pprint.pformat(urlconfs, sort_dicts=True)}",
         f"CLOUDFILE_CAPABILITIES = {pprint.pformat(capabilities, sort_dicts=True)}",
@@ -344,6 +344,8 @@ def render_settings(environment=None):
         f"{name} = {pprint.pformat(value, sort_dicts=True)}"
         for name, value in authentik.items()
     )
+    if oidc_enabled:
+        lines.append("ENABLE_OAUTH = False")
     lines.extend((END_MARKER, ""))
     return "\n".join(lines)
 
@@ -364,10 +366,10 @@ def write_settings(path, environment=None):
         end += len(END_MARKER)
         if end < len(current) and current[end] == "\n":
             end += 1
-        updated = current[:begin] + block + current[end:]
+        retained = current[:begin] + current[end:]
+        updated = retained.rstrip() + "\n\n" + block
     else:
-        separator = "" if not current or current.endswith("\n") else "\n"
-        updated = current + separator + block
+        updated = (current.rstrip() + "\n\n" if current.strip() else "") + block
 
     if updated == current:
         return False

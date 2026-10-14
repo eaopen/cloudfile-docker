@@ -68,6 +68,8 @@ def main():
     # rearranged conf/, so flipping a CF_ENABLE_* switch in .env takes effect
     # on restart rather than only at first bootstrap.
     write_cloudfile_config()
+    # Legacy defaults must load before the native extension overrides.
+    write_cloudfile_settings(join(topdir, 'conf', 'seahub_settings.py'))
 
     os.chdir(installdir)
 

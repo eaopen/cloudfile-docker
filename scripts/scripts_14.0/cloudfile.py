@@ -287,7 +287,10 @@ def render_settings(environment=None):
         f"CLOUDFILE_AUTHORIZATION_ENABLED = {authorization_enabled!r}",
         f"CLOUDFILE_LOCAL_EDIT_ENABLED = {local_edit_enabled!r}",
         f"CLOUDFILE_EDITING_ENABLED = {editing_enabled!r}",
-        f"CLOUDFILE_RESOURCE_SECRET = {editing_secret.encode('utf-8')!r}" if editing_enabled else
+        # Login and directory authority also use lifecycle-bound resources.
+        # Preserve their configured key even when online editing is disabled;
+        # PolicyHost validates the key/reader pair before accepting requests.
+        f"CLOUDFILE_RESOURCE_SECRET = {editing_secret.encode('utf-8')!r}" if editing_secret else
             "CLOUDFILE_RESOURCE_SECRET = None",
         ("def CLOUDFILE_RESOURCE_LIFECYCLE_READER(cursor, reference):\n"
          "    from cloudfile_extensions.resources.native import NativeResourceReader\n"

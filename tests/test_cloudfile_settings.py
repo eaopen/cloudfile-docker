@@ -221,6 +221,23 @@ class CloudFileSettingsTest(unittest.TestCase):
             exec(CLOUDFILE.render_settings(environment), namespace)
             self.assertEqual(namespace["CLOUDFILE_TRANSFER_ENABLED"], expected)
 
+    def test_login_and_directory_preserve_resource_key_without_editing(self):
+        # A lifecycle reader without its key cannot initialize PolicyHost;
+        # these independently enabled features must not depend on editing.
+        for feature in ("CLOUDFILE_OIDC_ENABLED", "CLOUDFILE_AUTHORIZATION_ENABLED",
+                        "CLOUDFILE_TRANSFER_ENABLED"):
+            environment = OIDCSettingsTest.environment()
+            environment.update({feature: "true", "CLOUDFILE_RESOURCE_SECRET": "r" * 32,
+                                "ENABLE_GO_FILESERVER": "true"})
+            if feature != "CLOUDFILE_OIDC_ENABLED":
+                environment["CLOUDFILE_OIDC_ENABLED"] = "false"
+            namespace = {}
+            exec(CLOUDFILE.render_settings(environment), namespace)
+            with self.subTest(feature=feature):
+                self.assertFalse(namespace["CLOUDFILE_EDITING_ENABLED"])
+                self.assertEqual(namespace["CLOUDFILE_RESOURCE_SECRET"], b"r" * 32)
+                self.assertTrue(callable(namespace["CLOUDFILE_RESOURCE_LIFECYCLE_READER"]))
+
     def test_enabled_transfer_rejects_missing_policy_worker(self):
         with self.assertRaisesRegex(ValueError, "authorization or transfer"):
             CLOUDFILE.render_settings({"CLOUDFILE_TRANSFER_ENABLED": "true"})

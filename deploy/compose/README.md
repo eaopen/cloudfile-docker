@@ -64,8 +64,9 @@ WebDAV 读路径（PROPFIND 列举/GET/资源解析）已由
 | `ai` | `seafile-ai` | 官方按需 AI 组件；需自备 LLM 配置，真实端到端仍待验证 |
 | `office` | `onlyoffice` | OnlyOffice Document Server |
 | `convert` | `seadoc` | SeaDoc 转换与导出 |
-| `s3` | `minio`、`minio-init` | 仅用于本地 S3/多存储验证，不是生产对象存储方案 |
-| `full` | `worker`、`search`、`metadata`、`ai`、`office`、`convert` 的服务 | 启动应用扩展组件；**不包含**仅属于 `s3` profile 的 MinIO |
+| `s3` | `rustfs`、`rustfs-init` | 默认 S3 参考服务，独立对象存储 |
+| `minio` | `minio`、`minio-init` | 兼容原 MinIO 部署 |
+| `full` | `worker`、`search`、`metadata`、`ai`、`office`、`convert` 的服务 | 启动应用扩展组件；**不包含**`s3` / `minio` profile 的对象存储 |
 
 启动示例：
 
@@ -152,13 +153,13 @@ docker compose up -d
 
 ### S3 与多存储
 
-设置 `CF_ENABLE_S3_STORAGE=true` 后，按 [`.env.example`](.env.example) 提供三类 bucket 和凭据；多存储还需 `SEAF_SERVER_STORAGE_TYPE=multiple` 与 `CF_STORAGE_CLASSES_JSON`。本地验证可启动 MinIO：
+默认 S3 服务为 RustFS 1.0.1；MinIO 改用 `minio` profile，已有 endpoint、凭据和存储类保持原值。新安装本地每库目录默认值不变。
 
-```bash
-docker compose --profile s3 up -d
-```
+按 [RustFS 与多存储操作说明](../../docs/features/rustfs-storage.md) 初始化 bucket，使用
+`tools/storage-class-config.py` 追加存储类并生成 server/worker 共用的 Compose override。
+已有部署使用 `--base` 传入真实存储类，不能使用新安装的 `--fresh`。
 
-MinIO 的示例凭据只能用于本地测试。对象布局、迁移、GC/FSCK 约束见 [`../../docs/features/storage-backends.md`](../../docs/features/storage-backends.md)。
+对象布局、离线迁移、GC/FSCK 约束见 [存储后端说明](../../docs/features/storage-backends.md)。
 
 ### 外部资料源
 
@@ -203,7 +204,8 @@ data/
 ├── seadoc/         SeaDoc 数据
 ├── seasearch/      SeaSearch 索引
 ├── meilisearch/    Meilisearch 索引
-├── minio/          本地测试对象
+├── rustfs/         默认 S3 参考服务对象
+├── minio/          原 MinIO 对象（保留）
 └── onlyoffice/     OnlyOffice 数据与日志
 ```
 
@@ -216,7 +218,7 @@ data/
 ```bash
 cp .env.example .env
 docker compose config --quiet
-for p in search office convert worker metadata ai s3 full; do
+for p in search office convert worker metadata ai s3 minio full; do
   docker compose --profile "$p" config --services
 done
 ```

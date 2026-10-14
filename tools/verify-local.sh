@@ -234,14 +234,20 @@ cap_metadata_run() {
 }
 
 cap_storage_env() {
+    local provider=${CF_STORAGE_TEST_PROVIDER:-rustfs}
+    case "$provider" in rustfs|minio) ;; *) echo "CF_STORAGE_TEST_PROVIDER must be rustfs or minio" >&2; return 1 ;; esac
     cat <<EOF
 SEAF_SERVER_STORAGE_TYPE=multiple
 S3_COMMIT_BUCKET=cloudfile-commits
 S3_FS_BUCKET=cloudfile-fs
 S3_BLOCK_BUCKET=cloudfile-blocks
+RUSTFS_API_PORT=19000
+RUSTFS_CONSOLE_PORT=19001
+RUSTFS_ACCESS_KEY=minioadmin
+RUSTFS_SECRET_KEY=change-this-minio-password
 MINIO_API_PORT=19000
 MINIO_CONSOLE_PORT=19001
-CF_STORAGE_CLASSES_JSON=[{"storage_id":"local","is_default":true,"commits":{"backend":"fs","dir":"/shared/seafile"},"fs":{"backend":"fs","dir":"/shared/seafile"},"blocks":{"backend":"fs","dir":"/shared/seafile"}},{"storage_id":"minio","commits":{"backend":"s3","bucket":"cloudfile-commits","host":"minio:9000","key_id":"minioadmin","key":"change-this-minio-password","use_https":false,"path_style_request":true,"max_retries":2},"fs":{"backend":"s3","bucket":"cloudfile-fs","host":"minio:9000","key_id":"minioadmin","key":"change-this-minio-password","use_https":false,"path_style_request":true,"max_retries":2},"blocks":{"backend":"s3","bucket":"cloudfile-blocks","host":"minio:9000","key_id":"minioadmin","key":"change-this-minio-password","use_https":false,"path_style_request":true,"max_retries":2}}]
+CF_STORAGE_CLASSES_JSON=[{"storage_id":"local","is_default":true,"commits":{"backend":"fs","dir":"/shared/seafile"},"fs":{"backend":"fs","dir":"/shared/seafile"},"blocks":{"backend":"fs","dir":"/shared/seafile"}},{"storage_id":"${provider}","commits":{"backend":"s3","bucket":"cloudfile-commits","host":"${provider}:9000","key_id":"minioadmin","key":"change-this-minio-password","use_https":false,"path_style_request":true,"max_retries":2},"fs":{"backend":"s3","bucket":"cloudfile-fs","host":"${provider}:9000","key_id":"minioadmin","key":"change-this-minio-password","use_https":false,"path_style_request":true,"max_retries":2},"blocks":{"backend":"s3","bucket":"cloudfile-blocks","host":"${provider}:9000","key_id":"minioadmin","key":"change-this-minio-password","use_https":false,"path_style_request":true,"max_retries":2}}]
 EOF
 }
 
@@ -257,8 +263,21 @@ EOF
 cap_storage_run() {
     local base=$1 repo_id
 
-    say "启动 MinIO"
-    compose --profile s3 up -d --wait --wait-timeout 90 minio-init || return 1
+    local provider=${CF_STORAGE_TEST_PROVIDER:-rustfs} profile
+    case "$provider" in
+        rustfs) profile=s3 ;;
+        minio) profile=minio ;;
+        *) echo "CF_STORAGE_TEST_PROVIDER must be rustfs or minio" >&2; return 1 ;;
+    esac
+    say "启动 S3 服务：$provider"
+    if [[ $provider == rustfs ]]; then
+        mkdir -p "$STAGE_DIR/data/rustfs"
+        # The reference image runs as UID 10001. Restrict this disposable gate
+        # directory to its container owner, without touching existing volumes.
+        compose --profile s3 run --rm --no-deps --user 0 --entrypoint chown rustfs 10001:10001 /data || return 1
+    fi
+    compose --profile "$profile" up -d "$provider" || return 1
+    compose --profile "$profile" run --rm "$provider-init" || return 1
 
     say "阶段 1 —— 上传并校验跨多个 block 的文件"
     python3 "$repo/tests/e2e/storage_matrix.py" --phase 1 --url "$base" --insecure \
@@ -295,7 +314,7 @@ cap_storage_run() {
 
     say "以一次性容器执行 seaf-storage-migrate.sh（共享同一份 /shared 卷）"
     compose run --rm --no-deps --entrypoint bash cloudfile -c \
-        "/etc/my_init.d/01_create_data_links.sh && /opt/seafile/\$SEAFILE_SERVER-\$SEAFILE_VERSION/seaf-storage-migrate.sh $repo_id minio" \
+        "/etc/my_init.d/01_create_data_links.sh && /opt/seafile/\$SEAFILE_SERVER-\$SEAFILE_VERSION/seaf-storage-migrate.sh $repo_id $provider" \
         || return 1
 
     say "重启并等待就绪"

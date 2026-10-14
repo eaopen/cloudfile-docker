@@ -192,7 +192,7 @@ class CloudFileSettingsTest(unittest.TestCase):
         environment["CF_ENABLE_FILE_LOCK"] = "true"
         rendered = CLOUDFILE.render_settings(environment)
         self.assertIn("CLOUDFILE_EDITING_ENABLED = True", rendered)
-        self.assertIn("CLOUDFILE_RESOURCE_LIFECYCLE_READER = NativeResourceReader(seafile_api)", rendered)
+        self.assertIn("return NativeResourceReader(seafile_api)(cursor, reference)", rendered)
 
     def test_authorization_routes_require_explicit_deployment_flag(self):
         policy = '{"database":{},"redis":{}}'
@@ -205,6 +205,8 @@ class CloudFileSettingsTest(unittest.TestCase):
             namespace = {}
             exec(CLOUDFILE.render_settings(environment), namespace)
             self.assertEqual(namespace["CLOUDFILE_AUTHORIZATION_ENABLED"], expected)
+            self.assertEqual(callable(namespace["CLOUDFILE_RESOURCE_LIFECYCLE_READER"]), expected)
+            self.assertFalse(namespace["CLOUDFILE_EDITING_ENABLED"])
 
     def test_transfer_routes_require_explicit_deployment_flag(self):
         policy = '{"database":{},"redis":{}}'
@@ -346,6 +348,19 @@ class OIDCSettingsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             CLOUDFILE.render_settings({"CLOUDFILE_OIDC_JIT_ENABLED": "true"})
 
+    def test_explicit_http_and_https_oidc_issuers_remain_supported(self):
+        # dev intentionally supports internal HTTP issuers; redaction tests must
+        # reject invalid schemes without silently reversing that contract.
+        import json
+        for scheme in ("http", "https"):
+            environment = self.environment()
+            value = json.loads(environment["CLOUDFILE_OIDC_CONFIG_JSON"])
+            value["issuer"] = scheme + "://idp.example"
+            environment["CLOUDFILE_OIDC_CONFIG_JSON"] = json.dumps(value)
+            namespace = {}
+            exec(CLOUDFILE.render_settings(environment), namespace)
+            self.assertEqual(namespace["CLOUDFILE_OIDC_CONFIG"]["issuer"], value["issuer"])
+
     def test_oidc_json_and_endpoint_errors_are_redacted(self):
         import json
         for raw in ('{"client_secret":"fixture-client-secret","client_secret":"duplicate"}',
@@ -355,7 +370,7 @@ class OIDCSettingsTest(unittest.TestCase):
             with self.subTest(raw=raw), self.assertRaises(ValueError) as error:
                 CLOUDFILE.render_settings(environment)
             self.assertNotIn("fixture-client-secret", str(error.exception))
-        for uri in ("http://idp.example", "https://user:fixture-client-secret@idp.example",
+        for uri in ("ftp://idp.example", "https://user:fixture-client-secret@idp.example",
                     "https://idp.example/#fragment", "https://idp.example:invalid", "https://idp.example/\n"):
             environment = self.environment()
             value = json.loads(environment["CLOUDFILE_OIDC_CONFIG_JSON"])

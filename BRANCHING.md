@@ -242,3 +242,11 @@ Node 24，容器固定 `24.21.0`。日历、SDoc 编辑器及锁文件采用上�
 扩展既有 `common/branch-mgr.c` 条件发布接缝：设备 `local_commit` 与网页登录
 `oidc_session` 分开校验；重复当前设备/会话/Checkout 检查，Branch、Intent 回执、
 签出及会话基线同事务更新。读用 `local_session` 仍拒绝写入。没有新增 HTTP 上游接缝。
+
+### 2026-10-13 v0.9 目录资格原生接线
+
+扩展既有 `common/branch-mgr.c` 读与条件发布接缝：原生资格 0 表示有效非库成员，继续交由 scoped 策略判断；负值仍拒绝。账户、身份、撤销屏障和目标校验不变。`server/cloudfile-policy.c` 在最终事务内装载祖先共享、校验真实目录出生历史和库只读状态，再调用 scoped C 核心；不伪造全库资格。Hub Web 票据及单文件写入使用同一目录资格预检查。新增独立原生回归脚本，不改用户运行中部署。
+
+### 2026-10-13 正常库与目录访问入口隔离
+
+在已登记 `common/branch-mgr.c` 和 `common/rpc-service.c` 条件接缝中区分服务器装配的 directory_access 模式：正常入口继续要求库资格，目录入口仅以当前 ACL/共享资格限定访问。RPC 只接受 OIDC Web 条件中的 true 模式标记，不将其视为授权；不修改旧 local_session/Agent 管理机制。Hub 新增独立目录取流/上传更新路由，旧路由预检查和既有管理工厂恢复原机制。原生最终规则与数据仍复用同一套机制。

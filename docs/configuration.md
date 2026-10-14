@@ -42,7 +42,7 @@
 | `CF_ENABLE_SEARCH` | `false` | 依赖 SeaSearch/Elasticsearch/Meilisearch 容器与索引 |
 | `CF_ENABLE_ONLYOFFICE` | `false` | 依赖第三方 Document Server |
 | `CF_ENABLE_CONVERT_EXPORT` | `false` | 依赖 SeaDoc 容器 + `JWT_PRIVATE_KEY` |
-| `CF_ENABLE_S3_STORAGE` | `false` | 依赖第三方 S3/MinIO 端点 |
+| `CF_ENABLE_S3_STORAGE` | `false` | 依赖 S3 端点（默认 RustFS，兼容 MinIO；自动本地 overlay 也复用此开关） |
 | `CF_ENABLE_EXTERNAL_SOURCES` | `false` | 依赖宿主机挂载的本地目录（v1 只读；协议转换归运维）|
 | `CF_ENABLE_LOCAL_APP` | `false` | 依赖用户机 Chrome 扩展 + Local Agent |
 

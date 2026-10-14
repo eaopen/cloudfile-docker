@@ -61,6 +61,9 @@ def load(func_name, env):
     ns = {
         'json': json,
         'get_conf': lambda key, default='': env.get(key, default),
+        # Extracted functions need the runtime logging dependency too; keep
+        # warnings out of this harness without skipping the SSO generation path.
+        'logwarning': lambda message: None,
         # 修改逻辑（2026-09-22 默认值改为“不依赖第三方的能力默认打开”）：
         # 替身 cf_enabled 改为与 bootstrap.py 真实实现同构——env 未显式提供时
         # 回退到 CF_DEFAULT_ON 决定的默认值。

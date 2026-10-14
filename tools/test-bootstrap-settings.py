@@ -171,7 +171,10 @@ def test_sso():
            and values.get('CF_SERVICE_SSO_DIRECTORY_KEY_ID') == 'dev-key-1'
            and values.get('CF_SERVICE_SSO_DIRECTORY_SERVICE_ID') == 'cloudfile'))
     values = evaluate(load('_settings_block_sso', BASE_ENV)())
-    check('旧配置保持 migration legacy 默认，显式 v2 才切换',
+    check('目录机器认证默认 v2，避免缺省配置回退旧协议',
+          values.get('CF_SERVICE_SSO_DIRECTORY_AUTH_MODE') == 'v2')
+    values = evaluate(load('_settings_block_sso', dict(BASE_ENV, CF_SERVICE_SSO_DIRECTORY_AUTH_MODE='legacy'))())
+    check('旧协议仅允许显式选择',
           values.get('CF_SERVICE_SSO_DIRECTORY_AUTH_MODE') == 'legacy')
 
     # uid 与 email 取同一个 claim 时，身份语义优先：同一个 claim 只能

@@ -379,8 +379,9 @@ def _settings_block_sso():
         % get_conf('CF_SERVICE_SSO_DIRECTORY_URL', ''),
         'CF_SERVICE_SSO_DIRECTORY_SECRET = %r'
         % get_conf('CF_SERVICE_SSO_DIRECTORY_SECRET', ''),
+        # Keep image startup defaults aligned with Compose and the Hub sender.
         'CF_SERVICE_SSO_DIRECTORY_AUTH_MODE = %r'
-        % get_conf('CF_SERVICE_SSO_DIRECTORY_AUTH_MODE', 'legacy'),
+        % get_conf('CF_SERVICE_SSO_DIRECTORY_AUTH_MODE', 'v2'),
         'CF_SERVICE_SSO_DIRECTORY_KEY_ID = %r'
         % get_conf('CF_SERVICE_SSO_DIRECTORY_KEY_ID', ''),
         'CF_SERVICE_SSO_DIRECTORY_SERVICE_ID = %r'

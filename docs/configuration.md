@@ -159,3 +159,9 @@ HTTP transmits sessions, credentials and document bytes in cleartext.
 Restrict it to appropriately secured internal networks/VPNs and use HTTPS
 where feasible. External IdPs may independently require HTTPS callbacks.
 Do not open a new Chrome native operation to foreign page origins.
+
+## 目录机器认证默认 v2（2026-10-14）
+
+修改原因：Hub 的 SSO_DIRECTORY 请求、镜像启动配置生成、主服务与 worker 的 Compose 默认值统一为 `v2`，避免省略变量时恢复旧 Token。v2 使用 Bearer HS256，要求与 EAP 对应环境一致的 key-id、32 字节以上共享密钥和 service-id；认证失败直接报错，不自动降级。
+
+`CF_SERVICE_SSO_DIRECTORY_AUTH_MODE=legacy` 仍可显式连接旧接收端；其他外部服务的默认协议不受影响。当前先在 DEV 验证，PROD 镜像与运行配置尚未更新，须等 DEV 验收后发布。

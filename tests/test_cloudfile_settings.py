@@ -168,12 +168,40 @@ class CloudFileSettingsTest(unittest.TestCase):
             self.assertEqual(namespace["CLOUDFILE_WEBDAV_SERVICE_ENABLED"], expected)
             self.assertEqual(namespace["CLOUDFILE_CAPABILITIES"]["protocol.webdav"]["enabled"], expected)
 
-    def test_local_edit_routes_require_explicit_deployment_flag(self):
-        for value, expected in ((None, False), ("true", True), ("false", False)):
+    def test_local_edit_requires_complete_native_runtime_and_renders_adapters(self):
+        for value in (None, "false"):
             environment = {} if value is None else {"CLOUDFILE_LOCAL_EDIT_ENABLED": value}
-            namespace = {}
-            exec(CLOUDFILE.render_settings(environment), namespace)
-            self.assertEqual(namespace["CLOUDFILE_LOCAL_EDIT_ENABLED"], expected)
+            namespace = {}; exec(CLOUDFILE.render_settings(environment), namespace)
+            self.assertFalse(namespace["CLOUDFILE_LOCAL_EDIT_ENABLED"])
+            self.assertIsNone(namespace["CLOUDFILE_LOCAL_EDIT_INSTANCE"])
+            self.assertFalse(namespace["CLOUDFILE_AGENT2_OPTIMISTIC_UPLOAD_ENABLED"])
+        with self.assertRaisesRegex(ValueError, "local edit requires"):
+            CLOUDFILE.render_settings({"CLOUDFILE_LOCAL_EDIT_ENABLED": "true"})
+        environment = OIDCSettingsTest.environment()
+        environment.update(CLOUDFILE_LOCAL_EDIT_ENABLED="true", CLOUDFILE_LOCAL_EDIT_INSTANCE="https://files.example",
+            CLOUDFILE_RESOURCE_SECRET="s" * 32, CLOUDFILE_AGENT2_OPTIMISTIC_UPLOAD_ENABLED="true")
+        namespace = {}; exec(CLOUDFILE.render_settings(environment), namespace)
+        self.assertFalse(namespace["CLOUDFILE_EDITING_ENABLED"])
+        self.assertTrue(namespace["CLOUDFILE_LOCAL_EDIT_ENABLED"])
+        self.assertTrue(namespace["CLOUDFILE_AGENT2_OPTIMISTIC_UPLOAD_ENABLED"])
+        self.assertEqual(namespace["CLOUDFILE_RESOURCE_SECRET"], b"s" * 32)
+        self.assertTrue(callable(namespace["CLOUDFILE_RESOURCE_LIFECYCLE_READER"]))
+        self.assertTrue(callable(namespace["CLOUDFILE_LOCAL_EDIT_VERSION_READER"]))
+        for key in ("CLOUDFILE_OIDC_ENABLED", "CLOUDFILE_POLICY_CONFIG_JSON", "CLOUDFILE_POLICY_WORKER_HOOKS", "CLOUDFILE_RESOURCE_SECRET"):
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                CLOUDFILE.render_settings({k:v for k,v in environment.items() if k != key})
+        for origin in ("https://other.example", "https://files.example/seafile", "https://user:secret@files.example", "https://files.example:invalid", "https://files.example:", "https://files.example/#fragment"):
+            with self.subTest(origin=origin), self.assertRaises(ValueError):
+                CLOUDFILE.render_settings({**environment, "CLOUDFILE_LOCAL_EDIT_INSTANCE": origin})
+        for gate in ("CLOUDFILE_AGENT2_OPTIMISTIC_UPLOAD_ENABLED", "CLOUDFILE_AGENT2_EXCLUSIVE_ENABLED"):
+            with self.assertRaises(ValueError): CLOUDFILE.render_settings({gate:"true"})
+        with self.assertRaises(ValueError): CLOUDFILE.render_settings({**environment,"CLOUDFILE_AGENT2_EXCLUSIVE_ENABLED":"true"})
+        import json
+        oidc = json.loads(environment["CLOUDFILE_OIDC_CONFIG_JSON"])
+        for field in ("issuer", "authorization_url", "token_url", "userinfo_url", "jwks_url", "redirect_uri"):
+            oidc[field] = oidc[field].replace("https://", "http://")
+        rendered = CLOUDFILE.render_settings({**environment,"CLOUDFILE_LOCAL_EDIT_INSTANCE":"http://files.example", "CLOUDFILE_OIDC_CONFIG_JSON":json.dumps(oidc)})
+        self.assertIn("CLOUDFILE_LOCAL_EDIT_INSTANCE = 'http://files.example'",rendered)
 
     def test_editing_requires_stable_resource_secret_and_native_oidc(self):
         namespace = {}

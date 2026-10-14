@@ -26,3 +26,31 @@ Agent 用新设备签名查询原 Intent，不能以重新创建 Intent 来重�
 验收用例：正常 Commit/Checkin、工作文件再修改不影响捕获快照、摘要/大小错误、
 跨 Intent 凭据、过期凭据、设备撤销、会话取消、Checkout 过期/替换、版本冲突、
 重复请求、发布后响应丢失、同资源其他会话不能读取 Intent。
+
+
+## Device Agent Runtime Configuration
+
+Ordinary Agent uploads use `CLOUDFILE_LOCAL_EDIT_ENABLED=true` and
+`CLOUDFILE_AGENT2_OPTIMISTIC_UPLOAD_ENABLED=true`. They do not require enabling
+exclusive Checkout. The defaults remain false.
+
+A complete deployment also requires the native OIDC login host, a validated
+`CLOUDFILE_OIDC_CONFIG_JSON`, `CLOUDFILE_POLICY_CONFIG_JSON`,
+`CLOUDFILE_POLICY_WORKER_HOOKS=true`, and a stable `CLOUDFILE_RESOURCE_SECRET`
+of at least 32 bytes. Set `CLOUDFILE_LOCAL_EDIT_INSTANCE` to the browser's
+canonical HTTP/HTTPS origin, without `SITE_ROOT`. It must match the OIDC callback
+origin. The renderer supplies the native lifecycle and version adapters.
+These variables are passed to both app and worker services by Compose.
+
+Before enabling the routes, complete the applicable schema migrations and
+validate `cloudfile_extensions.schema check`. Do not enable flags over an old
+ledger or substitute manually created tables for verified migrations. Native
+OIDC requires disabling the legacy OAuth callback in that deployment; register
+the native callback path at the IdP before switching login. Preserve a working
+rollback configuration and validate upgrades in an isolated database first.
+
+`local.open-edit` is advertised only by a current, non-draining worker with the
+native login, policy, resource, device, session and read-ticket adapters assembled.
+A requested capability in settings cannot manufacture runtime readiness.
+This capability does not itself prove external IdP acceptance or a successful
+file publication; those remain deployment acceptance checks.

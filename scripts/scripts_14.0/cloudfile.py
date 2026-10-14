@@ -243,6 +243,35 @@ def render_settings(environment=None):
     if editing_enabled and (not _boolean(environment, "CF_ENABLE_FILE_LOCK", False) or
             environment.get("CF_LOCK_BACKEND", "cloudfile").lower() != "cloudfile"):
         raise ValueError("editing requires the CloudFile native file-lock barrier")
+    local_edit_instance = environment.get("CLOUDFILE_LOCAL_EDIT_INSTANCE", "")
+    optimistic_upload_enabled = _boolean(environment, "CLOUDFILE_AGENT2_OPTIMISTIC_UPLOAD_ENABLED", False)
+    exclusive_enabled = _boolean(environment, "CLOUDFILE_AGENT2_EXCLUSIVE_ENABLED", False)
+    if local_edit_enabled:
+        if (not oidc_enabled or policy_config is None or
+                not _boolean(environment, "CLOUDFILE_POLICY_WORKER_HOOKS", False) or
+                len(editing_secret.encode("utf-8")) < 32):
+            raise ValueError("local edit requires native OIDC, policy worker and a stable resource secret")
+        parsed = urlparse(local_edit_instance)
+        if (parsed.scheme not in ("http", "https") or not parsed.hostname or
+                parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment or
+                parsed.netloc != parsed.netloc.lower() or parsed.netloc.endswith(":") or
+                local_edit_instance != parsed.scheme + "://" + parsed.netloc or
+                any(ord(c) < 33 or ord(c) > 126 for c in local_edit_instance) or
+                any(c in local_edit_instance for c in "%\\") or len(local_edit_instance) > 255):
+            raise ValueError("local edit requires a canonical public HTTP/HTTPS origin without a path")
+        try:
+            if parsed.port is not None and not 1 <= parsed.port <= 65535:
+                raise ValueError()
+        except ValueError:
+            raise ValueError("local edit requires a valid public origin port") from None
+        # Device proof instances and browser sessions must share one deployment origin.
+        callback = urlparse(oidc_config["redirect_uri"])
+        if parsed.scheme != callback.scheme or parsed.netloc != callback.netloc:
+            raise ValueError("local edit origin must match the registered native OIDC callback")
+    if optimistic_upload_enabled and not local_edit_enabled:
+        raise ValueError("optimistic Agent upload requires local edit")
+    if exclusive_enabled and not (local_edit_enabled and editing_enabled):
+        raise ValueError("exclusive Agent edit requires local edit and editing")
     transfer_enabled = _boolean(environment, "CLOUDFILE_TRANSFER_ENABLED", False)
     audit_query_enabled = _boolean(environment, "CLOUDFILE_AUDIT_QUERY_ENABLED", False)
     audit_export_enabled = _boolean(environment, "CLOUDFILE_AUDIT_EXPORT_ENABLED", False)
@@ -286,6 +315,13 @@ def render_settings(environment=None):
         f"CLOUDFILE_WEBDAV_SERVICE_ENABLED = {webdav_enabled!r}",
         f"CLOUDFILE_AUTHORIZATION_ENABLED = {authorization_enabled!r}",
         f"CLOUDFILE_LOCAL_EDIT_ENABLED = {local_edit_enabled!r}",
+        f"CLOUDFILE_LOCAL_EDIT_INSTANCE = {local_edit_instance!r}" if local_edit_enabled else "CLOUDFILE_LOCAL_EDIT_INSTANCE = None",
+        f"CLOUDFILE_AGENT2_OPTIMISTIC_UPLOAD_ENABLED = {optimistic_upload_enabled!r}",
+        f"CLOUDFILE_AGENT2_EXCLUSIVE_ENABLED = {exclusive_enabled!r}",
+        ("def CLOUDFILE_LOCAL_EDIT_VERSION_READER(cursor, reference, evidence):\n"
+         "    from cloudfile_extensions.editing.runtime import native_file_version\n"
+         "    return native_file_version(cursor, reference, evidence)") if local_edit_enabled else
+            "CLOUDFILE_LOCAL_EDIT_VERSION_READER = None",
         f"CLOUDFILE_EDITING_ENABLED = {editing_enabled!r}",
         # Login and directory authority also use lifecycle-bound resources.
         # Preserve their configured key even when online editing is disabled;
@@ -296,7 +332,7 @@ def render_settings(environment=None):
          "    from cloudfile_extensions.resources.native import NativeResourceReader\n"
          "    from seaserv import seafile_api\n"
          "    return NativeResourceReader(seafile_api)(cursor, reference)")
-        if (editing_enabled or authorization_enabled or transfer_enabled or oidc_enabled) else
+        if (editing_enabled or local_edit_enabled or authorization_enabled or transfer_enabled or oidc_enabled) else
             "CLOUDFILE_RESOURCE_LIFECYCLE_READER = None",
         f"CLOUDFILE_TRANSFER_ENABLED = {transfer_enabled!r}",
         f"CLOUDFILE_AUDIT_QUERY_ENABLED = {audit_query_enabled!r}",

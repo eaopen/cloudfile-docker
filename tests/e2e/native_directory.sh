@@ -4,6 +4,9 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 workspace=$(cd "$here/../../.." && pwd)
 backend=${CF_NATIVE_BACKEND:-$workspace/cloudfile-docker/build/cloudfile_14.0/cloudfile-backend}
+# Explicit worktree roots keep native and Hub code from drifting during review.
+hub_root=${CF_NATIVE_HUB_ROOT:-$workspace/cloudfile-hub}
+server_root=${CF_NATIVE_SERVER_ROOT:-$workspace/cloudfile-server}
 image=${CF_NATIVE_BASE_IMAGE:-cloudfile-build-base:ce14-v2}
 server_bin=${CF_NATIVE_SERVER_BINARY:?Set CF_NATIVE_SERVER_BINARY to the newly built seaf-server}
 acl_lib=${CF_NATIVE_ACL_LIB_DIR:?Set CF_NATIVE_ACL_LIB_DIR to its shared library directory}
@@ -38,7 +41,7 @@ docker run --rm -d --name "$runtime" --network "$network" \
     -e SEAFILE_MYSQL_DB_USER=cf_lab -e SEAFILE_MYSQL_DB_PASSWORD=isolated-fixture-only \
     -e SEAFILE_MYSQL_DB_CCNET_DB_NAME=cf_lab_ccnet -e SEAFILE_MYSQL_DB_SEAFILE_DB_NAME=cf_lab_seafile \
     -v "$server_bin:/native/seaf-server:ro" -v "$acl_lib:/acl:ro" -v "$lab:/lab" -v "$backend:/backend:ro" \
-    -v "$workspace/cloudfile-hub:/hub:ro" -v "$workspace/cloudfile-server:/server:ro" \
+    -v "$hub_root:/hub:ro" -v "$server_root:/server:ro" \
     -v "$here:/tests:ro" "$image" sleep infinity >/dev/null
 ready=false
 for attempt in $(seq 1 90); do

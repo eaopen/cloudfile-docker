@@ -1,27 +1,35 @@
 # Directory authority schema
 
-`cf_dir_acl`, `cf_dir_admin` and `cf_dir_share` belong to the native Seafile
+`cf_dir_acl` and `cf_dir_admin` belong to the native Seafile
 database (`SEAFILE_MYSQL_DB_SEAFILE_DB_NAME`, normally `seafile_db`). Hub policy
 configuration must point to that same database. EAP never creates these tables.
 
-The Hub versioned schema runner is their sole DDL owner. Migrations 008/009/040
-create the three tables; 036/041 add pagination indexes. Do not add duplicate
+The Hub versioned schema runner is their sole DDL owner. Migrations 008/009 create the authority tables; 036/041 add pagination indexes.
+Migration 042 folds the historical 040 shares into ACLs and drops `cf_dir_share`. Do not add duplicate
 definitions to Server bootstrap SQL, Django migrations or EAP SQL. Existing
 migration checksums remain unchanged.
 
-All three share UUID identifiers, SHA-256 path/subject hashes, qualified subjects
+Both tables use UUID identifiers, SHA-256 path/subject hashes, qualified subjects
 (`subject_type`, `provider`, `namespace`, `external_id`) and revision tokens.
 The field types, nullability and collations are checked against the immutable
 creation DDL. Each table keeps its business-specific fields:
 
 | Table | Meaning |
 | --- | --- |
-| `cf_dir_acl` | Operation permission and inheritance |
+| `cf_dir_acl` | Operation permission, inheritance, sharing mode and lifecycle evidence |
 | `cf_dir_admin` | Delegated administration permission and inheritance |
-| `cf_dir_share` | Shared-directory discovery and default read qualification; lifecycle and creator facts |
 
-A share never creates an ACL row. Removing it never removes an ACL. Do not add
-`permission` to shares merely to make the three tables look identical.
+Sharing is an ACL attribute (`share_mode=1`), not a second grant. Compatibility
+share creation creates a read ACL or enables an existing ACL without changing its
+permission/inheritance. Disabling sharing retains the library ACL; deleting an
+ACL revokes both. Non-members require current sharing and lifecycle evidence.
+
+Existing share-only rows become inherited read ACLs. Overlapping rows retain ACL
+permissions, inheritance and ID, rotate the ACL revision and enable sharing.
+After validated conversion, `cf_dir_share` is dropped directly: no archive or
+independent share-table restoration. Migration 040's immutable checksum remains
+in the ledger, with its retired structure verified through migration 042.
+Interrupted conversion/drop can be resumed without recreating a live share table.
 
 ## Release procedure
 
@@ -41,7 +49,7 @@ The command uses the native database configuration and rejects a policy-host
 database mismatch. Normal startup does not perform this destructive layout
 transition. `--offline` is an operator assertion, not automatic process control.
 
-The bounded command only upgrades the five directory migrations, preserving
+The bounded command only upgrades the six directory migrations, preserving
 unrelated ledger entries. It is not a claim that the entire extension runtime
 has been upgraded: use the full schema `check` and API/byte-access regression
 gates before enabling a new policy host.

@@ -88,10 +88,12 @@ def write(name='file.txt'):
 
 def acl(permission):
     with tx() as q:
-        q.execute('DELETE FROM cf_dir_acl WHERE repo_id=%s',(repo,))
-        if permission:
-            values=(str(uuid4()),repo,'/folder',digest('/folder'),'dir','user','fixture','user','employee',ACLRules._subject_hash(recipient_subject),permission,1,str(uuid4()))
-            q.execute('INSERT INTO cf_dir_acl ('+ACLRules.FIELDS+') VALUES ('+','.join(['%s']*13)+')', values)
+        if permission is None:
+            q.execute('DELETE FROM cf_dir_acl WHERE repo_id=%s', (repo,))
+        else:
+            # Preserve the single ACL's sharing/lifecycle fields when editing permissions.
+            q.execute('UPDATE cf_dir_acl SET permission=%s,revision=%s WHERE repo_id=%s',
+                (permission, str(uuid4()), repo))
 
 original=ticket()
 r=fetch(original)
@@ -146,8 +148,11 @@ denied(ticket)
 assert fetch(before_deny).status_code!=200
 passed('explicit deny overrides share and previously issued ticket')
 acl(None)
-assert fetch(ticket()).content==tmp.read_bytes()
-passed('ACL deletion restores share readonly without synthetic ACL')
+denied(ticket)
+passed('ACL deletion also removes sharing qualification')
+with tx() as q:
+    share, _ = shares.create(q, ref, dict(path='/folder', subject=recipient_subject), actor='fixture-admin')
+assert fetch(ticket()).content == tmp.read_bytes()
 current=ticket()
 with tx() as q:
     shares.delete(q, ref, share['id'], if_match=share['etag'])
@@ -160,18 +165,22 @@ assert revoked_range.status_code not in (200, 206)
 passed('share revocation invalidates old and new native access')
 with tx() as q:
     stale, _ = shares.create(q, ref, dict(path='/folder', subject=recipient_subject), actor='fixture-admin')
-    q.execute('UPDATE cf_dir_share SET lifecycle_ref=%s WHERE id=%s', ('ce14:path-birth:'+'0'*40, stale['id']))
+    q.execute('UPDATE cf_dir_acl SET lifecycle_ref=%s WHERE id=%s', ('ce14:path-birth:'+'0'*40, stale['id']))
 denied(ticket)
 passed('stale directory lifecycle cannot authorize native access')
 with tx() as q:
     shares.delete(q, ref, stale['id'], if_match=stale['etag'])
 acl('rw')
+denied(ticket)
+passed('positive ACL cannot bypass disabled sharing')
+with tx() as q:
+    shares.create(q, ref, dict(path='/folder', subject=recipient_subject), actor='fixture-admin')
 assert fetch(ticket()).content==tmp.read_bytes()
-passed('independent ACL works after share revocation')
+passed('reenabling unified sharing restores current ACL access')
 with tx() as q:
     q.execute('UPDATE cf_lab_ccnet.EmailUser SET is_active=0 WHERE email=%s', (recipient,))
 denied(ticket)
-passed('inactive native account cannot use independent ACL')
+passed('inactive native account cannot use shared ACL')
 with tx() as q:
     q.execute('UPDATE cf_lab_ccnet.EmailUser SET is_active=1 WHERE email=%s', (recipient,))
 with tx() as q:

@@ -975,7 +975,7 @@ def write_seafile_env():
 def apply_cloudfile_schema():
     """Create legacy integration tables in seafile-db if they are missing.
 
-    Current cf_dir_acl/cf_dir_admin/cf_dir_share belong exclusively to the Hub
+    Current cf_dir_acl/cf_dir_admin belong exclusively to the Hub
     versioned schema runner. Use cloudfile-directory-schema.py for their
     explicit offline upgrade; IF NOT EXISTS cannot synchronize old layouts.
 

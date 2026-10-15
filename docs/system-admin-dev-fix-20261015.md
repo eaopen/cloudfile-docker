@@ -22,3 +22,18 @@ Hub：`4ced1faed`；Server：`af1c0ac`。Docker 本提交补齐 Compose 主服�
 候选镜像应使用已验证源 SHA，记录 Hub、Server、Docker 三仓及基线镜像摘要与文件校验值。原生二进制必须在匹配的 amd64 运行时工具链内编译并检查动态链接依赖；不复制 macOS/arm64 构建结果。GitHub 三仓检查及 Server `build-c` 成功后才切换 DEV。
 
 DEV 验收至少包含：ETech 两种真实身份 SSO 与 UID 核验、普通组织成员既有资料库读取、系统角色跨库资格、日常管理员无隐式全库读写、现有库管理员、文件上传/下载与目录共享。使用独立验收库和可识别的测试资源，已有业务权限不因验收而扩展。完整 v0.9 OIDC/传输通道若未配置依赖则维持关闭，不把该状态写成已验收。
+
+## DEV 已完成验收
+
+2026-10-15 19:22（北京时间）主服务与 worker 已切换到 `10.12.1.138:8041/cloudfile/cloudfile:14.0.0-cf-dev-hotfix-4ced1faed`，摘要 `sha256:2d120b3f7c9f4da77af1b7e889dc3447b735543c6581891581d619d6333ffd3b`。构建来源 Hub `4ced1faed`、Server `af1c0ac`、Docker `44450d9`；三仓 GitHub 共享检查、Server 完整 C 构建与 Go lint 均通过。镜像内 `/opt/seafile/system-admin-content-fix.json` 记录基线镜像和文件校验值，`system-admin-release.yaml` 固定原生组件 SHA。
+
+- 补充真实 MariaDB/C 策略回归 37 项通过；临时数据库已移除。
+- admin 与邓鹏现有 EAP 身份 SSO 均下发有效会话，工号/业务 UID 匹配；etech01 均正常返回 46 个根条目和 3 个子目录条目、权限 rw。
+- 独立验收库由另一账号拥有，system_admin 无逐库授权即可初始化浏览、创建目录、上传 53 字节测试文件并下载，内容校验一致。
+- 普通用户无库资格时根目录为 403；配置单目录 share_mode=1 后可以读取该目录，根目录仍为 403。
+- 新建的临时原生账号依次验证 system_admin 为 rw，daily_admin/default_admin/audit_admin 无隐式内容权限；daily_admin 后台 can_manage_library 保留；停用系统管理员被拒绝。临时账号及角色已清理。
+- 在验收库添加系统管理员专属 invisible 后，目录读取与上传链接均为 403；其他共享接收者仍能访问；测试拒绝规则移除后恢复 200。
+
+验收库 `ef56dc98-5ce8-41c2-a735-5b2415103d9b` 仅包含合成测试文件；既有业务库授权不变。完整原生 OIDC/传输通道仍按当前部署保持关闭，既有 HTTP OAuth、管理员策略和原生文件读写均已验证。回滚备份在 minio157 `/data/etech-infra/cloudfile-dev/release-backups/system-admin-4ced1faed-20261015-192217`。
+
+CI 证据：[Hub](https://github.com/eaopen/cloudfile-hub/actions/runs/38725730029)、[Server](https://github.com/eaopen/cloudfile-server/actions/runs/38725731735)、[Docker](https://github.com/eaopen/cloudfile-docker/actions/runs/38725714736)。

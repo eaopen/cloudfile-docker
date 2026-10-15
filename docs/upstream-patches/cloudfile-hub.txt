@@ -98,3 +98,5 @@ seahub/views/repo.py
 # CI 审计回归与显式交互调试，理由见 BRANCHING.md。
 .github/workflows/test.yml
 tests/seahub/views/file/test_file.py
+
+seahub/share/utils.py

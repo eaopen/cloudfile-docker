@@ -37,3 +37,11 @@ DEV 验收至少包含：ETech 两种真实身份 SSO 与 UID 核验、普通组
 验收库 `ef56dc98-5ce8-41c2-a735-5b2415103d9b` 仅包含合成测试文件；既有业务库授权不变。完整原生 OIDC/传输通道仍按当前部署保持关闭，既有 HTTP OAuth、管理员策略和原生文件读写均已验证。回滚备份在 minio157 `/data/etech-infra/cloudfile-dev/release-backups/system-admin-4ced1faed-20261015-192217`。
 
 CI 证据：[Hub](https://github.com/eaopen/cloudfile-hub/actions/runs/38725730029)、[Server](https://github.com/eaopen/cloudfile-server/actions/runs/38725731735)、[Docker](https://github.com/eaopen/cloudfile-docker/actions/runs/38725714736)。
+
+### 最终继承边界补充
+
+复核发现管理专用 `LibraryWideManagementAuthority` 继承内容读取类，因此用一个覆盖方法保留其原管理判定，防止收紧内容角色时影响标签、审计等后台管理。Hub `3c56df23a` 完整回归仍为 1535 passed、390 skipped，[GitHub 检查通过](https://github.com/eaopen/cloudfile-hub/actions/runs/38727865252)。
+
+19:33 DEV 主服务和 worker 已切换最终镜像 `14.0.0-cf-dev-hotfix-3c56df23a`，摘要 `sha256:b0996f6d57a7cb23f77b8b8e67da3429141f190e3e19c98f42b741ef8932da8c`。镜像源码为 Hub `3c56df23a`、Server `af1c0ac`、Docker `aab0d1a`（与前版 Docker 运行时代码相同，仅补验收文档）；Server 二进制沿用已通过完整构建的同一 SHA。
+
+最终版本再次验证两人 SSO 与 etech01 读取、系统角色与停用、ACL 拒绝和恢复均通过。现场真实 SQL 额外确认：daily_admin 的内容资格为 false，管理专用资格与原生后台能力一致为 true。临时账号和测试拒绝规则均已清理。最终切换前的独立回滚备份为 `/data/etech-infra/cloudfile-dev/release-backups/system-admin-final-3c56df23a-20261015-193316`；原始升级前备份继续保留。

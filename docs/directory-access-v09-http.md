@@ -111,3 +111,23 @@ bash tests/e2e/native_directory.sh
 共享入口先请求 shared-directories，再以返回目录为 shared_root 调用 directory-address/directory-entries；后续文件读取/写入使用新增 directory-access 路由。目录地址直达也可使用新增路由，URL 本身不生成资格。每个文件请求均按目标路径复核权限，不能访问未授权父目录或兄弟目录。
 
 统一 ACL 接口新增可选整数 `share_mode`（0/1）；非根目录可开启，库根和文件不得开启。新建省略时为 0，替换省略时保留已有值；界面新增目录规则默认选择 1。响应包含 share_mode 和由服务端生成的 lifecycle_ref，客户端不得提交生命周期证据。shares 接口作为同一 ACL 的兼容投影，共用 id/revision/etag；关闭共享只清除模式和证据，删除 ACL 则同时删除共享。
+
+## 多认证会话证明（2026-10-15）
+
+`read-tickets/` 与 `directory-access/read-tickets/` **同时接受原生 OIDC 会话和 Authentik 旧 OAuth
+浏览器会话**，客户端不需要额外参数、专用下载地址或不同的 API 前缀。Hub 按服务器端会话后端
+（`_auth_user_backend`）选择会话类型，不读客户端协议提示；两种会话都必须通过各自的签名会话
+校验、当前账户状态和 `Profile.login_id` 业务身份绑定，才能得到同一 `context.userId`。
+
+票据条件里携带 Server 可在签发与每次消费时复核的原生会话证明，二者互斥：
+
+| 认证方式 | 条件字段 | Server 复核 |
+| --- | --- | --- |
+| 原生 OIDC | `oidc_session`（`scope_hash`/`subject_hash`/`sid_hash`/`authenticated_at`/`session_key`） | `cf_oidc_session` 精确行、`cf_oidc_logout_fence`、`django_session` 存活 |
+| 旧 OAuth 浏览器会话 | `browser_session`（`session_key`） | `identity_database` 中未过期的 `django_session` 行（登出即删行） |
+
+两者都复用同一套 v0.9 scoped 终判、账户/业务身份锁、屏障与库资格检查；会话证明本身**不授予**
+任何权限，只证明"这条票据属于当前仍有效的登录会话"。票据一次性使用，消费后再按同一证明复查
+每个传输分块。不允许由 Hub 伪造 OIDC 会话、为某一种认证新增专用下载路由，或以省略会话证明的
+方式放宽 Server 终判。旧受管库下载兼容例外（`CloudFileAllowLegacyManagedReads`）与本次适配无关，
+历史下载入口全部迁移验证完成后才能删除。

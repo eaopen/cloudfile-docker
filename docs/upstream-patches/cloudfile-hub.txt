@@ -100,3 +100,4 @@ seahub/views/repo.py
 tests/seahub/views/file/test_file.py
 
 seahub/share/utils.py
+seahub/api2/endpoints/smart_link.py

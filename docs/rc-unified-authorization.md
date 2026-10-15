@@ -35,3 +35,20 @@ Prohibited shortcuts: never clear cf_managed_library, never remove legacyLibrary
 ## Completed separately
 
 Unused cf_dir_share data conversion was removed with immutable 040/042 DDL retained: Hub commit 720a622, Docker 491f9ff. Fourteen isolated MySQL 8 upgrade tests and both GitHub CI checks passed.
+
+## v0.9 directory-address and Internal Link increment (2026-10-15)
+
+The CloudFile-native OAuth adapter now exposes the same authenticated
+read-only shared-directories, directory-address and directory-entries
+endpoint shapes as the hosted policy adapter. Seafile existing Smart Link
+directory creation/token lookup reuses those scoped checks for users who
+cannot pass its original native repo permission; it adds root_path,
+initial_path and permission, without creating additional access grants.
+For plain CE access, the original Smart Link handler remains unchanged.
+See docs/v09-permission-and-internal-links.md for the permission contract.
+
+This is not a claim that clicking a legacy browser Smart Link from a user
+without whole-library membership renders the old Seafile library page, nor
+that the old managed-library upload/download transport guard is solved.
+The latter remains P0 and MUST keep fail-closed until native proof reaches
+its byte and final-publication check.

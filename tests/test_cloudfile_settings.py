@@ -155,6 +155,27 @@ class CloudFileSettingsTest(unittest.TestCase):
         self.assertIn("https://files.example.com/oauth/callback/", rendered)
         self.assertIn("'provider': 'authentik'", rendered)
 
+    def test_authentik_redirect_defaults_to_the_deployment_protocol(self):
+        # Same default as bootstrap.get_proto(): an unset SEAFILE_SERVER_PROTOCOL
+        # means HTTP. Generating an HTTPS redirect for an HTTP entry is what made
+        # the Hub mark sessionid/csrftoken Secure on Etech's HTTP deployment.
+        environment = {
+            "CLOUDFILE_AUTHENTIK_ENABLED": "true",
+            "CLOUDFILE_AUTHENTIK_URL": "http://auth.example.com",
+            "CLOUDFILE_AUTHENTIK_ALLOW_INSECURE": "true",
+            "CLOUDFILE_AUTHENTIK_CLIENT_ID": "cloudfile",
+            "CLOUDFILE_AUTHENTIK_CLIENT_SECRET": "secret",
+            "SEAFILE_SERVER_HOSTNAME": "files.example.com",
+        }
+        self.assertIn("OAUTH_REDIRECT_URL = 'http://files.example.com/oauth/callback/'",
+            CLOUDFILE.render_settings(environment))
+        with_letsencrypt = dict(environment, SEAFILE_SERVER_LETSENCRYPT="true")
+        self.assertIn("OAUTH_REDIRECT_URL = 'https://files.example.com/oauth/callback/'",
+            CLOUDFILE.render_settings(with_letsencrypt))
+        explicit = dict(environment, SEAFILE_SERVER_PROTOCOL="https")
+        self.assertIn("OAUTH_REDIRECT_URL = 'https://files.example.com/oauth/callback/'",
+            CLOUDFILE.render_settings(explicit))
+
     def test_authentik_requires_https_by_default(self):
         with self.assertRaises(ValueError):
             CLOUDFILE.render_settings({
@@ -172,6 +193,9 @@ class CloudFileSettingsTest(unittest.TestCase):
             "CLOUDFILE_AUTHENTIK_URL": "https://auth.example.com",
             "CLOUDFILE_AUTHENTIK_CLIENT_ID": "cloudfile",
             "CLOUDFILE_AUTHENTIK_CLIENT_SECRET": "example-only",
+            # The generated redirect now follows the deployment protocol like
+            # bootstrap.get_proto() does, so an HTTPS entry must say so.
+            "SEAFILE_SERVER_PROTOCOL": "https",
             "SEAFILE_SERVER_HOSTNAME": "files.example.com",
         }), namespace)
         self.assertTrue(namespace["ENABLE_OAUTH"])

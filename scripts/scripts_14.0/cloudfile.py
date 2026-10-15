@@ -168,9 +168,17 @@ def _authentik_settings(environment):
 
     redirect_url = environment.get("CLOUDFILE_AUTHENTIK_REDIRECT_URL", "").strip()
     if not redirect_url:
-        protocol = environment.get("SEAFILE_SERVER_PROTOCOL", "https").strip().lower()
+        # Same protocol resolution as bootstrap.get_proto(): an unset
+        # SEAFILE_SERVER_PROTOCOL means HTTP unless the deployment terminates
+        # TLS itself. Defaulting to HTTPS here made the generated OAuth redirect
+        # claim a scheme the deployment does not serve, and the Hub then marked
+        # sessionid/csrftoken Secure on an HTTP entry.
+        protocol = environment.get("SEAFILE_SERVER_PROTOCOL", "").strip().lower()
+        if protocol not in ("http", "https"):
+            protocol = ("https" if environment.get(
+                "SEAFILE_SERVER_LETSENCRYPT", "false").strip().lower() == "true" else "http")
         hostname = environment.get("SEAFILE_SERVER_HOSTNAME", "").strip().rstrip("/")
-        if protocol not in ("http", "https") or not hostname:
+        if not hostname:
             raise ValueError(
                 "set CLOUDFILE_AUTHENTIK_REDIRECT_URL or SEAFILE_SERVER_PROTOCOL and "
                 "SEAFILE_SERVER_HOSTNAME"

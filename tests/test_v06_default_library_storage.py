@@ -4,6 +4,7 @@ Read-only tests. Never starts containers, creates libraries or modifies data.
 Existing .env files are deliberately not consulted or changed.
 """
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -48,6 +49,22 @@ class StorageDefaultTests(unittest.TestCase):
             self.assertEqual(1, len(mounts), "one parent mount per process")
             self.assertEqual("rw", mounts[0].get("mode", "rw"))
         self.assertEqual(False, str(server["environment"]["CF_ENABLE_CHECKOUT"]).lower() == "true")
+
+
+    @unittest.skipUnless(shutil.which("docker"), "Docker Compose CLI not installed")
+    def test_policy_flags_reach_both_processes(self):
+        # .env values used to be silently dropped by Compose before bootstrap.
+        for value in ("false", "true"):
+            result = subprocess.run(
+                ["docker", "compose", "--env-file", ".env.example", "config", "--format", "json"],
+                cwd=ROOT, capture_output=True, text=True, timeout=30, check=True,
+                env={**os.environ, "CLOUDFILE_AUTHORIZATION_ENABLED": value,
+                     "CLOUDFILE_TRANSFER_ENABLED": value})
+            data = json.loads(result.stdout)
+            for name in ("cloudfile", "cf-worker"):
+                environment = data["services"][name]["environment"]
+                for key in ("CLOUDFILE_AUTHORIZATION_ENABLED", "CLOUDFILE_TRANSFER_ENABLED"):
+                    self.assertEqual(value, str(environment[key]).lower())
 
 
 if __name__ == "__main__":

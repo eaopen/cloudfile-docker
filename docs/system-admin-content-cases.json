@@ -1,0 +1,18 @@
+{
+  "cases": [
+    {"id": "system", "role": "system_admin", "active": true, "staff": true, "expected": true},
+    {"id": "native-default", "assigned": false, "active": true, "staff": true, "expected": true},
+    {"id": "daily-management-only", "role": "daily_admin", "active": true, "staff": true, "expected": false},
+    {"id": "legacy-role-not-promoted", "role": "default_admin", "active": true, "staff": true, "expected": false},
+    {"id": "audit", "role": "audit_admin", "active": true, "staff": true, "expected": false},
+    {"id": "unknown", "role": "unknown_admin", "active": true, "staff": true, "expected": false},
+    {"id": "empty-role", "role": "", "active": true, "staff": true, "expected": false},
+    {"id": "null-role", "role": null, "active": true, "staff": true, "expected": false},
+    {"id": "disabled-system", "role": "system_admin", "active": false, "staff": true, "expected": false},
+    {"id": "staff-revoked", "role": "system_admin", "active": true, "staff": false, "expected": false},
+    {"id": "system-capability-revoked", "role": "system_admin", "active": true, "staff": true, "overrides": {"system_admin": {"can_manage_library": false}}, "expected": false},
+    {"id": "daily-capability-not-content", "role": "daily_admin", "active": true, "staff": true, "overrides": {"daily_admin": {"can_manage_library": true}}, "expected": false},
+    {"id": "custom-capability-not-content", "role": "custom_admin", "active": true, "staff": true, "overrides": {"custom_admin": {"can_manage_library": true}}, "expected": false},
+    {"id": "malformed-overrides", "role": "system_admin", "active": true, "staff": true, "overrides": [], "expected": false}
+  ]
+}

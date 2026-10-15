@@ -121,6 +121,29 @@ CloudFile 扩展继续生效；PRO 许可限制创建衍生作品，长期应视
 
 ---
 
+## 5.1 「不可用」不是权限结论（2026-10-15）
+
+`cf_ext_check_permission` 的旧入口只有两个输出：权限字符串或 NULL。受管库走旧入口是
+**故意拒绝**，而策略运行时读不到权威数据（`cf_managed_library` schema 缺失/漂移、SQL/事务失败）
+也是拒绝——两者同一个 NULL，客户端因此把存储故障显示成「当前用户无权限」。
+
+现在的契约：
+
+| 层 | 行为 |
+|---|---|
+| provider（`cf_acl_apply`） | 拒绝时若原因是读不到权威数据，置 `gboolean *unavailable`；故意拒绝不置 |
+| `cf_policy_check_legacy_access_reason()` | 把「受管库边界」与「schema/SQL 不可用」分开报告；旧的无 out-param 版本保持原语义 |
+| `cf_ext_check_permission(..., unavailable)` | 入口清零并透传；仅当返回 NULL 且置位时由调用方转成明确错误 |
+| `seafile_check_permission_by_path` | NULL + unavailable → `g_set_error(SEAF_ERR_GENERAL)`，让 Hub 拿到 SearpcError 而不是空权限 |
+| Hub `check_folder_permission` | 仍然 fail closed 返回 None，只在请求上打标记 |
+| `cloudfile_extensions.permission_middleware` | 带标记请求的 403 改写为 `503 {"code":"POLICY_UNAVAILABLE"}` |
+
+这不是放宽权限：两条路径都仍然拒绝，改的只是对外可区分的错误。旧入口的 4 参数调用方、
+`cf_policy_check_legacy_access()` 的既有调用方和普通 CE 路径行为不变（登记表未注册任何
+provider 时 `cf_ext_check_permission` 仍是 `g_strdup(@native_perm)` 的透传）。
+
+---
+
 ## 6. 待实现（进入 P0）
 
 | # | 项 | 完成标准 |

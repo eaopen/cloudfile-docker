@@ -155,6 +155,15 @@ class CloudFileSettingsTest(unittest.TestCase):
         self.assertIn("https://files.example.com/oauth/callback/", rendered)
         self.assertIn("'provider': 'authentik'", rendered)
 
+    def test_permission_runtime_middleware_is_installed(self):
+        # P0-5: a permission-runtime failure must surface as 503, so the
+        # response-shaping middleware has to be part of the generated settings.
+        # EXTRA_MIDDLEWARE is appended to MIDDLEWARE by load_local_settings, so
+        # it must be a list, not a bare string.
+        rendered = CLOUDFILE.render_settings({})
+        self.assertIn("EXTRA_MIDDLEWARE = ['cloudfile_extensions.permission_middleware."
+            "CloudFilePermissionMiddleware']", rendered)
+
     def test_authentik_redirect_defaults_to_the_deployment_protocol(self):
         # Same default as bootstrap.get_proto(): an unset SEAFILE_SERVER_PROTOCOL
         # means HTTP. Generating an HTTPS redirect for an HTTP entry is what made

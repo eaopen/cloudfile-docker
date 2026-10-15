@@ -326,6 +326,11 @@ def render_settings(environment=None):
         BEGIN_MARKER,
         f"EXTRA_INSTALLED_APPS = list(dict.fromkeys(globals().get('EXTRA_INSTALLED_APPS', []) + {pprint.pformat(['cloudfile_extensions', *extension_apps], sort_dicts=True)}))",
         "SITE_ROOT_URLCONF = 'cloudfile_extensions.root_urls'",
+        # A permission-runtime failure inside check_folder_permission is marked
+        # on the request; this middleware answers 503 instead of publishing the
+        # deny-on-error as a false 403 "Permission denied." (EXTRA_MIDDLEWARE is
+        # appended to MIDDLEWARE by seahub's load_local_settings.)
+        "EXTRA_MIDDLEWARE = ['cloudfile_extensions.permission_middleware.CloudFilePermissionMiddleware']",
         f"CLOUDFILE_EXTENSION_URLCONFS = {pprint.pformat(urlconfs, sort_dicts=True)}",
         f"CLOUDFILE_CAPABILITIES = {pprint.pformat(capabilities, sort_dicts=True)}",
         f"CLOUDFILE_POLICY_CONFIG = {pprint.pformat(policy_config, sort_dicts=True)}",

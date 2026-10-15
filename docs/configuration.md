@@ -98,6 +98,20 @@ secret、三个 OAuth 端点和 provider 均为启动必填项；默认仅接受
 `CF_STORAGE_CLASSES_JSON`。只填写变量不会创建生产 bucket，也不会迁移已有资料库；
 详见[多存储与 S3](features/storage-backends.md)。
 
+存储的回退边界（2026-10-15 明确）：
+
+| 情况 | 行为 |
+| --- | --- |
+| 未提供多存储 overlay、`SEAF_SERVER_STORAGE_TYPE` 为空 | 使用原生本地磁盘；`CF_ENABLE_S3_STORAGE=true` 但未指定后端时只告警，不再阻断启动 |
+| 新建库、临时数据，没有明确的存储类绑定 | 使用本地磁盘（默认存储类指向 `seafile-data`） |
+| 已绑定存储类/目录的库，映射不可用（未知存储类、父挂载缺失） | 报明确存储错误，**不**回退到 `seafile-data`、也不新建目录 |
+
+不需要新的 fallback 开关：**是否存在有效的存储绑定**就是选择依据。C、Go fileserver
+与 seafobj 三层都只在"没有绑定记录"时取默认类；一旦有绑定而类不可解析就拒绝
+（`storage-backend-multi.c` / `backend_multi.go` / `seafobj/auto_local.py`）。
+`CF_STORAGE_CLASSES_JSON` 缺失/非法或后端值未知仍然 fail closed——那是运维明确声明的
+映射，半套配置比不启动更危险。
+
 ## 外部资料源配置
 
 `CF_ENABLE_EXTERNAL_SOURCES` 启用当前 `local-path` 外部资料源入口，
@@ -159,6 +173,26 @@ HTTP transmits sessions, credentials and document bytes in cleartext.
 Restrict it to appropriately secured internal networks/VPNs and use HTTPS
 where feasible. External IdPs may independently require HTTPS callbacks.
 Do not open a new Chrome native operation to foreign page origins.
+
+### Cookie 的 Secure 归属（2026-10-15）
+
+`SESSION_COOKIE_SECURE` / `CSRF_COOKIE_SECURE` 只由**部署实际使用的公共访问入口**决定，
+不再由新启用的原生 OIDC callback 单独推断（`cloudfile_extensions/identity/configuration.py`
+的 `public_browser_scheme()`）。原因：Etech 用 Authentik 旧 OAuth 走 HTTP，而原生 OIDC
+可能注册为 HTTPS；若按 callback 把 Cookie 置为 Secure，HTTP 浏览器会直接丢弃
+`sessionid`/`csrftoken`，表现为登录后立刻掉线。
+
+选择顺序：`CLOUDFILE_PUBLIC_URL`（显式声明，原样校验为 Scheme/Host[/Port]，不接受路径）
+→ 否则 `OAUTH_REDIRECT_URL` 与 OIDC `redirect_uri` 必须同为一种 scheme → 两者不一致时
+采用旧 OAuth 入口并打 warning（就是现有用户已经在用的入口）。两种登录入口都在 `SITE_ROOT`
+之下，共用同一条 Cookie 路径；HttpOnly、SameSite 与 CSRF 校验保持不变。
+
+`CLOUDFILE_PUBLIC_URL` 未声明时，生成的 `OAUTH_REDIRECT_URL` 必须与部署协议一致：由
+`SEAFILE_SERVER_PROTOCOL`（未设置时看 `SEAFILE_SERVER_LETSENCRYPT`，都没有则为 HTTP）
+与 `SEAFILE_SERVER_HOSTNAME` 派生，与 `bootstrap.get_proto()` 同一套规则。Authentik 预设的
+默认协议此前多写了一个 HTTPS（`cloudfile.py`），HTTP 部署必须显式
+`SEAFILE_SERVER_PROTOCOL=http`（或 `CLOUDFILE_AUTHENTIK_ALLOW_INSECURE=true` 才允许 HTTP redirect）。
+Authentik 身份提供方自身是 HTTPS 不受影响：部署 HTTP + IdP HTTPS 是受支持组合。
 
 ## 目录机器认证默认 v2（2026-10-14）
 

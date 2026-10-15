@@ -853,8 +853,18 @@ def write_cloudfile_seafile_conf():
     # fall back to the local filesystem.
     if cf_enabled('CF_ENABLE_S3_STORAGE'):
         storage_type = get_conf('SEAF_SERVER_STORAGE_TYPE', '').lower()
-        if storage_type not in ('s3', 'multiple'):
+        if storage_type and storage_type not in ('s3', 'multiple'):
             raise Exception('SEAF_SERVER_STORAGE_TYPE must be s3 or multiple when CF_ENABLE_S3_STORAGE=true')
+        if not storage_type:
+            # This switch also enables the optional local storage-class overlay,
+            # so it can be on with no explicit backend: a half-applied overlay,
+            # or an operator who only wanted the Hub-side storage API. No
+            # explicit backend means the native local disk. Refusing to start
+            # would take down a plain CE deployment that never used
+            # multi-storage; an explicitly declared but unknown value still
+            # fails closed above.
+            logwarning('CF_ENABLE_S3_STORAGE is on but SEAF_SERVER_STORAGE_TYPE is unset; '
+                       'using the native local disk and writing no [storage] section.')
         if storage_type == 'multiple':
             classes = get_conf('CF_STORAGE_CLASSES_JSON', '')
             if not classes:
@@ -881,34 +891,35 @@ def write_cloudfile_seafile_conf():
                            CF_BEGIN, CF_END, ''.join(lines))
             return
 
-        values = {
-            'bucket': None,
-            'key_id': get_conf('S3_KEY_ID', ''),
-            'key': get_conf('S3_SECRET_KEY', ''),
-            'host': get_conf('S3_HOST', ''),
-            'use_v4_signature': get_conf('S3_USE_V4_SIGNATURE', 'true'),
-            'aws_region': get_conf('S3_AWS_REGION', 'us-east-1'),
-            'use_https': get_conf('S3_USE_HTTPS', 'true'),
-            'path_style_request': get_conf('S3_PATH_STYLE_REQUEST', 'true'),
-            'connection_timeout': get_conf('CF_S3_CONNECTION_TIMEOUT', '10'),
-            'request_timeout': get_conf('CF_S3_REQUEST_TIMEOUT', '60'),
-            'max_retries': get_conf('CF_S3_MAX_RETRIES', '2'),
-        }
-        for name in ('key_id', 'key', 'host'):
-            if not values[name]:
-                raise Exception('S3_%s is required when CF_ENABLE_S3_STORAGE=true' % name.upper())
-        for section, env_name in (
-                ('commit_object_backend', 'S3_COMMIT_BUCKET'),
-                ('fs_object_backend', 'S3_FS_BUCKET'),
-                ('block_backend', 'S3_BLOCK_BUCKET')):
-            bucket = get_conf(env_name, '')
-            if not bucket:
-                raise Exception('%s is required when CF_ENABLE_S3_STORAGE=true' % env_name)
-            lines.append('\n[%s]\nname = s3\n' % section)
-            lines.append('bucket = %s\n' % bucket)
-            for name, value in values.items():
-                if name != 'bucket':
-                    lines.append('%s = %s\n' % (name, value))
+        if storage_type == 's3':
+            values = {
+                'bucket': None,
+                'key_id': get_conf('S3_KEY_ID', ''),
+                'key': get_conf('S3_SECRET_KEY', ''),
+                'host': get_conf('S3_HOST', ''),
+                'use_v4_signature': get_conf('S3_USE_V4_SIGNATURE', 'true'),
+                'aws_region': get_conf('S3_AWS_REGION', 'us-east-1'),
+                'use_https': get_conf('S3_USE_HTTPS', 'true'),
+                'path_style_request': get_conf('S3_PATH_STYLE_REQUEST', 'true'),
+                'connection_timeout': get_conf('CF_S3_CONNECTION_TIMEOUT', '10'),
+                'request_timeout': get_conf('CF_S3_REQUEST_TIMEOUT', '60'),
+                'max_retries': get_conf('CF_S3_MAX_RETRIES', '2'),
+            }
+            for name in ('key_id', 'key', 'host'):
+                if not values[name]:
+                    raise Exception('S3_%s is required when CF_ENABLE_S3_STORAGE=true' % name.upper())
+            for section, env_name in (
+                    ('commit_object_backend', 'S3_COMMIT_BUCKET'),
+                    ('fs_object_backend', 'S3_FS_BUCKET'),
+                    ('block_backend', 'S3_BLOCK_BUCKET')):
+                bucket = get_conf(env_name, '')
+                if not bucket:
+                    raise Exception('%s is required when CF_ENABLE_S3_STORAGE=true' % env_name)
+                lines.append('\n[%s]\nname = s3\n' % section)
+                lines.append('bucket = %s\n' % bucket)
+                for name, value in values.items():
+                    if name != 'bucket':
+                        lines.append('%s = %s\n' % (name, value))
 
     _replace_block(join(topdir, 'conf', 'seafile.conf'),
                    CF_BEGIN, CF_END, ''.join(lines))

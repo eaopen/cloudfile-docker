@@ -23,6 +23,7 @@ import ast
 import json
 import os
 import sys
+import tempfile
 import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -47,7 +48,7 @@ def _module_constant(tree, name):
     raise SystemExit('bootstrap.py 里找不到常量 %s' % name)
 
 
-def load(func_name, env):
+def load(func_name, env, extra=None):
     """把 bootstrap 里的一个函数按当前 .env 取出来执行。"""
     with open(BOOTSTRAP, encoding='utf-8') as fp:
         tree = ast.parse(fp.read())
@@ -79,6 +80,7 @@ def load(func_name, env):
         'CF_DEFAULT_ON': _module_constant(tree, 'CF_DEFAULT_ON'),
         'CF_FEATURE_SWITCHES': _module_constant(tree, 'CF_FEATURE_SWITCHES'),
     }
+    ns.update(extra or {})
     exec(compile(ast.Module(body=[node], type_ignores=[]), BOOTSTRAP, 'exec'), ns)
     return ns[func_name]
 
@@ -774,6 +776,53 @@ def test_office():
         check('下载上限为 0 时启动失败', True)
 
 
+def test_storage_config_guard():
+    """可选存储 overlay 缺失时走本地磁盘，明确声明的存储后端仍然 fail closed。"""
+    print('── write_cloudfile_seafile_conf')
+
+    def generated(env):
+        blocks = []
+        with tempfile.TemporaryDirectory() as directory:
+            os.makedirs(os.path.join(directory, 'conf'), exist_ok=True)
+            write = load('write_cloudfile_seafile_conf', env, extra={
+                'os': os, 'join': os.path.join, 'topdir': directory,
+                'CF_BEGIN': '# begin', 'CF_END': '# end',
+                '_seafile_conf_cloudfile_lines': lambda: ['[cloudfile]\n'],
+                '_replace_block': lambda path, begin, end, body: blocks.append(body),
+            })
+            write()
+        return ''.join(blocks)
+
+    # The switch also enables the optional local storage-class overlay, so it
+    # can be on with no explicit backend. That must not block a local-disk CE
+    # deployment, and it must write no [storage] section.
+    block = generated({'CF_ENABLE_S3_STORAGE': 'true'})
+    check('开关打开但未指定后端：不写 [storage]', '[storage]' not in block, repr(block))
+    check('开关打开但未指定后端：不启用多存储', 'name = multiple' not in block, repr(block))
+
+    # Explicitly declared backends stay fail closed: a half-written mapping is
+    # what would make an existing bound library read the wrong directory.
+    for name, env in (
+            ('multiple 缺存储类仍然拒绝', {'CF_ENABLE_S3_STORAGE': 'true',
+                'SEAF_SERVER_STORAGE_TYPE': 'multiple'}),
+            ('未知后端仍然拒绝', {'CF_ENABLE_S3_STORAGE': 'true',
+                'SEAF_SERVER_STORAGE_TYPE': 'legacy'}),
+            ('s3 缺凭据仍然拒绝', {'CF_ENABLE_S3_STORAGE': 'true',
+                'SEAF_SERVER_STORAGE_TYPE': 's3'})):
+        try:
+            generated(env)
+            check(name, False, '被接受了')
+        except Exception:
+            check(name, True)
+
+    classes = json.dumps([{'storage_id': 'legacy-default', 'is_default': True,
+        'commits': {'backend': 'fs', 'dir': '/shared/seafile/seafile-data'}}])
+    block = generated({'CF_ENABLE_S3_STORAGE': 'true',
+        'SEAF_SERVER_STORAGE_TYPE': 'multiple', 'CF_STORAGE_CLASSES_JSON': classes})
+    check('multiple 有存储类时写 [storage]', '[storage]' in block and
+        'name = multiple' in block, repr(block))
+
+
 def main():
     print(__doc__.splitlines()[0])
     print()
@@ -785,6 +834,7 @@ def main():
     test_office()
     test_fileop_seafile_conf()
     test_metadata_schema_compatibility()
+    test_storage_config_guard()
     print()
     if failures:
         print('\033[31m%d 项失败\033[0m' % len(failures))

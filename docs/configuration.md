@@ -104,13 +104,24 @@ secret、三个 OAuth 端点和 provider 均为启动必填项；默认仅接受
 | --- | --- |
 | 未提供多存储 overlay、`SEAF_SERVER_STORAGE_TYPE` 为空 | 使用原生本地磁盘；`CF_ENABLE_S3_STORAGE=true` 但未指定后端时只告警，不再阻断启动 |
 | 新建库、临时数据，没有明确的存储类绑定 | 使用本地磁盘（默认存储类指向 `seafile-data`） |
-| 已绑定存储类/目录的库，映射不可用（未知存储类、父挂载缺失） | 报明确存储错误，**不**回退到 `seafile-data`、也不新建目录 |
+| 已绑定存储类/目录的库，映射不可用（未知存储类、父挂载缺失、静态类目录缺失） | 报明确存储错误，**不**回退到 `seafile-data`、也不新建目录 |
 
 不需要新的 fallback 开关：**是否存在有效的存储绑定**就是选择依据。C、Go fileserver
 与 seafobj 三层都只在"没有绑定记录"时取默认类；一旦有绑定而类不可解析就拒绝
 （`storage-backend-multi.c` / `backend_multi.go` / `seafobj/auto_local.py`）。
 `CF_STORAGE_CLASSES_JSON` 缺失/非法或后端值未知仍然 fail closed——那是运维明确声明的
 映射，半套配置比不启动更危险。
+
+**静态类的目录必须已存在（2026-10-15 收紧）。** `<类目录>/storage/<kind>` 仍按需创建，
+但类目录本身不再被创建：自动类（`auto-local`）的父挂载原本就在创建子目录前
+`lstat` 校验，静态类却没有，于是"卷没挂上"会变成一个全新的空目录，所有对象都
+显示为缺失，而不是报出映射不可用。
+
+| 静态类目录缺失 | 行为 |
+| --- | --- |
+| 非默认类 | 启动时跳过该类并打警告（`seaf_warning` / `log.Printf`）；已绑定它的库仍走既有的 unknown-class 路径 fail closed，未绑定的库继续用默认类——**不阻断启动** |
+| 默认类 | 仍然 fail loud（`errClassDirUnavailable`），因为默认类缺失时未绑定的库也会被服务成空 |
+| 语法错误、后端名未知 | 仍然 fail closed，不与"目录缺失"混为一谈——否则一个拼写错误会被静默降级成缺类 |
 
 ## 外部资料源配置
 

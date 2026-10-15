@@ -13,8 +13,7 @@
 | CloudFile | CE 14 fork（`cloudfile-server` + `cloudfile-hub` + `cloudfile-docker`） | 新增能力走 `CF_ENABLE_*` 开关（**新增开关默认 `false`**；2026-09-22 起不依赖第三方的已验收能力默认 `true`，逐项见 `configuration.md`）。它是对 CE 的**扩展**：基线里存在不受开关约束的兼容与安全补丁，因此**不承诺"全关 = 原生 CE"**（该 P0 铁律 2026-09-22 废除）；对上游文件的改动以 `upstream-patches/*.txt` 登记为准 |
 
 能力状态与来源的权威文档：[功能矩阵](feature-matrix.md)（定位列：Pro 平替 / CE 补强 / 新应用扩展）。
-"Pro 逐项对标"的方法论见历史档 [Pro-对标-旧版](history/Pro-对标-旧版.md)——它教怎么把 Pro 卖点映射回 CE 源码，
-但其状态列已归档，当前状态一律以功能矩阵为准。
+核对各版本能力时，结合 [当前能力矩阵](feature-matrix.md)、上游公开文档与对应版本源码；旧对标过程不作为当前功能支持依据。
 
 ## 2. 一次判定的总模型：三层门控
 
@@ -22,9 +21,9 @@
 
 | 层 | 机制 | 怎么识别 | 证据位置 |
 |---|---|---|---|
-| ① CE 原生默认 | 上游 settings + 角色权限（role permissions） | 视图代码里的 `request.user.permissions.can_xxx()`；默认值在 `DEFAULT_ENABLED_ROLE_PERMISSIONS` | [`role_permissions/settings.py`](../../cloudfile-hub/seahub/role_permissions/settings.py)、[`base/accounts.py`](../../cloudfile-hub/seahub/base/accounts.py) |
+| ① CE 原生默认 | 上游 settings + 角色权限（role permissions） | 视图代码里的 `request.user.permissions.can_xxx()`；默认值在 `DEFAULT_ENABLED_ROLE_PERMISSIONS` | [`role_permissions/settings.py`](https://github.com/eaopen/cloudfile-hub/blob/dev/seahub/role_permissions/settings.py)、[`base/accounts.py`](https://github.com/eaopen/cloudfile-hub/blob/dev/seahub/base/accounts.py) |
 | ② CE 内的 Pro 门控 | `is_pro_version()` / `IS_PRO_VERSION`，按 license 开 | grep 即得全部点（命令见下节）；命中则该能力属 Pro 范畴 | 功能矩阵对应行的"上游策略" |
-| ③ CloudFile 扩展 | `CF_ENABLE_*`（默认 False）；影子端点；登记过的上游文件改动 | [`cloudfile_ext/features.py`](../../cloudfile-hub/cloudfile_ext/features.py)；改动登记 [`upstream-patches/`](upstream-patches/cloudfile-hub.txt) | [功能矩阵](feature-matrix.md)、[Hub 能力矩阵](../../cloudfile-hub/docs/CAPABILITIES.md) |
+| ③ CloudFile 扩展 | `CF_ENABLE_*`（默认 False）；影子端点；登记过的上游文件改动 | [`cloudfile_ext/features.py`](https://github.com/eaopen/cloudfile-hub/blob/dev/cloudfile_ext/features.py)；改动登记 [`upstream-patches/`](upstream-patches/cloudfile-hub.txt) | [功能矩阵](feature-matrix.md)、[Hub 能力矩阵](https://github.com/eaopen/cloudfile-hub/blob/dev/docs/CAPABILITIES.md) |
 
 两个经常反直觉的事实：
 
@@ -38,8 +37,8 @@
 | 想知道 | 看哪里 |
 |---|---|
 | 某能力当前状态、来源、是不是 Pro 平替 | [功能矩阵](feature-matrix.md)（唯一真相，勿引用归档文档的状态列） |
-| Hub/Web 层某开关背后 CE 复用了什么、Hub 新增了什么 | [Hub 能力矩阵](../../cloudfile-hub/docs/CAPABILITIES.md) |
-| 某 Pro 独占特性在 CE 源码里到底有没有 | [Pro-对标-旧版](history/Pro-对标-旧版.md) 的逐项映射 + 自己 grep 验证 |
+| Hub/Web 层某开关背后 CE 复用了什么、Hub 新增了什么 | [Hub 能力矩阵](https://github.com/eaopen/cloudfile-hub/blob/dev/docs/CAPABILITIES.md) |
+| 某 Pro 独占特性在 CE 源码里到底有没有 | [当前能力矩阵](feature-matrix.md)、上游公开文档与对应版本源码核验 |
 | CloudFile 相比上游改了哪些文件 | [`docs/upstream-patches/*.txt`](upstream-patches/cloudfile-hub.txt)（强制登记清单） |
 
 代码级命令：
@@ -59,7 +58,7 @@ grep -n "CF_ENABLE" cloudfile-hub/cloudfile_ext/features.py
 ## 4. API 差异怎么查
 
 1. **CloudFile 专属端点**：`/api/v2.1/cloudfile/*`（用户）与 `/api/v2.1/admin/cloudfile/*`（管理员），
-   全表（方法、认证、开关）在 [`cloudfile-hub/docs/API.md`](../../cloudfile-hub/docs/API.md)。
+   全表（方法、认证、开关）在 [`cloudfile-hub/docs/API.md`](https://github.com/eaopen/cloudfile-hub/blob/dev/docs/API.md)。
    功能关闭时这些端点 404 或不注册。
 2. **影子/解锁端点**：CloudFile 在原生路由上注册的 shadow（如 `/api2/search/` 解开上游 Pro gate、
    外部源的 `/api/v2.1/repos/*` 影子）。开关关闭时回落上游原生行为。
@@ -112,19 +111,19 @@ grep -n "CF_ENABLE" cloudfile-hub/cloudfile_ext/features.py
 ### 证据链
 
 1. **端点与门控**：公共资料库 = "inner pub repo"。创建端点是 `POST /api2/repos/public/`
-   （[`api2/views.py` `PubRepos.post`](../../cloudfile-hub/seahub/api2/views.py)，约 L1399），
+   （[`api2/views.py` `PubRepos.post`](https://github.com/eaopen/cloudfile-hub/blob/dev/seahub/api2/views.py)，约 L1399），
    第一步就是 `request.user.permissions.can_add_public_repo()`，不满足直接 403——
    该端点**不会**把公共库"降级"建成私人库。
-2. **权限判定**（[`base/accounts.py:373`](../../cloudfile-hub/seahub/base/accounts.py)）：
+2. **权限判定**（[`base/accounts.py:373`](https://github.com/eaopen/cloudfile-hub/blob/dev/seahub/base/accounts.py)）：
    `CLOUD_MODE`（默认 False）且非 MULTI_TENANCY → False；`is_staff`（管理员）→ 恒 True；
    否则查角色权限 `can_add_public_repo`。
-3. **上游默认值**：[`role_permissions/settings.py:33`](../../cloudfile-hub/seahub/role_permissions/settings.py)
+3. **上游默认值**：[`role_permissions/settings.py:33`](https://github.com/eaopen/cloudfile-hub/blob/dev/seahub/role_permissions/settings.py)
    里 default 角色的 `can_add_public_repo` 就是 **False**；`git show upstream/master` 同值。
    这是上游 Seafile 的默认行为，普通用户默认不能建公共库，与 CloudFile 无关。
 4. **git 证据**：`PubRepos` 类、`base/accounts.py`、`role_permissions/settings.py`、
    `api2/endpoints/shared_repos.py` 与 upstream/master diff 全部为空（命令见第四节）。
 5. **前端一致**：公共资料库页"新建"按钮由 `canAddPublicRepo` 控制渲染
-   ([`pages/app/main-panel/shared-with-all/index.js`](../../cloudfile-hub/frontend/src/pages/app/main-panel/shared-with-all/index.js)，
+   ([`pages/app/main-panel/shared-with-all/index.js`](https://github.com/eaopen/cloudfile-hub/blob/dev/frontend/src/pages/app/main-panel/shared-with-all/index.js)，
    值来自 `seahub/views/__init__.py` 注入的 `pageOptions`)。权限关闭时入口整个不出现。
 
 ### 两种真实原因与处理

@@ -41,7 +41,7 @@ SAML、LDAP、AD 等应先接入 Authentik。仓库虽保留 Seafile CE 的直�
 代码证据边界：[`bootstrap.py`](../../scripts/scripts_14.0/bootstrap.py) 的
 `_settings_block_sso()` 只生成 `ENABLE_OAUTH`、端点、client、scope、provider、redirect
 和 claim 映射；实际授权码登录由
-[`views.py`](../../../cloudfile-hub/seahub/oauth/views.py) 的 `OAuth2Session` 完成。两处代码
+[`views.py`](https://github.com/eaopen/cloudfile-hub/blob/dev/seahub/oauth/views.py) 的 `OAuth2Session` 完成。两处代码
 均没有 Authentik 专用分支。
 
 ## Authentik Provider 配置
@@ -116,9 +116,9 @@ Seahub 当前 `OAuth2Session` 调用没有生成或发送 `code_challenge`、`co
 不宣称 PKCE；不得在 Authentik 端把“要求 PKCE”设为本次接入的先决条件。state 已用于回调
 关联，但不能把它写成 PKCE 已实现。
 
-证据：[`views.py`](../../../cloudfile-hub/seahub/oauth/views.py)、
-[`backends.py`](../../../cloudfile-hub/seahub/oauth/backends.py)、
-[`cloudfile_ext/sso/`](../../../cloudfile-hub/cloudfile_ext/sso/) 和
+证据：[`views.py`](https://github.com/eaopen/cloudfile-hub/blob/dev/seahub/oauth/views.py)、
+[`backends.py`](https://github.com/eaopen/cloudfile-hub/blob/dev/seahub/oauth/backends.py)、
+[`cloudfile_ext/sso/`](https://github.com/eaopen/cloudfile-hub/tree/dev/cloudfile_ext/sso) 和
 [`bootstrap.py`](../../scripts/scripts_14.0/bootstrap.py)。
 
 > **限制：** bootstrap 当前没有暴露 `OAUTH_CREATE_UNKNOWN_USER`。首次登录自动建用户沿用

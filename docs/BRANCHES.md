@@ -34,7 +34,7 @@ python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_serve
 python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_hub.ref
 ```
 
-上游未发布 CE 14 分支或 CE 14 tag，因此未 fork 组件必须在 `release.yaml` 中锁定提交 SHA。当前基线结论见 [`overview.md`](overview.md)，完整决策过程在 [`history/`](history/README.md)。
+源码和 CE 发布锚点以 `release.yaml` 中锁定的引用为准，不沿用历史“未发布 CE 14 tag”的判断。当前基线见 [`overview.md`](overview.md)，内部决策过程另行归档。
 
 ## 能力合并门槛
 
@@ -84,7 +84,7 @@ docs/upstream-patches/cloudfile-docker.txt
 4. 运行快速检查、基线门禁和受影响能力门禁。
 5. 三仓评审通过后合入 `dev`；发布前将最终提交写入构建信息和清单。
 
-跟随上游时优先复用官方实现和独立镜像。只有官方组件不满足 CloudFile 的 CE 扩展需求时，才新增协议兼容实现或替换 provider；当前边界见 [`feature-matrix.md`](feature-matrix.md)，探针过程保存在 [`history/上游复用探针-旧版.md`](history/上游复用探针-旧版.md)。
+跟随上游时优先复用官方实现和独立镜像。只有官方组件不满足 CloudFile 的 CE 扩展需求时，才新增协议兼容实现或替换 provider；当前边界见 [`feature-matrix.md`](feature-matrix.md)。内部探针过程另行归档。
 
 ## 并发与跨仓协作
 
@@ -98,4 +98,4 @@ docs/upstream-patches/cloudfile-docker.txt
   git merge-base --is-ancestor feature/<name> dev
   ```
 
-旧排期、历史成本计数与 ACL 分支重建过程保留在 [`history/特性分支与持续维护-旧版.md`](history/特性分支与持续维护-旧版.md)，不作为当前操作依据。
+旧排期、历史成本计数与研发复盘归内部管理，不作为当前操作依据。

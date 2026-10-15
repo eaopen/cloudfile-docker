@@ -1,50 +1,36 @@
-[Product home / 面向使用者的产品入口](https://github.com/eaopen/cloudfile)
+# CloudFile 构建与部署文档
 
-# CloudFile 文档
+本仓维护构建、镜像、配置、部署、升级恢复以及跨层技术契约和验证入口。产品定位、公开路线、AI 方向和专业服务统一见 [CloudFile 产品文档](https://github.com/eaopen/cloudfile/blob/main/docs/README.md)。
 
-> 用途：当前文档入口与阅读顺序
-> 适用版本：Seafile CE 14 参考基线
-> 当前状态：有效
+## 安装与运行
 
-## 使用与运维
+| 入口 | 内容 |
+| --- | --- |
+| [Compose](../deploy/compose/README.md)、[部署](deployment.md) | 安装、profile、升级、备份与恢复 |
+| [配置](configuration.md)、[构建](docker-build.md)、[源码构建](../build/README.md) | 参数、配置生成、镜像和产物 |
+| [发布清单](../release.yaml)、[能力矩阵](feature-matrix.md) | 版本引用、逐项状态、适用限制与证据 |
+| [部署概览](overview.md)、[架构](architecture.md) | CE 14 基线、组件职责和数据边界 |
+| [分支规则](../BRANCHING.md)、[同步说明](BRANCHES.md)、[上游贡献](upstream-contribution.md) | 兼容、源码改动登记与维护 |
 
-| 文档 | 内容 |
-|---|---|
-| [项目概览](overview.md) | 基线、产品边界和事实口径 |
-| [当前架构](architecture.md) | 三仓职责、数据边界和故障隔离 |
-| [部署](deployment.md) | Compose 部署、升级、备份和恢复 |
-| [配置](configuration.md) | 环境变量、profile 和配置生成规则 |
-| [扩展能力矩阵](feature-matrix.md) | 每项能力的状态、来源、定位、证据和上游策略 |
+## 技术专题
 
-## 能力说明
+| 入口 | 内容 |
+| --- | --- |
+| [认证](features/sso-authentik.md)、[目录 ACL](acl-semantics.md)、[权限表](permission-tables.md) | 通用认证与跨层授权契约 |
+| [存储](features/storage-backends.md)、[自动分库目录](features/automatic-local-storage.md)、[RustFS](features/rustfs-storage.md) | 配置、迁移和后端兼容边界；RustFS 仍需完整业务 E2E |
+| [写入生命周期](fileop-lifecycle.md)、[本地应用](features/file-collaboration.md)、[设备编辑上传](device-edit-upload.md) | 写入、锁与本地工作流技术说明 |
+| [搜索](features/search.md)、[标签](features/tags.md)、[审计](features/audit.md) | 索引、属性及操作事实 |
+| [外部资料](features/external-sources.md)、[外部目录规划](features/external-directory-mount.md) | 来源、只读根与尚未支持范围 |
+| [AI 配置](features/seafile-ai.md)、[扩展点](EXTENSION-POINTS.md)、[版本差异排查](edition-differences.md) | 可选集成与开发维护参考 |
 
-| 文档 | 当前状态 |
-|---|---|
-| [Authentik 与企业认证](features/sso-authentik.md) | 部分完成；通用 OIDC 与组织映射已有，Authentik 端到端待验证 |
-| [多存储与 S3 兼容存储](features/storage-backends.md) | 部署与兼容性说明；具体后端支持以发行版本为准 |
-| [外部资料联邦与虚拟目录挂载](features/external-directory-mount.md) | 规划；拟拆分为独立项目，为 AI 和 CloudFile 提供不同消费接口；**不属于虚拟目录 v1** |
-| [Seafile AI 与外接 LLM](features/seafile-ai.md) | 验证中；复用官方 Seafile AI，外接配置模型 |
-| [目录 ACL 语义](acl-semantics.md) | 验证中；active-authority 故障与修订契约尚待跨层实现 |
-| [写入生命周期](fileop-lifecycle.md) | 验证中 |
-| [目录/文件操作日志](features/audit.md) | 验证中；已查询提交变更，完整操作与协议覆盖待补 |
-| [目录/文件标签机制](features/tags.md) | 验证中；CE 通路存在，当前门禁未验证目录/文件绑定闭环 |
-| [收藏对象 ID 化](features/favorites.md) | 验证中；收藏按对象 ID 跟随移动/重命名，旧记录无损回填，容器 E2E 待补 |
-| [检索](features/search.md) | 部分完成 |
-| [文件协作与本地应用](features/file-collaboration.md) | 部分完成 |
-| [外部资料源与虚拟目录挂载（v1 只读本地目录）](features/external-sources.md) | 部分完成 |
+机器可读共享用例 `acl-cases.json`、`fileop-cases.json` 及 `upstream-patches/` 登记保留原位。组件实现说明分别见 [Server](https://github.com/eaopen/cloudfile-server/blob/dev/doc/README.md)、[Hub](https://github.com/eaopen/cloudfile-hub/blob/dev/docs/README.md)、[Agent](https://github.com/eaopen/cloudfile-local-agent)、[浏览器扩展](https://github.com/eaopen/cloudfile-chrome-extension)。
 
-## 研发与决策
+## 文档边界
 
-| 文档 | 内容 |
-|---|---|
-| [版本差异说明](edition-differences.md) | CE/Pro/CloudFile 特性与 API 差异的判定模型、"行为不符预期"排查流程与案例登记 |
-| [上游贡献建议](upstream-contribution.md) | 可提交、拆分后提交和内部保留的改动 |
-| [路线图](roadmap.md) | 仅保留未完成项，不承诺日期 |
-| [权限表与权限模型](permission-tables.md) | 权限相关表清单、字段语义、口径决策与收敛路线 |
-| [分支与上游跟随](BRANCHES.md) | 当前分支、合并门槛和同步步骤 |
-| [扩展点清单](EXTENSION-POINTS.md) | Hub/Server 扩展点及消费者技术参考 |
-| [历史版本](history/README.md) | 被替代方案、旧规划和决策过程索引 |
+[路线图](roadmap.md) 仅导航到公开产品中心；[历史目录](history/README.md) 保留兼容入口，内部讨论和客户环境记录不在本仓归档。技术文档须注明适用版本，开发分支的配置不能冒充已发布兼容保证。
 
-`docs/upstream-patches/` 是上游修改登记，`acl-cases.json` 和
-`fileop-cases.json` 是机器可读契约，不属于导航正文。历史文档不作为当前配置或功能状态
-依据。
+## 迁移与兼容参考
+
+[扩展运行配置](../CLOUDFILE.md) · [历史资料迁移](features/local-migration.md) · [旧标签批处理](legacy-file-tags-batch.md) · [单文件编辑验证范围](../tests/e2e/EDITING_SINGLE_FILE.md)
+
+上述技术参考按各自版本使用；命令执行前核对适用条件，不从文档存在推导当前环境已验收。

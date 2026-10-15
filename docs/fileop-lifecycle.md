@@ -429,8 +429,8 @@ journal 一行一个事件，字段固定顺序、空值写 `-`：
 
 后半句是重点。上游 CE 的锁接口就是这么坏的：`check_file_lock()` 恒返回 false，
 随后调用不存在的 `seafile_api.lock_file` 抛 `AttributeError`，代码只捕获
-`SearpcError`，于是普通 rw 用户就能触发 500（旧问题记录见
-[历史功能清单](history/FEATURES-旧版.md)第 6 条）。被吞成 500 的拒绝对用户是
+`SearpcError`，于是普通 rw 用户就能触发 500。拒绝与错误传播的验证范围见
+[写入生命周期共享用例](fileop-cases.json)。被吞成 500 的拒绝对用户是
 “服务坏了”，对监控是噪声，对排查毫无信息。
 
 ### 8.4 基线关闭

@@ -9,7 +9,7 @@
 
 | 分支 | 用途 | 生命周期 |
 |---|---|---|
-| `dev` | 集成基线：扩展点、构建、部署和已验收能力；全部能力开关默认关闭 | 长期 |
+| `dev` | 集成基线：扩展点、构建、部署和已验收能力；新增能力开关默认关闭，已验收能力默认值见配置说明 | 长期 |
 | `feature/<name>` | 单个耦合能力簇 | 验收后合回 `dev` 并删除 |
 | `fix/<name>` | 独立缺陷修复 | 验证后合回 `dev` 并删除 |
 | `sync/upstream-YYYYMMDD` | 三仓同步上游的临时工作分支 | 同步与回归完成后删除 |
@@ -18,7 +18,7 @@
 
 ## 上游基线
 
-未 fork 组件按 `release.yaml` 的 `upstream` SHA 锁定；CloudFile fork 使用 `forks` 下的 URL/ref。上游未发布 CE 14 tag，不能用 Pro tag 代替 CE 基线。
+未 fork 组件按 `release.yaml` 的 `upstream` SHA 锁定；CloudFile fork 使用 `forks` 下的 URL/ref。CE 发布锚点由 `ce_anchor` 记录，不能用 Pro tag 代替 CE 基线。
 
 ```bash
 python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_server.ref
@@ -242,6 +242,12 @@ Node 24，容器固定 `24.21.0`。日历、SDoc 编辑器及锁文件采用上�
 扩展既有 `common/branch-mgr.c` 条件发布接缝：设备 `local_commit` 与网页登录
 `oidc_session` 分开校验；重复当前设备/会话/Checkout 检查，Branch、Intent 回执、
 签出及会话基线同事务更新。读用 `local_session` 仍拒绝写入。没有新增 HTTP 上游接缝。
+
+## 文档链接维护（2026-10-13）
+
+Server `README.markdown` 修复失效上游贡献链接、移除旧 Travis 徽章并明确 CloudFile 构建入口，已在 `docs/upstream-patches/cloudfile-server.txt` 登记。仅更新文档，不改上游许可或程序行为。
+
+公开文档语言拆分（2026-10-13）：Server 新增独立中英文产品入口，`README.markdown` 保留英文上游介绍及语言导航；该上游文件仍列于补丁登记清单。
 
 ### 2026-10-13 v0.9 目录资格原生接线
 

@@ -12,7 +12,7 @@
 - **基础环境**：APT、固定版本 Node 和镜像运行时 Python 包只在 `Dockerfile.base` 中安装；日常应用镜像构建不访问公网。
 - **源码依赖**：发行包首次构建仍会拉取清单记录的 Git 源码以及项目级 PyPI/npm 依赖；已有 `build/cloudfile_14.0/src/` 缓存时才可复用。第二个 deps 镜像暂不引入，避免在 MVP 阶段维护两套基线。
 
-Seafile 上游未发布 CE 14 分支、CE 14 tag 或 CE 14 镜像，因此本仓不能复用完整的官方 CE 14 发行包。所有上游组件提交与 CloudFile fork ref 都从 `release.yaml` 读取，不在脚本中写死。
+CloudFile 修改了 C/Go 服务端，因此需要构建自身发行包。CE 发布锚点和上游镜像配方已有记录，不再以“上游未发布 CE 14”作为自建原因；具体基线以 `release.yaml` 为准。所有上游组件提交与 CloudFile fork ref 都从 `release.yaml` 读取，不在脚本中写死。
 
 ## 前置条件
 

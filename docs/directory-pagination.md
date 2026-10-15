@@ -37,30 +37,30 @@ native `dirent_to_json` 固定返回 12 个 required 字段，无 optional 字�
 
 ### cloudfile-server
 
-- [.github/workflows/cloudfile-checks.yml](../../cloudfile-server/.github/workflows/cloudfile-checks.yml)
-- [README.testing.md](../../cloudfile-server/README.testing.md)
-- [common/cf-dir-page.c](../../cloudfile-server/common/cf-dir-page.c)
-- [common/cf-dir-page.h](../../cloudfile-server/common/cf-dir-page.h)
-- [common/rpc-service.c](../../cloudfile-server/common/rpc-service.c)
-- [include/seafile-rpc.h](../../cloudfile-server/include/seafile-rpc.h)
-- [python/seafile/rpcclient.py](../../cloudfile-server/python/seafile/rpcclient.py)
-- [python/seaserv/api.py](../../cloudfile-server/python/seaserv/api.py)
-- [server/Makefile.am](../../cloudfile-server/server/Makefile.am)
-- [server/repo-mgr.h](../../cloudfile-server/server/repo-mgr.h)
-- [server/repo-perm.c](../../cloudfile-server/server/repo-perm.c)
-- [server/seaf-server.c](../../cloudfile-server/server/seaf-server.c)
-- [tests/cf-dir-page/compile-fixture.py](../../cloudfile-server/tests/cf-dir-page/compile-fixture.py)
-- [tests/cf-dir-page/fixture.c](../../cloudfile-server/tests/cf-dir-page/fixture.c)
-- [tests/cf-dir-page/run.sh](../../cloudfile-server/tests/cf-dir-page/run.sh)
-- [tests/cf-dir-page/test-pages.py](../../cloudfile-server/tests/cf-dir-page/test-pages.py)
-- [tests/cf-permission-many/build-native-inner.sh](../../cloudfile-server/tests/cf-permission-many/build-native-inner.sh)：同步复制分页依赖，保证已有 native 联测构建使用完整的当前 RPC 源码。
+- [.github/workflows/cloudfile-checks.yml](https://github.com/eaopen/cloudfile-server/blob/dev/.github/workflows/cloudfile-checks.yml)
+- [README.testing.md](https://github.com/eaopen/cloudfile-server/blob/dev/README.testing.md)
+- [common/cf-dir-page.c](https://github.com/eaopen/cloudfile-server/blob/dev/common/cf-dir-page.c)
+- [common/cf-dir-page.h](https://github.com/eaopen/cloudfile-server/blob/dev/common/cf-dir-page.h)
+- [common/rpc-service.c](https://github.com/eaopen/cloudfile-server/blob/dev/common/rpc-service.c)
+- [include/seafile-rpc.h](https://github.com/eaopen/cloudfile-server/blob/dev/include/seafile-rpc.h)
+- [python/seafile/rpcclient.py](https://github.com/eaopen/cloudfile-server/blob/dev/python/seafile/rpcclient.py)
+- [python/seaserv/api.py](https://github.com/eaopen/cloudfile-server/blob/dev/python/seaserv/api.py)
+- [server/Makefile.am](https://github.com/eaopen/cloudfile-server/blob/dev/server/Makefile.am)
+- [server/repo-mgr.h](https://github.com/eaopen/cloudfile-server/blob/dev/server/repo-mgr.h)
+- [server/repo-perm.c](https://github.com/eaopen/cloudfile-server/blob/dev/server/repo-perm.c)
+- [server/seaf-server.c](https://github.com/eaopen/cloudfile-server/blob/dev/server/seaf-server.c)
+- [tests/cf-dir-page/compile-fixture.py](https://github.com/eaopen/cloudfile-server/blob/dev/tests/cf-dir-page/compile-fixture.py)
+- [tests/cf-dir-page/fixture.c](https://github.com/eaopen/cloudfile-server/blob/dev/tests/cf-dir-page/fixture.c)
+- [tests/cf-dir-page/run.sh](https://github.com/eaopen/cloudfile-server/blob/dev/tests/cf-dir-page/run.sh)
+- [tests/cf-dir-page/test-pages.py](https://github.com/eaopen/cloudfile-server/blob/dev/tests/cf-dir-page/test-pages.py)
+- [tests/cf-permission-many/build-native-inner.sh](https://github.com/eaopen/cloudfile-server/blob/dev/tests/cf-permission-many/build-native-inner.sh)：同步复制分页依赖，保证已有 native 联测构建使用完整的当前 RPC 源码。
 
 ### cloudfile-hub
 
-- [.github/workflows/cloudfile-checks.yml](../../cloudfile-hub/.github/workflows/cloudfile-checks.yml)
-- [cloudfile_ext/directory_page.py](../../cloudfile-hub/cloudfile_ext/directory_page.py)
-- [cloudfile_ext/tests/test_directory_page.py](../../cloudfile-hub/cloudfile_ext/tests/test_directory_page.py)
-- [seahub/api2/endpoints/dir.py](../../cloudfile-hub/seahub/api2/endpoints/dir.py)
+- [.github/workflows/cloudfile-checks.yml](https://github.com/eaopen/cloudfile-hub/blob/dev/.github/workflows/cloudfile-checks.yml)
+- [cloudfile_ext/directory_page.py](https://github.com/eaopen/cloudfile-hub/blob/dev/cloudfile_ext/directory_page.py)
+- [cloudfile_ext/tests/test_directory_page.py](https://github.com/eaopen/cloudfile-hub/blob/dev/cloudfile_ext/tests/test_directory_page.py)
+- [seahub/api2/endpoints/dir.py](https://github.com/eaopen/cloudfile-hub/blob/dev/seahub/api2/endpoints/dir.py)
 
 ### cloudfile-docker
 

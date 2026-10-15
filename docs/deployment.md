@@ -7,8 +7,7 @@
 ## 前提
 
 - Linux 主机与 Docker Compose v2；镜像架构必须与主机一致。
-- **双架构约定：生产 amd64，本地（Apple Silicon）测试 arm64。** 构建脚本按宿主
-  自动选架构（见下），生产 amd64 镜像在 CI（amd64 原生）出，本地 mac 只出 arm64。
+- 构建默认跟随宿主架构；部署与镜像架构须一致。跨架构构建需单独验证，不能将 Apple Silicon 本地测试视为 amd64 实机验收。
 - 可解析的 `SEAFILE_SERVER_HOSTNAME`，以及持久化目录的备份策略。
 - 生产环境不得沿用 `.env.example` 中的示例密码、MinIO 凭据或 API key。
 
@@ -22,39 +21,16 @@ docker-build）共享的架构唯一来源。默认跟随宿主、原生优先�
 | macOS Apple Silicon | `linux/arm64` | 原生快；Rosetta 2 终端也正确判回 arm64 |
 | macOS Intel / Linux x86_64 | `linux/amd64` | 原生 |
 | Linux aarch64 | `linux/arm64` | 原生 |
-| Windows（Docker Desktop） | `linux/amd64` | Linux VM 是 amd64 |
+| Windows（Docker Desktop） | 以 Docker Linux VM 架构为准 | 核对目标架构后构建 |
 
 `CF_PLATFORM` 在任何脚本上覆盖自动检测（只收 `linux/amd64`/`linux/arm64`）。
-跨架构构建（mac 上出 amd64）走 QEMU 模拟，C 编译慢 5~10 倍，仅用于验证，不用于发布。
+跨架构构建可能使用 QEMU 模拟；耗时取决于环境。正式发行应在目标架构验证。
 
-## dev162 手工构建与推送 Nexus
+## 构建与镜像仓库
 
-在 dev162 的 `/data/workspace/cloudfile/cloudfile-docker` 运行；三个仓库需并排放置，
-且工作区无未提交改动。脚本按 `release.yaml` 核对 Server/Hub 分支，拉取最新提交，
-基础镜像缺失时从 Nexus 恢复，然后编译发行包、构建 amd64 应用镜像、验证产物，
-最后推送到 Nexus。若三个仓库的相关源码、发行包及本地镜像均未变化，则复用已有
-构建；若 Nexus 上该标签指向相同镜像，则跳过推送。版本由命令参数指定，不复用
-`latest` 标签。
+通用构建步骤见 [构建说明](../build/README.md)。按 `release.yaml` 固定来源与目标架构，验证产物后再推送自己的镜像仓库；使用不可变版本或 digest，不以 `latest` 作为升级依据。
 
-```bash
-./tools/release-dev162.sh 14.0.0-cf.1
-```
-
-已有同版本镜像只需推送时，可跳过拉取和编译；只编译、不推送则使用 `build`：
-
-```bash
-./tools/release-dev162.sh 14.0.0-cf.0 push
-./tools/release-dev162.sh 14.0.0-cf.1 build
-```
-
-默认目标是 `10.12.1.138:8041/cloudfile/cloudfile:<版本>`，可用
-`CF_NEXUS_REGISTRY` 覆盖 Registry 地址。推送使用当前用户已有的 Docker 登录凭据；
-缺凭据时先在终端运行 `docker login 10.12.1.138:8041`，不要把密码写进脚本。
-如需强制重新编译，设置 `CF_FORCE_REBUILD=1`。脚本默认使用 dev162 已验证可访问的 Python、npm 和 Go 镜像源，分别可通过
-`PIP_INDEX_URL`、`npm_config_registry`、`GOPROXY` 覆盖；`CF_BUILD_JOBS` 默认 16。
-构建产物留在 `build/cloudfile_14.0/`，由 Git 忽略，不提交到源码仓库。
-
-dev 镜像的产物校验按 `release.yaml` 当前输入解算实际 commit，并把独立的不可变源码清单与包内字节摘要写入 `cloudfile-build.json`；上游 annotated tag 解算到其 commit。既有 `build/seafile_14.0/release.json` 保留原发布证据，不限制 dev 必须复用旧源码，也不因 dev 构建而被更新。源码不符或包内字节变化仍拒绝组装；Git 校验使用工作目录参数，兼容 dev162 的 Git 1.8。容器编译完成后仅将所选发行包的属主交回调用用户，确保非 root 用户也能写入 provenance；构建缓存与其它版本发行包不受影响。
+`tools/release-dev162.sh` 是带历史环境默认值的发布辅助脚本。若复用它，必须显式设置 `CF_NEXUS_REGISTRY`、核对基础镜像和依赖源，不能直接使用默认目标。它可能拉取源码、编译和推送；不是只读验证命令。具体环境地址、凭据与发布记录在私有运维资料维护。
 
 ## 启动核心栈
 
@@ -73,7 +49,7 @@ docker compose ps
 docker compose logs -f cloudfile
 ```
 
-核心栈包括 `cloudfile`、`db`、`cache` 和 `proxy`。首次启动会初始化数据库与 Seafile
+默认栈包括 `cloudfile`、`db`、`cache`、`proxy`、`cf-worker` 和 `cloudfile-metadata`。首次启动会初始化数据库与 Seafile
 配置；`scripts/scripts_14.0/start.py` 在每次启动时重写带 `CF_BEGIN`/`CF_END` 标记的
 CloudFile 配置块，并幂等应用 `cloudfile.sql`。
 
@@ -81,14 +57,16 @@ CloudFile 配置块，并幂等应用 `cloudfile.sql`。
 
 | profile | 服务 | 使用条件 |
 |---|---|---|
-| `s3` | `minio`、`minio-init` | 仅本地 MinIO 集成验证；生产通常连接外部 S3 |
+| `s3` | `rustfs`、`rustfs-init` | 当前 RustFS 特性分支的可选服务；完整业务 E2E 待验收 |
+| `minio` | `minio`、`minio-init` | 兼容 MinIO；旧部署升级须核对 profile 名称 |
 | `search` | `seasearch`、`meilisearch` | 需设置检索开关并选择实际 provider |
-| `metadata` | `cloudfile-metadata` | 已进默认栈（2026-09-22 起 METADATA/TAGS 默认开）；14.x 只有 `-testing` 镜像，tag 必须单独验收 |
+| 默认服务，无独立 profile | `cloudfile-metadata` | 按配置选择镜像；核对 metadata 与 Hub 的 JWT 及版本兼容 |
 | `office` | `onlyoffice` | 需启用对应协作能力和稳定 JWT 密钥 |
 | `convert` | `seadoc` | 需启用转换/导出并配置 JWT |
-| `worker` | `cf-worker` | 已进默认栈（2026-09-22 起）：目录 ACL 迁移/同步、组织同步、索引等周期任务 |
+| 默认服务，无独立 profile | `cf-worker` | 运行已配置的目录、组织、索引等周期任务 |
 | `ai` | `seafile-ai` | 复用官方 Seafile AI 并外接 LLM；当前为验证中，不代表全链路已验收 |
-| `full` | 多个可选服务 | 只启动服务；不会自动把所有功能标记为已验证 |
+| `migration` | `cf-migration` | 按迁移说明提供来源、目标和受限凭据 |
+| `full` | search、office、convert、ai 对应服务 | 不含 s3/minio/migration；不会自动证明能力可用 |
 
 示例：
 
@@ -122,7 +100,7 @@ docker compose up -d      # 核心栈，已含 cf-worker 与 cloudfile-metadata
 
 - MariaDB 中的 `ccnet_db`、`seafile_db`、`seahub_db`；
 - `data/seafile/` 中的配置、密钥、日志和本地对象；
-- S3/MinIO 的 commit、FS、block 三类 bucket；
+- 所选 S3 后端的 commit、FS、block 三类 bucket；
 - 可选组件自己的数据目录和密钥。
 
 > **警告：** 只复制 `data/db/` 与 `data/seafile/` 不能覆盖外部 S3、MinIO、

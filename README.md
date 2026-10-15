@@ -1,39 +1,31 @@
-[CloudFile product home / 产品总入口](https://github.com/eaopen/cloudfile) · [English](https://github.com/eaopen/cloudfile/blob/main/README.md) · [简体中文](https://github.com/eaopen/cloudfile/blob/main/README.zh-CN.md)
-
-<!-- generated-by: gsd-doc-writer -->
 # CloudFile Docker
 
-> **用途**：提供 CloudFile 的源码构建、镜像、Compose 部署、发布清单与跨仓规格入口。
-> **适用版本**：CloudFile `14.0.0-cf.0`，基于 Seafile CE 14 源码重构。
-> **状态**：当前有效；发布组件 ref 与版本以 [`release.yaml`](release.yaml) 为唯一真相。
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-CloudFile Docker 面向需要在 Seafile CE 14 基础上部署企业扩展能力的开发和运维团队；本仓不承载 Seahub 或 seaf-server 业务实现，而是负责把三个 CloudFile 仓库构建、打包并部署为可验证的系统。
+Source builds, images, Compose deployment, release manifests and shared technical contracts for CloudFile, based on Seafile CE 14. The build version described here is `14.0.0-cf.0`; [`release.yaml`](release.yaml) is the authority for component refs and versions.
 
-CloudFile 面向客户和使用者的产品总入口为 [eaopen/cloudfile](https://github.com/eaopen/cloudfile)。
-本仓是构建、部署、发布与跨仓技术规格的维护位置。当前架构、部署、配置、能力状态、路线图和
-上游贡献建议统一维护在 [`docs/`](docs/README.md)；代码、配置、测试与 `release.yaml` 的证据
-优先于规划文档，历史稿不作为当前功能说明。
+This repository packages CloudFile Server and Hub for deployment. Product guidance and plans live in the [CloudFile product documentation](https://github.com/eaopen/cloudfile/blob/main/docs/en/README.md). Technical references linked here are currently maintained in Chinese unless indicated otherwise; feature support follows the selected release.
 
-## 项目组成
+## Components
 
-| 项目 | 职责 | 文档入口 |
-|---|---|---|
-| `cloudfile-server` | Seafile Server fork；权限终判、写入生命周期和存储扩展 | [`../cloudfile-server/doc/README.md`](../cloudfile-server/doc/README.md) |
-| `cloudfile-hub` | Seahub fork；Web/API、扩展注册和能力界面 | [`../cloudfile-hub/docs/README.md`](../cloudfile-hub/docs/README.md) |
-| `cloudfile-docker` | 构建、镜像、部署、跨仓规格、文档与发布清单 | [`docs/README.md`](docs/README.md) |
-| `cloudfile-local-agent` | 本地查看与编辑的 Native Messaging Host | [`../cloudfile-local-agent/README.md`](../cloudfile-local-agent/README.md) |
-| `cloudfile-chrome-extension` | 浏览器与本地 Agent 之间的受限桥接 | [`../cloudfile-chrome-extension/README.md`](../cloudfile-chrome-extension/README.md) |
-| `seafile`、`seafobj` | 上游依赖检出，不属于 CloudFile 扩展能力实现 | 各上游仓库 README |
+| Project | Responsibility | Documentation |
+| --- | --- | --- |
+| `cloudfile-server` | Seafile Server fork; permission enforcement, write lifecycle and storage | [Server](https://github.com/eaopen/cloudfile-server/blob/dev/README.md) |
+| `cloudfile-hub` | Seahub fork; Web/API, extension registration and UI | [Hub](https://github.com/eaopen/cloudfile-hub/blob/dev/README.md) |
+| `cloudfile-docker` | Builds, images, deployment, shared contracts and release manifests | [Technical index (Chinese)](docs/README.md) |
+| `cloudfile-local-agent` | Native Messaging Host for local viewing and editing | [Agent](https://github.com/eaopen/cloudfile-local-agent/blob/dev/README.md) |
+| `cloudfile-chrome-extension` | Restricted bridge between the browser and Agent | [Extension](https://github.com/eaopen/cloudfile-chrome-extension/blob/dev/README.md) |
+| `seafile`, `seafobj` | Upstream dependencies, not CloudFile extension implementations | Their upstream README files |
 
-## 边界
+## Scope
 
-- **复用 Seafile CE**：资料库、同步、WebDAV、分享、预览，以及 CE 源码中已有的 LDAP/SAML/OIDC、OnlyOffice、metadata 和 AI 接口。
-- **CloudFile 新增**：扩展注册、目录 ACL、组织映射、审计、可替换检索、多存储、外部资料源、写入生命周期，以及对应构建和门禁。
-- **外部组件**：MariaDB、Redis、Caddy、SeaSearch、Meilisearch、Metadata Server、seafile-ai、OnlyOffice、SeaDoc 和对象/文件存储；其许可证、容量、备份和可用性由部署方负责。
+- Reuse Seafile CE libraries, synchronization, WebDAV, sharing, previews and the LDAP/SAML/OIDC, OnlyOffice, metadata and AI interfaces present in its source.
+- CloudFile adds extension registration, directory ACLs, organization mapping, auditing, replaceable search, multiple storage classes, external sources, write lifecycle support and corresponding build checks.
+- External services include MariaDB, Redis, Caddy, SeaSearch, Meilisearch, Metadata Server, seafile-ai, OnlyOffice, SeaDoc and storage. Operators manage their licenses, capacity, backups and availability.
 
-CloudFile 包含自有服务端扩展，因此按 [`release.yaml`](release.yaml) 锁定源码并自建 CE 14 发行包和镜像。当前结论见 [`docs/overview.md`](docs/overview.md)，完整决策过程已归档。
+CloudFile builds its own CE 14 packages and images from manifest-pinned sources to include its server extensions. See the [technical overview (Chinese)](docs/overview.md).
 
-## 快速部署
+## Quick Deployment
 
 ```bash
 git clone https://github.com/eaopen/cloudfile-docker.git
@@ -41,7 +33,7 @@ cd cloudfile-docker/deploy/compose
 cp .env.example .env
 ```
 
-修改 `.env` 中的主机名、管理员密码和数据库密码，然后：
+Set the hostname, administrator password and database password in `.env`, then run:
 
 ```bash
 docker compose config --quiet
@@ -49,48 +41,46 @@ docker compose up -d
 docker compose logs -f cloudfile
 ```
 
-新增能力开关默认关闭；各项默认值以所选发行版本配置为准。可选 profile、能力开关、TLS、数据目录和备份边界见 [`deploy/compose/README.md`](deploy/compose/README.md)。
+New capability flags default to disabled; consult the selected release for actual defaults. See the [Compose guide (Chinese)](deploy/compose/README.md) for optional profiles, feature flags, TLS, persistent directories and backup scope.
 
-## 从源码构建
+## Build From Source
 
-需要 Linux 或 Docker：
+Requires Linux or Docker:
 
 ```bash
 ./build/cloudfile_14.0/build-in-docker.sh 14.0.0-cf.0
 ./image/cloudfile_14.0/docker-build.sh 14.0.0-cf.0
 ```
 
-构建依赖、ref 覆盖和产物位置见 [`build/README.md`](build/README.md)。
+See the [build guide (Chinese)](build/README.md) for dependencies, ref overrides and output locations.
 
-## 验证
+## Verification
 
 ```bash
 ./tools/run-checks.sh
 ./tools/verify-local.sh preflight
 ```
 
-完整基线构建与整机回归：
+For the full baseline build and system regression:
 
 ```bash
 ./tools/verify-local.sh
 ```
 
-专项能力门禁使用 `./tools/verify-local.sh cap <capability>`；支持的能力名以脚本的 `CAPABILITIES` 表为准。
+Use `./tools/verify-local.sh cap <capability>` for capability checks. Supported names are defined in the script's `CAPABILITIES` table.
 
-## 文档
+## Documentation
 
-- [`docs/README.md`](docs/README.md)：当前文档地图与阅读顺序。
-- [`docs/overview.md`](docs/overview.md)：产品定位、上游策略与仓库边界。
-- [`docs/architecture.md`](docs/architecture.md)：系统组件、控制面和数据面。
-- [`docs/deployment.md`](docs/deployment.md)：部署形态与生产边界。
-- [`docs/configuration.md`](docs/configuration.md)：环境变量与配置语义。
-- [`docs/feature-matrix.md`](docs/feature-matrix.md)：CE 复用、CloudFile 新增、外部组件与验证状态。
-- [`docs/history/README.md`](docs/history/README.md)：失效方案和旧流程索引。
+The following technical references are in Chinese:
 
-开始部署前阅读 [`docs/deployment.md`](docs/deployment.md) 和
-[`docs/configuration.md`](docs/configuration.md)。判断能力是否可用时，以
-[`docs/feature-matrix.md`](docs/feature-matrix.md) 中的状态、限制和证据为准。
+- [Index](docs/README.md) and [overview](docs/overview.md): reading order, upstream strategy and repository scope.
+- [Architecture](docs/architecture.md): components, control plane and data plane.
+- [Deployment](docs/deployment.md) and [configuration](docs/configuration.md): deployment options, operational boundaries and environment variables.
+- [Capability matrix](docs/feature-matrix.md): reuse, extensions, external services, limitations and verification status.
+- [Historical document policy](docs/history/README.md).
 
-## 许可证
+Read deployment and configuration before installing, and check capability status against the selected release.
 
-本仓沿用 [Apache License 2.0](LICENSE.txt)。各上游源码、官方二进制镜像和第三方组件仍受各自许可证约束。
+## License
+
+This repository uses [Apache License 2.0](LICENSE.txt). Upstream source, official binary images and third-party components retain their own licenses.

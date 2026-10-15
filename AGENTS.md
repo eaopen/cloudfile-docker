@@ -123,10 +123,10 @@ scripts/scripts_14.0/              容器内运行时脚本（上游文件，改
 这是未验收能力与已发布能力之间的隔离机制。
 
 > 修改说明（2026-09-22 产品决策）：“新增开关默认 false”不变，但**已验收且不依赖第三方的能力已改为默认 `true`**
-> （DIR_ACL/AUDIT/METADATA/TAGS/FILE_PREVIEW/FILE_LOCK/CHECKOUT/FAVORITES_ID/WATCH/FILEOPS/SHARE_RESTRICT）。
+> （DIR_ACL/AUDIT/METADATA/TAGS/FILE_PREVIEW/FAVORITES_ID/WATCH/FILEOPS/SHARE_RESTRICT）。
 > 原因：网盘是产品线主工程，已验收能力默认关闭会让交付部署逐项开开关；
 > 而“全关 = 原生 CE”铁律已废除，默认关闭不再是升级成本的保证。
-> 完整名单与依赖边界见 [`docs/configuration.md`](docs/configuration.md)。
+> FILE_LOCK、CHECKOUT 及 CLOUDFILE_EDITING_ENABLED 后续已恢复默认关闭；完整名单与依赖边界见 [`docs/configuration.md`](docs/configuration.md)。
 
 **但不再要求"全关 = 原生 CE 逐字一致"**（2026-09-22 废除该 P0 标准）。CloudFile
 本来就是 CE 的扩展版，基线里始终存在不受开关约束的改动——登记在
@@ -211,9 +211,13 @@ git merge-base --is-ancestor feature/<能力> dev && echo "危险：merge 会快
 
 ## 约定
 
-- 代码、注释、commit message 用英文；文档（`*.md`）用中文。
+- 代码、注释、commit message 用英文；公开入口 `README.md` 用英文，`README.zh-CN.md` 用中文；成对文档同次更新并提供语言切换。既有未翻译技术参考保留中文并明确标注；内部记录以中文为主。
 - shell 脚本用 `set -e`，改完跑 `bash -n`。
 - `release.yaml` 是构建的唯一真相来源。**不要把 ref 或 SHA 写死在构建脚本里**，
   加进 manifest 再用 `read-manifest.py` 读。
 - 绝不提交 `deploy/compose/.env` 和 `deploy/compose/data/`（含密码与实际数据，
   已在 `.gitignore`）。
+
+## 文档归属（2026-10-13）
+
+公开产品方案、架构概览、路线图、AI 方向、使用导航与服务信息统一在 [cloudfile](https://github.com/eaopen/cloudfile/blob/main/docs/zh-CN/README.md) 中英维护。本仓维护随代码更新的技术说明；Docker 保留构建、部署、发布矩阵及共享技术契约。内部方案权衡、开发排期与复盘归私有内部管理仓库，客户配置与交付归客户私有工程。公开说明不得依赖私有文档，一项正式内容只保留一个权威正文。

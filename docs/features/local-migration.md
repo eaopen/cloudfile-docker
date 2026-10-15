@@ -49,7 +49,7 @@ python3 tests/smoke_ce14_runtime.py --image cloudfile/cloudfile:14.0.8-v0.2-rc-w
 python3 tests/verify.py docker
 ```
 
-实际报告见 eap-cloudfile `docs/releases/evidence/cf02-import-2026-09-27.json`。
+该报告属于内部验收记录；公开部署应按所选版本的导入说明与校验结果判断，不依赖私有证据文件。
 
 ## Compose 单库迁移
 

@@ -224,8 +224,11 @@ def render_settings(environment=None):
     if oidc_enabled and (oidc_config is None or policy_config is None
             or not _boolean(environment, "CLOUDFILE_POLICY_WORKER_HOOKS", False)):
         raise ValueError("enabled OIDC requires OIDC config, policy config and worker hooks")
-    if oidc_enabled and authentik:
-        raise ValueError("CloudFile OIDC and the legacy Authentik OAuth preset cannot both be enabled")
+    # Native OIDC and the legacy Authentik OAuth preset coexist: the Hub keeps
+    # the OAuth login entry and dispatches browser sessions by authentication
+    # backend (cloudfile-hub a4cd1dc8e, docs/OIDC-OAUTH-COMPATIBILITY.md).
+    # Directories sharing and read tickets need the native OIDC host, so this
+    # combination must stay deployable instead of being rejected here.
     if oidc_jit_enabled and not oidc_enabled:
         raise ValueError("OIDC JIT requires the explicit OIDC host")
     if oidc_backchannel_enabled and not oidc_enabled:

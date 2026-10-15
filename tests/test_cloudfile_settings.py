@@ -402,14 +402,23 @@ class OIDCSettingsTest(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 CLOUDFILE.render_settings(environment)
 
-    def test_legacy_oauth_and_jit_without_host_are_rejected(self):
+    def test_legacy_oauth_coexists_with_native_oidc(self):
+        # Directory sharing and read tickets require the native OIDC host while
+        # existing deployments keep the Authentik OAuth preset, so the bootstrap
+        # must render both instead of rejecting the combination.
         environment = self.environment()
         environment.update(CLOUDFILE_AUTHENTIK_ENABLED="true",
             CLOUDFILE_AUTHENTIK_URL="https://idp.example",
             CLOUDFILE_AUTHENTIK_CLIENT_ID="fixture", CLOUDFILE_AUTHENTIK_CLIENT_SECRET="fixture",
             CLOUDFILE_AUTHENTIK_REDIRECT_URL="https://files.example/oauth/callback/")
-        with self.assertRaises(ValueError):
-            CLOUDFILE.render_settings(environment)
+        namespace = {}
+        exec(CLOUDFILE.render_settings(environment), namespace)
+        self.assertTrue(namespace["CLOUDFILE_OIDC_ENABLED"])
+        self.assertTrue(namespace["ENABLE_OAUTH"])
+        self.assertEqual(namespace["OAUTH_PROVIDER"], "authentik-oauth")
+        self.assertIsNotNone(namespace["CLOUDFILE_POLICY_CONFIG"])
+
+    def test_jit_without_oidc_host_is_rejected(self):
         with self.assertRaises(ValueError):
             CLOUDFILE.render_settings({"CLOUDFILE_OIDC_JIT_ENABLED": "true"})
 

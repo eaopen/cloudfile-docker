@@ -21,6 +21,7 @@ from upgrade import check_upgrade
 from bootstrap import init_seafile_server, write_cloudfile_config
 from cloudfile import write_settings as write_cloudfile_settings
 from cloudfile import write_policy_worker_hooks
+from cloudfile_schema import prepare_fresh_schema, initialize_fresh_schema
 
 
 shared_seafiledir = '/shared/seafile'
@@ -58,6 +59,9 @@ def main():
         print(e)
 
     wait_for_mysql()
+    # Record fresh-install intent before CE creates its data directory. This
+    # initializes current DDL without upgrading existing deployments on restart.
+    schema_marker = prepare_fresh_schema(shared_seafiledir)
     init_seafile_server()
     write_cloudfile_settings(join(topdir, 'conf', 'seahub_settings.py'))
     write_policy_worker_hooks(join(topdir, 'conf', 'gunicorn.conf.py'))
@@ -68,6 +72,7 @@ def main():
     # rearranged conf/, so flipping a CF_ENABLE_* switch in .env takes effect
     # on restart rather than only at first bootstrap.
     write_cloudfile_config()
+    initialize_fresh_schema(schema_marker, installdir)
     # Legacy defaults must load before the native extension overrides.
     write_cloudfile_settings(join(topdir, 'conf', 'seahub_settings.py'))
 

@@ -77,6 +77,12 @@ docker compose logs -f cloudfile
 配置；`scripts/scripts_14.0/start.py` 在每次启动时重写带 `CF_BEGIN`/`CF_END` 标记的
 CloudFile 配置块，并幂等应用 `cloudfile.sql`。
 
+新部署在启动 Server/Hub 前使用随镜像交付的版本化 schema runner 创建并校验当前
+DDL（包括资源表、统一编辑锁表及迁移记录），避免只创建旧集成表而遗漏写入屏障依赖。
+初始化意图保存在共享卷 `.cloudfile-schema-init-pending`；失败时停止启动并保留标记，
+重启后按正式 runner 的断点继续。既有数据目录且无该标记时不自动升级。
+文件锁与 Checkout 仍默认关闭，建表不代表启用能力。
+
 ## 可选 profile
 
 | profile | 服务 | 使用条件 |

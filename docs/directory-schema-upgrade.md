@@ -5,7 +5,7 @@ database (`SEAFILE_MYSQL_DB_SEAFILE_DB_NAME`, normally `seafile_db`). Hub policy
 configuration must point to that same database. EAP never creates these tables.
 
 The Hub versioned schema runner is their sole DDL owner. Migrations 008/009 create the authority tables; 036/041 add pagination indexes.
-Migration 042 folds the historical 040 shares into ACLs and drops `cf_dir_share`. Do not add duplicate
+Migration 042 adds the unified ACL columns/index and directly drops `cf_dir_share` (the independent feature was never enabled). Do not add duplicate
 definitions to Server bootstrap SQL, Django migrations or EAP SQL. Existing
 migration checksums remain unchanged.
 
@@ -24,12 +24,13 @@ share creation creates a read ACL or enables an existing ACL without changing it
 permission/inheritance. Disabling sharing retains the library ACL; deleting an
 ACL revokes both. Non-members require current sharing and lifecycle evidence.
 
-Existing share-only rows become inherited read ACLs. Overlapping rows retain ACL
-permissions, inheritance and ID, rotate the ACL revision and enable sharing.
-After validated conversion, `cf_dir_share` is dropped directly: no archive or
-independent share-table restoration. Migration 040's immutable checksum remains
-in the ledger, with its retired structure verified through migration 042.
-Interrupted conversion/drop can be resumed without recreating a live share table.
+Migration 040 remains immutable for deployed schema ledgers. The unused
+cf_dir_share table is dropped without importing any rows: it never
+represented enabled user-facing authorizations. Existing cf_dir_acl rows
+are preserved; new share_mode defaults to 0. No data merging, synthetic grant,
+ID replacement or revision rotation occurs. Interrupted DDL resumes using
+the canonical runner; a dropped table is not recreated.
+
 
 ## Release procedure
 

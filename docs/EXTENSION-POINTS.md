@@ -84,14 +84,34 @@ seasearch、Elasticsearch、企业自有检索服务都可以是同一个 kind �
 
 上面三个是**读侧**，下面三个是**写侧**（`common/cf-fileop.{c,h}`，规格见
 [fileop-lifecycle.md](fileop-lifecycle.md)）。两组的形状不同：读侧的
-`CfPermFunc` 是**串联**（每个 provider 拿到上一个的结果继续收紧），写侧的
+`CfPermFunc` 是**串联**（每个 provider 拿到上一个的结果继续求值），写侧的
 `CfFileOpPrepareFunc` 是**一票否决**（第一个拒绝就终止，后面的不再执行）。
-差别是有意的——权限是一个可以逐步收紧的值，而"这次写入能不能发生"是个布尔，
+差别是有意的——权限是一个可继续求值的量，而"这次写入能不能发生"是个布尔，
 让第二个 provider 观察一次不会发生的写入只会制造副作用。
 
-**规则：扩展只能收紧，不能放宽。** 两端各自穷举整个权限格验证过。
-写侧对应的规则是**只能拒绝，不能改写**：provider 拿到的上下文是只读的，
-否则 provider 的注册顺序就会决定结果，而那个顺序不是任何人设计过的。
+**`CfPermFunc` 的两条边界要分开说，写错会得到一条不工作的授权链。**
+
+**结构边界**（由 `cf-ext.c` 强制，绕不过去）：`cf_ext_check_permission()` 在
+`native_perm` 为 NULL 时**根本不调用任何 provider**，直接原样返回 NULL
+（`common/cf-ext.c:90-91`）；链上任一 provider 返回 NULL 即终止并返回 NULL，后面的
+provider 无法把它放宽回来（`:106-107`）。所以这条 Hook **结构上无法为 CE 没给过权限
+的用户创造访问资格**——它只能在 CE 已经授予的范围内做文章。
+
+**取值边界**（**是约定，不是代码不变量**）：`cf-ext.c` 不校验 provider 返回值是否
+≤ 传入值，约束它的是文档。这条约定**已对 v0.9 撤销**：目录规则允许把库级 `r` 在具体
+路径**提升**为 `rw`（[acl-semantics.md](acl-semantics.md)「决策 2026-08-28」及 §7）。
+不要再把"只能收紧"当作 v0.9 的不变量去论证收敛性。
+
+**v0.9 的目录资格不走这条链。**「无整库权限、仅凭目录 ACL/共享获得资格」是
+`cf_policy_check_read()` 的语义：它以 `ce_permission=0` 表示**合法非成员**，由 scoped
+core 依据适用的目录 ACL/共享授予资格（`server/cloudfile-policy.h:48-56`）。给
+`cf_ext_check_permission` 补 SQL 字段永远得不到这个效果——它在第一步就已经返回了。
+
+完整契约（谁判、判到什么范围、哪些入口不得当终判）见
+[权限终判契约](permission-adjudication-contract.md)。
+
+写侧的规则不受影响：`CfFileOpPrepareFunc` 仍**只能拒绝，不能改写**，provider 拿到的
+上下文是只读的，否则 provider 的注册顺序就会决定结果，而那个顺序不是任何人设计过的。
 
 ---
 

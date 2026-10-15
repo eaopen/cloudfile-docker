@@ -354,7 +354,16 @@ def render_settings(environment=None):
         f"{name} = {pprint.pformat(value, sort_dicts=True)}"
         for name, value in authentik.items()
     )
-    if oidc_enabled:
+    # Native OIDC owns the default login entry only when no legacy OAuth is
+    # configured. With one configured, both coexist: the Hub keeps the OAuth
+    # entry and dispatches browser sessions by authentication backend
+    # (cloudfile-hub a4cd1dc8e, docs/OIDC-OAUTH-COMPATIBILITY.md). Writing
+    # ENABLE_OAUTH = False here would silently switch off an operator's legacy
+    # login, which bootstrap.py explicitly refuses to do.
+    legacy_oauth = bool(authentik) or (
+        _boolean(environment, "CF_ENABLE_SSO", False)
+        and bool(environment.get("CF_SSO_OAUTH_CLIENT_ID", "").strip()))
+    if oidc_enabled and not legacy_oauth:
         lines.append("ENABLE_OAUTH = False")
         callback_path = urlparse(oidc_config["redirect_uri"]).path
         if not callback_path.endswith("callback/"):

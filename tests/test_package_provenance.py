@@ -1,5 +1,7 @@
 """Installed-byte and source-pin checks before local Docker image assembly."""
 
+# Keep regression tests runnable on dev162 Python 3.6 as well as CI Python.
+
 import importlib.util
 import json
 import os
@@ -108,7 +110,7 @@ class PackageProvenanceTests(unittest.TestCase):
         (source / "code.py").write_text("fixture")
         subprocess.run(["git", "-C", str(source), "add", "."], check=True)
         subprocess.run(["git", "-C", str(source), "commit", "-qm", "fixture"], check=True)
-        pin = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+        pin = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], universal_newlines=True).strip()
         for name in self.manifest["sources"]:
             shutil.copytree(source, sources / name)
             self.manifest["sources"][name]["ref"] = pin
@@ -142,7 +144,7 @@ class PackageProvenanceTests(unittest.TestCase):
         docker.chmod(0o755)
         result = subprocess.run(["bash", str(builder / "build-local-image.sh")],
             env={**os.environ, "PATH": str(binaries) + os.pathsep + os.environ["PATH"]},
-            capture_output=True, text=True)
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(marker.exists())
         self.assertIn("Native package validation failed", result.stderr)
@@ -173,7 +175,7 @@ esac
                        "CLOUDFILE_PACKAGE_DIR": str(self.package), "CF_DOCKER_CALLS": str(calls)}
         environment.pop("CF_PLATFORM", None)
         result = subprocess.run(["bash", str(BUILD / "build-local-image.sh")],
-            env=environment, capture_output=True, text=True)
+            env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         recorded = calls.read_text()
         self.assertIn("--platform linux/" + native_arch, recorded)
@@ -183,7 +185,7 @@ esac
         calls.write_text("")
         environment["CF_PLATFORM"] = "linux/" + native_arch
         result = subprocess.run(["bash", str(BUILD / "build-local-image.sh")],
-            env=environment, capture_output=True, text=True)
+            env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         recorded = calls.read_text()
         self.assertIn("cloudfile/cloudfile:14.0.8-v0.2-" + native_arch + "-local", recorded)

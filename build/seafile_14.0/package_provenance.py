@@ -22,8 +22,10 @@ REQUIRED_FILES = (
 
 
 def _git(source, *arguments):
+    # dev162 also runs provenance with Python 3.6, before capture_output/text.
     result = subprocess.run(["git", "-C", str(source), *arguments],
-                            capture_output=True, text=True, check=False)
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            universal_newlines=True, check=False)
     if result.returncode:
         raise ValueError("package source Git validation failed")
     return result.stdout.strip()

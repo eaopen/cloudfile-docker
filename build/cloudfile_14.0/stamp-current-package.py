@@ -41,8 +41,9 @@ def build_sources(package, version):
         raise ValueError("build version differs from selected distribution")
     if set(SOURCE_NAMES) - set(values) or not all(COMMIT.fullmatch(values[key]) for key in SOURCE_NAMES):
         raise ValueError("incomplete build source commits")
+    # Python 3.6 on dev162 predates text=True; preserve decoded Git output.
     docker_commit = subprocess.check_output(
-        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, universal_newlines=True).strip()
     if values.get("cloudfile-docker") != docker_commit:
         raise ValueError("distribution was built with a different Docker recipe commit")
     return {key: values[key] for key in SOURCE_NAMES}
@@ -72,9 +73,10 @@ def current_manifest(sources):
         if not expected:
             # Preserve local-building support for moving refs, but require
             # exact SHA equality when an immutable plan pin is supplied.
+            # Keep moving-ref resolution compatible with the same host Python.
             expected = subprocess.check_output(
                 ["git", "rev-parse", ref + "^{commit}"],
-                cwd=checkout, text=True).strip()
+                cwd=checkout, universal_newlines=True).strip()
         if expected != commit:
             raise ValueError("distribution differs from release.yaml input: " + name)
         manifest["sources"][name]["ref"] = commit

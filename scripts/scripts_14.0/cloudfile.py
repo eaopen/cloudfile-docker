@@ -167,16 +167,16 @@ def _authentik_settings(environment):
         raise ValueError("CLOUDFILE_AUTHENTIK_URL must be an absolute HTTPS URL")
 
     redirect_url = environment.get("CLOUDFILE_AUTHENTIK_REDIRECT_URL", "").strip()
+    # Same protocol resolution as bootstrap.get_proto(): an unset
+    # SEAFILE_SERVER_PROTOCOL means HTTP unless the deployment terminates TLS
+    # itself. Defaulting to HTTPS here made the generated OAuth redirect claim a
+    # scheme the deployment does not serve, and the Hub then marked
+    # sessionid/csrftoken Secure on an HTTP entry.
+    protocol = environment.get("SEAFILE_SERVER_PROTOCOL", "").strip().lower()
+    if protocol not in ("http", "https"):
+        protocol = ("https" if environment.get(
+            "SEAFILE_SERVER_LETSENCRYPT", "false").strip().lower() == "true" else "http")
     if not redirect_url:
-        # Same protocol resolution as bootstrap.get_proto(): an unset
-        # SEAFILE_SERVER_PROTOCOL means HTTP unless the deployment terminates
-        # TLS itself. Defaulting to HTTPS here made the generated OAuth redirect
-        # claim a scheme the deployment does not serve, and the Hub then marked
-        # sessionid/csrftoken Secure on an HTTP entry.
-        protocol = environment.get("SEAFILE_SERVER_PROTOCOL", "").strip().lower()
-        if protocol not in ("http", "https"):
-            protocol = ("https" if environment.get(
-                "SEAFILE_SERVER_LETSENCRYPT", "false").strip().lower() == "true" else "http")
         hostname = environment.get("SEAFILE_SERVER_HOSTNAME", "").strip().rstrip("/")
         if not hostname:
             raise ValueError(
@@ -186,8 +186,15 @@ def _authentik_settings(environment):
         redirect_url = f"{protocol}://{hostname}/oauth/callback/"
 
     redirect = urlparse(redirect_url)
-    if redirect.scheme not in (("http", "https") if allow_insecure else ("https",)) or not redirect.netloc:
-        raise ValueError("Authentik redirect URL must be an absolute HTTPS URL")
+    # The redirect is the deployment's own public entry, whose scheme it already
+    # declares through SEAFILE_SERVER_PROTOCOL (or an explicit redirect URL).
+    # Forcing HTTPS here would refuse to start an HTTP deployment that the
+    # product supports; CLOUDFILE_AUTHENTIK_ALLOW_INSECURE keeps governing the
+    # IdP-facing URLs, which are a different trust boundary.
+    allowed_redirect = ("http", "https") if (allow_insecure or protocol == "http") else ("https",)
+    if redirect.scheme not in allowed_redirect or not redirect.netloc:
+        raise ValueError("Authentik redirect URL must be an absolute HTTP/HTTPS URL "
+                         "matching the deployment protocol")
 
     return {
         "ENABLE_OAUTH": True,

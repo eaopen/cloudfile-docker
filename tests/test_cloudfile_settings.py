@@ -159,10 +159,12 @@ class CloudFileSettingsTest(unittest.TestCase):
         # Same default as bootstrap.get_proto(): an unset SEAFILE_SERVER_PROTOCOL
         # means HTTP. Generating an HTTPS redirect for an HTTP entry is what made
         # the Hub mark sessionid/csrftoken Secure on Etech's HTTP deployment.
+        # The public entry's scheme is declared by the deployment, so an HTTP
+        # redirect does not additionally require CLOUDFILE_AUTHENTIK_ALLOW_INSECURE
+        # (that flag stays on the IdP-facing URLs).
         environment = {
             "CLOUDFILE_AUTHENTIK_ENABLED": "true",
-            "CLOUDFILE_AUTHENTIK_URL": "http://auth.example.com",
-            "CLOUDFILE_AUTHENTIK_ALLOW_INSECURE": "true",
+            "CLOUDFILE_AUTHENTIK_URL": "https://auth.example.com",
             "CLOUDFILE_AUTHENTIK_CLIENT_ID": "cloudfile",
             "CLOUDFILE_AUTHENTIK_CLIENT_SECRET": "secret",
             "SEAFILE_SERVER_HOSTNAME": "files.example.com",
@@ -175,6 +177,18 @@ class CloudFileSettingsTest(unittest.TestCase):
         explicit = dict(environment, SEAFILE_SERVER_PROTOCOL="https")
         self.assertIn("OAUTH_REDIRECT_URL = 'https://files.example.com/oauth/callback/'",
             CLOUDFILE.render_settings(explicit))
+
+    def test_http_redirect_is_rejected_on_an_https_deployment(self):
+        environment = {
+            "CLOUDFILE_AUTHENTIK_ENABLED": "true",
+            "CLOUDFILE_AUTHENTIK_URL": "https://auth.example.com",
+            "CLOUDFILE_AUTHENTIK_CLIENT_ID": "cloudfile",
+            "CLOUDFILE_AUTHENTIK_CLIENT_SECRET": "secret",
+            "SEAFILE_SERVER_PROTOCOL": "https",
+            "CLOUDFILE_AUTHENTIK_REDIRECT_URL": "http://files.example.com/oauth/callback/",
+        }
+        with self.assertRaises(ValueError):
+            CLOUDFILE.render_settings(environment)
 
     def test_authentik_requires_https_by_default(self):
         with self.assertRaises(ValueError):

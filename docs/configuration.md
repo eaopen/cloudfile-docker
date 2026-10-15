@@ -190,9 +190,12 @@ Do not open a new Chrome native operation to foreign page origins.
 `CLOUDFILE_PUBLIC_URL` 未声明时，生成的 `OAUTH_REDIRECT_URL` 必须与部署协议一致：由
 `SEAFILE_SERVER_PROTOCOL`（未设置时看 `SEAFILE_SERVER_LETSENCRYPT`，都没有则为 HTTP）
 与 `SEAFILE_SERVER_HOSTNAME` 派生，与 `bootstrap.get_proto()` 同一套规则。Authentik 预设的
-默认协议此前多写了一个 HTTPS（`cloudfile.py`），HTTP 部署必须显式
-`SEAFILE_SERVER_PROTOCOL=http`（或 `CLOUDFILE_AUTHENTIK_ALLOW_INSECURE=true` 才允许 HTTP redirect）。
-Authentik 身份提供方自身是 HTTPS 不受影响：部署 HTTP + IdP HTTPS 是受支持组合。
+默认协议此前多写了一个 HTTPS（`cloudfile.py`），会把 HTTP 部署的跳转写成 HTTPS。
+
+HTTP 部署不需要额外开关即可使用该预设：redirect 指向的就是部署自己的公共入口，其协议已由
+`SEAFILE_SERVER_PROTOCOL`（或显式 `CLOUDFILE_AUTHENTIK_REDIRECT_URL`）声明；`CLOUDFILE_AUTHENTIK_ALLOW_INSECURE`
+只继续管**面向 IdP 的 URL**，两者是不同的信任边界。仅当部署声明为 HTTPS 却给出 HTTP redirect
+时才拒绝。Authentik 身份提供方自身是 HTTPS 不受影响：部署 HTTP + IdP HTTPS 是受支持组合。
 
 ## 目录机器认证默认 v2（2026-10-14）
 

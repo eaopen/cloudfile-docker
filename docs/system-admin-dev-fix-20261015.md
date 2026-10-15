@@ -32,9 +32,9 @@ DEV 验收至少包含：ETech 两种真实身份 SSO 与 UID 核验、普通组
 - 独立验收库由另一账号拥有，system_admin 无逐库授权即可初始化浏览、创建目录、上传 53 字节测试文件并下载，内容校验一致。
 - 普通用户无库资格时根目录为 403；配置单目录 share_mode=1 后可以读取该目录，根目录仍为 403。
 - 新建的临时原生账号依次验证 system_admin 为 rw，daily_admin/default_admin/audit_admin 无隐式内容权限；daily_admin 后台 can_manage_library 保留；停用系统管理员被拒绝。临时账号及角色已清理。
-- 在验收库添加系统管理员专属 invisible 后，目录读取与上传链接均为 403；其他共享接收者仍能访问；测试拒绝规则移除后恢复 200。
+- 在验收库添加系统管理员专属 invisible 后，目录读取为 403；其他共享接收者仍能访问；测试拒绝规则移除后目录读取恢复 200。旧上传入口的 403 属于受管库边界，不能单独作为路径 ACL 裁决的证据。
 
-验收库 `ef56dc98-5ce8-41c2-a735-5b2415103d9b` 仅包含合成测试文件；既有业务库授权不变。完整原生 OIDC/传输通道仍按当前部署保持关闭，既有 HTTP OAuth、管理员策略和原生文件读写均已验证。回滚备份在 minio157 `/data/etech-infra/cloudfile-dev/release-backups/system-admin-4ced1faed-20261015-192217`。
+验收库 `ef56dc98-5ce8-41c2-a735-5b2415103d9b` 仅包含合成测试文件；既有业务库授权不变。完整原生 OIDC/传输通道仍按当前部署保持关闭，既有 HTTP OAuth、管理员策略、未受管库原生文件读写和受管库目录浏览已验证；受管库字节传输尚未通过，见末节。回滚备份在 minio157 `/data/etech-infra/cloudfile-dev/release-backups/system-admin-4ced1faed-20261015-192217`。
 
 CI 证据：[Hub](https://github.com/eaopen/cloudfile-hub/actions/runs/38725730029)、[Server](https://github.com/eaopen/cloudfile-server/actions/runs/38725731735)、[Docker](https://github.com/eaopen/cloudfile-docker/actions/runs/38725714736)。
 
@@ -45,3 +45,9 @@ CI 证据：[Hub](https://github.com/eaopen/cloudfile-hub/actions/runs/387257300
 19:33 DEV 主服务和 worker 已切换最终镜像 `14.0.0-cf-dev-hotfix-3c56df23a`，摘要 `sha256:b0996f6d57a7cb23f77b8b8e67da3429141f190e3e19c98f42b741ef8932da8c`。镜像源码为 Hub `3c56df23a`、Server `af1c0ac`、Docker `aab0d1a`（与前版 Docker 运行时代码相同，仅补验收文档）；Server 二进制沿用已通过完整构建的同一 SHA。
 
 最终版本再次验证两人 SSO 与 etech01 读取、系统角色与停用、ACL 拒绝和恢复均通过。现场真实 SQL 额外确认：daily_admin 的内容资格为 false，管理专用资格与原生后台能力一致为 true。临时账号和测试拒绝规则均已清理。最终切换前的独立回滚备份为 `/data/etech-infra/cloudfile-dev/release-backups/system-admin-final-3c56df23a-20261015-193316`；原始升级前备份继续保留。
+
+### 验收发现的传输边界
+
+同一个验收库在首次写 ACL 前，旧上传/下载接口成功且文件内容一致；写 ACL 后会持久登记为 `cf_managed_library`，随后旧 `check_permission_by_path` / 上传入口按设计返回 403。删除测试 ACL 不会删除受管库标记，目录浏览可恢复 200，旧上传仍为 403。这不是角色撤销或缓存延迟，不能通过移除标记、管理员绕过或关闭守卫修复，否则会绕过目录 ACL。
+
+当前 ETech 文件传输仍走旧接口，DEV 的 `CLOUDFILE_TRANSFER_ENABLED=false`；现有传输路由只登记受控 delegated-read-tickets，单独打开开关不会把旧上传自动转换为 v0.9 事务写入。因此本轮仅完成管理员资格与 CI 最小修复，受管库文件读写联调仍未验收通过，需要后续将客户端接入现有 v0.9 受控读写入口；不把未受管库文件测试算作受管库通过。

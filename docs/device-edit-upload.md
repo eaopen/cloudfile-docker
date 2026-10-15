@@ -57,10 +57,12 @@ file publication; those remain deployment acceptance checks.
 
 ## 管理员发布与本地编辑并用
 
-`CLOUDFILE_ADMIN_POLICY_ENABLED` 默认关闭。显式开启后，系统管理员可用既有
-Seahub 管理员 Token 调用新版目录 ACL 与目录共享发布接口。它要求原生 OIDC、
-策略 worker 和稳定资源密钥；不能与 `CLOUDFILE_AUTHORIZATION_ENABLED` 同时
-占用相同路由。普通用户和资料库管理员 Token 不能取得该系统管理员发布权限。
+管理员策略管理默认启用，复用已配置的 CloudFile/MySQL 连接与 Seahub 系统管理员
+Token；管理员无需额外配置 OIDC、Redis、策略 JSON、worker hooks 或资源密钥。
+每次请求使用独立数据库事务并检查 schema，目录共享生命周期通过原生 RPC 核验。
+已显式启用 `CLOUDFILE_AUTHORIZATION_ENABLED` 的部署继续由用户授权通道持有路由，
+不会重复挂载；管理员通道不自动开启用户授权或修改现有登录方式。
+普通用户和资料库管理员 Token 不能取得系统管理员发布权限。
 
 发布写入统一 `cf_dir_acl`，复用事务锁、共享生命周期、If-Match、原请求重试记录
 及审计。原生管理员按 `native-account:` 服务主体记录，不伪造业务用户会话或目录

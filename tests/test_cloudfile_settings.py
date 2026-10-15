@@ -104,12 +104,14 @@ class CloudFileSettingsTest(unittest.TestCase):
             self.assertIn("before = True", rendered)
             self.assertIn("after = True", rendered)
 
-    def test_administrator_policy_defaults_off_and_requires_native_route_ownership(self):
+    def test_administrator_policy_defaults_on_without_oidc_or_extra_secrets(self):
         values = {}
         exec(CLOUDFILE.render_settings({}), values)
-        self.assertIs(values['CLOUDFILE_ADMIN_POLICY_ENABLED'], False)
+        self.assertIs(values['CLOUDFILE_ADMIN_POLICY_ENABLED'], True)
+        self.assertIs(values['CLOUDFILE_OIDC_ENABLED'], False)
+        self.assertIsNone(values['CLOUDFILE_POLICY_CONFIG'])
         with self.assertRaisesRegex(ValueError, 'administrator policy'):
-            CLOUDFILE.render_settings({'CLOUDFILE_ADMIN_POLICY_ENABLED':'true'})
+            CLOUDFILE.render_settings({'CLOUDFILE_ADMIN_POLICY_ENABLED':'true', 'CLOUDFILE_AUTHORIZATION_ENABLED':'true'})
 
     def test_native_block_follows_legacy_defaults_and_preserves_both_apps(self):
         with tempfile.TemporaryDirectory() as directory:

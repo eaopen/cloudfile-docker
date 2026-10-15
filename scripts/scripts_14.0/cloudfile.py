@@ -252,14 +252,13 @@ def render_settings(environment=None):
     webdav_enabled = _boolean(environment, "CLOUDFILE_WEBDAV_ENABLED", False)
     authorization_enabled = _boolean(environment, "CLOUDFILE_AUTHORIZATION_ENABLED", False)
     local_edit_enabled = _boolean(environment, "CLOUDFILE_LOCAL_EDIT_ENABLED", False)
-    admin_policy_enabled = _boolean(environment, "CLOUDFILE_ADMIN_POLICY_ENABLED", False)
-    if admin_policy_enabled and (not oidc_enabled or policy_config is None or authorization_enabled
-            or not _boolean(environment, "CLOUDFILE_POLICY_WORKER_HOOKS", False)):
-        raise ValueError("administrator policy requires native OIDC/policy hooks and distinct route ownership")
+    # Native administrator policy uses existing SQL/account authority, not OIDC.
+    # The session route remains an explicit alternative owning the same paths.
+    admin_policy_enabled = _boolean(environment, "CLOUDFILE_ADMIN_POLICY_ENABLED", not authorization_enabled)
+    if admin_policy_enabled and authorization_enabled:
+        raise ValueError("administrator policy requires distinct route ownership")
     editing_enabled = _boolean(environment, "CLOUDFILE_EDITING_ENABLED", False)
     editing_secret = environment.get("CLOUDFILE_RESOURCE_SECRET", "")
-    if admin_policy_enabled and len(editing_secret.encode("utf-8")) < 32:
-        raise ValueError("administrator policy requires a stable resource secret")
     if editing_enabled and (not oidc_enabled or policy_config is None or
             not _boolean(environment, "CLOUDFILE_POLICY_WORKER_HOOKS", False) or
             len(editing_secret.encode("utf-8")) < 32):
@@ -345,6 +344,7 @@ def render_settings(environment=None):
         f"CLOUDFILE_AUTHORIZATION_ENABLED = {authorization_enabled!r}",
         f"CLOUDFILE_LOCAL_EDIT_ENABLED = {local_edit_enabled!r}",
         f"CLOUDFILE_ADMIN_POLICY_ENABLED = {admin_policy_enabled!r}",
+        f"CF_NATIVE_DATABASE_NAME = {environment.get('SEAFILE_MYSQL_DB_CCNET_DB_NAME', 'ccnet_db')!r}",
         f"CLOUDFILE_LOCAL_EDIT_INSTANCE = {local_edit_instance!r}" if local_edit_enabled else "CLOUDFILE_LOCAL_EDIT_INSTANCE = None",
         f"CLOUDFILE_AGENT2_OPTIMISTIC_UPLOAD_ENABLED = {optimistic_upload_enabled!r}",
         f"CLOUDFILE_AGENT2_EXCLUSIVE_ENABLED = {exclusive_enabled!r}",

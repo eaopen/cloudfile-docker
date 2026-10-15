@@ -84,8 +84,11 @@ v0.2 的完整 OIDC 使用既有签名校验、登录资源、原生 session bac
 CLOUDFILE_OIDC_ENABLED=true
 CLOUDFILE_POLICY_WORKER_HOOKS=true
 CLOUDFILE_OIDC_JIT_ENABLED=false
-CLOUDFILE_AUTHENTIK_ENABLED=false
 ```
+
+原生 OIDC 与旧 Authentik OAuth 预设**可以并存**（2026-10-15 起与 Hub 一致）：两者各自保留登录与回调入口，
+启用旧 OAuth 时默认登录入口不变，浏览器会话按认证后端分派；需要目录共享与 read-ticket 的部署无须关闭
+`CLOUDFILE_AUTHENTIK_ENABLED`。仅用旧登录时仍可保持 `CF_SSO_OAUTH_ENABLED=true`、`CF_ENABLE_SSO=false`。
 
 同时提供 `CLOUDFILE_POLICY_CONFIG_JSON` 和严格 `CLOUDFILE_OIDC_CONFIG_JSON`，例如：
 

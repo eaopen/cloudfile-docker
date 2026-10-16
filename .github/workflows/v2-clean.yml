@@ -1,0 +1,68 @@
+name: CloudFile V2 clean CE14 isolated checks
+
+on:
+  push:
+    branches: [dev2-clean]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudfile-v2-clean
+  cancel-in-progress: true
+
+jobs:
+  native-and-schema:
+    runs-on: ubuntu-24.04
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: '1'
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s --health-timeout=5s --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: cloudfile-docker
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: eaopen/cloudfile-server
+          ref: 7c32cd5bce0ec04e30b2494c8f9b9a4af7c2e01b
+          path: cloudfile-server
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: eaopen/cloudfile-hub
+          ref: dbc3c1f2d303bde9ebada950ff1b6c87d4c3f75d
+          path: cloudfile-hub
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify selected upstream ancestry
+        run: |
+          git -C cloudfile-docker merge-base --is-ancestor 822c24c9908c4cc9f602987fcf8bc362d3f0454e HEAD
+          git -C cloudfile-server merge-base --is-ancestor b6179eb3d73b04c67a00412ebaf964153c4ad2c0 HEAD
+          git -C cloudfile-hub merge-base --is-ancestor 15ec1aa7114c013929509e0aad756b5365a29ce6 HEAD
+      - name: Install isolated test packages
+        run: |
+          python3 -m pip install --quiet 'pymysql>=1.1,<2' 'redis>=5,<8'
+      - name: Assert isolated upstream assembly and three-table runtime
+        env:
+          CF_TEST_DB_PORT: '3306'
+          CF_TEST_REDIS_PORT: '6379'
+        run: |
+          python3 -m unittest discover -s cloudfile-docker/tests -p test_v2_source_assembly.py -v
+          python3 cloudfile-docker/tools/prepare-v2-source.py --workspace . --output /tmp/cfv2-clean
+          python3 cloudfile-docker/tools/check-v2-fresh.py --source /tmp/cfv2-clean

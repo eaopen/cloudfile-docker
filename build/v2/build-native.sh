@@ -3,22 +3,20 @@
 set -euo pipefail
 source_root=${1:?prepared source directory required}
 prefix=${2:?dedicated install prefix required}
+target=${3:-all}
+case "$target" in all|sources|dependencies|server) ;; *) exit 2 ;; esac
 jobs=${CF_V2_BUILD_JOBS:-4}
 [[ $jobs =~ ^[1-9][0-9]*$ ]] || exit 2
-test -f "$source_root/v2-source-receipt.json"
-test ! -d "$source_root/seahub/cloudfile_extensions"
-test ! -f "$source_root/seafile-server/common/cf-ext.c"
-mkdir -p "$prefix"
-export PATH="$prefix/bin:$PATH"
-export PKG_CONFIG_PATH="$prefix/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
-export LD_LIBRARY_PATH="$prefix/lib:${LD_LIBRARY_PATH:-}"
-export CFLAGS="-O2 -I$prefix/include"
-export LDFLAGS="-L$prefix/lib"
+if [[ $target != dependencies ]]; then
+    test -f "$source_root/v2-source-receipt.json"
+    test ! -d "$source_root/seahub/cloudfile_extensions"
+    test ! -f "$source_root/seafile-server/common/cf-ext.c"
+fi
 
 fetch_dependency() {
     local project=$1 revision=$2
     local target="$source_root/$project"
-    if [[ ! -d $target ]]; then
+    if [[ ! -d $target/.git ]]; then
         git init -q "$target"
         git -C "$target" remote add origin "https://github.com/haiwen/$project.git"
         git -C "$target" fetch --depth=1 origin "$revision"
@@ -27,8 +25,21 @@ fetch_dependency() {
     [[ $(git -C "$target" rev-parse HEAD) == "$revision" ]] || exit 2
 }
 
+if [[ $target != server ]]; then
 fetch_dependency libsearpc 23d5df62815fb3b7825bf4e1a28b29af701e8cb2
 fetch_dependency libevhtp 91071e2f20749cd469b87ac2ef1c158dc2a6806f
+fi
+[[ $target != sources ]] || exit 0
+
+mkdir -p "$prefix"
+export PATH="$prefix/bin:$PATH"
+export PKG_CONFIG_PATH="$prefix/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+export LD_LIBRARY_PATH="$prefix/lib:${LD_LIBRARY_PATH:-}"
+export CFLAGS="-O2 -I$prefix/include"
+export LDFLAGS="-L$prefix/lib"
+
+# Dependency-only layers survive changes to application C/Go source.
+if [[ $target != server ]]; then
 (
     cd "$source_root/libsearpc"
     ./autogen.sh
@@ -40,6 +51,8 @@ cmake -S "$source_root/libevhtp" -B "$source_root/libevhtp/build-v2" \
     -DEVHTP_DISABLE_SSL=ON -DEVHTP_BUILD_SHARED=OFF -DCMAKE_INSTALL_PREFIX="$prefix"
 cmake --build "$source_root/libevhtp/build-v2" -j"$jobs"
 cmake --install "$source_root/libevhtp/build-v2"
+fi
+[[ $target != dependencies ]] || exit 0
 (
     cd "$source_root/seafile-server"
     ./autogen.sh

@@ -16,3 +16,6 @@ custom/*/base_scripts
 
 build/src
 build/seafile-server-*
+
+# Persistent V2 dependency/download caches stay local.
+build/v2/.cache/

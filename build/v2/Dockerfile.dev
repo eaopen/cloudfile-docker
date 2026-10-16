@@ -1,0 +1,78 @@
+# Existing CE14 toolchain/runtime images remain reusable independently.
+ARG DEV_BASE=cloudfile-build-base:ce14-v2
+ARG CF_BASE_IMAGE=${DEV_BASE}
+ARG CLOUDFILE_RUNTIME_BASE=${DEV_BASE}
+FROM ${CF_BASE_IMAGE} AS native-dependencies
+USER root
+ARG TARGETARCH
+ENV CCACHE_DIR=/root/.cache/ccache
+COPY --from=cf-build build-native.sh /build-native.sh
+COPY libsearpc /source/libsearpc
+COPY libevhtp /source/libevhtp
+RUN --mount=type=cache,id=cfv2-ccache-${TARGETARCH},from=cf-cache,source=ccache,target=/root/.cache/ccache \
+    PATH=/usr/lib/ccache:$PATH bash /build-native.sh /source /opt/cfv2-prefix dependencies
+
+FROM native-dependencies AS go-dependencies
+ARG TARGETARCH
+ARG GOPROXY=https://proxy.golang.org,direct
+ARG GOSUMDB=sum.golang.org
+ENV GOPROXY=${GOPROXY} GOSUMDB=${GOSUMDB} GOPATH=/go
+WORKDIR /source/seafile-server/fileserver
+COPY seafile-server/fileserver/go.mod seafile-server/fileserver/go.sum ./
+RUN --mount=type=cache,id=cfv2-gomod,from=cf-cache,source=gomodcache,target=/go/pkg/mod \
+    go mod download
+
+FROM go-dependencies AS native
+COPY v2-source-receipt.json /source/v2-source-receipt.json
+COPY seafile-server /source/seafile-server
+RUN --mount=type=cache,id=cfv2-gomod,from=cf-cache,source=gomodcache,target=/go/pkg/mod \
+    --mount=type=cache,id=cfv2-gobuild-${TARGETARCH},from=cf-cache,source=gocache,target=/root/.cache/go-build \
+    --mount=type=cache,id=cfv2-ccache-${TARGETARCH},from=cf-cache,source=ccache,target=/root/.cache/ccache \
+    PATH=/usr/lib/ccache:$PATH bash /build-native.sh /source /opt/cfv2-prefix server
+
+FROM ${CF_BASE_IMAGE} AS frontend-dependencies
+USER root
+ARG TARGETARCH
+WORKDIR /source/seahub/frontend
+COPY seahub/frontend/package.json seahub/frontend/package-lock.json ./
+RUN --mount=type=cache,id=cfv2-npm-${TARGETARCH},from=cf-cache,source=npm,target=/root/.npm \
+    npm ci --prefer-offline --legacy-peer-deps --no-audit --no-fund
+
+FROM frontend-dependencies AS frontend
+COPY seahub/frontend /source/seahub/frontend
+COPY seahub/media /source/seahub/media
+COPY --from=cf-build build-frontend.cjs /build-frontend.cjs
+RUN --mount=type=cache,id=cfv2-frontend-${TARGETARCH},target=/source/seahub/frontend/node_modules/.cache \
+    GENERATE_SOURCEMAP=false DISABLE_ESLINT_PLUGIN=true NODE_OPTIONS=--max-old-space-size=16384 \
+    node --require /build-frontend.cjs scripts/build.js
+
+FROM ${CLOUDFILE_RUNTIME_BASE} AS python-dependencies
+USER root
+# Remove application trees while retaining the existing runtime packages.
+RUN rm -rf /opt/seafile /opt/cloudfile-v2 /opt/cfv2-prefix /scripts /etc/my_init.d/* /etc/service/* && \
+    mkdir -p /opt/cloudfile-v2 /shared
+COPY seahub/requirements.txt /tmp/cfv2-requirements.txt
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+RUN --mount=type=cache,id=cfv2-pip,from=cf-cache,source=pip,target=/root/.cache/pip \
+    python3 -m pip install --break-system-packages -r /tmp/cfv2-requirements.txt pymysql
+
+FROM python-dependencies AS runtime
+COPY --from=native /opt/cfv2-prefix /opt/cfv2-prefix
+COPY seahub /opt/cloudfile-v2/source/seahub
+COPY seafile-server/python /opt/cloudfile-v2/source/seafile-server/python
+COPY seafile-server/scripts/sql/mysql /opt/cloudfile-v2/source/seafile-server/scripts/sql/mysql
+COPY v2-source-receipt.json /opt/cloudfile-v2/source/v2-source-receipt.json
+COPY --from=frontend /source/seahub/frontend/build /opt/cloudfile-v2/source/seahub/frontend/build
+COPY --from=frontend /source/seahub/frontend/webpack-stats.pro.json /opt/cloudfile-v2/source/seahub/frontend/webpack-stats.pro.json
+COPY --from=cf-build start-dev.py /opt/cloudfile-v2/start.py
+COPY --from=cf-build nginx-dev.conf /etc/nginx/nginx.conf
+ENV PATH=/opt/cfv2-prefix/bin:$PATH \
+    LD_LIBRARY_PATH=/opt/cfv2-prefix/lib \
+    PYTHONPATH=/opt/cfv2-prefix/lib/python3.12/site-packages:/opt/cloudfile-v2/source/seahub:/opt/cloudfile-v2/source/seahub/thirdpart:/opt/cloudfile-v2/source/seafile-server/python \
+    SEAFILE_DATA_DIR=/shared/seafile-data \
+    SEAFILE_CENTRAL_CONF_DIR=/shared/conf \
+    SEAHUB_LOG_DIR=/shared/logs \
+    ENABLE_GO_FILESERVER=true
+WORKDIR /opt/cloudfile-v2/source/seahub
+EXPOSE 80
+CMD ["python3", "/opt/cloudfile-v2/start.py"]

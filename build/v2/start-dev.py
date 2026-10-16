@@ -135,6 +135,8 @@ for key, value in {
     'SEAFILE_MYSQL_DB_SEAHUB_DB_NAME': names['hub'], 'SEAFILE_CENTRAL_CONF_DIR': str(conf),
     'SEAFILE_CONF_DIR': str(data), 'SEAFILE_DATA_DIR': str(data), 'CCNET_CONF_DIR': str(ccnet),
     'SEAFILE_RPC_PIPE_PATH': str(data),
+    # Native C/Go construct the internal Hub URL from this canonical root too.
+    'SITE_ROOT': settings['SITE_ROOT'],
     'SEAHUB_LOG_DIR': str(logs), 'CACHE_PROVIDER': 'redis', 'DJANGO_SETTINGS_MODULE': 'seahub.settings',
 }.items():
     os.environ[key] = value

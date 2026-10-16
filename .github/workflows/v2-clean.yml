@@ -52,13 +52,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-server
-          ref: e3c976c3156ff74e48c7d276149a4fb661b60d73
+          ref: 2e3fb8225a5947018d5bd3eb4c6272f383069a18
           path: cloudfile-server
           fetch-depth: 0
       - uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-hub
-          ref: a3d4a5b8237590d029afefb29401f9fff6873c58
+          ref: 6107c71d50908ff8474a552c677e179bc1942a8a
           path: cloudfile-hub
           fetch-depth: 0
       - uses: actions/setup-python@v5
@@ -108,13 +108,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-server
-          ref: e3c976c3156ff74e48c7d276149a4fb661b60d73
+          ref: 2e3fb8225a5947018d5bd3eb4c6272f383069a18
           path: cloudfile-server
           fetch-depth: 0
       - uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-hub
-          ref: a3d4a5b8237590d029afefb29401f9fff6873c58
+          ref: 6107c71d50908ff8474a552c677e179bc1942a8a
           path: cloudfile-hub
           fetch-depth: 0
       - uses: actions/setup-python@v5

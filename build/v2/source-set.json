@@ -15,9 +15,11 @@
         "common/cf-v2-edit-fence.c",
         "common/cf-v2-edit-fence.h",
         "fileserver/cf_v2_edit_fence.go",
-        "fileserver/cf_v2_edit_fence_test.go"
+        "fileserver/cf_v2_edit_fence_test.go",
+        "fileserver/cf_v2_edit_agent.go",
+        "fileserver/cf_v2_edit_agent_test.go"
       ],
-      "overlay_commit": "89f645f1e46a8b2d3d05e813a3a18aa980bc2735",
+      "overlay_commit": "80ecaadf6fecc4d554ab6ba75da8eabd2e428551",
       "native_patches": [
         "common/Makefile.am",
         "common/obj-backend-fs.c",
@@ -40,7 +42,7 @@
       "overlay": [
         "cloudfile_ext/v2"
       ],
-      "overlay_commit": "64ed374bc8ceeb7d610baf9f3a99c6a60cffa93f",
+      "overlay_commit": "298e9321035960e31e1a5982edd4fc1a4ae9fd5d",
       "native_patches": [
         "seahub/urls.py",
         "seahub/oauth/views.py"

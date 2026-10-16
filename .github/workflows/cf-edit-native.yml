@@ -24,21 +24,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-server
-          ref: feature/cf-edit
+          ref: dev
           fetch-depth: 0  # pinned upstream CE14 SHA must exist, not just feature tip
           path: workspace/cloudfile-server
       - name: Checkout Hub feature (read-only)
         uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-hub
-          ref: feature/cf-edit
+          ref: dev
           fetch-depth: 0
           path: workspace/cloudfile-hub
       - name: Assemble only reviewed pinned CE14 sources
         run: |
           python3 tools/prepare-v2-source.py \
             --workspace workspace --output prepared \
-            --server-ref feature/cf-edit --hub-ref feature/cf-edit
+            --server-ref dev --hub-ref dev
       - name: Install disposable native build dependencies
         run: |
           sudo apt-get update -qq

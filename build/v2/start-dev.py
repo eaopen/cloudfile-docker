@@ -1,5 +1,4 @@
 """Start a fresh CE14 DEV instance using native SQL/RPC/HTTP services only."""
-import ast
 import os
 import shutil
 import shlex
@@ -12,6 +11,7 @@ from urllib.parse import urlsplit
 import pymysql
 
 from cloudfile_ext.v2.schema import FreshSchema
+from web_paths import web_settings, nginx_config, read_settings
 
 
 source = Path('/opt/cloudfile-v2/source')
@@ -33,16 +33,12 @@ if existing:
             values = shlex.split(value)
             os.environ.setdefault(key.strip(), values[0] if values else '')
     shutil.copyfile(original / 'seafile.conf', conf / 'seafile.conf')
-    settings = {}
-    tree = ast.parse((original / 'seahub_settings.py').read_text())
-    for node in tree.body:
-        if not isinstance(node, ast.Assign) or len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
-            continue
-        key = node.targets[0].id
-        if key in ('SECRET_KEY', 'TIME_ZONE', 'LOGIN_URL', 'LOGIN_REDIRECT_URL',
-                   'CF_ENABLE_SEARCH', 'CF_PROVIDER_SEARCH', 'CF_MEILISEARCH_URL',
-                   'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX') or key.startswith('OAUTH_'):
-            settings[key] = ast.literal_eval(node.value)
+    settings = read_settings(original / 'seahub_settings.py', {
+        'SECRET_KEY', 'TIME_ZONE', 'LOGIN_URL', 'LOGIN_REDIRECT_URL', 'SITE_ROOT', 'FILE_SERVER_ROOT',
+        'CF_ENABLE_SEARCH', 'CF_PROVIDER_SEARCH', 'CF_MEILISEARCH_URL',
+        'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX'})
+    if not settings.get('SECRET_KEY'):
+        raise ValueError('existing deployment SECRET_KEY is required')
     host = os.environ['SEAFILE_MYSQL_DB_HOST']
     password = os.environ['SEAFILE_MYSQL_DB_PASSWORD']
     user = os.environ['SEAFILE_MYSQL_DB_USER']
@@ -50,7 +46,6 @@ if existing:
              'files': os.environ['SEAFILE_MYSQL_DB_SEAFILE_DB_NAME'],
              'hub': os.environ['SEAFILE_MYSQL_DB_SEAHUB_DB_NAME']}
     public_url = os.environ.get('SEAFILE_SERVER_PROTOCOL', 'http') + '://' + os.environ['SEAFILE_SERVER_HOSTNAME']
-    settings['ENABLE_OAUTH'] = bool(settings.get('OAUTH_CLIENT_ID') and settings.get('OAUTH_CLIENT_SECRET'))
 else:
     host, password, user = os.environ['DB_HOST'], os.environ['DB_PASSWORD'], 'cfv2'
     names = {'account': 'cfv2_ccnet', 'files': 'cfv2_seafile', 'hub': 'cfv2_seahub'}
@@ -100,22 +95,26 @@ port=8082
 auto_local_root=/shared/library-storage
 ''')
     settings = {'SECRET_KEY': os.environ['DJANGO_SECRET_KEY']}
+    # Fresh deployments may seed native OAuth/OIDC settings before first boot.
+    # Retain them on restart rather than silently disabling the login provider.
+    settings.update(read_settings(conf / 'seahub_settings.py', {'LOGIN_URL', 'LOGIN_REDIRECT_URL'}))
+
+settings['ENABLE_OAUTH'] = bool(settings.get('OAUTH_CLIENT_ID') and settings.get('OAUTH_CLIENT_SECRET'))
 
 for key in ('CF_ENABLE_SEARCH', 'CF_PROVIDER_SEARCH', 'CF_MEILISEARCH_URL',
             'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX'):
     if key in os.environ:
         settings[key] = os.environ[key].lower() == 'true' if key == 'CF_ENABLE_SEARCH' else os.environ[key]
 
+settings.update(web_settings(public_url, settings, existing=existing))
+nginx_template = Path('/opt/cloudfile-v2/nginx.conf.template').read_text()
+Path('/etc/nginx/nginx.conf').write_text(nginx_config(nginx_template, settings['SITE_ROOT']))
+
 settings.update({
     'DATABASES': {'default': {'ENGINE': 'django.db.backends.mysql', 'NAME': names['hub'],
                             'USER': user, 'PASSWORD': password, 'HOST': host,
                             'PORT': os.environ.get('SEAFILE_MYSQL_DB_PORT', '3306'),
                             'OPTIONS': {'charset': 'utf8mb4'}}},
-    'SERVICE_URL': public_url + '/seafile',
-    'FILE_SERVER_ROOT': public_url + '/seafhttp',
-    'SITE_ROOT': '/seafile/',
-    'MEDIA_URL': '/seafile/media/',
-    'STATIC_URL': '/seafile/media/assets/',
     # Webpack fingerprints its bundles; use native static collection without map rehashing.
     'STORAGES': {'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
                  'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'}},

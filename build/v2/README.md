@@ -52,6 +52,22 @@ For a fresh volume, startup imports native SQL into new schemas and installs the
 three approved V2 tables. It collects native assets and starts native RPC, Go
 fileserver, Seahub and nginx.
 
+Fresh installs use `/cfile/` for Web/API/login and `/cfhttp` for file URLs.
+CloudFile's own ingress also accepts `/seafile/` and `/seafhttp/`. Both Web paths
+use the single canonical SITE_ROOT, session and CSRF cookies. Compatibility API
+requests are internally rewritten, preserving their method and body. Existing
+volumes retain their configured SITE_ROOT and file-service path (old settings
+without these values retain `/seafile/` and `/seafhttp`). This changes no IdP
+callbacks automatically. Run `python3 -m unittest discover -s tests -p
+'test_v2_web_paths.py'`; nginx-equipped environments also exercise the real proxy.
+
+Fresh deployments can seed native `OAUTH_*`, `LOGIN_URL` and
+`LOGIN_REDIRECT_URL` literals in `/shared/conf/seahub_settings.py`; startup retains
+them on later boots. The optional OIDC login at `<SITE_ROOT>oidc/login/` uses the
+same configured native OAuth callback and CE account. It additionally requires
+`OAUTH_OIDC_ISSUER`, `OAUTH_OIDC_JWKS_URI`, `openid` scope and the stable UID mapped
+to `login_id`. It supports RS256 and validates the ID Token before authentication.
+
 This packages native file operations. It does not add OIDC/SSO routes or directory
 ACL enforcement absent from the pinned source. Native API success does not
 certify the Etech end-to-end cutover.

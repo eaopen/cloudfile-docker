@@ -13,6 +13,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  web-paths:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check only the canonical path and ingress changes
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends nginx
+          command -v nginx
+          python3 -m unittest discover -s tests -p test_v2_web_paths.py -v
+
   native-and-schema:
     runs-on: ubuntu-24.04
     services:
@@ -44,7 +58,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-hub
-          ref: dbc3c1f2d303bde9ebada950ff1b6c87d4c3f75d
+          ref: 3beb20f733ad863615b742aa3d8a1d66fdc2bc7f
           path: cloudfile-hub
           fetch-depth: 0
       - uses: actions/setup-python@v5
@@ -100,7 +114,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-hub
-          ref: dbc3c1f2d303bde9ebada950ff1b6c87d4c3f75d
+          ref: 3beb20f733ad863615b742aa3d8a1d66fdc2bc7f
           path: cloudfile-hub
           fetch-depth: 0
       - uses: actions/setup-python@v5

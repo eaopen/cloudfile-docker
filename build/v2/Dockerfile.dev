@@ -65,7 +65,8 @@ COPY v2-source-receipt.json /opt/cloudfile-v2/source/v2-source-receipt.json
 COPY --from=frontend /source/seahub/frontend/build /opt/cloudfile-v2/source/seahub/frontend/build
 COPY --from=frontend /source/seahub/frontend/webpack-stats.pro.json /opt/cloudfile-v2/source/seahub/frontend/webpack-stats.pro.json
 COPY --from=cf-build start-dev.py /opt/cloudfile-v2/start.py
-COPY --from=cf-build nginx-dev.conf /etc/nginx/nginx.conf
+COPY --from=cf-build web_paths.py /opt/cloudfile-v2/web_paths.py
+COPY --from=cf-build nginx-dev.conf /opt/cloudfile-v2/nginx.conf.template
 ENV PATH=/opt/cfv2-prefix/bin:$PATH \
     LD_LIBRARY_PATH=/opt/cfv2-prefix/lib \
     PYTHONPATH=/opt/cfv2-prefix/lib/python3.12/site-packages:/opt/cloudfile-v2/source/seahub:/opt/cloudfile-v2/source/seahub/thirdpart:/opt/cloudfile-v2/source/seafile-server/python \

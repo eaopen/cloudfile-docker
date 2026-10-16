@@ -44,7 +44,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-hub
-          ref: bf928c6b2666de8dc21438023a9134f643e91fd1
+          ref: dbc3c1f2d303bde9ebada950ff1b6c87d4c3f75d
           path: cloudfile-hub
           fetch-depth: 0
       - uses: actions/setup-python@v5
@@ -57,7 +57,7 @@ jobs:
           git -C cloudfile-hub merge-base --is-ancestor 15ec1aa7114c013929509e0aad756b5365a29ce6 HEAD
       - name: Install isolated test packages
         run: |
-          python3 -m pip install --quiet 'pymysql>=1.1,<2' 'redis>=5,<8' 'Django==5.2.*'
+          python3 -m pip install --quiet 'pymysql>=1.1,<2' 'redis>=5,<8'
       - name: Assert isolated upstream assembly and three-table runtime
         env:
           CF_TEST_DB_PORT: '3306'
@@ -100,7 +100,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-hub
-          ref: bf928c6b2666de8dc21438023a9134f643e91fd1
+          ref: dbc3c1f2d303bde9ebada950ff1b6c87d4c3f75d
           path: cloudfile-hub
           fetch-depth: 0
       - uses: actions/setup-python@v5

@@ -39,8 +39,8 @@ class PinContractTest(unittest.TestCase):
 
     def manifest_for(self, server=None, hub=None):
         self.manifest.write_text(
-            "forks:\\n  cloudfile_server:\\n    ref: " + (server or self.server) +
-            "\\n  cloudfile_hub:\\n    ref: " + (hub or self.hub) + "\\n",
+            "forks:\n  cloudfile_server:\n    ref: " + (server or self.server) +
+            "\n  cloudfile_hub:\n    ref: " + (hub or self.hub) + "\n",
             encoding="utf-8",
         )
 

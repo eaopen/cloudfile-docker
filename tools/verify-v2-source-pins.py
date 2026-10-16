@@ -7,7 +7,7 @@ import runpy
 import subprocess
 import sys
 
-HEX_SHA = re.compile(r"[0-9a-f]{40}\\Z")
+HEX_SHA = re.compile(r"[0-9a-f]{40}\Z")
 SOURCES = {
     "cloudfile_server": "cloudfile-server",
     "cloudfile_hub": "cloudfile-hub",

@@ -17,7 +17,11 @@
         "fileserver/cf_v2_edit_fence.go",
         "fileserver/cf_v2_edit_fence_test.go",
         "fileserver/cf_v2_edit_agent.go",
-        "fileserver/cf_v2_edit_agent_test.go"
+        "fileserver/cf_v2_edit_agent_test.go",
+        "common/cf-v2-acl.c",
+        "common/cf-v2-acl.h",
+        "fileserver/cf_v2_acl.go",
+        "fileserver/cf_v2_acl_test.go"
       ],
       "overlay_commit": "866ca36886c90f11138f9df537df9fb61ca62d7d",
       "native_patches": [
@@ -33,7 +37,13 @@
         "common/branch-mgr.c",
         "common/diff-simple.c",
         "fileserver/fileop.go",
-        "fileserver/option/option.go"
+        "fileserver/option/option.go",
+        "common/branch-mgr.h",
+        "server/http-server.c",
+        "server/http-tx-mgr.c",
+        "server/repo-op.c",
+        "server/web-accesstoken-mgr.c",
+        "fileserver/sync_api.go"
       ]
     },
     "cloudfile-hub": {
@@ -45,7 +55,8 @@
       "overlay_commit": "298e9321035960e31e1a5982edd4fc1a4ae9fd5d",
       "native_patches": [
         "seahub/urls.py",
-        "seahub/oauth/views.py"
+        "seahub/oauth/views.py",
+        "seahub/api2/endpoints/internal_api.py"
       ]
     }
   },

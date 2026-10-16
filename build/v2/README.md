@@ -67,3 +67,31 @@ nor reset. Runtime configuration under `/run/cloudfile-conf` reuses native OAuth
 settings and points all services at the same RPC socket. Original configuration
 and Compose files stay intact. Existing extension records remain stored; this
 does not imply that the removed legacy extension APIs or ACL enforcement run.
+
+## Existing Meilisearch Search
+
+The V2 runtime preserves the existing `CF_ENABLE_SEARCH`, `CF_PROVIDER_SEARCH`,
+`CF_MEILISEARCH_URL`, `CF_MEILISEARCH_API_KEY`, and optional
+`CF_MEILISEARCH_INDEX` settings. The same names may be supplied as environment
+variables. Search remains disabled when it is not explicitly configured.
+Meilisearch must already contain a `cloudfile_files` index using the existing
+`repo_id/path/object_type/tags/dirs` document fields. No SQL tables are added.
+
+The authenticated `GET /api/v2.1/cloudfile/search/` endpoint accepts `repo_id`,
+`q`, `path`, `limit` and a signed five-minute `cursor`. Results use the existing
+file-browser response contract, with current CE object and path checks before
+publication. Native Tag tables supply returned tags. Configured `cf_dir_acl`
+subtrees are excluded until V2 directory-policy enforcement is integrated;
+queries rooted inside them return 503. Virtual/encrypted libraries and
+directory-only shares are not certified by this restoration. Exhausting the
+configured Meilisearch candidate window returns 409 and requires a narrower query.
+
+A separate search worker follows native commit diffs and Tag changes every
+60 seconds. It confirms Meilisearch tasks before writing the disposable
+`/shared/search-v2-checkpoint.json`. On the first start against an existing index,
+set `CF_SEARCH_BOOTSTRAP_BEFORE` to a Unix timestamp preceding the V2 cutover;
+the worker catches up from the latest native commit at or before that time.
+Missing libraries use fixed-commit directory pages. The existing index is never
+cleared. A failed batch retains its previous checkpoint for retry. Search
+failures do not terminate native file services. This path restores the existing
+file browser; it does not activate the separately designed resource-search POST API.

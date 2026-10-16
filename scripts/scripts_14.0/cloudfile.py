@@ -227,10 +227,16 @@ def _authentik_settings(environment):
 
 def render_settings(environment=None):
     environment = os.environ if environment is None else environment
+    schema_profile = environment.get('CLOUDFILE_SCHEMA_PROFILE', 'legacy')
+    if schema_profile not in ('legacy', 'm1'):
+        raise ValueError('invalid CloudFile schema profile')
     extension_apps = _extension_apps(environment.get("CLOUDFILE_EXTENSION_APPS", ""))
     urlconfs = _extension_urlconfs(environment.get("CLOUDFILE_EXTENSION_URLCONFS_JSON", ""))
     capabilities = _capabilities(environment.get("CLOUDFILE_CAPABILITIES_JSON", ""))
     policy_config = _policy_config(environment.get("CLOUDFILE_POLICY_CONFIG_JSON", ""))
+    if schema_profile == 'm1' and (policy_config is not None or _boolean(environment, 'CF_ENABLE_SSO', False)):
+        if not isinstance(policy_config, dict) or policy_config.get('membership_mode') != 'subject_ttl':
+            raise ValueError('M1 identity requires subject_ttl directory membership mode')
     oidc_config = _oidc_config(environment.get("CLOUDFILE_OIDC_CONFIG_JSON", ""))
     oidc_enabled = _boolean(environment, "CLOUDFILE_OIDC_ENABLED", False)
     oidc_jit_enabled = _boolean(environment, "CLOUDFILE_OIDC_JIT_ENABLED", False)
@@ -323,6 +329,7 @@ def render_settings(environment=None):
 
     lines = [
         BEGIN_MARKER,
+        f"CLOUDFILE_SCHEMA_PROFILE = {schema_profile!r}",
         f"EXTRA_INSTALLED_APPS = list(dict.fromkeys(globals().get('EXTRA_INSTALLED_APPS', []) + {pprint.pformat(['cloudfile_extensions', *extension_apps], sort_dicts=True)}))",
         "SITE_ROOT_URLCONF = 'cloudfile_extensions.root_urls'",
         # A permission-runtime failure inside check_folder_permission is marked
@@ -370,6 +377,20 @@ def render_settings(environment=None):
         f"CLOUDFILE_AUDIT_RESULT_ROOT = {audit_result_root!r}",
         f"CLOUDFILE_AUDIT_CURSOR_SECRET = {audit_secret!r}",
     ]
+    if schema_profile == 'm1':
+        # These optional legacy runtimes require tables outside the M1 schema.
+        # Keep CE-native file operations/Tag/preview; never create their old
+        # extension state behind an operator's selected schema profile.
+        for flag in ('CF_ENABLE_EXTERNAL_SOURCES', 'CF_ENABLE_SEARCH', 'CF_ENABLE_FILEOPS',
+                     'CF_ENABLE_FILE_LOCK', 'CF_ENABLE_CHECKOUT', 'CF_ENABLE_LOCAL_APP'):
+            if _boolean(environment, flag, False):
+                raise ValueError(f'{flag} is not available in the M1 schema profile')
+            lines.append(f'{flag} = False')
+        for flag in ('CLOUDFILE_EDITING_ENABLED', 'CLOUDFILE_LOCAL_EDIT_ENABLED',
+                     'CLOUDFILE_AGENT2_OPTIMISTIC_UPLOAD_ENABLED', 'CLOUDFILE_AGENT2_EXCLUSIVE_ENABLED',
+                     'CLOUDFILE_ANNOTATIONS_ENABLED'):
+            if _boolean(environment, flag, False):
+                raise ValueError(f'{flag} requires a schema outside M1')
     lines.extend(
         f"{name} = {pprint.pformat(value, sort_dicts=True)}"
         for name, value in authentik.items()

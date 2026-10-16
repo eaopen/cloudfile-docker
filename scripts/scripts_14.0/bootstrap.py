@@ -1392,12 +1392,16 @@ def write_cloudfile_config():
     write_cloudfile_seafile_conf()
     write_seafevents_search_config()
     write_seafevents_audit_config()
-    apply_cloudfile_schema()
-    apply_sso_hierarchy_schema_compatibility()
+    from cloudfile_schema import installation_profile
+    m1_schema = installation_profile(shared_seafiledir) == 'm1'
+    if not m1_schema:
+        apply_cloudfile_schema()
+        apply_sso_hierarchy_schema_compatibility()
     apply_metadata_schema_compatibility()
     apply_tag_schema_compatibility()
     apply_starred_obj_id_schema_compatibility()
-    apply_audit_schema()
+    if not m1_schema:
+        apply_audit_schema()
 
 
 def apply_sso_hierarchy_schema_compatibility():

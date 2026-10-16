@@ -15,9 +15,13 @@
         "common/cf-v2-edit-fence.c",
         "common/cf-v2-edit-fence.h",
         "fileserver/cf_v2_edit_fence.go",
-        "fileserver/cf_v2_edit_fence_test.go"
+        "fileserver/cf_v2_edit_fence_test.go",
+        "common/cf-v2-acl.c",
+        "common/cf-v2-acl.h",
+        "fileserver/cf_v2_acl.go",
+        "fileserver/cf_v2_acl_test.go"
       ],
-      "overlay_commit": "89f645f1e46a8b2d3d05e813a3a18aa980bc2735",
+      "overlay_commit": "7bb50f174b48e5f28f0b02490c7c9769f2997ad5",
       "native_patches": [
         "common/Makefile.am",
         "common/obj-backend-fs.c",
@@ -31,7 +35,13 @@
         "common/branch-mgr.c",
         "common/diff-simple.c",
         "fileserver/fileop.go",
-        "fileserver/option/option.go"
+        "fileserver/option/option.go",
+        "common/branch-mgr.h",
+        "server/repo-op.c",
+        "server/http-server.c",
+        "server/http-tx-mgr.c",
+        "server/web-accesstoken-mgr.c",
+        "fileserver/sync_api.go"
       ]
     },
     "cloudfile-hub": {
@@ -40,10 +50,11 @@
       "overlay": [
         "cloudfile_ext/v2"
       ],
-      "overlay_commit": "64ed374bc8ceeb7d610baf9f3a99c6a60cffa93f",
+      "overlay_commit": "e9ed640b765a2ec08633f80f5aad6a4e0b3aeb7b",
       "native_patches": [
         "seahub/urls.py",
-        "seahub/oauth/views.py"
+        "seahub/oauth/views.py",
+        "seahub/api2/endpoints/internal_api.py"
       ]
     }
   },

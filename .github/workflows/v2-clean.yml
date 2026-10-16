@@ -2,14 +2,14 @@ name: CloudFile V2 clean CE14 isolated checks
 
 on:
   push:
-    branches: [dev2-clean]
+    branches: [dev, dev2-clean]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: cloudfile-v2-clean
+  group: cloudfile-v2-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:

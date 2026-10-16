@@ -22,7 +22,9 @@ def init_repo(folder):
     subprocess.run(["git", "-C", str(folder), "init", "-q"], check=True)
     subprocess.run(["git", "-C", str(folder), "config", "user.email", "tests@example.invalid"], check=True)
     subprocess.run(["git", "-C", str(folder), "config", "user.name", "CloudFile Test"], check=True)
-    (folder / "README").write_text("baseline", encoding="utf-8")
+    # Equal trees committed in the same second can have identical SHAs.
+    # Distinguish repositories so a cross-repository pin swap is detectable.
+    (folder / "README").write_text(f"baseline: {folder.name}", encoding="utf-8")
     subprocess.run(["git", "-C", str(folder), "add", "README"], check=True)
     subprocess.run(["git", "-C", str(folder), "commit", "-qm", "baseline"], check=True)
     return subprocess.check_output(["git", "-C", str(folder), "rev-parse", "HEAD"], text=True).strip()
@@ -35,6 +37,7 @@ class PinContractTest(unittest.TestCase):
         self.workspace = Path(self.tmp.name)
         self.server = init_repo(self.workspace / "cloudfile-server")
         self.hub = init_repo(self.workspace / "cloudfile-hub")
+        self.assertNotEqual(self.server, self.hub)
         self.manifest = self.workspace / "release.yaml"
 
     def manifest_for(self, server=None, hub=None):

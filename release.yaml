@@ -10,8 +10,9 @@
 # The build script (build/cloudfile_14.0/cloudfile-build.sh) reads this file and
 # checks out exactly these refs. Bump the SHAs here, never in the build script.
 
-product: 14.0.0-cf.0
-image: cloudfile/cloudfile:14.0.0-cf.0
+# Candidate-only 2.0 dev2 snapshot. No PROD tag, image or rollout is authorized.
+product: 2.0.0-dev.1
+image: cloudfile/cloudfile:2.0.0-dev.1
 build_base_image: cloudfile-build-base:ce14-v2
 ubuntu_base_image: ubuntu:24.04
 
@@ -22,17 +23,16 @@ docker_commit: ""
 
 # CloudFile forks.
 #
-# `dev` is the extension baseline: seams, build and deploy machinery, and no
-# capabilities. A capability build points these at its own long-lived branch,
-# e.g. ref: feature/dir-acl on both. CF_SERVER_REF / CF_HUB_REF override them
-# without editing this file.
+# CloudFile 2.0 dev2 pins both forks to immutable source commits. Update these
+# SHAs together after the corresponding dev2 code and cross-repo tests pass.
+# Never reuse the moving v0.9 dev branches or publish this candidate as PROD.
 forks:
   cloudfile_server:
     url: https://github.com/eaopen/cloudfile-server.git
-    ref: dev
+    ref: ed0cb02937c6246c579f650f870bd298d5c7876b
   cloudfile_hub:
     url: https://github.com/eaopen/cloudfile-hub.git
-    ref: dev
+    ref: 94ee2853c7827b2e5c5766982c473f58f0c2b24e
 
 # Not forked. These are the upstream commits each fork is currently synced to.
 # tools/check-upstream-patches.sh uses them as its diff base in CI, where the
@@ -68,6 +68,8 @@ ce_anchor:
   seafile_server: 17e4b875c2118233830316392ed76a736b374c69
   seahub: 3c408439bfca54dbad61e2f6cdb706d2dcdf9f7a
 
+# Transitional legacy database schema until 2.0 fresh-install and migration
+# checks are implemented. Do NOT interpret this as the reduced 2.0 schema.
 # Bump when cf_* tables change shape; the upgrade path keys off this.
 # 1 -> 2 (2026-08-17): added cf_dir_admin (directory-level delegated manage).
 # Additive, IF NOT EXISTS, auto-applied by the bootstrap on every start -- no

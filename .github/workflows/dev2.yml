@@ -1,0 +1,53 @@
+name: CloudFile 2.0 dev2 source and contract checks
+
+on:
+  push:
+    branches: [dev2]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudfile-v2-dev2
+  cancel-in-progress: true
+
+jobs:
+  source-contracts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: cloudfile-docker
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: eaopen/cloudfile-server
+          ref: dev2
+          path: cloudfile-server
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: eaopen/cloudfile-hub
+          ref: dev2
+          path: cloudfile-hub
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cloudfile-server/fileserver/go.mod
+          cache-dependency-path: cloudfile-server/fileserver/go.sum
+      - name: Check immutable CloudFile 2.0 pins
+        run: |
+          python3 cloudfile-docker/tools/verify-v2-source-pins.py
+          python3 -m unittest discover -s cloudfile-docker/tests -p test_dev2_source_pins.py -q
+      - name: Install C test dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libglib2.0-dev libjansson-dev valac pkg-config
+      - name: Install isolated Python check dependencies
+        run: pip install --quiet -r cloudfile-docker/tools/check-requirements.txt
+      - name: Run inherited CE14, native ACL and CloudFile checks
+        run: ./cloudfile-docker/tools/run-checks.sh

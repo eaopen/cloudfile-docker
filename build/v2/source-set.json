@@ -17,7 +17,7 @@
         "fileserver/cf_v2_edit_fence.go",
         "fileserver/cf_v2_edit_fence_test.go"
       ],
-      "overlay_commit": "9a15b9568a9fafafb3b9706788676c16f8532705",
+      "overlay_commit": "c7c54a1002fbafbd9c507bac1a3e5c8a632b09fb",
       "native_patches": [
         "common/Makefile.am",
         "common/obj-backend-fs.c",

@@ -108,7 +108,7 @@ def _oidc_config(raw_value):
         return None
     required = {"issuer", "client_id", "client_secret", "redirect_uri",
                 "authorization_url", "token_url", "userinfo_url", "jwks_url"}
-    optional = {"user_id_claim", "ca_bundle", "end_session_url", "post_logout_redirect_uri"}
+    optional = {"user_id_claim", "login_name_claim", "ca_bundle", "end_session_url", "post_logout_redirect_uri"}
     if not required <= value.keys() or value.keys() - required - optional:
         raise ValueError("OIDC configuration has missing or unsupported fields")
     if any(not isinstance(value[name], str) or not value[name] or "\x00" in value[name]

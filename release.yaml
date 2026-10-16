@@ -11,8 +11,8 @@
 # checks out exactly these refs. Bump the SHAs here, never in the build script.
 
 # Candidate-only 2.0 dev2 snapshot. No PROD tag, image or rollout is authorized.
-product: 2.0.0-dev.1
-image: cloudfile/cloudfile:2.0.0-dev.1
+product: 2.0.0-dev.2
+image: cloudfile/cloudfile:2.0.0-dev.2
 build_base_image: cloudfile-build-base:ce14-v2
 ubuntu_base_image: ubuntu:24.04
 
@@ -32,7 +32,7 @@ forks:
     ref: ed0cb02937c6246c579f650f870bd298d5c7876b
   cloudfile_hub:
     url: https://github.com/eaopen/cloudfile-hub.git
-    ref: e97d7387a12878d2a0d2d4f2187f5756bca491fb
+    ref: ca9321dadeff6b0bb5f2a372ff16e6f860c4d7ec
 
 # Not forked. These are the upstream commits each fork is currently synced to.
 # tools/check-upstream-patches.sh uses them as its diff base in CI, where the

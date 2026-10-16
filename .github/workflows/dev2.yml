@@ -15,6 +15,21 @@ concurrency:
 jobs:
   source-contracts:
     runs-on: ubuntu-24.04
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: '1'
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s --health-timeout=5s --health-retries=10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,8 +61,20 @@ jobs:
       - name: Install C test dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libglib2.0-dev libjansson-dev valac pkg-config
+          sudo apt-get install -y -qq libglib2.0-dev libjansson-dev valac pkg-config libmariadb-dev
       - name: Install isolated Python check dependencies
-        run: pip install --quiet -r cloudfile-docker/tools/check-requirements.txt
+        run: |
+          pip install --quiet -r cloudfile-docker/tools/check-requirements.txt
+          pip install --quiet 'mysqlclient>=2.2,<3'
       - name: Run inherited CE14, native ACL and CloudFile checks
         run: ./cloudfile-docker/tools/run-checks.sh
+      - name: Check M1 identity on isolated MariaDB and Redis
+        env:
+          CF_TEST_DB_PORT: '3306'
+          CF_TEST_REDIS_PORT: '6379'
+          CF_TEST_ACL_LIBRARY: /tmp/cloudfile-v2-m1-acl.so
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -shared -fPIC cloudfile-server/server/cloudfile-acl.c -o "$CF_TEST_ACL_LIBRARY"
+          python3 cloudfile-docker/tools/check-hub-contracts.py -k 'identity or external_identity or contexts or projection or sql_bindings or bindings or provisioning or prepared_login or directory_catalog or directory_partial or subject_read_scope'
+          cd cloudfile-hub
+          python3 -m pytest cloudfile_ext/sso/ -q

@@ -439,6 +439,23 @@ class OIDCSettingsTest(unittest.TestCase):
         self.assertFalse(namespace["CLOUDFILE_OIDC_JIT_ENABLED"])
         self.assertEqual(namespace["CLOUDFILE_OIDC_CONFIG"]["client_id"], "cloudfile")
         self.assertFalse(namespace["CLOUDFILE_CAPABILITIES"]["auth.oidc"]["enabled"])
+
+    def test_v2_identity_claims_and_single_writer_configuration_survive_rendering(self):
+        import json
+        environment = self.environment()
+        oidc = json.loads(environment['CLOUDFILE_OIDC_CONFIG_JSON'])
+        oidc.update(user_id_claim='external_user_id', login_name_claim='preferred_username')
+        policy = json.loads(environment['CLOUDFILE_POLICY_CONFIG_JSON'])
+        policy.update(membership_mode='subject_ttl', subject_ttl=600)
+        policy['attribute_allowlist'] = ['login_name']
+        environment.update(CLOUDFILE_OIDC_CONFIG_JSON=json.dumps(oidc),
+                           CLOUDFILE_POLICY_CONFIG_JSON=json.dumps(policy))
+        namespace = {}
+        exec(CLOUDFILE.render_settings(environment), namespace)
+        self.assertEqual(namespace['CLOUDFILE_OIDC_CONFIG']['user_id_claim'], 'external_user_id')
+        self.assertEqual(namespace['CLOUDFILE_OIDC_CONFIG']['login_name_claim'], 'preferred_username')
+        self.assertEqual(namespace['CLOUDFILE_POLICY_CONFIG']['membership_mode'], 'subject_ttl')
+        self.assertEqual(namespace['CLOUDFILE_POLICY_CONFIG']['subject_ttl'], 600)
         self.assertIs(namespace["ENABLE_OAUTH"], False)
         self.assertEqual(namespace["LOGIN_URL"], "/api/v2.1/cloudfile/extensions/identity/v1/begin/")
         self.assertFalse(namespace["CLOUDFILE_LOCAL_EDIT_ENABLED"])

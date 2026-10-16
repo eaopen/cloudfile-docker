@@ -39,7 +39,9 @@ if existing:
         if not isinstance(node, ast.Assign) or len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
             continue
         key = node.targets[0].id
-        if key in ('SECRET_KEY', 'TIME_ZONE', 'LOGIN_URL', 'LOGIN_REDIRECT_URL') or key.startswith('OAUTH_'):
+        if key in ('SECRET_KEY', 'TIME_ZONE', 'LOGIN_URL', 'LOGIN_REDIRECT_URL',
+                   'CF_ENABLE_SEARCH', 'CF_PROVIDER_SEARCH', 'CF_MEILISEARCH_URL',
+                   'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX') or key.startswith('OAUTH_'):
             settings[key] = ast.literal_eval(node.value)
     host = os.environ['SEAFILE_MYSQL_DB_HOST']
     password = os.environ['SEAFILE_MYSQL_DB_PASSWORD']
@@ -99,6 +101,11 @@ auto_local_root=/shared/library-storage
 ''')
     settings = {'SECRET_KEY': os.environ['DJANGO_SECRET_KEY']}
 
+for key in ('CF_ENABLE_SEARCH', 'CF_PROVIDER_SEARCH', 'CF_MEILISEARCH_URL',
+            'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX'):
+    if key in os.environ:
+        settings[key] = os.environ[key].lower() == 'true' if key == 'CF_ENABLE_SEARCH' else os.environ[key]
+
 settings.update({
     'DATABASES': {'default': {'ENGINE': 'django.db.backends.mysql', 'NAME': names['hub'],
                             'USER': user, 'PASSWORD': password, 'HOST': host,
@@ -128,7 +135,10 @@ for key, value in {
 }.items():
     os.environ[key] = value
 processes = []
+search_worker = None
 def shutdown(*unused):
+    if search_worker is not None:
+        search_worker.terminate()
     for process in reversed(processes):
         process.terminate()
 signal.signal(signal.SIGTERM, shutdown)
@@ -158,7 +168,14 @@ except User.DoesNotExist:
     processes.append(subprocess.Popen(['gunicorn', 'seahub.wsgi:application', '--bind', '127.0.0.1:8000',
         '--workers', '2', '--timeout', '120', '--access-logfile', '-']))
     processes.append(subprocess.Popen(['nginx', '-g', 'daemon off;']))
+    if settings.get('CF_ENABLE_SEARCH') and settings.get('CF_PROVIDER_SEARCH') == 'meilisearch':
+        search_worker = subprocess.Popen(['python3', '-m', 'cloudfile_ext.v2.search.worker',
+                                         '--checkpoint', str(shared / 'search-v2-checkpoint.json')])
     while all(process.poll() is None for process in processes):
+        if search_worker is not None and search_worker.poll() is not None:
+            # Search failures must not terminate native file services.
+            print('Search worker exited; file services continue', flush=True)
+            search_worker = None
         time.sleep(1)
 finally:
     shutdown()

@@ -15,6 +15,9 @@ from web_paths import web_settings, nginx_config, read_settings
 
 
 source = Path('/opt/cloudfile-v2/source')
+# Explicitly test-only opt-in. Standard V2 remains the original three tables.
+agent_edit = os.environ.get('CF_V2_AGENT_EDIT_ENABLED', '').lower() in ('1', 'true')
+
 shared = Path('/shared')
 existing = (shared / 'seafile/seafile-data').is_dir()
 data = shared / ('seafile/seafile-data' if existing else 'seafile-data')
@@ -78,7 +81,12 @@ else:
                     while cursor.nextset():
                         pass
     with pymysql.connect(host=host, user=user, password=password, database=names['files'], autocommit=True) as connection:
-        FreshSchema(connection, (source / 'seafile-server/scripts/sql/mysql/cloudfile-v2.sql').read_text()).install()
+        FreshSchema(
+            connection,
+            (source / 'seafile-server/scripts/sql/mysql/cloudfile-v2.sql').read_text(),
+            edit_ddl=(source / 'seafile-server/scripts/sql/mysql/cloudfile-v2-edit.sql').read_text()
+                     if agent_edit else None,
+        ).install()
     (conf / 'seafile.conf').write_text(f'''[database]
 type=mysql
 host={host}
@@ -93,11 +101,20 @@ use_go_fileserver=true
 port=8082
 [cloudfile_v2]
 auto_local_root=/shared/library-storage
+[cloudfile]
+v2_edit_enabled={'true' if agent_edit else 'false'}
 ''')
     settings = {'SECRET_KEY': os.environ['DJANGO_SECRET_KEY']}
     # Fresh deployments may seed native OAuth/OIDC settings before first boot.
     # Retain them on restart rather than silently disabling the login provider.
     settings.update(read_settings(conf / 'seahub_settings.py', {'LOGIN_URL', 'LOGIN_REDIRECT_URL'}))
+
+# Do not silently switch on agent editing for reused production CE14 volumes.
+if agent_edit and existing:
+    raise ValueError('Guard-only CF-EDIT must first be tested on an isolated fresh V2 instance')
+settings['CF_V2_AGENT_EDIT_ENABLED'] = agent_edit
+if os.environ.get('JWT_PRIVATE_KEY'):
+    settings['JWT_PRIVATE_KEY'] = os.environ['JWT_PRIVATE_KEY']
 
 settings['ENABLE_OAUTH'] = bool(settings.get('OAUTH_CLIENT_ID') and settings.get('OAUTH_CLIENT_SECRET'))
 

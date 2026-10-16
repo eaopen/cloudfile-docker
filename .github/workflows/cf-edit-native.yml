@@ -1,7 +1,7 @@
 name: CF-EDIT pinned native compile (feature)
 on:
   push:
-    branches: [feature/cf-edit]
+    branches: [feature/v2-rust-guard-only, dev]
     paths:
       - "build/v2/source-set.json"
       - ".github/workflows/cf-edit-native.yml"
@@ -20,25 +20,25 @@ jobs:
     steps:
       - name: Checkout feature assembly
         uses: actions/checkout@v4
-      - name: Checkout Server feature (read-only)
+      - name: Checkout immutable Server dev commit
         uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-server
-          ref: dev
+          ref: 2e3fb8225a5947018d5bd3eb4c6272f383069a18
           fetch-depth: 0  # pinned upstream CE14 SHA must exist, not just feature tip
           path: workspace/cloudfile-server
-      - name: Checkout Hub feature (read-only)
+      - name: Checkout immutable Hub dev commit
         uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-hub
-          ref: dev
+          ref: 6107c71d50908ff8474a552c677e179bc1942a8a
           fetch-depth: 0
           path: workspace/cloudfile-hub
       - name: Assemble only reviewed pinned CE14 sources
         run: |
           python3 tools/prepare-v2-source.py \
             --workspace workspace --output prepared \
-            --server-ref dev --hub-ref dev
+            --server-ref 2e3fb8225a5947018d5bd3eb4c6272f383069a18 --hub-ref 6107c71d50908ff8474a552c677e179bc1942a8a
       - name: Install disposable native build dependencies
         run: |
           sudo apt-get update -qq

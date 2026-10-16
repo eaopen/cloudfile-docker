@@ -57,6 +57,17 @@ class SettingsTest(unittest.TestCase):
             paths.nginx_config('__CF_CANONICAL__', '/cfile/; include bad;')
 
 
+    def test_fileserver_proxies_overwrite_client_real_ip(self):
+        # The Go fileserver records X-Real-IP from loopback as the Checkout IP,
+        # so every nginx location in front of it must replace the client value.
+        root = BUILD.parents[1]
+        for name in ('build/v2/nginx-dev.conf', 'services/seafile.nginx.conf',
+                     'templates/seafile.nginx.conf.template'):
+            for block in (root / name).read_text().split('location')[1:]:
+                if 'proxy_pass http://127.0.0.1:8082' in block:
+                    self.assertIn('proxy_set_header X-Real-IP $remote_addr;', block, name)
+
+
 class Echo(BaseHTTPRequestHandler):
     def do_GET(self):
         body = self.rfile.read(int(self.headers.get('Content-Length', '0')))

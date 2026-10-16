@@ -43,7 +43,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq \
-            autoconf automake intltool libtool pkg-config cmake make gcc g++ \
+            autoconf automake intltool valac libtool pkg-config cmake make gcc g++ \
             git python3 libglib2.0-dev libjansson-dev libsqlite3-dev \
             libmariadb-dev libcurl4-openssl-dev libssl-dev libevent-dev \
             libarchive-dev libfuse-dev libfuse3-dev libhiredis-dev \

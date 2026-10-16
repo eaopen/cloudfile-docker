@@ -29,11 +29,36 @@ CloudFile 默认以 Authentik 作为企业身份协议与 Seafile 之间的身�
 
 ## 当前实现与边界
 
-CloudFile 与 Authentik 的当前技术路径是 Seafile CE 的通用 OAuth2/OIDC Authorization Code
-流程，使用 user-info claim 做身份映射。仓库没有 Authentik 专属 Compose 服务、blueprint、
-协议适配代码或端到端测试，也没有把 OIDC discovery 文档自动翻译为 Seahub 配置；操作员必须
-填写精确端点。因此当前结论是“已有通用 OIDC 接线，可配置 Authentik”，不是“Authentik
-MVP 已验收”或“已验证支持 Authentik”。
+CloudFile 保留 Seafile CE 的旧登录适配，并提供独立的新版 OIDC 入口。
+旧入口为 `/oauth/login/`、`/oauth/callback/`；新入口为
+`/api/v2.1/cloudfile/extensions/identity/v1/begin/` 和同前缀 `callback/`，实际部署需加 `SITE_ROOT`。
+启用新版 OIDC 不再关闭旧 OAuth，也不改变既有 `OAUTH_PROVIDER`、账号绑定或旧 `LOGIN_URL`。
+
+只启用旧登录、但不运行旧目录同步时，设置 `CF_SSO_OAUTH_ENABLED=true` 并保持
+`CF_ENABLE_SSO=false`。新开关默认 false，复用现有 `CF_SSO_OAUTH_*` 配置；原有
+`CF_ENABLE_SSO=true` 的配置语义保持不变。Agent 2.2 只消费设备授权接口。
+
+部署前可用 [`oidc-discover.py`](../../tools/oidc-discover.py) 从固定 issuer 生成新版配置。
+运行时仍使用经检查的明确端点，登录请求不动态发现任意 IdP：
+
+```sh
+# 通过部署密钥管理设置 CLOUDFILE_OIDC_CLIENT_SECRET，不把密钥写入命令参数。
+python3 tools/oidc-discover.py \
+  --issuer https://idp.example/application/o/cloudfile/ \
+  --client-id cloudfile \
+  --redirect-uri https://files.example/api/v2.1/cloudfile/extensions/identity/v1/callback/ \
+  --user-id-claim userId \
+  --output oidc-config.json
+```
+
+工具严格匹配 issuer，不跟随 HTTP 重定向，限制响应大小并拒绝重复 JSON 字段，校验
+Authorization Code、RS256、PKCE S256（如有声明）和客户端认证支持。生成文件权限为
+0600，内容可交给部署密钥管理作为 `CLOUDFILE_OIDC_CONFIG_JSON`。HTTP/HTTPS 均沿用部署约束。
+`userId` 是现有目录服务中的稳定 UID；无目录部署仍需补齐身份准备，不能直接拿不同 issuer
+下相同的 `sub` 或邮箱合并账号。Authentik 推荐但不强制，其他 IdP 必须满足相同协议及映射契约。
+
+原 dev 已验证两个入口跳转和 Discovery 元数据；真实登录、账号复用、文件操作与 Agent
+联调仍需分别验收。这些检查不等于 Authentik MVP 全部通过。
 
 SAML、LDAP、AD 等应先接入 Authentik。仓库虽保留 Seafile CE 的直接 SAML/LDAP 配置，
 但它们不是 CloudFile 默认企业认证路径，也未被 Authentik 门禁覆盖。

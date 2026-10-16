@@ -81,6 +81,8 @@ The authenticated `GET /api/v2.1/cloudfile/search/` endpoint accepts `repo_id`,
 `q`, `path`, `limit` and a signed five-minute `cursor`. Results use the existing
 file-browser response contract, with current CE object and path checks before
 publication. Native Tag tables supply returned tags. Configured `cf_dir_acl`
+Keyword matching uses the file/directory basename and Tags; ancestor path names
+only constrain the requested scope and never make every descendant a keyword hit.
 subtrees are excluded until V2 directory-policy enforcement is integrated;
 queries rooted inside them return 503. Virtual/encrypted libraries and
 directory-only shares are not certified by this restoration. Exhausting the

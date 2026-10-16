@@ -31,7 +31,11 @@
       "overlay": [
         "cloudfile_ext/v2"
       ],
-      "overlay_commit": "dbc3c1f2d303bde9ebada950ff1b6c87d4c3f75d"
+      "overlay_commit": "84979cd22a3b08371db80ff158344a333f7d84ff",
+      "native_patches": [
+        "seahub/urls.py",
+        "seahub/oauth/views.py"
+      ]
     }
   },
   "docker_native_commit": "822c24c9908c4cc9f602987fcf8bc362d3f0454e"

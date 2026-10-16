@@ -30,8 +30,10 @@ def check_overlay(path):
         if isinstance(node, ast.Import):
             modules = [item.name for item in node.names]
         elif isinstance(node, ast.ImportFrom):
-            package = next(parent for parent in path.parents if parent.name == 'v2')
-            if node.level and node.level > len(path.relative_to(package).parts):
+            # Native OAuth/URL seams also contain native relative imports.
+            # Only additive V2 modules must stay inside the V2 package.
+            package = next((parent for parent in path.parents if parent.name == 'v2'), None)
+            if package is not None and node.level and node.level > len(path.relative_to(package).parts):
                 raise ValueError('overlay import escapes V2 package')
             modules = [node.module or '']
         for module in modules:

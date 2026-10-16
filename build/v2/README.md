@@ -113,3 +113,22 @@ Missing libraries use fixed-commit directory pages. The existing index is never
 cleared. A failed batch retains its previous checkpoint for retry. Search
 failures do not terminate native file services. This path restores the existing
 file browser; it does not activate the separately designed resource-search POST API.
+
+## Subject / ACL integration
+
+Set `CF_DIRECTORY_URL` to the trusted context service base. Supply
+`CF_DIRECTORY_SECRET`, `CF_DIRECTORY_KEY_ID`, `CF_DIRECTORY_ISSUER`,
+`CF_DIRECTORY_AUDIENCE`, and `CF_DIRECTORY_SERVICE_ID` from deployment secrets,
+matching the EAP machine verifier. Static `CF_DIRECTORY_TOKEN` is rejected.
+JWTs are minted per request, scoped to `directory.read`, and expire in 60 seconds.
+Restart workers when rotating credentials; never pass an administrator token.
+
+`CF_DIRECTORY_PROVIDER` defaults to `etech`; the renderer binds
+`CF_ACL_PROVIDER` to it and selects `cloudfile_ext.v2.runtime.ensure_acl_subject`.
+`CF_SUBJECT_TTL` (30–1800), `CF_DIRECTORY_TIMEOUT` (1–30), and
+`CF_ACL_CACHE_TTL` (0–300) are parsed as integers. Saved settings survive restart.
+`CF_V2_ACL_ENABLED` defaults to false; true requires complete Directory credentials
+and renders `[cloudfile] v2_acl_enabled=true` for both native processes.
+This does not unlock public ACL rule writes or certify deployment acceptance.
+Use isolated databases/Redis/data volumes for validation; do not replace a shared
+DEV instance solely because an image builds successfully.

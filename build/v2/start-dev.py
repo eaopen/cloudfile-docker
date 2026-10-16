@@ -12,6 +12,7 @@ import pymysql
 
 from cloudfile_ext.v2.schema import FreshSchema
 from web_paths import web_settings, nginx_config, read_settings
+from subject_settings import NAMES, subject_settings, native_acl_config
 
 
 source = Path('/opt/cloudfile-v2/source')
@@ -36,7 +37,7 @@ if existing:
     settings = read_settings(original / 'seahub_settings.py', {
         'SECRET_KEY', 'TIME_ZONE', 'LOGIN_URL', 'LOGIN_REDIRECT_URL', 'SITE_ROOT', 'FILE_SERVER_ROOT',
         'CF_ENABLE_SEARCH', 'CF_PROVIDER_SEARCH', 'CF_MEILISEARCH_URL',
-        'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX'})
+        'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX'} | NAMES)
     if not settings.get('SECRET_KEY'):
         raise ValueError('existing deployment SECRET_KEY is required')
     host = os.environ['SEAFILE_MYSQL_DB_HOST']
@@ -97,7 +98,11 @@ auto_local_root=/shared/library-storage
     settings = {'SECRET_KEY': os.environ['DJANGO_SECRET_KEY']}
     # Fresh deployments may seed native OAuth/OIDC settings before first boot.
     # Retain them on restart rather than silently disabling the login provider.
-    settings.update(read_settings(conf / 'seahub_settings.py', {'LOGIN_URL', 'LOGIN_REDIRECT_URL'}))
+    settings.update(read_settings(conf / 'seahub_settings.py', {'LOGIN_URL', 'LOGIN_REDIRECT_URL'} | NAMES))
+
+settings.update(subject_settings(settings, os.environ))
+(conf / 'seafile.conf').write_text(native_acl_config(
+    (conf / 'seafile.conf').read_text(), settings['CF_V2_ACL_ENABLED']))
 
 settings['ENABLE_OAUTH'] = bool(settings.get('OAUTH_CLIENT_ID') and settings.get('OAUTH_CLIENT_SECRET'))
 

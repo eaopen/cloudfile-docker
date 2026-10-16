@@ -224,8 +224,6 @@ def render_settings(environment=None):
     if oidc_enabled and (oidc_config is None or policy_config is None
             or not _boolean(environment, "CLOUDFILE_POLICY_WORKER_HOOKS", False)):
         raise ValueError("enabled OIDC requires OIDC config, policy config and worker hooks")
-    if oidc_enabled and authentik:
-        raise ValueError("CloudFile OIDC and the legacy Authentik OAuth preset cannot both be enabled")
     if oidc_jit_enabled and not oidc_enabled:
         raise ValueError("OIDC JIT requires the explicit OIDC host")
     if oidc_backchannel_enabled and not oidc_enabled:
@@ -352,11 +350,11 @@ def render_settings(environment=None):
         for name, value in authentik.items()
     )
     if oidc_enabled:
-        lines.append("ENABLE_OAUTH = False")
         callback_path = urlparse(oidc_config["redirect_uri"]).path
         if not callback_path.endswith("callback/"):
             raise ValueError("native OIDC requires its registered callback path")
-        lines.append(f"LOGIN_URL = {callback_path[:-len('callback/')] + 'begin/'!r}")
+        lines.append("if not globals().get('ENABLE_OAUTH', False):")
+        lines.append(f"    LOGIN_URL = {callback_path[:-len('callback/')] + 'begin/'!r}")
     lines.extend((END_MARKER, ""))
     return "\n".join(lines)
 

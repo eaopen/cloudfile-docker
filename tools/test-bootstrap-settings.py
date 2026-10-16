@@ -117,6 +117,14 @@ def test_sso():
     # 开关关闭时该能力不生效：一个字节都不该写。
     check('开关关闭时不写任何内容', sso() == '', repr(sso()))
 
+    login_only = dict(BASE_ENV, CF_ENABLE_SSO='false', CF_SSO_OAUTH_ENABLED='true')
+    login_values = evaluate(load('_settings_block_sso', login_only)())
+    check('独立旧登录开关启用 OAuth', login_values.get('ENABLE_OAUTH') is True)
+    check('独立旧登录保留 Provider', login_values.get('OAUTH_PROVIDER') == BASE_ENV['CF_SSO_OAUTH_PROVIDER'])
+    check('独立旧登录不写入旧目录同步配置', not any(
+        key.startswith(('CF_PROVIDER_SSO_DIRECTORY', 'CF_SERVICE_SSO_DIRECTORY', 'CF_SSO_DIRECTORY'))
+        for key in login_values))
+
     env = dict(BASE_ENV)
     sso = load('_settings_block_sso', env)
     block = sso()

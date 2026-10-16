@@ -390,9 +390,18 @@ class OIDCSettingsTest(unittest.TestCase):
         self.assertFalse(namespace["CLOUDFILE_OIDC_JIT_ENABLED"])
         self.assertEqual(namespace["CLOUDFILE_OIDC_CONFIG"]["client_id"], "cloudfile")
         self.assertFalse(namespace["CLOUDFILE_CAPABILITIES"]["auth.oidc"]["enabled"])
-        self.assertIs(namespace["ENABLE_OAUTH"], False)
+        self.assertNotIn("ENABLE_OAUTH", namespace)
         self.assertEqual(namespace["LOGIN_URL"], "/api/v2.1/cloudfile/extensions/identity/v1/begin/")
         self.assertFalse(namespace["CLOUDFILE_LOCAL_EDIT_ENABLED"])
+
+    def test_oidc_preserves_existing_non_authentik_oauth_configuration(self):
+        namespace = dict(ENABLE_OAUTH=True, LOGIN_URL='/oauth/login/',
+            OAUTH_PROVIDER='existing-provider', OAUTH_CLIENT_ID='existing-client')
+        exec(CLOUDFILE.render_settings(self.environment()), namespace)
+        self.assertTrue(namespace['ENABLE_OAUTH'])
+        self.assertEqual(namespace['LOGIN_URL'], '/oauth/login/')
+        self.assertEqual(namespace['OAUTH_PROVIDER'], 'existing-provider')
+        self.assertEqual(namespace['OAUTH_CLIENT_ID'], 'existing-client')
 
     def test_missing_runtime_or_worker_hooks_rejected(self):
         for key in ("CLOUDFILE_POLICY_CONFIG_JSON", "CLOUDFILE_OIDC_CONFIG_JSON",
@@ -402,14 +411,17 @@ class OIDCSettingsTest(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 CLOUDFILE.render_settings(environment)
 
-    def test_legacy_oauth_and_jit_without_host_are_rejected(self):
+    def test_legacy_oauth_coexists_and_jit_requires_host(self):
         environment = self.environment()
         environment.update(CLOUDFILE_AUTHENTIK_ENABLED="true",
             CLOUDFILE_AUTHENTIK_URL="https://idp.example",
             CLOUDFILE_AUTHENTIK_CLIENT_ID="fixture", CLOUDFILE_AUTHENTIK_CLIENT_SECRET="fixture",
             CLOUDFILE_AUTHENTIK_REDIRECT_URL="https://files.example/oauth/callback/")
-        with self.assertRaises(ValueError):
-            CLOUDFILE.render_settings(environment)
+        namespace = {"LOGIN_URL": "/oauth/login/"}
+        exec(CLOUDFILE.render_settings(environment), namespace)
+        self.assertTrue(namespace["ENABLE_OAUTH"])
+        self.assertTrue(namespace["CLOUDFILE_OIDC_ENABLED"])
+        self.assertEqual(namespace["LOGIN_URL"], "/oauth/login/")
         with self.assertRaises(ValueError):
             CLOUDFILE.render_settings({"CLOUDFILE_OIDC_JIT_ENABLED": "true"})
 

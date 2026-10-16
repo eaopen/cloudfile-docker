@@ -217,7 +217,9 @@ def _settings_block_sso():
     Everything written here is a self-contained assignment -- see the note
     above about seahub_settings.py being an ordinary module.
     """
-    if not cf_enabled('CF_ENABLE_SSO'):
+    directory_enabled = cf_enabled('CF_ENABLE_SSO')
+    oauth_enabled = cf_enabled('CF_SSO_OAUTH_ENABLED')
+    if not directory_enabled and not oauth_enabled:
         # The iron rule: a switch that is off leaves the deployment byte for
         # byte as native CE. In particular ENABLE_OAUTH is not written as
         # False either -- upstream's own default is False, and writing it
@@ -228,6 +230,8 @@ def _settings_block_sso():
     lines = []
 
     client_id = get_conf('CF_SSO_OAUTH_CLIENT_ID', '').strip()
+    if oauth_enabled and not client_id:
+        raise ValueError('CF_SSO_OAUTH_ENABLED requires CF_SSO_OAUTH_CLIENT_ID')
     if client_id:
         def boolean(name, default):
             raw = get_conf(name, default).strip().lower()
@@ -364,6 +368,10 @@ def _settings_block_sso():
             'OAUTH_CREATE_UNKNOWN_USER = %r'
             % boolean('CF_SSO_OAUTH_CREATE_UNKNOWN_USER', 'true'),
         ]
+
+    # Login compatibility must not re-enable the retired directory publisher.
+    if not directory_enabled:
+        return '\n'.join(lines) + '\n'
 
     lines += [
         'CF_PROVIDER_SSO_DIRECTORY = %r'

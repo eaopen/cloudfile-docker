@@ -10,6 +10,19 @@ The release consumer is the existing Etech drive. Independent Hub pages,
 sync/WebDAV/third-party clients and v2.0 compatibility are outside this
 closeout. Existing guards remain mandatory for unadapted entries.
 
+Closeout now prioritizes the existing Etech happy path: listing, upload/resume/
+overwrite, single-file download/preview, folder creation and ordinary file
+operations. Use one ordinary library, one managed library and existing real
+accounts. Do not expand negative-test or authentication/entrypoint matrices;
+run only focused checks needed by the changed behavior or an observed failure.
+Retain existing guards and regression tests. This consumer-specific scope
+supersedes broader acceptance requirements later in this document.
+
+Exclusive editing, Checkout/checkin, editing leases/sessions and Rust Agent
+development, pairing, packaging and acceptance are excluded from v0.9.
+They are neither delivery requirements nor dependencies of ordinary drive
+operations. v2.0 is being rebuilt separately; no compatibility work is required.
+
 The native single-file GET adapter preserves `/api2/repos/{repo}/file/` and
 returns a JSON URL string, as CE does. It issues an existing path/head-bound
 60-second native read ticket after current C-policy preflight. Browser navigation

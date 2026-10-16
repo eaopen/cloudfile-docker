@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-server
-          ref: e7113d7b7bff2e939e71d941b9d68fe81c2d3898
+          ref: 8ebd562aa5da2a747255e40234c42aba6ce8ac21
           path: cloudfile-server
           fetch-depth: 0
       - uses: actions/checkout@v4
@@ -94,7 +94,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-server
-          ref: e7113d7b7bff2e939e71d941b9d68fe81c2d3898
+          ref: 8ebd562aa5da2a747255e40234c42aba6ce8ac21
           path: cloudfile-server
           fetch-depth: 0
       - uses: actions/checkout@v4

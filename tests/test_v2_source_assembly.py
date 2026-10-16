@@ -65,6 +65,24 @@ class SourceAssemblyTest(unittest.TestCase):
             module.assemble(self.root, output, self.config, self.refs)
         self.assertFalse(output.exists())
 
+    def test_explicit_native_patch_has_before_and_after_receipt(self):
+        self.config['components']['cloudfile-server']['native_patches'] = ['native.txt']
+        output = self.root / 'patched'
+        receipt = module.assemble(self.root, output, self.config, self.refs)
+        self.assertEqual((output / 'seafile-server/native.txt').read_text(), 'unreviewed fork modification')
+        server = receipt['components']['cloudfile-server']
+        self.assertNotEqual(server['native_before_sha256']['native.txt'], server['overlay_sha256']['native.txt'])
+        self.assertEqual((output / 'seahub/native.txt').read_text(), 'fixed upstream file')
+        self.assertFalse((output / 'seafile-server/cloudfile_extensions').exists())
+
+    def test_native_patch_cannot_name_directory_or_new_module(self):
+        for file in ('cloudfile_extensions', 'native.txt/..', 'missing.txt', '/'):
+            with self.subTest(file=file):
+                self.config['components']['cloudfile-server']['native_patches'] = [file]
+                with self.assertRaises(ValueError):
+                    module.assemble(self.root, self.root / 'failed', self.config, self.refs)
+                self.assertFalse((self.root / 'failed').exists())
+
     def test_absolute_legacy_import_is_rejected(self):
         self._bad_import('from cloudfile_extensions.jobs.store import JobStore\n')
 

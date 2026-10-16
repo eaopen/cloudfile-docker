@@ -77,6 +77,17 @@ def assemble(workspace, output, source_set, refs):
                         raise ValueError('overlay must not replace native source: ' + file)
                     overlay_files.append(file)
                 extract(repo, overlay_ref, target, [prefix])
+            # Native execution seams are reviewed file by file, separately from
+            # additive modules. Both source commits stay immutable in the pin.
+            native_patch_digests = {}
+            for file in config.get('native_patches', []):
+                if (file not in native_files or file.startswith('/') or
+                        '..' in Path(file).parts or
+                        git(repo, 'ls-tree', '--name-only', overlay_ref, '--', file).decode().strip() != file):
+                    raise ValueError('native patch must name one existing file: ' + file)
+                native_patch_digests[file] = hashlib.sha256((target / file).read_bytes()).hexdigest()
+                extract(repo, overlay_ref, target, [file])
+                overlay_files.append(file)
             digests = {}
             for file in overlay_files:
                 path = target / file
@@ -87,7 +98,8 @@ def assemble(workspace, output, source_set, refs):
             if (target / 'cloudfile_extensions').exists() or (target / 'cloudfile_ext/apps.py').exists():
                 raise ValueError('legacy runtime leaked into native source')
             receipt['components'][component] = {'native_commit': base, 'overlay_commit': overlay_ref,
-                                                'overlay_sha256': digests}
+                                                'overlay_sha256': digests,
+                                                'native_before_sha256': native_patch_digests}
         (stage / 'v2-source-receipt.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
         stage.rename(output)
     except BaseException:

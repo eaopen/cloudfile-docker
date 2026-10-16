@@ -47,7 +47,8 @@ def run():
         connection = pymysql.connect(host=sql_host, port=sql_port, user=database_user, password=database_password,
                                      database=names['files'], charset='utf8mb4', autocommit=True)
         FreshSchema(connection, (source / 'seafile-server/scripts/sql/mysql/cloudfile-v2.sql').read_text()).install()
-        with tempfile.TemporaryDirectory(prefix='cfv2-native-runtime-') as temporary:
+        with tempfile.TemporaryDirectory(prefix='cfv2-native-runtime-') as temporary, \
+                tempfile.TemporaryDirectory(prefix='cfv2-library-root-', dir='/dev/shm') as automatic_root:
             root = Path(temporary)
             conf, ccnet, data = root / 'conf', root / 'ccnet', root / 'seafile-data'
             for directory in (conf, ccnet, data):
@@ -70,27 +71,29 @@ port=8082
                 SEAFILE_MYSQL_DB_PASSWORD=database_password,
                 SEAFILE_MYSQL_DB_CCNET_DB_NAME=names['account'], SEAFILE_MYSQL_DB_SEAFILE_DB_NAME=names['files'],
                 JWT_PRIVATE_KEY=secrets.token_urlsafe(48), CACHE_PROVIDER='redis', ENABLE_GO_FILESERVER='true')
-            for label, command in (
-                ('server', [str(prefix / 'bin/seaf-server'), '-F', str(conf), '-c', str(ccnet), '-d', str(data), '-l', str(root / 'server.log'), '-f']),
-                ('fileserver', [str(prefix / 'bin/fileserver'), '-F', str(conf), '-d', str(data), '-l', str(root / 'fileserver.log')])):
-                handle = (root / (label + '.stderr')).open('w')
-                handles.append(handle)
-                processes.append(subprocess.Popen(command, stdout=handle, stderr=handle))
-            deadline = time.monotonic() + 30
-            while True:
-                try:
-                    if not (data / 'seafile.sock').exists():
-                        raise ConnectionError('RPC not ready')
-                    with socket.create_connection(('127.0.0.1', 8082), timeout=1):
-                        break
-                except OSError:
-                    if time.monotonic() >= deadline or any(p.poll() is not None for p in processes):
-                        for log in root.glob('*.log'):
-                            print(log.name, log.read_text()[-6000:])
-                        for log in root.glob('*.stderr'):
-                            print(log.name, log.read_text()[-6000:])
-                        raise RuntimeError('native CE14 services did not start') from None
-                    time.sleep(.2)
+            def start_services():
+                for label, command in (
+                    ('server', [str(prefix / 'bin/seaf-server'), '-F', str(conf), '-c', str(ccnet), '-d', str(data), '-l', str(root / 'server.log'), '-f']),
+                    ('fileserver', [str(prefix / 'bin/fileserver'), '-F', str(conf), '-d', str(data), '-l', str(root / 'fileserver.log')])):
+                    handle = (root / (label + '.stderr')).open('a')
+                    handles.append(handle)
+                    processes.append(subprocess.Popen(command, stdout=handle, stderr=handle))
+                deadline = time.monotonic() + 30
+                while True:
+                    try:
+                        if not (data / 'seafile.sock').exists():
+                            raise ConnectionError('RPC not ready')
+                        with socket.create_connection(('127.0.0.1', 8082), timeout=1):
+                            break
+                    except OSError:
+                        if time.monotonic() >= deadline or any(p.poll() is not None for p in processes):
+                            for log in root.glob('*.log'):
+                                print(log.name, log.read_text()[-6000:])
+                            for log in root.glob('*.stderr'):
+                                print(log.name, log.read_text()[-6000:])
+                            raise RuntimeError('native CE14 services did not start') from None
+                        time.sleep(.2)
+            start_services()
             from seaserv import ccnet_api, seafile_api
             owner = 'native-owner@example.test'
             assert ccnet_api.add_emailuser(owner, '!', 0, 1) == 0
@@ -110,6 +113,31 @@ port=8082
             projector = Memberships(connection, client, identity, account_schema=names['account'], provider='etech', fetch=lambda uid: subject)
             cache_key = projector._key('uid-runtime', username)
             projector.ensure('uid-runtime', username)
+            automatic = os.environ.get('CF_V2_AUTO_STORAGE') == '1'
+            legacy = None
+            storage = Path(automatic_root)
+            if automatic:
+                legacy = seafile_api.create_repo('Native library before V2', '', owner)
+                assert seafile_api.post_dir(legacy, '/', 'preserved', owner) == 0
+                legacy_head = seafile_api.get_repo(legacy).head_cmmt_id
+                for process in reversed(processes):
+                    process.terminate()
+                    process.wait(timeout=10)
+                processes.clear()
+                # Native Python RPC pools retain sockets across process restarts.
+                from seaserv.service import seafserv_threaded_rpc
+                while not seafserv_threaded_rpc._pool.empty():
+                    seafserv_threaded_rpc._pool.get_nowait().stop()
+                with (conf / 'seafile.conf').open('a') as config:
+                    config.write(f'\n[cloudfile_v2]\nauto_local_root={storage}\n')
+                start_services()
+                assert seafile_api.get_repo(legacy).head_cmmt_id == legacy_head
+                assert seafile_api.post_dir(legacy, '/', 'still-native', owner) == 0
+                with connection.cursor() as cursor:
+                    cursor.execute('SELECT storage_id FROM RepoStorageId WHERE repo_id=%s', (legacy,))
+                    assert cursor.fetchone() is None
+                    cursor.execute('SELECT repo_key FROM cf_library_storage WHERE repo_id=%s', (legacy,))
+                    assert cursor.fetchone() is None
             repo = seafile_api.create_repo('Fresh native V2 runtime', '', owner)
             assert repo and seafile_api.get_repo(repo).id == repo
             assert seafile_api.check_permission(repo, username) is None
@@ -139,11 +167,95 @@ port=8082
             subject.update(roles=[], generated_at=datetime.now(timezone.utc).isoformat())
             projector.ensure('uid-runtime', username, force=True)
             assert seafile_api.check_permission(repo, username) is None
+            if automatic:
+                # C RPC writes blocks and metadata; Go downloads those bytes.
+                local_file = root / 'c-source.bin'
+                local_file.write_bytes(content)
+                assert seafile_api.post_file(repo, str(local_file), '/project', 'c-written.bin', owner) == 0
+                c_file = seafile_api.get_file_id_by_path(repo, '/project/c-written.bin')
+                c_token = seafile_api.get_fileserver_access_token(repo, c_file, 'download', owner, False)
+                assert requests.get('http://127.0.0.1:8082/files/' + c_token + '/c-written.bin', timeout=30).content == content
+                with connection.cursor() as cursor:
+                    cursor.execute('SELECT repo_key,state FROM cf_library_storage WHERE repo_id=%s', (repo,))
+                    assert cursor.fetchone() == (repo, 'active')
+                    cursor.execute('SELECT storage_id FROM RepoStorageId WHERE repo_id=%s', (repo,))
+                    assert cursor.fetchone() == ('auto-local:' + repo,)
+                for kind in ('commits', 'fs', 'blocks'):
+                    assert any((storage / repo / 'storage' / kind / repo).rglob('*'))
+                    assert not (data / 'storage' / kind / repo).exists()
+                assert os.stat(data).st_dev != os.stat(storage).st_dev
+                seafile_api.copy_file(repo, '/project', json.dumps(['c-written.bin']), legacy,
+                                      '/', json.dumps(['cross-volume.bin']), owner, 0, synchronous=1)
+                copied = seafile_api.get_file_id_by_path(legacy, '/cross-volume.bin')
+                assert copied == c_file
+                copy_token = seafile_api.get_fileserver_access_token(legacy, copied, 'download', owner, False)
+                assert requests.get('http://127.0.0.1:8082/files/' + copy_token + '/cross-volume.bin', timeout=30).content == content
+                # A bad mapping must refuse both processes, never read a decoy
+                # in the default directory. A schema outage must also refuse.
+                decoy = data / 'storage/blocks' / repo
+                decoy.mkdir()
+                with connection.cursor() as cursor:
+                    cursor.execute('UPDATE RepoStorageId SET storage_id=%s WHERE repo_id=%s', ('auto-local:wrong-key', repo))
+                refused = requests.get('http://127.0.0.1:8082/files/' + c_token + '/c-written.bin', timeout=30)
+                assert refused.status_code != 200
+                try:
+                    broken = seafile_api.post_dir(repo, '/', 'must-refuse', owner)
+                except Exception:
+                    broken = -1
+                assert broken != 0
+                with connection.cursor() as cursor:
+                    cursor.execute('UPDATE RepoStorageId SET storage_id=%s WHERE repo_id=%s', ('auto-local:' + repo, repo))
+                assert requests.get('http://127.0.0.1:8082/files/' + c_token + '/c-written.bin', timeout=30).content == content
+                with connection.cursor() as cursor:
+                    cursor.execute('SELECT COUNT(*) FROM Repo')
+                    count_before = cursor.fetchone()[0]
+                    cursor.execute('ALTER TABLE cf_library_storage RENAME TO storage_unavailable')
+                try:
+                    unavailable = requests.get('http://127.0.0.1:8082/files/' + c_token + '/c-written.bin', timeout=30)
+                    assert unavailable.status_code != 200
+                    try:
+                        seafile_api.create_repo('Must not allocate during outage', '', owner)
+                    except Exception:
+                        pass
+                    else:
+                        raise AssertionError('storage outage allowed allocation')
+                    with connection.cursor() as cursor:
+                        cursor.execute('SELECT COUNT(*) FROM Repo')
+                        assert cursor.fetchone()[0] == count_before
+                finally:
+                    with connection.cursor() as cursor:
+                        cursor.execute('ALTER TABLE storage_unavailable RENAME TO cf_library_storage')
+                assert seafile_api.remove_repo(repo) == 0
+                assert seafile_api.restore_repo_from_trash(repo) == 0
+                assert seafile_api.get_file_id_by_path(repo, '/project/c-written.bin') == c_file
+                assert seafile_api.remove_repo(repo) == 0
+                assert seafile_api.del_repo_from_trash(repo) == 0
+                with connection.cursor() as cursor:
+                    cursor.execute('SELECT repo_key,state FROM cf_library_storage WHERE repo_id=%s', (repo,))
+                    assert cursor.fetchone() == (repo, 'retired')
+                # Cold GC must find the route without warming Server caches.
+                for process in reversed(processes):
+                    process.terminate()
+                    process.wait(timeout=10)
+                processes.clear()
+                gc = subprocess.run([str(prefix / 'bin/seafserv-gc'), '-F', str(conf), '-c', str(ccnet), '-d', str(data), '-r'],
+                                    capture_output=True, text=True, timeout=30)
+                assert gc.returncode == 0, gc.stdout + gc.stderr
+                for kind in ('commits', 'fs', 'blocks'):
+                    assert not (storage / repo / 'storage' / kind / repo).exists()
+                assert decoy.exists(), 'GC touched default-directory decoy'
+                with connection.cursor() as cursor:
+                    cursor.execute('SELECT repo_key,state FROM cf_library_storage WHERE repo_id=%s', (repo,))
+                    assert cursor.fetchone() == (repo, 'retired')
+                    cursor.execute('SELECT storage_id FROM RepoStorageId WHERE repo_id=%s', (repo,))
+                    assert cursor.fetchone() == ('auto-local:' + repo,)
             with connection.cursor() as cursor:
                 cursor.execute('SHOW TABLES')
                 assert {row[0] for row in cursor.fetchall() if row[0].startswith('cf_')} == TABLES
             print(json.dumps(dict(native_c_started=True, native_go_started=True, native_rpc_accounts=True,
                 uid_rename_stable=True, group_projection_and_revocation=True, native_repo_create=True,
+                automatic_storage_verified=automatic, native_library_preserved=bool(legacy), cold_storage_gc=automatic,
+                cross_volume_copy=automatic, schema_outage_denied=automatic,
                 native_group_share=True, http_upload_bytes=len(content), branch_commit_changed=True,
                 http_download_bytes=len(content), http_range=True, rename=True, delete=True,
                 extension_tables=sorted(TABLES), oidc_login_verified=False, directory_acl_verified=False), sort_keys=True))

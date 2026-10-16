@@ -6,9 +6,24 @@
       "directory": "seafile-server",
       "native_commit": "b6179eb3d73b04c67a00412ebaf964153c4ad2c0",
       "overlay": [
-        "scripts/sql/mysql/cloudfile-v2.sql"
+        "scripts/sql/mysql/cloudfile-v2.sql",
+        "common/cf-v2-storage.c",
+        "common/cf-v2-storage.h",
+        "fileserver/objstore/cf_v2_storage.go",
+        "fileserver/objstore/cf_v2_storage_test.go"
       ],
-      "overlay_commit": "7c32cd5bce0ec04e30b2494c8f9b9a4af7c2e01b"
+      "overlay_commit": "85a9dd5b9e52c57befb39940e4e392b1bcd630d4",
+      "native_patches": [
+        "common/Makefile.am",
+        "common/obj-backend-fs.c",
+        "common/block-backend-fs.c",
+        "server/Makefile.am",
+        "server/repo-mgr.c",
+        "server/gc/Makefile.am",
+        "fuse/Makefile.am",
+        "fileserver/fileserver.go",
+        "fileserver/objstore/objstore.go"
+      ]
     },
     "cloudfile-hub": {
       "directory": "seahub",

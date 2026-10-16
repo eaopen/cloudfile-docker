@@ -1,6 +1,6 @@
 # V2 独立三表与 CE14 源码组装
 
-本切片交付独立新装 DDL、原生 UID 绑定/单用户 GroupUser TTL 适配器及干净源码组装工具。**尚非完整 M1/MVP**：没有接通 OIDC Web 登录、目录 ACL 的 C/Go 终判、无库权限共享根，或独立库存储路由；不能将本切片作为这些能力已可用的镜像部署。
+本切片交付独立新装 DDL、原生 UID 绑定/单用户 GroupUser TTL 适配器、自动每库存储路由及干净源码组装工具。**尚非完整 M1/MVP**：没有接通 OIDC Web 登录、目录 ACL 的 C/Go 终判或无库权限共享根；不能将本切片作为这些能力已可用的镜像部署。
 
 ## 干净源码
 
@@ -10,7 +10,7 @@
 python3 tools/prepare-v2-source.py --workspace .. --output /tmp/cfv2-clean
 ```
 
-输出保留 `v2-source-receipt.json`，记录原生提交、扩展提交及每个扩展文件 SHA256。扩展禁止覆盖原生文件、越出 V2 包或引用旧注册中心/任务框架。旧分支历史仍在 Git 内，构建输入只取这份显式源码集。现有 `cloudfile_14.0` 构建器属于旧组装路径，不能用其结果证明此干净基线。
+输出保留 `v2-source-receipt.json`，记录原生提交、扩展提交及每个扩展文件 SHA256。普通 overlay 禁止覆盖原生文件；实际执行所需的修改必须逐文件列在 `native_patches`，仅允许固定上游已经存在的单一文件，并记录修改前后 SHA256。扩展仍不得越出 V2 包或引用旧注册中心/任务框架。旧分支历史仍在 Git 内，构建输入只取这份显式源码集。现有 `cloudfile_14.0` 构建器属于旧组装路径，不能用其结果证明此干净基线。
 
 ## 新装三表
 
@@ -47,13 +47,24 @@ python3 -m cloudfile_ext.v2 check --ddl ../seafile-server/scripts/sql/mysql/clou
 
 Linux CE14 构建环境执行 `bash build/v2/build-native.sh /tmp/cfv2-clean /tmp/cfv2-prefix`，固定 libsearpc/libevhtp 来源，编译原生 C 和 Go；不运行旧 bootstrap。`tests/v2/native_runtime.py` 在隔离数据库上启动真实服务，通过原生 RPC 建号/建组/建库/共享，并验证 HTTP 上传、Branch 变化、下载、Range、改名和删除。
 
-真实服务用例仅证明原生 CE 文件通道与新身份/组适配器可共存，**不是** OIDC、扩展目录权限、独立库存储或 Etech Web/BPM 验收。当前不自动挂载 V2 ACL 发布接口。
+默认运行验证原生 CE 文件通道与新身份/组适配器可共存。设置 `CF_V2_AUTO_STORAGE=1` 后，同一测试先创建普通原生库，再重启启用自动库存储，验证旧库不改绑、C/Go 文件字节、跨文件系统复制、损坏绑定/缺表拒绝、回收站恢复和冷 GC。自动存储测试使用 `/dev/shm` 与默认数据目录分属不同设备，不用同一磁盘上的两个目录冒充跨设备复制。两种模式均需通过；CI 每次重新编译 C/Go，并执行 Go 后端 race 测试。**这些不是 OIDC、扩展目录权限或 Etech Web/BPM 验收**。当前不自动挂载 V2 ACL 发布接口。
+
+## 自动每库存储配置
+
+Server、Go Fileserver 和 GC 共用 `seafile.conf`：
+
+```ini
+[cloudfile_v2]
+auto_local_root=/srv/cloudfile-libraries
+```
+
+缺省不启用。根目录必须预先创建且由部署方管理；缺失挂载、符号链接 key、未知/损坏路由或缺表均拒绝 I/O。新库在第一份 Commit 写入前，将 UUID key 和原生 `RepoStorageId` 在同一事务内保留。`cf_library_storage` 不复制 storage_id，永久删除后保留 retired key 和原生绑定供冷 GC 定位，不自动认领、移动或重建旧库。块暂存位于目标文件系统，支持 key 目录分别挂载的部署方式。完整契约见 Server `doc/cloudfile-v2-clean.md`。该配置暂未接入镜像 bootstrap；本批不交付产品镜像。
 
 ## dev2-clean 来源锁定
 
 本工作分支来自 upstream Docker `822c24c9`（2026-10-12）；Server/Hub 的上游基线分别为 `b6179eb3`（2026-10-15）与 `15ec1aa7`（2026-10-16）。三仓已有 `archive/dev2-m1-20261016` 保存上一版全部成果，`dev2-clean` 只含上游源码和显式移植的少量文件。
 
-`source-set.json` 的 `overlay_commit` 分别锁定 Server `7c32cd5b` 与 Hub `dbc3c1f2`；组装时强制校验锁定 SHA，后续移植必须显式同步更新。`ce_version` 表示测试源码组，不是声称 Seafile 官方发布了同名发行版。此工作树尚未构建 2.0 镜像或完成真实 Etech 端到端验收。
+`source-set.json` 的 `overlay_commit` 锁定实际 Server/Hub 提交；组装时强制校验锁定 SHA，后续移植必须显式同步更新，CI checkout 使用同一来源。`ce_version` 表示测试源码组，不是声称 Seafile 官方发布了同名发行版。此工作树尚未构建 2.0 镜像或完成真实 Etech 端到端验收。
 
 ## First native runtime evidence (2026-10-16)
 

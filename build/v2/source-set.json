@@ -10,9 +10,14 @@
         "common/cf-v2-storage.c",
         "common/cf-v2-storage.h",
         "fileserver/objstore/cf_v2_storage.go",
-        "fileserver/objstore/cf_v2_storage_test.go"
+        "fileserver/objstore/cf_v2_storage_test.go",
+        "scripts/sql/mysql/cloudfile-v2-edit.sql",
+        "common/cf-v2-edit-fence.c",
+        "common/cf-v2-edit-fence.h",
+        "fileserver/cf_v2_edit_fence.go",
+        "fileserver/cf_v2_edit_fence_test.go"
       ],
-      "overlay_commit": "8ebd562aa5da2a747255e40234c42aba6ce8ac21",
+      "overlay_commit": "9a15b9568a9fafafb3b9706788676c16f8532705",
       "native_patches": [
         "common/Makefile.am",
         "common/obj-backend-fs.c",
@@ -22,7 +27,11 @@
         "server/gc/Makefile.am",
         "fuse/Makefile.am",
         "fileserver/fileserver.go",
-        "fileserver/objstore/objstore.go"
+        "fileserver/objstore/objstore.go",
+        "common/branch-mgr.c",
+        "common/diff-simple.c",
+        "fileserver/fileop.go",
+        "fileserver/option/option.go"
       ]
     },
     "cloudfile-hub": {
@@ -31,7 +40,7 @@
       "overlay": [
         "cloudfile_ext/v2"
       ],
-      "overlay_commit": "2acaea2be16d95a8b8b21f8033f4e33ec190ae51",
+      "overlay_commit": "49317db5582edfa17770d9ebadda0f832b7374b1",
       "native_patches": [
         "seahub/urls.py",
         "seahub/oauth/views.py"

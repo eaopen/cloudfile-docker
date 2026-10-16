@@ -1,5 +1,10 @@
 name: CF-EDIT pinned native compile (feature)
 on:
+  push:
+    branches: [feature/cf-edit]
+    paths:
+      - "build/v2/source-set.json"
+      - ".github/workflows/cf-edit-native.yml"
   pull_request:
     branches: [dev]
     paths:

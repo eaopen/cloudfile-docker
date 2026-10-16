@@ -54,3 +54,7 @@ Linux CE14 构建环境执行 `bash build/v2/build-native.sh /tmp/cfv2-clean /tm
 本工作分支来自 upstream Docker `822c24c9`（2026-10-12）；Server/Hub 的上游基线分别为 `b6179eb3`（2026-10-15）与 `15ec1aa7`（2026-10-16）。三仓已有 `archive/dev2-m1-20261016` 保存上一版全部成果，`dev2-clean` 只含上游源码和显式移植的少量文件。
 
 `source-set.json` 的 `overlay_commit` 分别锁定 Server `7c32cd5b` 与 Hub `dbc3c1f2`；组装时强制校验锁定 SHA，后续移植必须显式同步更新。`ce_version` 表示测试源码组，不是声称 Seafile 官方发布了同名发行版。此工作树尚未构建 2.0 镜像或完成真实 Etech 端到端验收。
+
+## First native runtime evidence (2026-10-16)
+
+[Actions run 38865151544](https://github.com/eaopen/cloudfile-docker/actions/runs/38865151544), sourced from Docker commit `ee652a1dd0fadd6af625aaa4e34912760c995a6e`, reports both `native-and-schema` and `native-ce14-runtime` **success**. The latter actually builds `seaf-server` and Go `fileserver` using `build/v2/build-native.sh`, starts them with isolated MariaDB/Redis, then runs `tests/v2/native_runtime.py`. The JSON proof reports `http_upload_bytes=184320`, `http_download_bytes=184320`, `branch_commit_changed=true`, `http_range=true`, and real create/group-share/rename/delete. It also explicitly reports `oidc_login_verified=false` and `directory_acl_verified=false`. No Seahub Web process, application session, Etech DEV UI, storage backend-routing or CloudFile ACL byte final-authorization was verified. The two missing product milestones remain open.

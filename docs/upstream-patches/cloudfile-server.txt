@@ -57,3 +57,5 @@ common/branch-mgr.c
 common/user-mgr.c
 
 common/user-mgr.h
+
+fileserver/fileserver.go

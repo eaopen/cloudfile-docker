@@ -1,6 +1,37 @@
 # v0.9 RC: Unified Default Authorization (Blocking Contract)
 
-Status: P0 NOT IMPLEMENTED. This document is a release acceptance contract, not a claim of completed work.
+Status: P0 IN PROGRESS. Native single-file download adapters are implemented
+and locally tested; chunked upload, structural writes and real deployment
+acceptance remain incomplete. This is not a release claim.
+
+## Etech v0.9 closeout boundary (2026-10-16)
+
+The release consumer is the existing Etech drive. Independent Hub pages,
+sync/WebDAV/third-party clients and v2.0 compatibility are outside this
+closeout. Existing guards remain mandatory for unadapted entries.
+
+The native single-file GET adapter preserves `/api2/repos/{repo}/file/` and
+returns a JSON URL string, as CE does. It issues an existing path/head-bound
+60-second native read ticket after current C-policy preflight. Browser navigation
+uses `/cloudfile/files/{ticket}/{filename}` on the configured FileServer root;
+this adapter reuses the guarded reader and audit path. It never issues a legacy
+ticket, accepts client-selected identities, or enables legacy managed reads.
+Every byte chunk and Range request still invokes the native read authority.
+Tickets remain single-use; a new request requires a fresh URL.
+
+The supported credentials are the existing signed OAuth browser session and
+the native v1 user Token used by Etech. The latter stores only a SHA-256 digest
+in private ticket conditions. At issuance, consumption and each chunk, Server
+locks the exact owner's current `api2_token` row on the configured identity
+database, compares its digest and requires InnoDB. Rotation/deletion, account
+disablement, identity/context changes and ACL revocation cannot reuse a cached
+grant. This proof is read-only and is refused by final write publication.
+Other token kinds fail closed until explicitly implemented.
+Token issuance uses a distinct native RPC name, so a newer Hub paired with
+an older Server refuses instead of dropping an unknown credential proof.
+
+This increment does not complete native chunked upload, structural writes or
+the Etech DEV acceptance gate. Hub/Server must be deployed together.
 
 ## Product invariants
 

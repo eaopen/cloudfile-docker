@@ -32,7 +32,7 @@ forks:
     ref: ed0cb02937c6246c579f650f870bd298d5c7876b
   cloudfile_hub:
     url: https://github.com/eaopen/cloudfile-hub.git
-    ref: 94ee2853c7827b2e5c5766982c473f58f0c2b24e
+    ref: e97d7387a12878d2a0d2d4f2187f5756bca491fb
 
 # Not forked. These are the upstream commits each fork is currently synced to.
 # tools/check-upstream-patches.sh uses them as its diff base in CI, where the

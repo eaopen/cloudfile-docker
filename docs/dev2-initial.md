@@ -5,7 +5,7 @@
 ## 当前来源
 
 - Server `dev2` @ `ed0cb02937c6246c579f650f870bd298d5c7876b`：继承 CE14 底层写入及已验证补丁；对共享根新增正向 ACL 的原生终判。
-- Hub `dev2` @ `94ee2853c7827b2e5c5766982c473f58f0c2b24e`：继承 CE14 Web/API，输入侧正向 ACL + `share_mode` 校验及单元用例。
+- Hub `dev2` @ `e97d7387a12878d2a0d2d4f2187f5756bca491fb`：继承 CE14 Web/API，输入侧正向 ACL + `share_mode` 校验及单元用例。
 - Docker `dev2`：只由此仓 `release.yaml` 组装 Server/Hub 的 **固定提交**，不接受滚动的 `dev` 默默参与构建。旧 `dev` 保持 CloudFile v0.9。
 - `jcetech/etech-eap` / `etech-eap-web` 固定使用已统一且包含 E0–E2 的 `dev`；不另起一条独立 Etech dev2 业务实现。
 
@@ -37,3 +37,5 @@ python3 -m unittest discover -s tests -p test_dev2_source_pins.py -q
 DEV Etech 单入口先允许 `/seafile + /seafhttp`，别名 `/cfile + /cfhttp` 属可延期能力；Etech SSO 是主系统之外的旁路，不能反向影响 PLM 主登录。2.0 首批优先验证浏览、目录内容授权、共享根和原生字节提交真实一致性。
 
 本次机器环境限制：上海开发机 RDC 未连接，Docker/C/Go/DB/Etech DEV 现场联验未实际执行；静态文件和 GitHub 提交不代表通过它们。
+
+**共享兼容入口复核**：Hub dev2 后续提交已一并修复旧 `DirectoryShares.create` 对拒绝权限的晋升，以及旧 ACL 更新保留 `share_mode` 时缺少合并后验证的问题；两项 SQL 测试用例已增补，但现场 MySQL 运行结果仍待 CI/开发环境确认。

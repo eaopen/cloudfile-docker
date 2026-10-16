@@ -171,6 +171,9 @@ port=8082
                 # C RPC writes blocks and metadata; Go downloads those bytes.
                 local_file = root / 'c-source.bin'
                 local_file.write_bytes(content)
+                # Native export selects the newest commit by whole-second ctime.
+                # Ensure the export fixture has a strictly newer timestamp.
+                time.sleep(1.05)
                 assert seafile_api.post_file(repo, str(local_file), '/project', 'c-written.bin', owner) == 0
                 c_file = seafile_api.get_file_id_by_path(repo, '/project/c-written.bin')
                 c_token = seafile_api.get_fileserver_access_token(repo, c_file, 'download', owner, False)
@@ -190,6 +193,17 @@ port=8082
                 assert copied == c_file
                 copy_token = seafile_api.get_fileserver_access_token(legacy, copied, 'download', owner, False)
                 assert requests.get('http://127.0.0.1:8082/files/' + copy_token + '/cross-volume.bin', timeout=30).content == content
+                maintenance_args = ['-F', str(conf), '-c', str(ccnet), '-d', str(data)]
+                fsck = subprocess.run([str(prefix / 'bin/seaf-fsck'), *maintenance_args, repo],
+                                      capture_output=True, text=True, timeout=30)
+                assert fsck.returncode == 0 and 'Fsck finished for repo ' + repo[:8] in fsck.stdout + fsck.stderr, fsck.stdout + fsck.stderr
+                assert not re.search(r'failed|missing|corrupt', fsck.stdout + fsck.stderr, re.I), fsck.stdout + fsck.stderr
+                exported = root / 'exported'
+                export = subprocess.run([str(prefix / 'bin/seaf-fsck'), *maintenance_args, '-E', str(exported), repo],
+                                        capture_output=True, text=True, timeout=30)
+                assert export.returncode == 0, export.stdout + export.stderr
+                export_files = list(exported.rglob('c-written.bin'))
+                assert len(export_files) == 1 and export_files[0].read_bytes() == content, export.stdout + export.stderr
                 # A bad mapping must refuse both processes, never read a decoy
                 # in the default directory. A schema outage must also refuse.
                 decoy = data / 'storage/blocks' / repo
@@ -276,6 +290,7 @@ port=8082
                 uid_rename_stable=True, group_projection_and_revocation=True, native_repo_create=True,
                 automatic_storage_verified=automatic, native_library_preserved=bool(legacy), cold_storage_gc=automatic,
                 cross_volume_copy=automatic, schema_outage_denied=automatic, allocation_rollback=automatic, key_reuse_denied=automatic,
+                fsck_integrity=automatic, fsck_export_bytes=automatic,
                 native_group_share=True, http_upload_bytes=len(content), branch_commit_changed=True,
                 http_download_bytes=len(content), http_range=True, rename=True, delete=True,
                 extension_tables=sorted(TABLES), oidc_login_verified=False, directory_acl_verified=False), sort_keys=True))

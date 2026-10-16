@@ -12,7 +12,7 @@
         "fileserver/objstore/cf_v2_storage.go",
         "fileserver/objstore/cf_v2_storage_test.go"
       ],
-      "overlay_commit": "85a9dd5b9e52c57befb39940e4e392b1bcd630d4",
+      "overlay_commit": "e7113d7b7bff2e939e71d941b9d68fe81c2d3898",
       "native_patches": [
         "common/Makefile.am",
         "common/obj-backend-fs.c",
@@ -22,7 +22,8 @@
         "server/gc/Makefile.am",
         "fuse/Makefile.am",
         "fileserver/fileserver.go",
-        "fileserver/objstore/objstore.go"
+        "fileserver/objstore/objstore.go",
+        "server/gc/seafile-session.c"
       ]
     },
     "cloudfile-hub": {

@@ -17,7 +17,7 @@
         "fileserver/cf_v2_edit_fence.go",
         "fileserver/cf_v2_edit_fence_test.go"
       ],
-      "overlay_commit": "ccdef66debfdb802ef112e2a98234ca487539d61",
+      "overlay_commit": "9a15b9568a9fafafb3b9706788676c16f8532705",
       "native_patches": [
         "common/Makefile.am",
         "common/obj-backend-fs.c",
@@ -29,6 +29,7 @@
         "fileserver/fileserver.go",
         "fileserver/objstore/objstore.go",
         "common/branch-mgr.c",
+        "common/diff-simple.c",
         "fileserver/fileop.go",
         "fileserver/option/option.go"
       ]
@@ -39,7 +40,7 @@
       "overlay": [
         "cloudfile_ext/v2"
       ],
-      "overlay_commit": "40a779bf998b2e8a3cebf240094498402e5af9de",
+      "overlay_commit": "84cfbda843e8b2447de97325149b05a4ff3fd0ba",
       "native_patches": [
         "seahub/urls.py",
         "seahub/oauth/views.py"

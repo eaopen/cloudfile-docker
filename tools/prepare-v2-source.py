@@ -30,9 +30,12 @@ def check_overlay(path):
         if isinstance(node, ast.Import):
             modules = [item.name for item in node.names]
         elif isinstance(node, ast.ImportFrom):
-            package = next(parent for parent in path.parents if parent.name == 'v2')
-            if node.level and node.level > len(path.relative_to(package).parts):
-                raise ValueError('overlay import escapes V2 package')
+            # Reviewed native URL seams use absolute Django imports and do
+            # not live below v2/. Relative imports must still stay in V2.
+            if node.level:
+                package = next((parent for parent in path.parents if parent.name == 'v2'), None)
+                if package is None or node.level > len(path.relative_to(package).parts):
+                    raise ValueError('overlay import escapes V2 package')
             modules = [node.module or '']
         for module in modules:
             if module.startswith('cloudfile_ext') and not (module == 'cloudfile_ext.v2' or module.startswith('cloudfile_ext.v2.')):

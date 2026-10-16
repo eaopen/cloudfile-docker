@@ -11,8 +11,8 @@
 # checks out exactly these refs. Bump the SHAs here, never in the build script.
 
 # Candidate-only 2.0 dev2 snapshot. No PROD tag, image or rollout is authorized.
-product: 2.0.0-dev.2
-image: cloudfile/cloudfile:2.0.0-dev.2
+product: 2.0.0-dev.3
+image: cloudfile/cloudfile:2.0.0-dev.3
 build_base_image: cloudfile-build-base:ce14-v2
 ubuntu_base_image: ubuntu:24.04
 
@@ -29,10 +29,10 @@ docker_commit: ""
 forks:
   cloudfile_server:
     url: https://github.com/eaopen/cloudfile-server.git
-    ref: ed0cb02937c6246c579f650f870bd298d5c7876b
+    ref: af5615d1f8cbabc734d86133c039f92b4bc9d7b9
   cloudfile_hub:
     url: https://github.com/eaopen/cloudfile-hub.git
-    ref: ca9321dadeff6b0bb5f2a372ff16e6f860c4d7ec
+    ref: f361cede825969ab63a60a28ba6a1ebf867532ef
 
 # Not forked. These are the upstream commits each fork is currently synced to.
 # tools/check-upstream-patches.sh uses them as its diff base in CI, where the
@@ -68,8 +68,9 @@ ce_anchor:
   seafile_server: 17e4b875c2118233830316392ed76a736b374c69
   seahub: 3c408439bfca54dbad61e2f6cdb706d2dcdf9f7a
 
-# Transitional legacy database schema until 2.0 fresh-install and migration
-# checks are implemented. Do NOT interpret this as the reduced 2.0 schema.
+# Legacy assembly schema only. The independent V2 three-table source uses
+# build/v2/source-set.json and scripts/sql/mysql/cloudfile-v2.sql; it never
+# applies the legacy bootstrap or migration ledger. V2 runtime is incomplete.
 # Bump when cf_* tables change shape; the upgrade path keys off this.
 # 1 -> 2 (2026-08-17): added cf_dir_admin (directory-level delegated manage).
 # Additive, IF NOT EXISTS, auto-applied by the bootstrap on every start -- no
@@ -79,3 +80,6 @@ ce_anchor:
 database_schema: 3
 # Bump when cloudfile_ext.registry hook signatures change.
 extension_api: 1
+
+# Explicit clean CE14 source assembly; source checkpoint, not a deployable MVP.
+v2_source_set: build/v2/source-set.json

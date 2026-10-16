@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "ce_version": "14.0.8",
+  "components": {
+    "cloudfile-server": {
+      "directory": "seafile-server",
+      "native_commit": "17e4b875c2118233830316392ed76a736b374c69",
+      "overlay": ["scripts/sql/mysql/cloudfile-v2.sql"]
+    },
+    "cloudfile-hub": {
+      "directory": "seahub",
+      "native_commit": "3c408439bfca54dbad61e2f6cdb706d2dcdf9f7a",
+      "overlay": ["cloudfile_ext/v2"]
+    }
+  }
+}

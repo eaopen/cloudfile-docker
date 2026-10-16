@@ -1,4 +1,5 @@
 """Focused canonical-path settings and real nginx proxy checks; no CE retesting."""
+import ast
 import importlib.util
 import json
 from pathlib import Path
@@ -44,6 +45,36 @@ class SettingsTest(unittest.TestCase):
             result=paths.read_settings(filename,set())
             self.assertEqual(set(result),{'CF_DIRECTORY_URL','CF_DIRECTORY_KEY_ID','CF_DIRECTORY_GROUP_OWNER'})
             self.assertEqual(result['CF_DIRECTORY_GROUP_OWNER'],'service@auth.local')
+
+    def test_native_child_inherits_the_same_canonical_root_as_hub(self):
+        # Native C/Go build internal ACL URLs from their process environment,
+        # not seahub_settings.py. Execute the real export block for both roots.
+        import os
+        import sys
+        from types import SimpleNamespace
+        tree = ast.parse((BUILD / 'start-dev.py').read_text())
+        exports = next(node for node in tree.body if isinstance(node, ast.For)
+                       and isinstance(node.iter, ast.Call)
+                       and isinstance(node.iter.func, ast.Attribute)
+                       and isinstance(node.iter.func.value, ast.Dict)
+                       and any(isinstance(key, ast.Constant) and key.value == 'SEAFILE_RPC_PIPE_PATH'
+                               for key in node.iter.func.value.keys))
+        code = compile(ast.Module(body=[exports], type_ignores=[]), '<native-env-export>', 'exec')
+        with tempfile.TemporaryDirectory() as directory:
+            for canonical in ('/cfile/', '/seafile/'):
+                settings = paths.web_settings('https://files.example.test', {'SITE_ROOT': canonical},
+                                              existing=canonical == '/seafile/')
+                environ = dict(os.environ, SITE_ROOT='/stale-inherited-root/')
+                scope = dict(os=SimpleNamespace(environ=environ), host='localhost',
+                             user='fixture', password='fixture-only',
+                             names={'account':'accounts','files':'files','hub':'hub'},
+                             conf=Path(directory), data=Path(directory), ccnet=Path(directory),
+                             logs=Path(directory), settings=settings)
+                exec(code, scope)
+                actual = subprocess.check_output(
+                    [sys.executable, '-c', 'import os; print(os.environ["SITE_ROOT"])'],
+                    env=environ, text=True).strip()
+                self.assertEqual(actual, settings['SITE_ROOT'])
 
     def test_fresh_defaults_use_cloudfile_paths(self):
         result = paths.web_settings('https://files.example.test/', {}, existing=False)

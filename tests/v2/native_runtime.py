@@ -233,6 +233,26 @@ port=8082
                 with connection.cursor() as cursor:
                     cursor.execute('SELECT repo_key,state FROM cf_library_storage WHERE repo_id=%s', (repo,))
                     assert cursor.fetchone() == (repo, 'retired')
+                # Explicit UUID creation cannot reuse a retired key, and a
+                # pre-existing untracked directory cannot be adopted.
+                blocked = str(uuid4())
+                (storage / blocked).mkdir()
+                marker = storage / blocked / 'preserve.txt'
+                marker.write_text('untracked directory')
+                for identifier in (repo, blocked):
+                    try:
+                        seafile_api.create_enc_repo(identifier, 'Must refuse reused key', '', owner,
+                                                    None, None, None, -1)
+                    except Exception:
+                        pass
+                    else:
+                        raise AssertionError('reserved or untracked key was reused')
+                assert marker.read_text() == 'untracked directory'
+                with connection.cursor() as cursor:
+                    cursor.execute('SELECT repo_id FROM RepoStorageId WHERE repo_id=%s', (blocked,))
+                    assert cursor.fetchone() is None
+                    cursor.execute('SELECT repo_key FROM cf_library_storage WHERE repo_id=%s', (blocked,))
+                    assert cursor.fetchone() is None
                 # Cold GC must find the route without warming Server caches.
                 for process in reversed(processes):
                     process.terminate()
@@ -255,7 +275,7 @@ port=8082
             print(json.dumps(dict(native_c_started=True, native_go_started=True, native_rpc_accounts=True,
                 uid_rename_stable=True, group_projection_and_revocation=True, native_repo_create=True,
                 automatic_storage_verified=automatic, native_library_preserved=bool(legacy), cold_storage_gc=automatic,
-                cross_volume_copy=automatic, schema_outage_denied=automatic,
+                cross_volume_copy=automatic, schema_outage_denied=automatic, allocation_rollback=automatic, key_reuse_denied=automatic,
                 native_group_share=True, http_upload_bytes=len(content), branch_commit_changed=True,
                 http_download_bytes=len(content), http_range=True, rename=True, delete=True,
                 extension_tables=sorted(TABLES), oidc_login_verified=False, directory_acl_verified=False), sort_keys=True))

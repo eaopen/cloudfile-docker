@@ -19,7 +19,7 @@
         "fileserver/cf_v2_edit_agent.go",
         "fileserver/cf_v2_edit_agent_test.go"
       ],
-      "overlay_commit": "80ecaadf6fecc4d554ab6ba75da8eabd2e428551",
+      "overlay_commit": "866ca36886c90f11138f9df537df9fb61ca62d7d",
       "native_patches": [
         "common/Makefile.am",
         "common/obj-backend-fs.c",

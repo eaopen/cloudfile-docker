@@ -25,12 +25,14 @@ jobs:
         with:
           repository: eaopen/cloudfile-server
           ref: feature/cf-edit
+          fetch-depth: 0  # pinned upstream CE14 SHA must exist, not just feature tip
           path: workspace/cloudfile-server
       - name: Checkout Hub feature (read-only)
         uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-hub
           ref: feature/cf-edit
+          fetch-depth: 0
           path: workspace/cloudfile-hub
       - name: Assemble only reviewed pinned CE14 sources
         run: |

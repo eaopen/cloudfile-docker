@@ -46,3 +46,7 @@ CloudFile 每次启动均运行 NativeLibraryDiscovery.reconcile()：只给真�
 Etech 管理员 POST /eap/cloudDrive/config/libraries/storage-check 对比 cf_library_storage 与 webdisk_library 全量集合。CloudFile 多出的 READY 库自动加入 Etech 待启用管理记录（active=0、PROVISIONING、BLOCKED），不更改 Seafile 原有权限，普通 Etech 用户列表不显示。已存在业务配置不覆盖；Etech 独有 UUID 通过单库原生资源诊断后显示缺登记/缺 Repo/回收站等处理建议。存在未完成 Etech 建库时不自动认领新的 V2 定向库，以避免新库发布回填竞态。
 
 Etech 的 active=0 仅控制业务可见性与发布，并不是 Seafile ACL 拒绝。确实丢失的旧 Repo 不复用 UUID 创建新库，应由运维恢复旧数据库和文件，或由业务人员确认新建独立库。首次强制发布可能覆盖原生受管授权，必须人工核对。
+
+## DEV 发布 source-set 修复（2026-10-17）
+
+修改原因：PR 合并后构建清单仍固定旧 overlay，且未纳入原生 AdminLibraries 执行入口。发布必须固定 Hub `8dd4e5b6c53c0aeb1218996cd8aec50a237d1dbf`、Server `c1b3ba62423341b5321f052119697e6f24528b2a`，并显式携带 `seahub/api2/endpoints/admin/libraries.py`；仅更新 Docker 启动脚本不能交付库发现能力。构建前核对实际组装 receipt 和入口文件摘要，不以 PR 合并替代镜像内容验证。

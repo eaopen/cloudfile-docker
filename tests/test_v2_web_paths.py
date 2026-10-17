@@ -69,52 +69,20 @@ class SettingsTest(unittest.TestCase):
 
 
 class CheckoutCapabilityTest(unittest.TestCase):
-    def test_new_v2_checkout_is_enabled_by_default(self):
-        self.assertTrue(paths.checkout_enabled(None, existing=False))
-        self.assertTrue(paths.checkout_enabled('true', existing=False))
-        self.assertFalse(paths.checkout_enabled('false', existing=False))
-        self.assertFalse(paths.checkout_enabled(None, '0', existing=False))
+    def test_new_v2_always_has_checkout_without_flags(self):
+        self.assertTrue(paths.checkout_capable(existing=False))
 
-    def test_existing_v2_tracks_actual_guard_capability(self):
-        self.assertFalse(paths.checkout_enabled(None, existing=True, guard_installed=False))
-        self.assertTrue(paths.checkout_enabled(None, existing=True, guard_installed=True))
-        self.assertTrue(paths.checkout_enabled('1', existing=True, guard_installed=True))
-        with self.assertRaises(ValueError):
-            paths.checkout_enabled('true', existing=True, guard_installed=False)
-        with self.assertRaises(ValueError):
-            paths.checkout_enabled('false', existing=True, guard_installed=True)
+    def test_reused_ce_requires_actual_guard_schema(self):
+        self.assertFalse(paths.checkout_capable(existing=True, guard_installed=False))
+        self.assertTrue(paths.checkout_capable(existing=True, guard_installed=True))
 
-    def test_no_ambiguous_or_invalid_configuration(self):
-        for value in ('enabled', 'auto', '', 'maybe'):
-            with self.assertRaises(ValueError):
-                paths.checkout_enabled(value, existing=False)
-        with self.assertRaises(ValueError):
-            paths.checkout_enabled('false', 'true', existing=False)
-        self.assertTrue(paths.checkout_enabled('true', '1', existing=False))
+    def test_launch_has_no_checkout_or_search_enable_flags(self):
+        startup = (BUILD / 'start-dev.py').read_text()
+        for legacy in ('CF_V2_CHECKOUT_ENABLED', 'CF_V2_AGENT_EDIT_ENABLED',
+                       'CF_ENABLE_SEARCH', 'CF_PROVIDER_SEARCH', 'v2_edit_enabled'):
+            self.assertNotIn(legacy, startup)
+        self.assertIn("if settings.get('CF_MEILISEARCH_URL')", startup)
 
-
-class NativeGuardConfigTest(unittest.TestCase):
-    def test_preserves_unrelated_native_section_case_and_content(self):
-        original = ('[database]\nPasswordCase=KeepThisExactly\n'
-                    '[cloudfile]\nv2_edit_enabled=false\n'
-                    '[General]\nMixedCaseSetting=LeaveUnchanged\n')
-        updated = paths.native_guard_config(original, True)
-        self.assertIn('[database]\nPasswordCase=KeepThisExactly\n', updated)
-        self.assertIn('[General]\nMixedCaseSetting=LeaveUnchanged\n', updated)
-        self.assertEqual(updated.count('v2_edit_enabled=true'), 1)
-        self.assertNotIn('v2_edit_enabled=false', updated)
-        self.assertEqual(paths.native_guard_config(updated, True), updated)
-
-    def test_fresh_and_legacy_config_add_exactly_one_guard_key(self):
-        for original in ('[database]\nport=3306\n', '[cloudfile]', ''):
-            with self.subTest(original=original):
-                updated = paths.native_guard_config(original, False)
-                self.assertEqual(updated.count('[cloudfile]'), 1)
-                self.assertEqual(updated.count('v2_edit_enabled=false'), 1)
-
-    def test_duplicate_guard_sections_are_not_silently_reinterpreted(self):
-        with self.assertRaises(ValueError):
-            paths.native_guard_config('[cloudfile]\n[cloudfile]\n', True)
 
 
 class Echo(BaseHTTPRequestHandler):

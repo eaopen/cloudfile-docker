@@ -11,12 +11,12 @@ from urllib.parse import urlsplit
 import pymysql
 
 from cloudfile_ext.v2.schema import FreshSchema
-from web_paths import web_settings, nginx_config, read_settings
+from web_paths import web_settings, nginx_config, read_settings, checkout_enabled, native_guard_config
 
 
 source = Path('/opt/cloudfile-v2/source')
-# Explicitly test-only opt-in. Standard V2 remains the original three tables.
-agent_edit = os.environ.get('CF_V2_AGENT_EDIT_ENABLED', '').lower() in ('1', 'true')
+# Checkout is installed by default on new V2. The old environment variable is
+# supported for compatibility; CF_V2_CHECKOUT_ENABLED is the preferred name.
 
 shared = Path('/shared')
 existing = (shared / 'seafile/seafile-data').is_dir()
@@ -49,7 +49,31 @@ if existing:
              'files': os.environ['SEAFILE_MYSQL_DB_SEAFILE_DB_NAME'],
              'hub': os.environ['SEAFILE_MYSQL_DB_SEAHUB_DB_NAME']}
     public_url = os.environ.get('SEAFILE_SERVER_PROTOCOL', 'http') + '://' + os.environ['SEAFILE_SERVER_HOSTNAME']
+    # Reused CE volumes are NOT silently upgraded. Treat a verified V2 Guard
+    # table as proof of Checkout support; never bypass an existing Guard.
+    with pymysql.connect(host=host, port=int(os.environ.get('SEAFILE_MYSQL_DB_PORT', '3306')),
+                         user=user, password=password, database=names['files'], autocommit=True) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM information_schema.tables "
+                           "WHERE table_schema=DATABASE() AND table_name='cf_edit_guard'")
+            guard_installed = cursor.fetchone()[0] == 1
+        if guard_installed:
+            FreshSchema(
+                connection,
+                (source / 'seafile-server/scripts/sql/mysql/cloudfile-v2.sql').read_text(),
+                edit_ddl=(source / 'seafile-server/scripts/sql/mysql/cloudfile-v2-edit.sql').read_text(),
+            ).verify()
+    agent_edit = checkout_enabled(
+        os.environ.get('CF_V2_CHECKOUT_ENABLED'), os.environ.get('CF_V2_AGENT_EDIT_ENABLED'),
+        existing=True, guard_installed=guard_installed)
+    # Edit only the copied runtime config under /run, never the existing volume.
+    # v2_edit_enabled means Guard enforcement is available, not "block edits".
+    temporary_conf = conf / 'seafile.conf'
+    temporary_conf.write_text(native_guard_config(temporary_conf.read_text(), guard_installed))
 else:
+    agent_edit = checkout_enabled(
+        os.environ.get('CF_V2_CHECKOUT_ENABLED'), os.environ.get('CF_V2_AGENT_EDIT_ENABLED'),
+        existing=False)
     host, password, user = os.environ['DB_HOST'], os.environ['DB_PASSWORD'], 'cfv2'
     names = {'account': 'cfv2_ccnet', 'files': 'cfv2_seafile', 'hub': 'cfv2_seahub'}
     public_url = os.environ['PUBLIC_URL']
@@ -109,9 +133,8 @@ v2_edit_enabled={'true' if agent_edit else 'false'}
     # Retain them on restart rather than silently disabling the login provider.
     settings.update(read_settings(conf / 'seahub_settings.py', {'LOGIN_URL', 'LOGIN_REDIRECT_URL'}))
 
-# Do not silently switch on agent editing for reused production CE14 volumes.
-if agent_edit and existing:
-    raise ValueError('Guard-only CF-EDIT must first be tested on an isolated fresh V2 instance')
+# Used only by browser Checkout issuance and lock-info; optimistic editing
+# remains available with no Guard table. Native fence is tied to schema presence.
 settings['CF_V2_AGENT_EDIT_ENABLED'] = agent_edit
 if os.environ.get('JWT_PRIVATE_KEY'):
     settings['JWT_PRIVATE_KEY'] = os.environ['JWT_PRIVATE_KEY']

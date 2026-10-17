@@ -68,6 +68,55 @@ class SettingsTest(unittest.TestCase):
                     self.assertIn('proxy_set_header X-Real-IP $remote_addr;', block, name)
 
 
+class CheckoutCapabilityTest(unittest.TestCase):
+    def test_new_v2_checkout_is_enabled_by_default(self):
+        self.assertTrue(paths.checkout_enabled(None, existing=False))
+        self.assertTrue(paths.checkout_enabled('true', existing=False))
+        self.assertFalse(paths.checkout_enabled('false', existing=False))
+        self.assertFalse(paths.checkout_enabled(None, '0', existing=False))
+
+    def test_existing_v2_tracks_actual_guard_capability(self):
+        self.assertFalse(paths.checkout_enabled(None, existing=True, guard_installed=False))
+        self.assertTrue(paths.checkout_enabled(None, existing=True, guard_installed=True))
+        self.assertTrue(paths.checkout_enabled('1', existing=True, guard_installed=True))
+        with self.assertRaises(ValueError):
+            paths.checkout_enabled('true', existing=True, guard_installed=False)
+        with self.assertRaises(ValueError):
+            paths.checkout_enabled('false', existing=True, guard_installed=True)
+
+    def test_no_ambiguous_or_invalid_configuration(self):
+        for value in ('enabled', 'auto', '', 'maybe'):
+            with self.assertRaises(ValueError):
+                paths.checkout_enabled(value, existing=False)
+        with self.assertRaises(ValueError):
+            paths.checkout_enabled('false', 'true', existing=False)
+        self.assertTrue(paths.checkout_enabled('true', '1', existing=False))
+
+
+class NativeGuardConfigTest(unittest.TestCase):
+    def test_preserves_unrelated_native_section_case_and_content(self):
+        original = ('[database]\nPasswordCase=KeepThisExactly\n'
+                    '[cloudfile]\nv2_edit_enabled=false\n'
+                    '[General]\nMixedCaseSetting=LeaveUnchanged\n')
+        updated = paths.native_guard_config(original, True)
+        self.assertIn('[database]\nPasswordCase=KeepThisExactly\n', updated)
+        self.assertIn('[General]\nMixedCaseSetting=LeaveUnchanged\n', updated)
+        self.assertEqual(updated.count('v2_edit_enabled=true'), 1)
+        self.assertNotIn('v2_edit_enabled=false', updated)
+        self.assertEqual(paths.native_guard_config(updated, True), updated)
+
+    def test_fresh_and_legacy_config_add_exactly_one_guard_key(self):
+        for original in ('[database]\nport=3306\n', '[cloudfile]', ''):
+            with self.subTest(original=original):
+                updated = paths.native_guard_config(original, False)
+                self.assertEqual(updated.count('[cloudfile]'), 1)
+                self.assertEqual(updated.count('v2_edit_enabled=false'), 1)
+
+    def test_duplicate_guard_sections_are_not_silently_reinterpreted(self):
+        with self.assertRaises(ValueError):
+            paths.native_guard_config('[cloudfile]\n[cloudfile]\n', True)
+
+
 class Echo(BaseHTTPRequestHandler):
     def do_GET(self):
         body = self.rfile.read(int(self.headers.get('Content-Length', '0')))

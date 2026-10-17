@@ -11,12 +11,11 @@ from urllib.parse import urlsplit
 import pymysql
 
 from cloudfile_ext.v2.schema import FreshSchema
-from web_paths import web_settings, nginx_config, read_settings, checkout_enabled, native_guard_config
+from web_paths import web_settings, nginx_config, read_settings, checkout_capable
 
 
 source = Path('/opt/cloudfile-v2/source')
-# Checkout is installed by default on new V2. The old environment variable is
-# supported for compatibility; CF_V2_CHECKOUT_ENABLED is the preferred name.
+# Fresh V2 installs Checkout Guard; reused data is never silently migrated.
 
 shared = Path('/shared')
 existing = (shared / 'seafile/seafile-data').is_dir()
@@ -38,8 +37,7 @@ if existing:
     shutil.copyfile(original / 'seafile.conf', conf / 'seafile.conf')
     settings = read_settings(original / 'seahub_settings.py', {
         'SECRET_KEY', 'TIME_ZONE', 'LOGIN_URL', 'LOGIN_REDIRECT_URL', 'SITE_ROOT', 'FILE_SERVER_ROOT',
-        'CF_ENABLE_SEARCH', 'CF_PROVIDER_SEARCH', 'CF_MEILISEARCH_URL',
-        'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX'})
+        'CF_MEILISEARCH_URL', 'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX'})
     if not settings.get('SECRET_KEY'):
         raise ValueError('existing deployment SECRET_KEY is required')
     host = os.environ['SEAFILE_MYSQL_DB_HOST']
@@ -63,17 +61,9 @@ if existing:
                 (source / 'seafile-server/scripts/sql/mysql/cloudfile-v2.sql').read_text(),
                 edit_ddl=(source / 'seafile-server/scripts/sql/mysql/cloudfile-v2-edit.sql').read_text(),
             ).verify()
-    agent_edit = checkout_enabled(
-        os.environ.get('CF_V2_CHECKOUT_ENABLED'), os.environ.get('CF_V2_AGENT_EDIT_ENABLED'),
-        existing=True, guard_installed=guard_installed)
-    # Edit only the copied runtime config under /run, never the existing volume.
-    # v2_edit_enabled means Guard enforcement is available, not "block edits".
-    temporary_conf = conf / 'seafile.conf'
-    temporary_conf.write_text(native_guard_config(temporary_conf.read_text(), guard_installed))
+    agent_edit = checkout_capable(existing=True, guard_installed=guard_installed)
 else:
-    agent_edit = checkout_enabled(
-        os.environ.get('CF_V2_CHECKOUT_ENABLED'), os.environ.get('CF_V2_AGENT_EDIT_ENABLED'),
-        existing=False)
+    agent_edit = checkout_capable(existing=False)
     host, password, user = os.environ['DB_HOST'], os.environ['DB_PASSWORD'], 'cfv2'
     names = {'account': 'cfv2_ccnet', 'files': 'cfv2_seafile', 'hub': 'cfv2_seahub'}
     public_url = os.environ['PUBLIC_URL']
@@ -108,8 +98,7 @@ else:
         FreshSchema(
             connection,
             (source / 'seafile-server/scripts/sql/mysql/cloudfile-v2.sql').read_text(),
-            edit_ddl=(source / 'seafile-server/scripts/sql/mysql/cloudfile-v2-edit.sql').read_text()
-                     if agent_edit else None,
+            edit_ddl=(source / 'seafile-server/scripts/sql/mysql/cloudfile-v2-edit.sql').read_text(),
         ).install()
     (conf / 'seafile.conf').write_text(f'''[database]
 type=mysql
@@ -125,26 +114,21 @@ use_go_fileserver=true
 port=8082
 [cloudfile_v2]
 auto_local_root=/shared/library-storage
-[cloudfile]
-v2_edit_enabled={'true' if agent_edit else 'false'}
 ''')
     settings = {'SECRET_KEY': os.environ['DJANGO_SECRET_KEY']}
     # Fresh deployments may seed native OAuth/OIDC settings before first boot.
     # Retain them on restart rather than silently disabling the login provider.
     settings.update(read_settings(conf / 'seahub_settings.py', {'LOGIN_URL', 'LOGIN_REDIRECT_URL'}))
 
-# Used only by browser Checkout issuance and lock-info; optimistic editing
-# remains available with no Guard table. Native fence is tied to schema presence.
-settings['CF_V2_AGENT_EDIT_ENABLED'] = agent_edit
+# Hub detects Checkout from the same installed Guard schema as native services.
 if os.environ.get('JWT_PRIVATE_KEY'):
     settings['JWT_PRIVATE_KEY'] = os.environ['JWT_PRIVATE_KEY']
 
 settings['ENABLE_OAUTH'] = bool(settings.get('OAUTH_CLIENT_ID') and settings.get('OAUTH_CLIENT_SECRET'))
 
-for key in ('CF_ENABLE_SEARCH', 'CF_PROVIDER_SEARCH', 'CF_MEILISEARCH_URL',
-            'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX'):
+for key in ('CF_MEILISEARCH_URL', 'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX'):
     if key in os.environ:
-        settings[key] = os.environ[key].lower() == 'true' if key == 'CF_ENABLE_SEARCH' else os.environ[key]
+        settings[key] = os.environ[key]
 
 settings.update(web_settings(public_url, settings, existing=existing))
 nginx_template = Path('/opt/cloudfile-v2/nginx.conf.template').read_text()
@@ -207,7 +191,7 @@ except User.DoesNotExist:
     processes.append(subprocess.Popen(['gunicorn', 'seahub.wsgi:application', '--bind', '127.0.0.1:8000',
         '--workers', '2', '--timeout', '120', '--access-logfile', '-']))
     processes.append(subprocess.Popen(['nginx', '-g', 'daemon off;']))
-    if settings.get('CF_ENABLE_SEARCH') and settings.get('CF_PROVIDER_SEARCH') == 'meilisearch':
+    if settings.get('CF_MEILISEARCH_URL'):
         search_worker = subprocess.Popen(['python3', '-m', 'cloudfile_ext.v2.search.worker',
                                          '--checkpoint', str(shared / 'search-v2-checkpoint.json')])
     while all(process.poll() is None for process in processes):

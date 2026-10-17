@@ -140,6 +140,15 @@ this source change.
 
 ## Etech P0 Integration
 
+Etech's existing `cloudDirectorySync` PowerJob should run every 600 seconds
+using the native admin channel to
+`POST /api/v2.1/admin/cloudfile/directory/entities/sync/`.
+CloudFile fetches the existing `/groups?view=entities` snapshot with its
+short-lived machine JWT. The periodic task only reconciles CE Group entities
+and `cf_sso_group_map`, **not** all users or native `GroupUser` membership.
+The on-demand UID projector refreshes GroupUser after login or TTL expiry.
+No v0.9 full-member directory worker may run in parallel.
+
 The built-in Hub adapter consumes the existing EAP Directory base URL through
 `CF_DIRECTORY_URL`, `CF_DIRECTORY_KEY_ID`, and `CF_DIRECTORY_SECRET`.
 Use the same machine credential as EAP's `cloudfile.identity-directory.auth`;

@@ -52,14 +52,16 @@
       "overlay": [
         "cloudfile_ext/v2"
       ],
-      "overlay_commit": "3144e9a6b113c4e0ea40111369f231f61918aa53",
+      "overlay_commit": "58a6a7ae9806119d394311b0b095d91c09cf0389",
       "native_patches": [
         "seahub/urls.py",
         "seahub/oauth/views.py",
         "seahub/api2/endpoints/internal_api.py",
         "seahub/api2/endpoints/admin/libraries.py",
         "seahub/api2/endpoints/dir.py",
-        "seahub/api2/endpoints/repo_tags.py"
+        "seahub/api2/endpoints/repo_tags.py",
+        "seahub/api2/endpoints/file_tag.py",
+        "seahub/file_tags/models.py"
       ]
     }
   },

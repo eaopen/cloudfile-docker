@@ -51,16 +51,20 @@ jobs:
         with:
           path: cloudfile-docker
           fetch-depth: 0
+      - name: Read immutable source-set pins
+        id: pins
+        run: |
+          python3 -c "import json; c=json.load(open('cloudfile-docker/build/v2/source-set.json'))['components']; print('server='+c['cloudfile-server']['overlay_commit']); print('hub='+c['cloudfile-hub']['overlay_commit'])" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-server
-          ref: af206814de78797040f05d4746d959bc1106d670
+          ref: ${{ steps.pins.outputs.server }}
           path: cloudfile-server
           fetch-depth: 0
       - uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-hub
-          ref: 2996a6f0d6b4813a467535e55530a0409bf1e8ca
+          ref: ${{ steps.pins.outputs.hub }}
           path: cloudfile-hub
           fetch-depth: 0
       - uses: actions/setup-python@v5
@@ -107,16 +111,20 @@ jobs:
         with:
           path: cloudfile-docker
           fetch-depth: 0
+      - name: Read immutable source-set pins
+        id: pins
+        run: |
+          python3 -c "import json; c=json.load(open('cloudfile-docker/build/v2/source-set.json'))['components']; print('server='+c['cloudfile-server']['overlay_commit']); print('hub='+c['cloudfile-hub']['overlay_commit'])" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-server
-          ref: af206814de78797040f05d4746d959bc1106d670
+          ref: ${{ steps.pins.outputs.server }}
           path: cloudfile-server
           fetch-depth: 0
       - uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-hub
-          ref: 2996a6f0d6b4813a467535e55530a0409bf1e8ca
+          ref: ${{ steps.pins.outputs.hub }}
           path: cloudfile-hub
           fetch-depth: 0
       - uses: actions/setup-python@v5

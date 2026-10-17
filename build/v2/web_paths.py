@@ -52,65 +52,10 @@ def nginx_config(template, root):
     return template.replace('__CF_CANONICAL__', root)
 
 
-def checkout_enabled(configured, legacy=None, *, existing, guard_installed=False):
-    """Checkout is enabled by default on new V2, or whenever valid Guard exists.
 
-    The environment setting is a deployment capability, never a runtime lock
-    bypass. Existing installations must not silently alter their schemas.
+def checkout_capable(*, existing, guard_installed=False):
+    """Fresh V2 installs Guard; reused CE volumes require a verified Guard table.
+    
+    This is a schema capability, not a deployment flag or lock bypass.
     """
-    def parse(raw):
-        if raw is None:
-            return None
-        if not isinstance(raw, str) or raw.lower() not in ('true', 'false', '1', '0'):
-            raise ValueError('Checkout setting must be true or false')
-        return raw.lower() in ('true', '1')
-
-    requested, previous = parse(configured), parse(legacy)
-    if requested is not None and previous is not None and requested != previous:
-        raise ValueError('Conflicting Checkout capability settings')
-    if requested is None:
-        requested = previous
-    if not existing:
-        # Fresh V2 installs the single Guard table unless explicitly unsupported.
-        return requested is not False
-    if guard_installed:
-        # Disabling the enforcement for any installed Guard may bypass an
-        # existing Checkout. A deliberate schema retirement is a separate task.
-        if requested is False:
-            raise ValueError('Cannot disable Checkout while a Guard table is installed')
-        return True
-    if requested is True:
-        raise ValueError('Existing instance has no V2 Guard table; use an approved migration')
-    return False
-
-
-def native_guard_config(source, enabled):
-    """Adjust only the native Guard capability key in a copied seafile.conf.
-
-    Preserve all unrelated CE14 settings and their original case/format.
-    Never rewrite the existing volume's original configuration.
-    """
-    if type(enabled) is not bool:
-        raise ValueError('invalid native Guard availability')
-    lines = source.splitlines(keepends=True)
-    sections = [i for i, line in enumerate(lines) if line.strip() == '[cloudfile]']
-    if len(sections) > 1:
-        raise ValueError('duplicate [cloudfile] sections')
-    desired = 'v2_edit_enabled=' + ('true' if enabled else 'false') + '\n'
-    if not sections:
-        separator = '' if not source or source.endswith(('\n', '\r')) else '\n'
-        return source + separator + '[cloudfile]\n' + desired
-    begin = sections[0] + 1
-    end = next((i for i in range(begin, len(lines)) if lines[i].lstrip().startswith('[')), len(lines))
-    matches = [i for i in range(begin, end)
-               if lines[i].lstrip().startswith('v2_edit_enabled')
-               and lines[i].lstrip()[len('v2_edit_enabled'):].lstrip().startswith('=')]
-    if len(matches) > 1:
-        raise ValueError('duplicate native Guard setting')
-    if matches:
-        lines[matches[0]] = desired
-    else:
-        if end > 0 and not lines[end - 1].endswith(('\n', '\r')):
-            lines[end - 1] += '\n'
-        lines.insert(end, desired)
-    return ''.join(lines)
+    return not existing or guard_installed

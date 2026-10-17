@@ -106,7 +106,12 @@ with pymysql.connect(host=host, user=user, password=password, database=names['fi
                      charset='utf8mb4', autocommit=True) as connection:
     NativeLibraryDiscovery.check_native_schema(connection)
     FreshSchema(connection, (source / 'seafile-server/scripts/sql/mysql/cloudfile-v2.sql').read_text()).install()
-    print('CloudFile V2 native library discovery:', NativeLibraryDiscovery(connection).reconcile(), flush=True)
+    discovery = NativeLibraryDiscovery(connection)
+    print('CloudFile V2 native library discovery:', discovery.reconcile(), flush=True)
+    unresolved = discovery.unresolved_registry_count()
+    if unresolved:
+        print('CloudFile V2 needs operator review: registered libraries missing from '
+              'Repo, RepoTrash and GarbageRepos:', unresolved, flush=True)
 
 settings['ENABLE_OAUTH'] = bool(settings.get('OAUTH_CLIENT_ID') and settings.get('OAUTH_CLIENT_SECRET'))
 

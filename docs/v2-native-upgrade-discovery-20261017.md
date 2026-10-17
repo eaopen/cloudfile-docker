@@ -37,3 +37,12 @@ python -m cloudfile_ext.v2 reconcile --ddl /opt/cloudfile-v2/source/seafile-serv
 `NATIVE_REGISTERED` 只证明数据库登记正确，不取代文件内容完整性、权限或 FSCK 验证；切换流量前必须抽样验证原库上传/下载、旧授权和文件版本。
 
 **etech01 仅存在于旧数据库时**：在新数据库里无法“发现”出它。先将 CloudFile 接回含 `etech01` 的旧原生库数据库和文件卷，或执行受控原生恢复，再启动发现。Etech 侧不能根据旧业务配置凭空造相同 UUID 的新 Repo。
+## V2 双向库存对账（2026-10-17）
+
+CloudFile 每次启动均运行 NativeLibraryDiscovery.reconcile()：只给真实 Repo 且非 VirtualRepo 的旧库幂等补 cf_library_storage。已有配置不修改；发现 cf_library_storage 对应资源不在 Repo、RepoTrash、GarbageRepos 时只记录运维警告，不自动退役或删库。
+
+管理员只读接口 GET /api/v2.1/admin/cloudfile/storage-libraries/?page=1&per_page=100 枚举库存登记；GET 同一路径带 repo_id=<UUID> 可区分缺少登记与原 Repo 缺失。只有 READY 且原生 Repo 可读的库允许导入 Etech；RESERVED、RETIRED、IN_TRASH、GC_PENDING、VIRTUAL_REPO、BINDING_ERROR、RESOURCE_UNREADABLE 均只报告状态。READY 不证明全部文件块完整，需额外 FSCK 与读写验收。
+
+Etech 管理员 POST /eap/cloudDrive/config/libraries/storage-check 对比 cf_library_storage 与 webdisk_library 全量集合。CloudFile 多出的 READY 库自动加入 Etech 待启用管理记录（active=0、PROVISIONING、BLOCKED），不更改 Seafile 原有权限，普通 Etech 用户列表不显示。已存在业务配置不覆盖；Etech 独有 UUID 通过单库原生资源诊断后显示缺登记/缺 Repo/回收站等处理建议。存在未完成 Etech 建库时不自动认领新的 V2 定向库，以避免新库发布回填竞态。
+
+Etech 的 active=0 仅控制业务可见性与发布，并不是 Seafile ACL 拒绝。确实丢失的旧 Repo 不复用 UUID 创建新库，应由运维恢复旧数据库和文件，或由业务人员确认新建独立库。首次强制发布可能覆盖原生受管授权，必须人工核对。

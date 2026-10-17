@@ -33,6 +33,18 @@ class SettingsTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 paths.read_settings(filename, set())
 
+    def test_directory_connection_survives_restart_without_new_enable_switch(self):
+        # Losing these inputs on restart would disable current-subject TTL proof.
+        with tempfile.TemporaryDirectory() as directory:
+            filename=Path(directory)/'seahub_settings.py'
+            filename.write_text("CF_DIRECTORY_URL = 'https://eap.example.test/eap/cloudDrive/directory'\n"
+                                "CF_DIRECTORY_KEY_ID = 'fixture-key'\n"
+                                "CF_DIRECTORY_GROUP_OWNER = 'service@auth.local'\n"
+                                "UNRELATED = 1 / 0\n")
+            result=paths.read_settings(filename,set())
+            self.assertEqual(set(result),{'CF_DIRECTORY_URL','CF_DIRECTORY_KEY_ID','CF_DIRECTORY_GROUP_OWNER'})
+            self.assertEqual(result['CF_DIRECTORY_GROUP_OWNER'],'service@auth.local')
+
     def test_fresh_defaults_use_cloudfile_paths(self):
         result = paths.web_settings('https://files.example.test/', {}, existing=False)
         self.assertEqual(result['SITE_ROOT'], '/cfile/')

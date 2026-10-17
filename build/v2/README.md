@@ -137,3 +137,25 @@ connections. Connection credentials, existing OIDC configuration, storage-root
 overrides and measured cache TTL parameters are *not* feature flags. No live
 volumes, original deployment config or production database are rewritten by
 this source change.
+
+## Etech P0 Integration
+
+The built-in Hub adapter consumes the existing EAP Directory base URL through
+`CF_DIRECTORY_URL`, `CF_DIRECTORY_KEY_ID`, and `CF_DIRECTORY_SECRET`.
+Use the same machine credential as EAP's `cloudfile.identity-directory.auth`;
+never put deployment secrets into this repository. The issuer/audience defaults
+are `cloudfile-sso` and `eap-directory`. `CF_DIRECTORY_GROUP_OWNER` identifies an
+existing active native service administrator for flat Group creation. Native
+Redis cache LOCATION supplies shared subject freshness. Seeded Directory
+connection settings survive restarts and may be supplied through environment
+variables; there is no new feature flag.
+
+Identity pre-creation independently checks the Directory UID and active status;
+first SSO login reuses the native UID account. Group members refresh only for the
+current user at the bounded TTL. Missing/failed Directory or Redis fails closed.
+No extra user/member tables or legacy authorization routes are added.
+
+Native ordinary copy/move is synchronous while both library ACL fences are held;
+protected or virtual scopes still reject transfers. The source-set pins must
+select matching Hub fence writers and native transfer guards. Local native byte,
+revocation and race tests are separate from real Etech DEV and SSO acceptance.

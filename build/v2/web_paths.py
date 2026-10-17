@@ -12,7 +12,7 @@ def read_settings(filename, names):
         if (isinstance(node, ast.Assign) and len(node.targets) == 1 and
                 isinstance(node.targets[0], ast.Name)):
             key = node.targets[0].id
-            if key.startswith('OAUTH_') or key in names:
+            if key.startswith(('OAUTH_', 'CF_DIRECTORY_')) or key in names:
                 result[key] = ast.literal_eval(node.value)
     return result
 

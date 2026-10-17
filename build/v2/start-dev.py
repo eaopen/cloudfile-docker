@@ -122,6 +122,15 @@ auto_local_root=/shared/library-storage
 if os.environ.get('JWT_PRIVATE_KEY'):
     settings['JWT_PRIVATE_KEY'] = os.environ['JWT_PRIVATE_KEY']
 
+# Directory is a trusted external connection, not a feature flag. Preserve
+# seeded connection/security settings and allow deployment secret injection.
+for key in ('CF_DIRECTORY_URL', 'CF_DIRECTORY_SECRET', 'CF_DIRECTORY_KEY_ID',
+            'CF_DIRECTORY_ISSUER', 'CF_DIRECTORY_AUDIENCE', 'CF_DIRECTORY_GROUP_OWNER'):
+    if key in os.environ:
+        settings[key] = os.environ[key]
+settings['CF_ACL_PROVIDER'] = 'etech'
+settings['CF_ACL_SUBJECT_ENSURE'] = 'cloudfile_ext.v2.etech_directory.ensure_subject'
+
 settings['ENABLE_OAUTH'] = bool(settings.get('OAUTH_CLIENT_ID') and settings.get('OAUTH_CLIENT_SECRET'))
 
 for key in ('CF_MEILISEARCH_URL', 'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX'):

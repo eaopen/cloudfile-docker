@@ -134,7 +134,7 @@ jobs:
             libarchive-dev libargon2-dev libhiredis-dev libonig-dev libunwind-dev \
             libjwt-dev libfuse-dev libldap2-dev libxml2-dev libxslt-dev \
             uuid-dev libevhtp-dev
-          python3 -m pip install --quiet 'pymysql>=1.1,<2' 'redis>=5,<8' 'requests>=2.31,<3'
+          python3 -m pip install --quiet 'pymysql>=1.1,<2' 'redis>=5,<8' 'requests>=2.31,<3' 'PyJWT>=2,<3'
       - name: Assemble exact selected native source
         run: |
           python3 cloudfile-docker/tools/prepare-v2-source.py --workspace . --output /tmp/cfv2-clean

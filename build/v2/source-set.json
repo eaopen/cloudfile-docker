@@ -23,7 +23,7 @@
         "fileserver/cf_v2_acl.go",
         "fileserver/cf_v2_acl_test.go"
       ],
-      "overlay_commit": "af206814de78797040f05d4746d959bc1106d670",
+      "overlay_commit": "2dd05bfbbee6eaf855776553541b1a36038c2f7d",
       "native_patches": [
         "common/Makefile.am",
         "common/obj-backend-fs.c",
@@ -52,7 +52,7 @@
       "overlay": [
         "cloudfile_ext/v2"
       ],
-      "overlay_commit": "2996a6f0d6b4813a467535e55530a0409bf1e8ca",
+      "overlay_commit": "1a0305d03aa35fd0bfa9ffc681c778792861fb72",
       "native_patches": [
         "seahub/urls.py",
         "seahub/oauth/views.py",

@@ -1,6 +1,5 @@
 """Start a fresh CE14 DEV instance using native SQL/RPC/HTTP services only."""
 import os
-import configparser
 import shutil
 import shlex
 from pathlib import Path
@@ -12,7 +11,7 @@ from urllib.parse import urlsplit
 import pymysql
 
 from cloudfile_ext.v2.schema import FreshSchema
-from web_paths import web_settings, nginx_config, read_settings, checkout_enabled
+from web_paths import web_settings, nginx_config, read_settings, checkout_enabled, native_guard_config
 
 
 source = Path('/opt/cloudfile-v2/source')
@@ -69,13 +68,8 @@ if existing:
         existing=True, guard_installed=guard_installed)
     # Edit only the copied runtime config under /run, never the existing volume.
     # v2_edit_enabled means Guard enforcement is available, not "block edits".
-    native_conf = configparser.ConfigParser(interpolation=None)
-    native_conf.read(conf / 'seafile.conf')
-    if not native_conf.has_section('cloudfile'):
-        native_conf.add_section('cloudfile')
-    native_conf.set('cloudfile', 'v2_edit_enabled', 'true' if guard_installed else 'false')
-    with (conf / 'seafile.conf').open('w') as config_file:
-        native_conf.write(config_file)
+    temporary_conf = conf / 'seafile.conf'
+    temporary_conf.write_text(native_guard_config(temporary_conf.read_text(), guard_installed))
 else:
     agent_edit = checkout_enabled(
         os.environ.get('CF_V2_CHECKOUT_ENABLED'), os.environ.get('CF_V2_AGENT_EDIT_ENABLED'),

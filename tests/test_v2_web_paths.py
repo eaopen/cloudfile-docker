@@ -68,6 +68,31 @@ class SettingsTest(unittest.TestCase):
                     self.assertIn('proxy_set_header X-Real-IP $remote_addr;', block, name)
 
 
+class CheckoutCapabilityTest(unittest.TestCase):
+    def test_new_v2_checkout_is_enabled_by_default(self):
+        self.assertTrue(paths.checkout_enabled(None, existing=False))
+        self.assertTrue(paths.checkout_enabled('true', existing=False))
+        self.assertFalse(paths.checkout_enabled('false', existing=False))
+        self.assertFalse(paths.checkout_enabled(None, '0', existing=False))
+
+    def test_existing_v2_tracks_actual_guard_capability(self):
+        self.assertFalse(paths.checkout_enabled(None, existing=True, guard_installed=False))
+        self.assertTrue(paths.checkout_enabled(None, existing=True, guard_installed=True))
+        self.assertTrue(paths.checkout_enabled('1', existing=True, guard_installed=True))
+        with self.assertRaises(ValueError):
+            paths.checkout_enabled('true', existing=True, guard_installed=False)
+        with self.assertRaises(ValueError):
+            paths.checkout_enabled('false', existing=True, guard_installed=True)
+
+    def test_no_ambiguous_or_invalid_configuration(self):
+        for value in ('enabled', 'auto', '', 'maybe'):
+            with self.assertRaises(ValueError):
+                paths.checkout_enabled(value, existing=False)
+        with self.assertRaises(ValueError):
+            paths.checkout_enabled('false', 'true', existing=False)
+        self.assertTrue(paths.checkout_enabled('true', '1', existing=False))
+
+
 class Echo(BaseHTTPRequestHandler):
     def do_GET(self):
         body = self.rfile.read(int(self.headers.get('Content-Length', '0')))

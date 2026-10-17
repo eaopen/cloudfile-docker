@@ -90,10 +90,13 @@ does not imply that the removed legacy extension APIs or ACL enforcement run.
 
 ## Existing Meilisearch Search
 
-The V2 runtime preserves the existing `CF_ENABLE_SEARCH`, `CF_PROVIDER_SEARCH`,
-`CF_MEILISEARCH_URL`, `CF_MEILISEARCH_API_KEY`, and optional
-`CF_MEILISEARCH_INDEX` settings. The same names may be supplied as environment
-variables. Search remains disabled when it is not explicitly configured.
+V2 Search has no separate ENABLE or provider selector. When
+`CF_MEILISEARCH_URL` is configured, the worker starts and Search uses that
+external service. `CF_MEILISEARCH_API_KEY` holds its credential and
+`CF_MEILISEARCH_INDEX` optionally overrides the default `cloudfile_files`
+index. Without a configured endpoint, or while Meilisearch is unavailable,
+only enhanced Search returns `SEARCH_UNAVAILABLE`; native file services continue.
+Retired `CF_ENABLE_SEARCH` / `CF_PROVIDER_SEARCH` are ignored.
 Meilisearch must already contain a `cloudfile_files` index using the existing
 `repo_id/path/object_type/tags/dirs` document fields. No SQL tables are added.
 
@@ -117,3 +120,20 @@ Missing libraries use fixed-commit directory pages. The existing index is never
 cleared. A failed batch retains its previous checkpoint for retry. Search
 failures do not terminate native file services. This path restores the existing
 file browser; it does not activate the separately designed resource-search POST API.
+
+## Built-in capability defaults (2026-10-17)
+
+A new V2 installation always installs the three core extension tables and the
+separate `cf_edit_guard` Checkout table. C/Go native fences and Hub discover
+Guard from the database schema; the historic `CF_V2_CHECKOUT_ENABLED`,
+`CF_V2_AGENT_EDIT_ENABLED` and `[cloudfile] v2_edit_enabled` parameters
+are not accepted as activation or bypass controls. A reused CE14 installation
+without Guard retains optimistic editing and requires an approved, explicit
+schema migration followed by restart before Checkout becomes available.
+
+CloudFile directory ACL and native CE Tag are always-on capabilities. Optional
+Search, Office and other external integrations depend on their actual
+connections. Connection credentials, existing OIDC configuration, storage-root
+overrides and measured cache TTL parameters are *not* feature flags. No live
+volumes, original deployment config or production database are rewritten by
+this source change.

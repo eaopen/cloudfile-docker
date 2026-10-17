@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 import pymysql
 
 from cloudfile_ext.v2.schema import FreshSchema
+from cloudfile_ext.v2.native_discovery import NativeLibraryDiscovery
 from web_paths import web_settings, nginx_config, read_settings
 
 
@@ -19,6 +20,8 @@ source = Path('/opt/cloudfile-v2/source')
 
 shared = Path('/shared')
 existing = (shared / 'seafile/seafile-data').is_dir()
+if (shared / 'seafile/conf').exists() and not existing:
+    raise RuntimeError('NATIVE_STORAGE_MISSING: original Seafile data mount is not connected')
 data = shared / ('seafile/seafile-data' if existing else 'seafile-data')
 ccnet = shared / ('seafile/ccnet' if existing else 'ccnet')
 logs = shared / ('seafile/logs' if existing else 'logs')
@@ -58,12 +61,17 @@ if existing:
             cursor.execute("SELECT COUNT(*) FROM information_schema.tables "
                            "WHERE table_schema=DATABASE() AND table_name='cf_edit_guard'")
             guard_installed = cursor.fetchone()[0] == 1
+        core_ddl = (source / 'seafile-server/scripts/sql/mysql/cloudfile-v2.sql').read_text()
         if guard_installed:
             FreshSchema(
-                connection,
-                (source / 'seafile-server/scripts/sql/mysql/cloudfile-v2.sql').read_text(),
+                connection, core_ddl,
                 edit_ddl=(source / 'seafile-server/scripts/sql/mysql/cloudfile-v2-edit.sql').read_text(),
             ).verify()
+        else:
+            # CE14 upgrade: add the reviewed three V2 metadata tables in-place.
+            # Existing native Repo/permissions/files are untouched; unsupported
+            # legacy CloudFile schema is rejected by FreshSchema.install().
+            FreshSchema(connection, core_ddl).install()
 else:
     host, password, user = os.environ['DB_HOST'], os.environ['DB_PASSWORD'], 'cfv2'
     names = {'account': 'cfv2_ccnet', 'files': 'cfv2_seafile', 'hub': 'cfv2_seahub'}
@@ -121,6 +129,18 @@ auto_local_root=/shared/library-storage
     # Retain them on restart rather than silently disabling the login provider.
     settings.update(read_settings(conf / 'seahub_settings.py', {'LOGIN_URL', 'LOGIN_REDIRECT_URL'}))
 
+# Discovery always runs at startup, using the same CE database and registered storage path.
+# Existing V2 schema is checked first. Never create replacement Repo IDs.
+with pymysql.connect(host=host, user=user, password=password, database=names['files'],
+                     charset='utf8mb4', autocommit=True) as connection:
+    NativeLibraryDiscovery.check_native_schema(connection)
+    discovery = NativeLibraryDiscovery(connection)
+    print('CloudFile V2 native library discovery:', discovery.reconcile(), flush=True)
+    unresolved = discovery.unresolved_registry_count()
+    if unresolved:
+        print('CloudFile V2 needs operator review: registered libraries missing from '
+              'Repo, RepoTrash and GarbageRepos:', unresolved, flush=True)
+
 # Hub detects Checkout from the same installed Guard schema as native services.
 if os.environ.get('JWT_PRIVATE_KEY'):
     settings['JWT_PRIVATE_KEY'] = os.environ['JWT_PRIVATE_KEY']
@@ -135,6 +155,7 @@ if 'CF_DIRECTORY_SUBJECT_TTL' in os.environ:
     settings['CF_DIRECTORY_SUBJECT_TTL'] = int(os.environ['CF_DIRECTORY_SUBJECT_TTL'])
 settings['CF_ACL_PROVIDER'] = 'etech'
 settings['CF_ACL_SUBJECT_ENSURE'] = 'cloudfile_ext.v2.etech_directory.ensure_subject'
+
 
 settings['ENABLE_OAUTH'] = bool(settings.get('OAUTH_CLIENT_ID') and settings.get('OAUTH_CLIENT_SECRET'))
 

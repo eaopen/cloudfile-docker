@@ -1,121 +1,55 @@
-# CF-EDIT optional feature: Agent2 + PLM/CAD Checkout/Checkin
+# CloudFile V2 — 普通编辑始终可用，Checkout 默认启用
 
-Status: **optional infrastructure only**. After 2026-10-16 indexed-lock
-performance review, this foundation is permitted to merge into `dev` while
-**disabled by default**. It is NOT ready to activate or deploy as an operational
-Checkout/Checkin feature.
-Based on the independent CE14 CloudFile V2 `dev` baseline. Do not restore the V0.9
-schema, resource UID service, local edit sessions, outbox or old locks/v1 HTTP API.
+> 2026-10-17 配置语义收敛：**Checkout 是安装能力，不是普通编辑总开关。** 本次不部署生产；既有数据不做静默破坏性迁移。
 
-## Isolation
+## 两种编辑及唯一一张 Guard 表
 
-Repositories: `eaopen/cloudfile-server`, `cloudfile-hub`, `cloudfile-docker`,
-each on `feature/cf-edit`; native source pins in `build/v2/source-set.json`.
-The existing three-table `cloudfile-v2.sql` stays unchanged. An independent
-`cloudfile-v2-edit.sql` adds exactly:
+| 能力 | 不支持 Checkout 的兼容实例 | 安装了 Guard 的 V2 实例 |
+| --- | --- | --- |
+| Seafile 原生 Web 上传/下载 | 始终支持 | 始终支持 |
+| Rust Agent2 普通本地编辑 | 允许；原生 File ID 乐观条件提交 | 允许；原生 File ID 条件提交且最终检查有效 Guard |
+| Rust Agent2 独占 Checkout / Commit / Checkin | 不支持，返回 `CHECKOUT_UNSUPPORTED` | **默认支持** |
+| 文件读取 / 列表 | 不依赖 Guard | 不依赖 Guard |
+| 普通编辑锁或服务器 Intent | **无** | **无** |
+| 独占数据 | 无额外编辑表 | 单张 `cf_edit_guard` |
+| 断线后恢复 | Rust 本地 Journal + Seafile File/Commit | Rust Journal + 原生版本 + Guard |
 
-| Table | Owner / purpose |
-| --- | --- |
-| `cf_edit_guard` | One permanent file slot per repo+path hash; lock/checkout mode, monotonic generation, credential epoch, owner, client, optimistic baseline, renewable/persistent lease and pending intent |
-| `cf_commit_intent` | Durable request digest and prepare/published/cancelled receipt, expected/staged/result file IDs and final native Commit ID; shared by optimistic Agent saves and exclusive Commit/Checkin |
+Checkout 本身是独占机制，但普通编辑**不申请锁、不续租、不创建 Guard 行**。普通编辑的版本冲突保守拒绝，保留本地副本，不覆盖他人的更新。独占中的文件不能由普通保存、原生 Web/Sync 或删除/改名绕过 Guard。
 
-Both are **in seafile_db, InnoDB**, so the final Branch update, published
-receipt, and released/advanced Guard can share one database transaction.
-`FreshSchema(connection, core_ddl)` still verifies exactly three tables.
-Only an explicit `FreshSchema(connection, core_ddl, edit_ddl=...)` opt-in
-can install or verify the two feature tables in an isolated instance.
+## Checkout 能力如何自动识别（无启用参数）
 
-## Two clients, one server contract
+**CloudFile V2 不再提供 Checkout 功能开关。**
 
-- Agent2: authenticated user/registered device, renewable Checkout, local
-  journal/snapshot, automatic optimistic saves or explicit exclusive Commit.
-- External PLM/CAD integration (Teamcenter-like): delegated authenticated
-  user and integration application identity, persistent Checkout if needed,
-  direct file/block staging, explicit Commit/Checkin without Agent/Chrome.
-  `client_ref` is only external correlation, never a source of authorization.
-- One Guard per real `repo_id + path`. New Guard always increments generation.
-  `credential_epoch` rotates on Resume; every write requires *current* ACL,
-  current Guard proof, expected file version and prepared Intent.
-- `commit` advances `base_file_id` and keeps Checkout; `checkin` releases
-  only after successful native publication; `checkin-unchanged` releases
-  atomically without forcing a new file version; `abandon` requires an
-  explicit owner/management action and **no unresolved prepared Intent**.
-- File changes and parent directory rename/delete affecting guarded files
-  must be blocked from unscoped native writes. Unsupported paths fail closed
-  once CF-EDIT enforcement is enabled; ordinary CE instances remain native.
+- 全新 V2 始终安装三张已批准核心扩展表和独立 `cf_edit_guard` 表；Hub/C/Go 依数据库实际结构识别能力并强制执行 Guard。
+- 已有实例无 Guard 表：仍可进行原生文件读写和普通乐观编辑；不自动新增表，独占请求明确返回 `CHECKOUT_UNSUPPORTED`。
+- 已有实例存在 Guard：必须按经过校验的结构执行围栏；结构异常或查询失败不能解释为“Checkout 关闭”，必须拒绝不安全的写入。
+- 移除 `CF_V2_CHECKOUT_ENABLED`、`CF_V2_AGENT_EDIT_ENABLED`、`[cloudfile] v2_edit_enabled` 作为产品配置的语义。遗留配置不再用于放行或拒绝；升级后的受控运行环境应清理其残留。
+- Guard 的安装/退出属于受控 Schema 迁移，需要重启原生进程和 Hub，绝不是配置开关操作。已有 Checkout 必须经过 Checkin/Release 和数据核对，不允许绕过活动锁。
 
-## Current code and immediate checks
+## 既有环境和部署人员
 
-Completed on the feature branch:
-1. Core schema and generic, authenticated-principal-only Guard/Intent contract
-   and SQL Store (`editing_contract.py`, `editing_store.py`).
-2. Transaction order Branch → Guard → Intent in the Hub Store.
-3. C Branch and Go Fileserver final-CAS unscoped write fences. They compare the
-   actual native old/new trees and refuse touching an occupied path; errors
-   fail closed. Both use `[cloudfile] v2_edit_enabled` from `seafile.conf`,
-   **default false**. They do not grant exclusive publishing by themselves.
-4. Pure Python contract and lock-order tests, Go guarded-path unit tests,
-   isolated MariaDB schema and atomic receipt tests; each has its own feature CI.
+- 全新 V2 默认支持；**不需要**系统管理员每次启动时点“启用 Checkout”，也无用户级开关。
+- 复用的 CE14/V2 数据目录若已经包含 **结构经过完整校验**的单表 `cf_edit_guard`，自动启用原生 Guard 保护；无论旧配置值是什么都不能绕过。
+- 复用数据目录没有 Guard：维持普通编辑，不自动新增表。独占请求返回 `CHECKOUT_UNSUPPORTED`；需由部署管理员完成受控的一次性单表迁移，再重启 Hub/C/Go。
+- 若已有 Guard 结构不匹配，启动拒绝，而不是带着无法执行的锁机制继续服务。
+- Docker `build/v2/start-dev.py` 只改动复用目录**临时运行配置**，不会覆盖旧 CE14 的原始 `seafile.conf`、删除文件或升级原生版本。
 
-**BLOCKING FOR ACTIVATION / AGENT2 E2E**, not for merging disabled
-infrastructure. Do NOT set `v2_edit_enabled=true` in any shared or production
-instance yet:
+## 最小 API
 
-- A native C controlled-publish method that atomically checks the authenticated
-  ACL, prepared Intent, live Guard/epoch/proof, real File ID under locked Branch,
-  and writes published receipt + updated/released Guard + Branch in one
-  transaction. The existing generic C/Go fences intentionally deny unscoped
-  edits including the owner; a user cannot yet Commit a Checkout.
-- Trusted HTTP/SDK adapters for Agent2 and external integrations, including
-  a secure staging/CDC path, identity-to-native-user mapping and read-only
-  Intent result query. **No editing routes have been registered.**
-- Runtime integration/compile validation against the exact immutable CE14
-  source tree and MariaDB, Web/Sync/VirtualRepo bypass validation, restart and
-  lost-response tests, and real Agent/PLM client E2E. Contract and DB tests
-  cannot substitute for these.
+- Hub `POST /api/v2.1/cloudfile/edit/v1/open/`：浏览器当前用户签发短期文件授权；普通模式始终可以申请，独占模式只在能力存在时申请。
+- Hub `GET /api/v2.1/cloudfile/edit/v1/lock-info/`：返回 Checkout 支持能力和当前占用；终端/IP 仅向持有人或管理员展示。
+- Go Fileserver `/cf-edit/v1/read|status|publish`：普通编辑不要求 Guard 表；独占发布仍须 Guard 证明。
+- Go `/cf-edit/v1/checkout|renew|release`：仅安装 Guard 的实例提供；Checkout 原子写入 + 当前用户及文件权限校验。
+- 所有最终原生 Branch 写入：安装 Guard 时仍执行 Guard 围栏；独占 Commit/Checkin 与 Guard 基线/释放处于同一个数据库事务。
 
-## MVP verification and merge gate
+## DEV 验收建议
 
-Only after Etech core V2 M1/M2 is independently operational, run this isolated
-feature MVP: (1) start from pinned clean CE14 with five reviewed tables;
-(2) build native C + Go and run feature CI; (3) two concurrent Checkout
-requests, one success; (4) another user's Web/C/Go/sync/rename attempt cannot
-touch a checked-out file; (5) Agent saves and direct PLM Commit/Checkin use
-one native transaction; (6) restart/lost HTTP receipt retry returns exactly one
-native version; (7) revoked ACL/expired Agent lease/stale token rejects final
-publish; (8) independent files remain editable and normal CE unguarded behavior
-unchanged.
+1. 不配置任何 Checkout 开关，新装 V2 自动安装四张扩展表；普通/独占入口及 C/Go 围栏一致。
+2. 复用旧 CE14 且无 Guard：普通编辑可用、独占返回 `CHECKOUT_UNSUPPORTED`，不会因开关缺失触发迁移。
+3. 已安装 Guard 即使残留旧 `enabled=false` 参数，也不得绕过任何原生写入检查。
+4. Guard 表存在但结构损坏、权限不足或数据库暂时故障时拒绝不安全写入，不将异常当作 Guard 缺失。
+5. 两用户冲突、Checkout 阻断 Web/Sync/原生变更、多次 Commit/Checkin、权限撤销及 Rust Journal 恢复均进行隔离 DEV 联验。
+6. 所有源代码/配置变更均不直接发布 PROD，不静默改动旧数据。
 
-Updated acceptance (2026-10-16): merging **feature-off foundational code**
-into `dev` is allowed after native build, test, and performance gate. Enabling
-CF-EDIT or claiming Agent2 edit capability still requires the real E2E checks.
-No feature table installation is part of standard 3-table V2 startup.
-No PROD deployment or switch-on is approved by this merge. This document is
-a status/boundary record, **not** a claim that MVP passed.
 
-## Reviewed performance and Agent Rust compatibility
-
-- Read/preview/download/list API paths do not invoke the CF-EDIT Branch
-  final-write hook. With `v2_edit_enabled=false`, Go returns before SQL and
-  native C returns before Guard SQL; default CE write paths are retained.
-- With the flag enabled, native C+Go query only *active* Guard IDs using the
-  reviewed index `cf_edit_guard_active (repo_id,guard_id)`. No active locks
-  means no file-tree diff. A per-repository active-lock guardrail fails closed
-  rather than scanning an unlimited result set. The 2026-10-16 disposable
-  MariaDB test used **12,000 historical Guard rows and one active Guard**, then
-  zero active Guards, asserting the chosen index and query results. It is
-  **not** a real-life upload throughput benchmark. No guarantee of constant
-  time for large multi-file writes while thousands of locks are active.
-- `eaopen/cloudfile-local-agent2@dev` already has Rust
-  `auto_upload.rs`, `exclusive.rs`, `journal.rs`, `cdc.rs` and P-256
-  device signing. Its actual device endpoints remain
-  `/api/v2.1/cloudfile/extensions/local-edit/v1/agent/` and browser pairing
-  `.../local-edit/v1/devices/pair-start/`. In this V2 CF-EDIT foundation,
-  **these routes and the signed device identity bridge do not exist**.
-  Only the Guard/Intent storage primitives and unscoped native protection
-  exist. Do not misreport Agent2 E2E as implemented; leave all Agent2 editing
-  capabilities unavailable until an authenticated V2 adapter and controlled
-  native final Commit/Checkin are completed.
-- Teamcenter-like PLM direct API remains design-only per user instruction;
-  it is NOT an activation or merge prerequisite. Focus future test passes on
-  Agent2 optimistic local edits and exclusive Checkout/Commit/Checkin.
+只有 `cf_edit_guard` 为本功能扩展状态；**不重新引入服务器 Intent、设备账户、编辑 Session 或历史锁表。**

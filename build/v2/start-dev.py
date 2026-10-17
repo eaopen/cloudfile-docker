@@ -16,6 +16,8 @@ from web_paths import web_settings, nginx_config, read_settings
 
 
 source = Path('/opt/cloudfile-v2/source')
+# Fresh V2 installs Checkout Guard; reused data is never silently migrated.
+
 shared = Path('/shared')
 existing = (shared / 'seafile/seafile-data').is_dir()
 if (shared / 'seafile/conf').exists() and not existing:
@@ -38,8 +40,10 @@ if existing:
     shutil.copyfile(original / 'seafile.conf', conf / 'seafile.conf')
     settings = read_settings(original / 'seahub_settings.py', {
         'SECRET_KEY', 'TIME_ZONE', 'LOGIN_URL', 'LOGIN_REDIRECT_URL', 'SITE_ROOT', 'FILE_SERVER_ROOT',
-        'CF_ENABLE_SEARCH', 'CF_PROVIDER_SEARCH', 'CF_MEILISEARCH_URL',
-        'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX'})
+        'CF_MEILISEARCH_URL', 'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX',
+        'CF_DIRECTORY_URL', 'CF_DIRECTORY_SECRET', 'CF_DIRECTORY_KEY_ID',
+        'CF_DIRECTORY_ISSUER', 'CF_DIRECTORY_AUDIENCE',
+        'CF_DIRECTORY_GROUP_OWNER', 'CF_DIRECTORY_SUBJECT_TTL'})
     if not settings.get('SECRET_KEY'):
         raise ValueError('existing deployment SECRET_KEY is required')
     host = os.environ['SEAFILE_MYSQL_DB_HOST']
@@ -49,6 +53,25 @@ if existing:
              'files': os.environ['SEAFILE_MYSQL_DB_SEAFILE_DB_NAME'],
              'hub': os.environ['SEAFILE_MYSQL_DB_SEAHUB_DB_NAME']}
     public_url = os.environ.get('SEAFILE_SERVER_PROTOCOL', 'http') + '://' + os.environ['SEAFILE_SERVER_HOSTNAME']
+    # Reused CE volumes are NOT silently upgraded. Treat a verified V2 Guard
+    # table as proof of Checkout support; never bypass an existing Guard.
+    with pymysql.connect(host=host, port=int(os.environ.get('SEAFILE_MYSQL_DB_PORT', '3306')),
+                         user=user, password=password, database=names['files'], autocommit=True) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT COUNT(*) FROM information_schema.tables "
+                           "WHERE table_schema=DATABASE() AND table_name='cf_edit_guard'")
+            guard_installed = cursor.fetchone()[0] == 1
+        core_ddl = (source / 'seafile-server/scripts/sql/mysql/cloudfile-v2.sql').read_text()
+        if guard_installed:
+            FreshSchema(
+                connection, core_ddl,
+                edit_ddl=(source / 'seafile-server/scripts/sql/mysql/cloudfile-v2-edit.sql').read_text(),
+            ).verify()
+        else:
+            # CE14 upgrade: add the reviewed three V2 metadata tables in-place.
+            # Existing native Repo/permissions/files are untouched; unsupported
+            # legacy CloudFile schema is rejected by FreshSchema.install().
+            FreshSchema(connection, core_ddl).install()
 else:
     host, password, user = os.environ['DB_HOST'], os.environ['DB_PASSWORD'], 'cfv2'
     names = {'account': 'cfv2_ccnet', 'files': 'cfv2_seafile', 'hub': 'cfv2_seahub'}
@@ -80,6 +103,12 @@ else:
                     cursor.execute(filename.read_text())
                     while cursor.nextset():
                         pass
+    with pymysql.connect(host=host, user=user, password=password, database=names['files'], autocommit=True) as connection:
+        FreshSchema(
+            connection,
+            (source / 'seafile-server/scripts/sql/mysql/cloudfile-v2.sql').read_text(),
+            edit_ddl=(source / 'seafile-server/scripts/sql/mysql/cloudfile-v2-edit.sql').read_text(),
+        ).install()
     (conf / 'seafile.conf').write_text(f'''[database]
 type=mysql
 host={host}
@@ -100,12 +129,11 @@ auto_local_root=/shared/library-storage
     # Retain them on restart rather than silently disabling the login provider.
     settings.update(read_settings(conf / 'seahub_settings.py', {'LOGIN_URL', 'LOGIN_REDIRECT_URL'}))
 
-# Run the same idempotent native-library discovery for both existing CE upgrades
-# and fresh instances. Never create a replacement Repo in a new/empty database.
+# Discovery always runs at startup, using the same CE database and registered storage path.
+# Existing V2 schema is checked first. Never create replacement Repo IDs.
 with pymysql.connect(host=host, user=user, password=password, database=names['files'],
                      charset='utf8mb4', autocommit=True) as connection:
     NativeLibraryDiscovery.check_native_schema(connection)
-    FreshSchema(connection, (source / 'seafile-server/scripts/sql/mysql/cloudfile-v2.sql').read_text()).install()
     discovery = NativeLibraryDiscovery(connection)
     print('CloudFile V2 native library discovery:', discovery.reconcile(), flush=True)
     unresolved = discovery.unresolved_registry_count()
@@ -113,12 +141,27 @@ with pymysql.connect(host=host, user=user, password=password, database=names['fi
         print('CloudFile V2 needs operator review: registered libraries missing from '
               'Repo, RepoTrash and GarbageRepos:', unresolved, flush=True)
 
+# Hub detects Checkout from the same installed Guard schema as native services.
+if os.environ.get('JWT_PRIVATE_KEY'):
+    settings['JWT_PRIVATE_KEY'] = os.environ['JWT_PRIVATE_KEY']
+
+# Directory is a trusted external connection, not a feature flag. Preserve
+# seeded connection/security settings and allow deployment secret injection.
+for key in ('CF_DIRECTORY_URL', 'CF_DIRECTORY_SECRET', 'CF_DIRECTORY_KEY_ID',
+            'CF_DIRECTORY_ISSUER', 'CF_DIRECTORY_AUDIENCE', 'CF_DIRECTORY_GROUP_OWNER'):
+    if key in os.environ:
+        settings[key] = os.environ[key]
+if 'CF_DIRECTORY_SUBJECT_TTL' in os.environ:
+    settings['CF_DIRECTORY_SUBJECT_TTL'] = int(os.environ['CF_DIRECTORY_SUBJECT_TTL'])
+settings['CF_ACL_PROVIDER'] = 'etech'
+settings['CF_ACL_SUBJECT_ENSURE'] = 'cloudfile_ext.v2.etech_directory.ensure_subject'
+
+
 settings['ENABLE_OAUTH'] = bool(settings.get('OAUTH_CLIENT_ID') and settings.get('OAUTH_CLIENT_SECRET'))
 
-for key in ('CF_ENABLE_SEARCH', 'CF_PROVIDER_SEARCH', 'CF_MEILISEARCH_URL',
-            'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX'):
+for key in ('CF_MEILISEARCH_URL', 'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX'):
     if key in os.environ:
-        settings[key] = os.environ[key].lower() == 'true' if key == 'CF_ENABLE_SEARCH' else os.environ[key]
+        settings[key] = os.environ[key]
 
 settings.update(web_settings(public_url, settings, existing=existing))
 nginx_template = Path('/opt/cloudfile-v2/nginx.conf.template').read_text()
@@ -144,6 +187,8 @@ for key, value in {
     'SEAFILE_MYSQL_DB_SEAHUB_DB_NAME': names['hub'], 'SEAFILE_CENTRAL_CONF_DIR': str(conf),
     'SEAFILE_CONF_DIR': str(data), 'SEAFILE_DATA_DIR': str(data), 'CCNET_CONF_DIR': str(ccnet),
     'SEAFILE_RPC_PIPE_PATH': str(data),
+    # Native C/Go construct the internal Hub URL from this canonical root too.
+    'SITE_ROOT': settings['SITE_ROOT'],
     'SEAHUB_LOG_DIR': str(logs), 'CACHE_PROVIDER': 'redis', 'DJANGO_SETTINGS_MODULE': 'seahub.settings',
 }.items():
     os.environ[key] = value
@@ -181,7 +226,7 @@ except User.DoesNotExist:
     processes.append(subprocess.Popen(['gunicorn', 'seahub.wsgi:application', '--bind', '127.0.0.1:8000',
         '--workers', '2', '--timeout', '120', '--access-logfile', '-']))
     processes.append(subprocess.Popen(['nginx', '-g', 'daemon off;']))
-    if settings.get('CF_ENABLE_SEARCH') and settings.get('CF_PROVIDER_SEARCH') == 'meilisearch':
+    if settings.get('CF_MEILISEARCH_URL'):
         search_worker = subprocess.Popen(['python3', '-m', 'cloudfile_ext.v2.search.worker',
                                          '--checkpoint', str(shared / 'search-v2-checkpoint.json')])
     while all(process.poll() is None for process in processes):

@@ -2,7 +2,9 @@ name: CloudFile V2 clean CE14 isolated checks
 
 on:
   push:
-    branches: [dev, dev2-clean]
+    branches: [dev, dev2-clean, feature/v2-rust-guard-only, feature/v2-checkout-default-on]
+  pull_request:
+    branches: [dev]
   workflow_dispatch:
 
 permissions:
@@ -49,16 +51,20 @@ jobs:
         with:
           path: cloudfile-docker
           fetch-depth: 0
+      - name: Read immutable source-set pins
+        id: pins
+        run: |
+          python3 -c "import json; c=json.load(open('cloudfile-docker/build/v2/source-set.json'))['components']; print('server='+c['cloudfile-server']['overlay_commit']); print('hub='+c['cloudfile-hub']['overlay_commit'])" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-server
-          ref: 7bb50f174b48e5f28f0b02490c7c9769f2997ad5
+          ref: ${{ steps.pins.outputs.server }}
           path: cloudfile-server
           fetch-depth: 0
       - uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-hub
-          ref: e9ed640b765a2ec08633f80f5aad6a4e0b3aeb7b
+          ref: ${{ steps.pins.outputs.hub }}
           path: cloudfile-hub
           fetch-depth: 0
       - uses: actions/setup-python@v5
@@ -71,7 +77,7 @@ jobs:
           git -C cloudfile-hub merge-base --is-ancestor 15ec1aa7114c013929509e0aad756b5365a29ce6 HEAD
       - name: Install isolated test packages
         run: |
-          python3 -m pip install --quiet 'pymysql>=1.1,<2' 'redis>=5,<8'
+          python3 -m pip install --quiet 'pymysql>=1.1,<2' 'redis>=5,<8' 'PyJWT>=2.8,<3' 'requests>=2.31,<3' 'Django>=5.2,<5.3'
       - name: Assert isolated upstream assembly and three-table runtime
         env:
           CF_TEST_DB_PORT: '3306'
@@ -105,16 +111,20 @@ jobs:
         with:
           path: cloudfile-docker
           fetch-depth: 0
+      - name: Read immutable source-set pins
+        id: pins
+        run: |
+          python3 -c "import json; c=json.load(open('cloudfile-docker/build/v2/source-set.json'))['components']; print('server='+c['cloudfile-server']['overlay_commit']); print('hub='+c['cloudfile-hub']['overlay_commit'])" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-server
-          ref: 7bb50f174b48e5f28f0b02490c7c9769f2997ad5
+          ref: ${{ steps.pins.outputs.server }}
           path: cloudfile-server
           fetch-depth: 0
       - uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-hub
-          ref: e9ed640b765a2ec08633f80f5aad6a4e0b3aeb7b
+          ref: ${{ steps.pins.outputs.hub }}
           path: cloudfile-hub
           fetch-depth: 0
       - uses: actions/setup-python@v5
@@ -134,7 +144,7 @@ jobs:
             libarchive-dev libargon2-dev libhiredis-dev libonig-dev libunwind-dev \
             libjwt-dev libfuse-dev libldap2-dev libxml2-dev libxslt-dev \
             uuid-dev libevhtp-dev
-          python3 -m pip install --quiet 'pymysql>=1.1,<2' 'redis>=5,<8' 'requests>=2.31,<3'
+          python3 -m pip install --quiet 'pymysql>=1.1,<2' 'redis>=5,<8' 'PyJWT>=2.8,<3' 'requests>=2.31,<3' 'Django>=5.2,<5.3' 'requests>=2.31,<3' 'PyJWT>=2,<3'
       - name: Assemble exact selected native source
         run: |
           python3 cloudfile-docker/tools/prepare-v2-source.py --workspace . --output /tmp/cfv2-clean
@@ -163,3 +173,4 @@ jobs:
         run: |
           python3 cloudfile-docker/tests/v2/native_runtime.py
           CF_V2_AUTO_STORAGE=1 python3 cloudfile-docker/tests/v2/native_runtime.py
+          CF_V2_TEST_CHECKOUT=1 python3 cloudfile-docker/tests/v2/native_runtime.py

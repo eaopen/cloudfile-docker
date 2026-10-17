@@ -68,9 +68,13 @@ same configured native OAuth callback and CE account. It additionally requires
 `OAUTH_OIDC_ISSUER`, `OAUTH_OIDC_JWKS_URI`, `openid` scope and the stable UID mapped
 to `login_id`. It supports RS256 and validates the ID Token before authentication.
 
-This packages native file operations. It does not add OIDC/SSO routes or directory
-ACL enforcement absent from the pinned source. Native API success does not
-certify the Etech end-to-end cutover.
+This packages native file operations. CloudFile V2 directory ACL is a built-in,
+always-on capability when the matched Hub/Server V2 sources are assembled:
+there is no `v2_acl_enabled` option or public-rule publication feature switch.
+Protected libraries still require the current user, native repository rights
+and C/Go byte/final-commit checks; underlying SQL/subject failures deny.
+Legacy unscoped operations on protected repositories remain restricted.
+Native API success does not certify the Etech end-to-end cutover.
 
 An existing CE14 volume with `seafile/seafile-data` is reused in place. Keep its
 database environment, network, published port and `/shared` mount. Exclude the
@@ -86,10 +90,13 @@ does not imply that the removed legacy extension APIs or ACL enforcement run.
 
 ## Existing Meilisearch Search
 
-The V2 runtime preserves the existing `CF_ENABLE_SEARCH`, `CF_PROVIDER_SEARCH`,
-`CF_MEILISEARCH_URL`, `CF_MEILISEARCH_API_KEY`, and optional
-`CF_MEILISEARCH_INDEX` settings. The same names may be supplied as environment
-variables. Search remains disabled when it is not explicitly configured.
+V2 Search has no separate ENABLE or provider selector. When
+`CF_MEILISEARCH_URL` is configured, the worker starts and Search uses that
+external service. `CF_MEILISEARCH_API_KEY` holds its credential and
+`CF_MEILISEARCH_INDEX` optionally overrides the default `cloudfile_files`
+index. Without a configured endpoint, or while Meilisearch is unavailable,
+only enhanced Search returns `SEARCH_UNAVAILABLE`; native file services continue.
+Retired `CF_ENABLE_SEARCH` / `CF_PROVIDER_SEARCH` are ignored.
 Meilisearch must already contain a `cloudfile_files` index using the existing
 `repo_id/path/object_type/tags/dirs` document fields. No SQL tables are added.
 
@@ -113,3 +120,51 @@ Missing libraries use fixed-commit directory pages. The existing index is never
 cleared. A failed batch retains its previous checkpoint for retry. Search
 failures do not terminate native file services. This path restores the existing
 file browser; it does not activate the separately designed resource-search POST API.
+
+## Built-in capability defaults (2026-10-17)
+
+A new V2 installation always installs the three core extension tables and the
+separate `cf_edit_guard` Checkout table. C/Go native fences and Hub discover
+Guard from the database schema; the historic `CF_V2_CHECKOUT_ENABLED`,
+`CF_V2_AGENT_EDIT_ENABLED` and `[cloudfile] v2_edit_enabled` parameters
+are not accepted as activation or bypass controls. A reused CE14 installation
+without Guard retains optimistic editing and requires an approved, explicit
+schema migration followed by restart before Checkout becomes available.
+
+CloudFile directory ACL and native CE Tag are always-on capabilities. Optional
+Search, Office and other external integrations depend on their actual
+connections. Connection credentials, existing OIDC configuration, storage-root
+overrides and measured cache TTL parameters are *not* feature flags. No live
+volumes, original deployment config or production database are rewritten by
+this source change.
+
+## Etech P0 Integration
+
+Etech's existing `cloudDirectorySync` PowerJob should run every 600 seconds
+using the native admin channel to
+`POST /api/v2.1/admin/cloudfile/directory/entities/sync/`.
+CloudFile fetches the existing `/groups?view=entities` snapshot with its
+short-lived machine JWT. The periodic task only reconciles CE Group entities
+and `cf_sso_group_map`, **not** all users or native `GroupUser` membership.
+The on-demand UID projector refreshes GroupUser after login or TTL expiry.
+No v0.9 full-member directory worker may run in parallel.
+
+The built-in Hub adapter consumes the existing EAP Directory base URL through
+`CF_DIRECTORY_URL`, `CF_DIRECTORY_KEY_ID`, and `CF_DIRECTORY_SECRET`.
+Use the same machine credential as EAP's `cloudfile.identity-directory.auth`;
+never put deployment secrets into this repository. The issuer/audience defaults
+are `cloudfile-sso` and `eap-directory`. `CF_DIRECTORY_GROUP_OWNER` identifies an
+existing active native service administrator for flat Group creation. Native
+Redis cache LOCATION supplies shared subject freshness. Seeded Directory
+connection settings survive restarts and may be supplied through environment
+variables; there is no new feature flag.
+
+Identity pre-creation independently checks the Directory UID and active status;
+first SSO login reuses the native UID account. Group members refresh only for the
+current user at the bounded TTL. Missing/failed Directory or Redis fails closed.
+No extra user/member tables or legacy authorization routes are added.
+
+Native ordinary copy/move is synchronous while both library ACL fences are held;
+protected or virtual scopes still reject transfers. The source-set pins must
+select matching Hub fence writers and native transfer guards. Local native byte,
+revocation and race tests are separate from real Etech DEV and SSO acceptance.

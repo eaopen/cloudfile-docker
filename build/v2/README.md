@@ -187,3 +187,11 @@ For a runtime-layer DEV build, use the deployed immutable image digest as
 base, replace these pinned Python files, update the source receipt, and run
 the directory-page/ACL tests before publishing. Preserve database bindings
 and all original storage mounts when replacing the DEV container.
+
+### 2026-10-18 Hub performance source group
+
+The Hub pin includes subject-readiness reuse, ACL-filtered search and bounded
+native tag reads. Ship `seahub/api2/endpoints/repo_tags.py` with the V2 overlay
+and URL/directory seams: otherwise CE still computes tag file counts by default
+and the pinned performance fix is absent from the actual image. This source
+group changes no Server pin, native binary, runtime dependency or schema.

@@ -50,3 +50,27 @@ Etech 的 active=0 仅控制业务可见性与发布，并不是 Seafile ACL 拒
 ## DEV 发布 source-set 修复（2026-10-17）
 
 修改原因：PR 合并后构建清单仍固定旧 overlay，且未纳入原生 AdminLibraries 执行入口。发布必须固定 Hub `8dd4e5b6c53c0aeb1218996cd8aec50a237d1dbf`、Server `c1b3ba62423341b5321f052119697e6f24528b2a`，并显式携带 `seahub/api2/endpoints/admin/libraries.py`；仅更新 Docker 启动脚本不能交付库发现能力。构建前核对实际组装 receipt 和入口文件摘要，不以 PR 合并替代镜像内容验证。
+
+## 原库保护：先复用 Seafile 原生能力
+
+修改原因：旧版卷布局与 V2 平铺卷布局都可能包含真实库，不能把后者误判成首次安装；升级时新 env 也不能悄悄覆盖原数据库绑定。
+
+已核对现有实现：
+
+| 需求 | 复用能力 | CloudFile 边界 |
+| --- | --- | --- |
+| Seafile 跨版本数据库升级 | `scripts/scripts_14.0/upgrade.py` 调度原生 release `upgrade_*.sh` / `minor-upgrade.sh`，使用原 `current_version` | 不重写原生 SQL 迁移。已知非 14.0 版本先按官方流程升级；当前 V2 源码构建镜像不能代替完整旧版升级发行包。无版本戳也不构成已完成原生升级的证明。 |
+| Repo、Commit、目录、虚拟库与对象路径读取 | `seafile_api.get_repo` 和 `list_dir_by_path` | 启动后直接调用原生 RPC，根目录只取 1 项，不输出名称；失败时不开放 HTTP。不写 Commit/FS 解析器或另一套路由。现有发现扫描只覆盖原生物理库，此检查不替代虚拟库及历史完整性验收。 |
+| 文件/块完整性 | 原生 `seaf-fsck`，维护窗口按原生配置运行，不加 `-r` / `-E` | 不实现第二套 FSCK，不自动修复、导出或复制文件。上游入口未传播所有库检查的失败状态，必须核对原生日志，不能只把退出码 0 当作所有库通过。 |
+| CloudFile 库登记 | 已有 `NativeLibraryDiscovery` | 仍只补三表范围内的登记，不创建 Repo，不修改原生权限。 |
+
+本轮启动修复：
+
+- 同时识别 `/shared/seafile/{conf,seafile-data}` 与 `/shared/{conf,seafile-data}`。已有数据缺配置、同时出现两个可能的根或无法识别的存储布局，均停止；不创建另一套空库掩盖旧库。
+- 平铺 V2 重启沿用持久化原生配置与数据库名，不再走首次安装分支。原 `.env`、Seafile C 配置、Seahub 数据库配置及传入 env 发生冲突时停止，错误只含配置项名，不输出凭据。
+- 仅在 `/run/cloudfile-conf` 写运行配置，保留原配置和 SECRET_KEY。先检查原生数据库结构，再处理已批准的 V2 表；不清表、搬文件或扫描/投影全员成员。
+- 使用原生 `current_version` 戳拦截已知未完成的跨主版本升级，复用原生流程；不添加 CloudFile 迁移账本、基线工具或权限摘要表。
+
+此修复不能凭空发现未挂载的旧文件卷或未连接的另一个数据库。升级发布仍必须沿用原实例的数据库、卷和权限，核对原生库清单并完成原生 FSCK/授权验收后才能切流量。新建隔离实例的启动成功仅证明新实例可运行，不能宣称原库升级完成。数据库中已有不兼容的旧 CloudFile 扩展结构仍会明确拒绝，不把删表或回灌旧扩展当作自动修复。
+
+验证：`python3 -m unittest discover -s tests -p 'test_v2_*.py'`。包含布局误判、缺失挂载、数据库冲突、特殊字符凭据、原生版本戳和原生 RPC 故障拒绝；真实库不得用新建空库替代。

@@ -1,7 +1,7 @@
-"""Start a fresh CE14 DEV instance using native SQL/RPC/HTTP services only."""
+"""Start CE14 DEV using native services, preserving existing data/config."""
 import os
-import shutil
-import shlex
+import configparser
+import json
 from pathlib import Path
 import signal
 import subprocess
@@ -13,46 +13,53 @@ import pymysql
 from cloudfile_ext.v2.schema import FreshSchema
 from cloudfile_ext.v2.native_discovery import NativeLibraryDiscovery
 from web_paths import web_settings, nginx_config, read_settings
+from native_config import (volume_layout, load_native_environment, native_environment,
+                           verify_database_binding, require_native_ce14)
 
 
 source = Path('/opt/cloudfile-v2/source')
 # Fresh V2 installs Checkout Guard; reused data is never silently migrated.
 
 shared = Path('/shared')
-existing = (shared / 'seafile/seafile-data').is_dir()
-if (shared / 'seafile/conf').exists() and not existing:
-    raise RuntimeError('NATIVE_STORAGE_MISSING: original Seafile data mount is not connected')
-data = shared / ('seafile/seafile-data' if existing else 'seafile-data')
-ccnet = shared / ('seafile/ccnet' if existing else 'ccnet')
-logs = shared / ('seafile/logs' if existing else 'logs')
+# Detect existing native data before creating directories or touching SQL.
+root, existing = volume_layout(shared)
+data, ccnet, logs = root / 'seafile-data', root / 'ccnet', root / 'logs'
 conf = Path('/run/cloudfile-conf') if existing else shared / 'conf'
-for directory in (data, ccnet, logs, conf):
-    directory.mkdir(parents=True, exist_ok=True)
+original = root / 'conf'
 
 if existing:
     # Reuse CE14 native databases and objects in place; no import or schema reset.
-    original = shared / 'seafile/conf'
-    for line in (original / '.env').read_text().splitlines():
-        key, separator, value = line.partition('=')
-        if separator and not key.lstrip().startswith('#'):
-            values = shlex.split(value)
-            os.environ.setdefault(key.strip(), values[0] if values else '')
-    shutil.copyfile(original / 'seafile.conf', conf / 'seafile.conf')
+    require_native_ce14(data)
+    load_native_environment(original, os.environ)
+    native_config = configparser.ConfigParser(interpolation=None)
+    native_config.read(original / 'seafile.conf')
     settings = read_settings(original / 'seahub_settings.py', {
-        'SECRET_KEY', 'TIME_ZONE', 'LOGIN_URL', 'LOGIN_REDIRECT_URL', 'SITE_ROOT', 'FILE_SERVER_ROOT',
+        'DATABASES', 'SECRET_KEY', 'TIME_ZONE', 'LOGIN_URL', 'LOGIN_REDIRECT_URL', 'SITE_ROOT', 'FILE_SERVER_ROOT',
         'CF_MEILISEARCH_URL', 'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX',
         'CF_DIRECTORY_URL', 'CF_DIRECTORY_SECRET', 'CF_DIRECTORY_KEY_ID',
         'CF_DIRECTORY_ISSUER', 'CF_DIRECTORY_AUDIENCE',
         'CF_DIRECTORY_GROUP_OWNER', 'CF_DIRECTORY_SUBJECT_TTL'})
     if not settings.get('SECRET_KEY'):
         raise ValueError('existing deployment SECRET_KEY is required')
+    native_environment(native_config, settings, os.environ)
     host = os.environ['SEAFILE_MYSQL_DB_HOST']
     password = os.environ['SEAFILE_MYSQL_DB_PASSWORD']
     user = os.environ['SEAFILE_MYSQL_DB_USER']
     names = {'account': os.environ['SEAFILE_MYSQL_DB_CCNET_DB_NAME'],
              'files': os.environ['SEAFILE_MYSQL_DB_SEAFILE_DB_NAME'],
              'hub': os.environ['SEAFILE_MYSQL_DB_SEAHUB_DB_NAME']}
-    public_url = os.environ.get('SEAFILE_SERVER_PROTOCOL', 'http') + '://' + os.environ['SEAFILE_SERVER_HOSTNAME']
+    public_url = os.environ.get('PUBLIC_URL') or (
+        os.environ.get('SEAFILE_SERVER_PROTOCOL', 'http') + '://' + os.environ['SEAFILE_SERVER_HOSTNAME'])
+    verify_database_binding(native_config, os.environ, settings)
+    with pymysql.connect(host=host, port=int(os.environ.get('SEAFILE_MYSQL_DB_PORT', '3306')),
+                         user=user, password=password, database=names['files'], autocommit=True) as connection:
+        NativeLibraryDiscovery.check_native_schema(connection)
+    # Write only ephemeral configuration after native database binding checks.
+    for directory in (ccnet, logs, conf):
+        directory.mkdir(parents=True, exist_ok=True)
+    with (conf / 'seafile.conf').open('w') as output:
+        native_config.write(output)
+
     # Reused CE volumes are NOT silently upgraded. Treat a verified V2 Guard
     # table as proof of Checkout support; never bypass an existing Guard.
     with pymysql.connect(host=host, port=int(os.environ.get('SEAFILE_MYSQL_DB_PORT', '3306')),
@@ -76,6 +83,8 @@ else:
     host, password, user = os.environ['DB_HOST'], os.environ['DB_PASSWORD'], 'cfv2'
     names = {'account': 'cfv2_ccnet', 'files': 'cfv2_seafile', 'hub': 'cfv2_seahub'}
     public_url = os.environ['PUBLIC_URL']
+    for directory in (data, ccnet, logs, conf):
+        directory.mkdir(parents=True, exist_ok=True)
     for directory in (shared / 'library-storage', shared / 'seahub-data'):
         directory.mkdir(parents=True, exist_ok=True)
     for attempt in range(60):
@@ -131,10 +140,12 @@ auto_local_root=/shared/library-storage
 
 # Discovery always runs at startup, using the same CE database and registered storage path.
 # Existing V2 schema is checked first. Never create replacement Repo IDs.
-with pymysql.connect(host=host, user=user, password=password, database=names['files'],
+with pymysql.connect(host=host, port=int(os.environ.get('SEAFILE_MYSQL_DB_PORT', '3306')),
+                     user=user, password=password, database=names['files'],
                      charset='utf8mb4', autocommit=True) as connection:
     NativeLibraryDiscovery.check_native_schema(connection)
     discovery = NativeLibraryDiscovery(connection)
+    native_repo_ids = [item['repo_id'] for item in discovery.scan()]
     print('CloudFile V2 native library discovery:', discovery.reconcile(), flush=True)
     unresolved = discovery.unresolved_registry_count()
     if unresolved:
@@ -210,6 +221,14 @@ try:
         if processes[0].poll() is not None or attempt == 59:
             raise RuntimeError('Native RPC did not start')
         time.sleep(1)
+    # Use the running native reader before exposing HTTP. Native CE handles
+    # commit formats, virtual repos and storage routes; CloudFile does not.
+    subprocess.run(['python3', '-c',
+                    'import json,sys; from seaserv import seafile_api; '
+                    'from native_config import verify_native_reads; '
+                    'verify_native_reads(json.load(sys.stdin), seafile_api)'],
+                   input=json.dumps(native_repo_ids), text=True, check=True,
+                   cwd='/opt/cloudfile-v2')
     processes.append(subprocess.Popen(['fileserver', '-F', str(conf), '-d', str(data),
         '-l', str(logs / 'fileserver.log')]))
     # The native release SQL already contains its complete schema and initial data.

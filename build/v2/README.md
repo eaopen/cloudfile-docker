@@ -76,7 +76,14 @@ and C/Go byte/final-commit checks; underlying SQL/subject failures deny.
 Legacy unscoped operations on protected repositories remain restricted.
 Native API success does not certify the Etech end-to-end cutover.
 
-An existing CE14 volume with `seafile/seafile-data` is reused in place. Keep its
+Existing CE14 nested (`seafile/seafile-data` + `seafile/conf`) and flat
+(`seafile-data` + `conf`) volumes are reused in place. Flat V2 restarts also
+follow the reuse path; they must not bootstrap another native database.
+Ambiguous/partial data mounts or conflicting persisted database bindings stop
+startup before schema installation. Native RPC reads each discovered physical
+repository before HTTP is exposed; full integrity remains native `seaf-fsck`
+and native release upgrade scripts remain authoritative for version changes.
+See [native upgrade boundaries](../../docs/v2-native-upgrade-discovery-20261017.md). Keep its
 database environment, network, published port and `/shared` mount. Exclude the
 old image's `PATH`, `PYTHONPATH` and `LD_LIBRARY_PATH` from the environment passed
 to the replacement so the new image selects its own native binaries and modules.

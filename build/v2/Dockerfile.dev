@@ -66,6 +66,7 @@ COPY --from=frontend /source/seahub/frontend/build /opt/cloudfile-v2/source/seah
 COPY --from=frontend /source/seahub/frontend/webpack-stats.pro.json /opt/cloudfile-v2/source/seahub/frontend/webpack-stats.pro.json
 COPY --from=cf-build start-dev.py /opt/cloudfile-v2/start.py
 COPY --from=cf-build web_paths.py /opt/cloudfile-v2/web_paths.py
+COPY --from=cf-build native_config.py /opt/cloudfile-v2/native_config.py
 COPY --from=cf-build nginx-dev.conf /opt/cloudfile-v2/nginx.conf.template
 ENV PATH=/opt/cfv2-prefix/bin:$PATH \
     LD_LIBRARY_PATH=/opt/cfv2-prefix/lib \

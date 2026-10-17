@@ -23,7 +23,7 @@
         "fileserver/cf_v2_acl.go",
         "fileserver/cf_v2_acl_test.go"
       ],
-      "overlay_commit": "44532bd929e021bd1c208379f335e5703985fb15",
+      "overlay_commit": "af206814de78797040f05d4746d959bc1106d670",
       "native_patches": [
         "common/Makefile.am",
         "common/obj-backend-fs.c",

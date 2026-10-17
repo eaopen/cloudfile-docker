@@ -50,3 +50,35 @@ def nginx_config(template, root):
     if '__CF_CANONICAL__' not in template:
         raise ValueError('canonical nginx template marker missing')
     return template.replace('__CF_CANONICAL__', root)
+
+
+def checkout_enabled(configured, legacy=None, *, existing, guard_installed=False):
+    """Checkout is enabled by default on new V2, or whenever valid Guard exists.
+
+    The environment setting is a deployment capability, never a runtime lock
+    bypass. Existing installations must not silently alter their schemas.
+    """
+    def parse(raw):
+        if raw is None:
+            return None
+        if not isinstance(raw, str) or raw.lower() not in ('true', 'false', '1', '0'):
+            raise ValueError('Checkout setting must be true or false')
+        return raw.lower() in ('true', '1')
+
+    requested, previous = parse(configured), parse(legacy)
+    if requested is not None and previous is not None and requested != previous:
+        raise ValueError('Conflicting Checkout capability settings')
+    if requested is None:
+        requested = previous
+    if not existing:
+        # Fresh V2 installs the single Guard table unless explicitly unsupported.
+        return requested is not False
+    if guard_installed:
+        # Disabling the enforcement for any installed Guard may bypass an
+        # existing Checkout. A deliberate schema retirement is a separate task.
+        if requested is False:
+            raise ValueError('Cannot disable Checkout while a Guard table is installed')
+        return True
+    if requested is True:
+        raise ValueError('Existing instance has no V2 Guard table; use an approved migration')
+    return False

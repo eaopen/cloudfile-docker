@@ -37,7 +37,10 @@ if existing:
     shutil.copyfile(original / 'seafile.conf', conf / 'seafile.conf')
     settings = read_settings(original / 'seahub_settings.py', {
         'SECRET_KEY', 'TIME_ZONE', 'LOGIN_URL', 'LOGIN_REDIRECT_URL', 'SITE_ROOT', 'FILE_SERVER_ROOT',
-        'CF_MEILISEARCH_URL', 'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX'})
+        'CF_MEILISEARCH_URL', 'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX',
+        'CF_DIRECTORY_URL', 'CF_DIRECTORY_SECRET', 'CF_DIRECTORY_KEY_ID',
+        'CF_DIRECTORY_ISSUER', 'CF_DIRECTORY_AUDIENCE',
+        'CF_DIRECTORY_GROUP_OWNER', 'CF_DIRECTORY_SUBJECT_TTL'})
     if not settings.get('SECRET_KEY'):
         raise ValueError('existing deployment SECRET_KEY is required')
     host = os.environ['SEAFILE_MYSQL_DB_HOST']
@@ -128,6 +131,8 @@ for key in ('CF_DIRECTORY_URL', 'CF_DIRECTORY_SECRET', 'CF_DIRECTORY_KEY_ID',
             'CF_DIRECTORY_ISSUER', 'CF_DIRECTORY_AUDIENCE', 'CF_DIRECTORY_GROUP_OWNER'):
     if key in os.environ:
         settings[key] = os.environ[key]
+if 'CF_DIRECTORY_SUBJECT_TTL' in os.environ:
+    settings['CF_DIRECTORY_SUBJECT_TTL'] = int(os.environ['CF_DIRECTORY_SUBJECT_TTL'])
 settings['CF_ACL_PROVIDER'] = 'etech'
 settings['CF_ACL_SUBJECT_ENSURE'] = 'cloudfile_ext.v2.etech_directory.ensure_subject'
 

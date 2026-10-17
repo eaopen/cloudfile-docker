@@ -68,9 +68,13 @@ same configured native OAuth callback and CE account. It additionally requires
 `OAUTH_OIDC_ISSUER`, `OAUTH_OIDC_JWKS_URI`, `openid` scope and the stable UID mapped
 to `login_id`. It supports RS256 and validates the ID Token before authentication.
 
-This packages native file operations. It does not add OIDC/SSO routes or directory
-ACL enforcement absent from the pinned source. Native API success does not
-certify the Etech end-to-end cutover.
+This packages native file operations. CloudFile V2 directory ACL is a built-in,
+always-on capability when the matched Hub/Server V2 sources are assembled:
+there is no `v2_acl_enabled` option or public-rule publication feature switch.
+Protected libraries still require the current user, native repository rights
+and C/Go byte/final-commit checks; underlying SQL/subject failures deny.
+Legacy unscoped operations on protected repositories remain restricted.
+Native API success does not certify the Etech end-to-end cutover.
 
 An existing CE14 volume with `seafile/seafile-data` is reused in place. Keep its
 database environment, network, published port and `/shared` mount. Exclude the

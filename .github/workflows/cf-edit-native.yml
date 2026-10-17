@@ -24,21 +24,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-server
-          ref: 2e3fb8225a5947018d5bd3eb4c6272f383069a18
+          ref: 44532bd929e021bd1c208379f335e5703985fb15
           fetch-depth: 0  # pinned upstream CE14 SHA must exist, not just feature tip
           path: workspace/cloudfile-server
       - name: Checkout immutable Hub dev commit
         uses: actions/checkout@v4
         with:
           repository: eaopen/cloudfile-hub
-          ref: 6107c71d50908ff8474a552c677e179bc1942a8a
+          ref: ae5afca0adc3fb3947ff8d88fa81dc63c809e16f
           fetch-depth: 0
           path: workspace/cloudfile-hub
       - name: Assemble only reviewed pinned CE14 sources
         run: |
           python3 tools/prepare-v2-source.py \
             --workspace workspace --output prepared \
-            --server-ref 2e3fb8225a5947018d5bd3eb4c6272f383069a18 --hub-ref 6107c71d50908ff8474a552c677e179bc1942a8a
+            --server-ref 44532bd929e021bd1c208379f335e5703985fb15 --hub-ref ae5afca0adc3fb3947ff8d88fa81dc63c809e16f
       - name: Install disposable native build dependencies
         run: |
           sudo apt-get update -qq

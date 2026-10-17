@@ -195,3 +195,12 @@ native tag reads. Ship `seahub/api2/endpoints/repo_tags.py` with the V2 overlay
 and URL/directory seams: otherwise CE still computes tag file counts by default
 and the pinned performance fix is absent from the actual image. This source
 group changes no Server pin, native binary, runtime dependency or schema.
+
+### Browser-session Tag batch correction (2026-10-18)
+
+The Hub pin includes the live DEV correction for JSON tag batches authenticated
+by a native browser session. Cache the size-limited request body before native
+CSRF validation consumes the JSON stream; keep both CSRF and authentication
+checks. Token callers and the V2 batch schema are unchanged. The regression
+reproduces RawPostDataException on the prior image; no schema, tag migration or
+native binary rebuild is involved.

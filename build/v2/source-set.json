@@ -52,7 +52,7 @@
       "overlay": [
         "cloudfile_ext/v2"
       ],
-      "overlay_commit": "85630f063d1e2bf1ad0a8c26803a936e23ca9c8f",
+      "overlay_commit": "1cb95d926fcabd814025fb4081e968ada8090748",
       "native_patches": [
         "seahub/urls.py",
         "seahub/oauth/views.py",

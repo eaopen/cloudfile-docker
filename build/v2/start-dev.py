@@ -38,9 +38,9 @@ if existing:
     settings = read_settings(original / 'seahub_settings.py', {
         'SECRET_KEY', 'TIME_ZONE', 'LOGIN_URL', 'LOGIN_REDIRECT_URL', 'SITE_ROOT', 'FILE_SERVER_ROOT',
         'CF_MEILISEARCH_URL', 'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX',
-        'CF_DIRECTORY_URL', 'CF_DIRECTORY_PROVIDER', 'CF_DIRECTORY_TIMEOUT',
-        'CF_DIRECTORY_ALLOW_HTTP', 'CF_SUBJECT_TTL', 'CF_DIRECTORY_AUTH_KEY_ID', 'CF_DIRECTORY_AUTH_SECRET',
-        'CF_DIRECTORY_AUTH_ISSUER', 'CF_DIRECTORY_AUTH_AUDIENCE', 'CF_DIRECTORY_AUTH_SERVICE_ID'})
+        'CF_DIRECTORY_URL', 'CF_DIRECTORY_SECRET', 'CF_DIRECTORY_KEY_ID',
+        'CF_DIRECTORY_ISSUER', 'CF_DIRECTORY_AUDIENCE', 'CF_DIRECTORY_GROUP_OWNER',
+        'CF_DIRECTORY_SUBJECT_TTL'})
     if not settings.get('SECRET_KEY'):
         raise ValueError('existing deployment SECRET_KEY is required')
     host = os.environ['SEAFILE_MYSQL_DB_HOST']
@@ -131,24 +131,16 @@ for key in ('CF_MEILISEARCH_URL', 'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDE
     if key in os.environ:
         settings[key] = os.environ[key]
 
-# Reuse the Etech Directory's existing short-lived HS256 machine credentials.
-# All fields are optional as a set; the Hub rejects incomplete configuration
-# instead of silently falling back to legacy full-member snapshot sync.
-for key in ('CF_DIRECTORY_URL', 'CF_DIRECTORY_PROVIDER', 'CF_DIRECTORY_AUTH_KEY_ID',
-            'CF_DIRECTORY_AUTH_SECRET', 'CF_DIRECTORY_AUTH_ISSUER',
-            'CF_DIRECTORY_AUTH_AUDIENCE', 'CF_DIRECTORY_AUTH_SERVICE_ID'):
+# Reuse V2's existing trusted Etech Directory runtime (short-lived machine JWT).
+for key in ('CF_DIRECTORY_URL', 'CF_DIRECTORY_SECRET', 'CF_DIRECTORY_KEY_ID',
+            'CF_DIRECTORY_ISSUER', 'CF_DIRECTORY_AUDIENCE',
+            'CF_DIRECTORY_GROUP_OWNER'):
     if key in os.environ:
         settings[key] = os.environ[key]
-if 'CF_DIRECTORY_TIMEOUT' in os.environ:
-    settings['CF_DIRECTORY_TIMEOUT'] = int(os.environ['CF_DIRECTORY_TIMEOUT'])
-if 'CF_SUBJECT_TTL' in os.environ:
-    settings['CF_SUBJECT_TTL'] = int(os.environ['CF_SUBJECT_TTL'])
-# The native C/Go and Hub ACL must consult the *same* single-UID projector.
-if settings.get('CF_DIRECTORY_URL'):
-    settings['CF_ACL_PROVIDER'] = settings.get('CF_DIRECTORY_PROVIDER') or 'etech'
-    settings['CF_ACL_SUBJECT_ENSURE'] = 'cloudfile_ext.v2.runtime.ensure_current_subject'
-if 'CF_DIRECTORY_ALLOW_HTTP' in os.environ:
-    settings['CF_DIRECTORY_ALLOW_HTTP'] = os.environ['CF_DIRECTORY_ALLOW_HTTP'].lower() == 'true'
+if 'CF_DIRECTORY_SUBJECT_TTL' in os.environ:
+    settings['CF_DIRECTORY_SUBJECT_TTL'] = int(os.environ['CF_DIRECTORY_SUBJECT_TTL'])
+# Existing ACL authority already invokes the shared UID projector by default.
+# No secondary membership worker or dynamically configured hook is needed.
 
 settings.update(web_settings(public_url, settings, existing=existing))
 nginx_template = Path('/opt/cloudfile-v2/nginx.conf.template').read_text()

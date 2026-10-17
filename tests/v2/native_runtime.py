@@ -1,6 +1,7 @@
 """Disposable real CE14 C/Go startup and byte tests, not directory ACL acceptance."""
 from datetime import datetime, timezone
 import json
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -17,7 +18,7 @@ import requests
 
 from cloudfile_ext.v2.identity import NativeIdentity
 from cloudfile_ext.v2.memberships import GroupCatalog, Memberships
-from cloudfile_ext.v2.schema import FreshSchema, TABLES
+from cloudfile_ext.v2.schema import FreshSchema, TABLES, EDIT_TABLES
 
 
 def run():
@@ -46,7 +47,13 @@ def run():
                 cursor.execute('GRANT ALL ON `' + name.replace('_', '\\_') + '`.* TO %s@%s', (database_user, '%'))
         connection = pymysql.connect(host=sql_host, port=sql_port, user=database_user, password=database_password,
                                      database=names['files'], charset='utf8mb4', autocommit=True)
-        FreshSchema(connection, (source / 'seafile-server/scripts/sql/mysql/cloudfile-v2.sql').read_text()).install()
+        checkout = os.environ.get('CF_V2_TEST_CHECKOUT') == '1'
+        FreshSchema(
+            connection,
+            (source / 'seafile-server/scripts/sql/mysql/cloudfile-v2.sql').read_text(),
+            edit_ddl=(source / 'seafile-server/scripts/sql/mysql/cloudfile-v2-edit.sql').read_text()
+                      if checkout else None,
+        ).install()
         with tempfile.TemporaryDirectory(prefix='cfv2-native-runtime-') as temporary, \
                 tempfile.TemporaryDirectory(prefix='cfv2-library-root-', dir='/dev/shm') as automatic_root:
             root = Path(temporary)
@@ -65,6 +72,8 @@ connection_charset=utf8mb4
 [fileserver]
 use_go_fileserver=true
 port=8082
+[cloudfile]
+v2_edit_enabled={'true' if checkout else 'false'}
 ''')
             os.environ.update(SEAFILE_DATA_DIR=str(data), SEAFILE_CENTRAL_CONF_DIR=str(conf),
                 SEAFILE_MYSQL_DB_HOST=sql_host, SEAFILE_MYSQL_DB_PORT=str(sql_port), SEAFILE_MYSQL_DB_USER=database_user,
@@ -160,6 +169,35 @@ port=8082
             assert downloaded.status_code == 200 and downloaded.content == content
             ranged = requests.get(url, headers={'Range': 'bytes=17-89'}, timeout=30)
             assert ranged.status_code == 206 and ranged.content == content[17:90]
+            if checkout:
+                # Active Checkout has no effect on reads but MUST block native
+                # C/Go writes. This tests real Branch interception, not just SQL.
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "INSERT INTO cf_edit_guard(repo_id,path_hash,path,guard_id,generation,"
+                        "owner_uid,owner_native_user,proof_digest,base_file_id,lease_expires_at) "
+                        "VALUES(%s,%s,%s,%s,1,%s,%s,%s,%s,"
+                        "TIMESTAMPADD(SECOND,600,UTC_TIMESTAMP(6)))",
+                        (repo, hashlib.sha256(b'/project/proof.txt').digest(),
+                         '/project/proof.txt', str(uuid4()), 'uid-runtime',
+                         username, 'f' * 64, file_id))
+                try:
+                    try:
+                        attempted = seafile_api.rename_file(repo, '/project', 'proof.txt',
+                                                           'should-block.txt', username)
+                    except Exception:
+                        attempted = -1
+                    assert attempted != 0, 'native rename bypassed Checkout Guard'
+                    assert seafile_api.get_file_id_by_path(repo, '/project/proof.txt') == file_id
+                    with connection.cursor() as cursor:
+                        cursor.execute('SELECT COUNT(*) FROM cf_edit_guard WHERE repo_id=%s', (repo,))
+                        assert cursor.fetchone()[0] == 1
+                finally:
+                    with connection.cursor() as cursor:
+                        cursor.execute(
+                            "UPDATE cf_edit_guard SET guard_id=NULL,owner_uid=NULL,"
+                            "owner_native_user=NULL,proof_digest=NULL,base_file_id=NULL,"
+                            "lease_expires_at=NULL WHERE repo_id=%s", (repo,))
             assert seafile_api.rename_file(repo, '/project', 'proof.txt', 'renamed.txt', username) == 0
             assert seafile_api.get_file_id_by_path(repo, '/project/renamed.txt') == file_id
             assert seafile_api.del_file(repo, '/project', json.dumps(['renamed.txt']), username) == 0
@@ -271,14 +309,15 @@ port=8082
                     assert cursor.fetchone() == ('auto-local:' + repo,)
             with connection.cursor() as cursor:
                 cursor.execute('SHOW TABLES')
-                assert {row[0] for row in cursor.fetchall() if row[0].startswith('cf_')} == TABLES
+                assert {row[0] for row in cursor.fetchall() if row[0].startswith('cf_')} == (TABLES | EDIT_TABLES if checkout else TABLES)
             print(json.dumps(dict(native_c_started=True, native_go_started=True, native_rpc_accounts=True,
                 uid_rename_stable=True, group_projection_and_revocation=True, native_repo_create=True,
                 automatic_storage_verified=automatic, native_library_preserved=bool(legacy), cold_storage_gc=automatic,
                 cross_volume_copy=automatic, schema_outage_denied=automatic, allocation_rollback=automatic, key_reuse_denied=automatic,
                 native_group_share=True, http_upload_bytes=len(content), branch_commit_changed=True,
                 http_download_bytes=len(content), http_range=True, rename=True, delete=True,
-                extension_tables=sorted(TABLES), oidc_login_verified=False, directory_acl_verified=False), sort_keys=True))
+                extension_tables=sorted(TABLES | EDIT_TABLES if checkout else TABLES),
+                checkout_guard_verified=checkout, oidc_login_verified=False, directory_acl_verified=False), sort_keys=True))
             # Shut down before removing private temporary files/databases.
             for process in reversed(processes):
                 process.terminate()

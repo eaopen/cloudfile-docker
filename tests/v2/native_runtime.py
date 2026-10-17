@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 import json
 import hashlib
+import jwt
 import os
 from pathlib import Path
 import re
@@ -169,6 +170,31 @@ v2_edit_enabled={'true' if checkout else 'false'}
             assert downloaded.status_code == 200 and downloaded.content == content
             ranged = requests.get(url, headers={'Range': 'bytes=17-89'}, timeout=30)
             assert ranged.status_code == 206 and ranged.content == content[17:90]
+            # Rust's ordinary-edit transport MUST work both with AND without
+            # the optional Guard table. Authenticate with the same scoped,
+            # short-lived browser ticket contract; compare the actual File ID.
+            now = int(time.time())
+            ticket = jwt.encode({
+                'iss': 'cloudfile-v2-edit', 'aud': 'cloudfile-edit-agent',
+                'sub': username, 'uid': 'uid-runtime', 'iat': now,
+                'nbf': now, 'exp': now + 600,
+                'repo_id': repo, 'path': '/project/proof.txt',
+                'file_id': file_id, 'mode': 'optimistic-edit',
+            }, os.environ['JWT_PRIVATE_KEY'], algorithm='HS256')
+            revised = content + b'Rust optimistic file edit checked by native CAS\\n'
+            result = requests.post('http://127.0.0.1:8082/cf-edit/v1/publish',
+                data=revised, headers={
+                    'Authorization': 'Bearer ' + ticket, 'X-CF-Action': 'optimistic',
+                    'X-CF-Base-ID': file_id,
+                    'X-CF-SHA256': hashlib.sha256(revised).hexdigest(),
+                }, timeout=60)
+            assert result.status_code == 200, (result.status_code, result.text)
+            updated = result.json()
+            assert updated['state'] == 'published' and not updated['checked_in']
+            assert updated['file_id'] != file_id
+            assert seafile_api.get_file_id_by_path(repo, '/project/proof.txt') == updated['file_id']
+            file_id = updated['file_id']
+            content = revised
             if checkout:
                 # Active Checkout has no effect on reads but MUST block native
                 # C/Go writes. This tests real Branch interception, not just SQL.
@@ -314,7 +340,8 @@ v2_edit_enabled={'true' if checkout else 'false'}
                 uid_rename_stable=True, group_projection_and_revocation=True, native_repo_create=True,
                 automatic_storage_verified=automatic, native_library_preserved=bool(legacy), cold_storage_gc=automatic,
                 cross_volume_copy=automatic, schema_outage_denied=automatic, allocation_rollback=automatic, key_reuse_denied=automatic,
-                native_group_share=True, http_upload_bytes=len(content), branch_commit_changed=True,
+                native_group_share=True, rust_optimistic_cas_without_guard=not checkout, rust_optimistic_cas_with_guard=checkout,
+                http_upload_bytes=len(content), branch_commit_changed=True,
                 http_download_bytes=len(content), http_range=True, rename=True, delete=True,
                 extension_tables=sorted(TABLES | EDIT_TABLES if checkout else TABLES),
                 checkout_guard_verified=checkout, oidc_login_verified=False, directory_acl_verified=False), sort_keys=True))

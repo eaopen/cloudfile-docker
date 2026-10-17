@@ -50,12 +50,3 @@ def nginx_config(template, root):
     if '__CF_CANONICAL__' not in template:
         raise ValueError('canonical nginx template marker missing')
     return template.replace('__CF_CANONICAL__', root)
-
-
-
-def checkout_capable(*, existing, guard_installed=False):
-    """Fresh V2 installs Guard; reused CE volumes require a verified Guard table.
-    
-    This is a schema capability, not a deployment flag or lock bypass.
-    """
-    return not existing or guard_installed

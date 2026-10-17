@@ -2,7 +2,7 @@ name: CloudFile V2 clean CE14 isolated checks
 
 on:
   push:
-    branches: [dev, dev2-clean, feature/v2-rust-guard-only]
+    branches: [dev, dev2-clean, feature/v2-rust-guard-only, feature/v2-checkout-default-on]
   workflow_dispatch:
 
 permissions:
@@ -163,3 +163,4 @@ jobs:
         run: |
           python3 cloudfile-docker/tests/v2/native_runtime.py
           CF_V2_AUTO_STORAGE=1 python3 cloudfile-docker/tests/v2/native_runtime.py
+          CF_V2_TEST_CHECKOUT=1 python3 cloudfile-docker/tests/v2/native_runtime.py

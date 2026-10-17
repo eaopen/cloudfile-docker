@@ -39,7 +39,7 @@ if existing:
         'SECRET_KEY', 'TIME_ZONE', 'LOGIN_URL', 'LOGIN_REDIRECT_URL', 'SITE_ROOT', 'FILE_SERVER_ROOT',
         'CF_MEILISEARCH_URL', 'CF_MEILISEARCH_API_KEY', 'CF_MEILISEARCH_INDEX',
         'CF_DIRECTORY_URL', 'CF_DIRECTORY_PROVIDER', 'CF_DIRECTORY_TIMEOUT',
-        'CF_DIRECTORY_ALLOW_HTTP', 'CF_DIRECTORY_AUTH_KEY_ID', 'CF_DIRECTORY_AUTH_SECRET',
+        'CF_DIRECTORY_ALLOW_HTTP', 'CF_SUBJECT_TTL', 'CF_DIRECTORY_AUTH_KEY_ID', 'CF_DIRECTORY_AUTH_SECRET',
         'CF_DIRECTORY_AUTH_ISSUER', 'CF_DIRECTORY_AUTH_AUDIENCE', 'CF_DIRECTORY_AUTH_SERVICE_ID'})
     if not settings.get('SECRET_KEY'):
         raise ValueError('existing deployment SECRET_KEY is required')
@@ -141,6 +141,12 @@ for key in ('CF_DIRECTORY_URL', 'CF_DIRECTORY_PROVIDER', 'CF_DIRECTORY_AUTH_KEY_
         settings[key] = os.environ[key]
 if 'CF_DIRECTORY_TIMEOUT' in os.environ:
     settings['CF_DIRECTORY_TIMEOUT'] = int(os.environ['CF_DIRECTORY_TIMEOUT'])
+if 'CF_SUBJECT_TTL' in os.environ:
+    settings['CF_SUBJECT_TTL'] = int(os.environ['CF_SUBJECT_TTL'])
+# The native C/Go and Hub ACL must consult the *same* single-UID projector.
+if settings.get('CF_DIRECTORY_URL'):
+    settings['CF_ACL_PROVIDER'] = settings.get('CF_DIRECTORY_PROVIDER') or 'etech'
+    settings['CF_ACL_SUBJECT_ENSURE'] = 'cloudfile_ext.v2.runtime.ensure_current_subject'
 if 'CF_DIRECTORY_ALLOW_HTTP' in os.environ:
     settings['CF_DIRECTORY_ALLOW_HTTP'] = os.environ['CF_DIRECTORY_ALLOW_HTTP'].lower() == 'true'
 

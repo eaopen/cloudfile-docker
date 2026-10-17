@@ -175,3 +175,15 @@ Native ordinary copy/move is synchronous while both library ACL fences are held;
 protected or virtual scopes still reject transfers. The source-set pins must
 select matching Hub fence writers and native transfer guards. Local native byte,
 revocation and race tests are separate from real Etech DEV and SSO acceptance.
+
+### 2026-10-17 Hub directory-page update
+
+The Hub pin includes the native `seahub/api2/endpoints/dir.py` integration in
+addition to `cloudfile_ext/v2`. Both must ship together: copying only the
+extension leaves EAP `start`/`limit` requests on the unpaged CE handler.
+The existing V2 ACL authority filters every child; no new discovery API,
+schema migration, native binary rebuild, or data relocation is required.
+For a runtime-layer DEV build, use the deployed immutable image digest as
+base, replace these pinned Python files, update the source receipt, and run
+the directory-page/ACL tests before publishing. Preserve database bindings
+and all original storage mounts when replacing the DEV container.

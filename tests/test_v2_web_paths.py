@@ -68,20 +68,19 @@ class SettingsTest(unittest.TestCase):
                     self.assertIn('proxy_set_header X-Real-IP $remote_addr;', block, name)
 
 
-class CheckoutCapabilityTest(unittest.TestCase):
-    def test_new_v2_always_has_checkout_without_flags(self):
-        self.assertTrue(paths.checkout_capable(existing=False))
-
-    def test_reused_ce_requires_actual_guard_schema(self):
-        self.assertFalse(paths.checkout_capable(existing=True, guard_installed=False))
-        self.assertTrue(paths.checkout_capable(existing=True, guard_installed=True))
-
-    def test_launch_has_no_checkout_or_search_enable_flags(self):
+class DefaultCapabilitySourceTest(unittest.TestCase):
+    def test_no_manual_enable_flags_or_native_guard_toggle(self):
         startup = (BUILD / 'start-dev.py').read_text()
         for legacy in ('CF_V2_CHECKOUT_ENABLED', 'CF_V2_AGENT_EDIT_ENABLED',
                        'CF_ENABLE_SEARCH', 'CF_PROVIDER_SEARCH', 'v2_edit_enabled'):
             self.assertNotIn(legacy, startup)
-        self.assertIn("if settings.get('CF_MEILISEARCH_URL')", startup)
+
+    def test_fresh_checkout_schema_and_reused_guard_verify(self):
+        startup = (BUILD / 'start-dev.py').read_text()
+        self.assertIn("if guard_installed:", startup)
+        self.assertIn(").verify()", startup)
+        self.assertIn(").install()", startup)
+        self.assertIn("if settings.get('CF_MEILISEARCH_URL'):", startup)
 
 
 

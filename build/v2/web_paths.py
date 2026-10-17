@@ -110,5 +110,7 @@ def native_guard_config(source, enabled):
     if matches:
         lines[matches[0]] = desired
     else:
+        if end > 0 and not lines[end - 1].endswith(('\n', '\r')):
+            lines[end - 1] += '\n'
         lines.insert(end, desired)
     return ''.join(lines)

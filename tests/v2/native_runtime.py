@@ -63,7 +63,7 @@ def run():
                 directory.mkdir()
             # Deliberately pass a legacy false key only when Guard exists:
             # native C/Go must ignore it and still enforce Checkout.
-            legacy_false = '[cloudfile]\\nv2_edit_enabled=false\\n' if checkout else ''
+            legacy_false = '[cloudfile]\nv2_edit_enabled=false\n' if checkout else ''
             (conf / 'seafile.conf').write_text(f'''[database]
 type=mysql
 host={sql_host}

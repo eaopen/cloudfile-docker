@@ -137,3 +137,44 @@ connections. Connection credentials, existing OIDC configuration, storage-root
 overrides and measured cache TTL parameters are *not* feature flags. No live
 volumes, original deployment config or production database are rewritten by
 this source change.
+
+## Etech Directory: V2 entity reconciliation and UID provisioning
+
+Etech owns the `cloudDirectorySync` PowerJob (recommended every 600 seconds).
+Its existing administrator channel calls
+`POST /api/v2.1/admin/cloudfile/directory/entities/sync/`.
+CloudFile then calls the **existing** Etech
+`GET /eap/cloudDrive/directory/groups?view=entities` with a newly signed
+60-second HS256 JWT. Only organization/role entities are mapped to the native
+CE Group and `cf_sso_group_map`; the periodic job never writes all users or
+`GroupUser` members. Manual sync invokes exactly the same endpoint.
+
+Set the private DEV environment variables below (names only, no secrets in
+Git). `CF_DIRECTORY_URL` is the full trusted Etech directory **base path**
+(e.g. `http://10.9.8.162/eap/cloudDrive/directory` in a permitted isolated
+intranet), not a URL for the `/groups` response itself.
+
+- `CF_DIRECTORY_URL`
+- `CF_DIRECTORY_PROVIDER=etech`
+- `CF_DIRECTORY_AUTH_KEY_ID`
+- `CF_DIRECTORY_AUTH_SECRET` (same long random secret as Etech's
+  `cloudfile.identity-directory.auth.secret`; do not log it)
+- `CF_DIRECTORY_AUTH_ISSUER` (Etech default `cloudfile-sso`)
+- `CF_DIRECTORY_AUTH_AUDIENCE` (Etech default `eap-directory`)
+- `CF_DIRECTORY_AUTH_SERVICE_ID` (Etech default `cloudfile`)
+- `CF_DIRECTORY_TIMEOUT=5`
+- `CF_DIRECTORY_ALLOW_HTTP=true` only on explicitly trusted HTTP intranets;
+  HTTPS is required otherwise.
+
+The Etech admin `/sso/identities/resolve/` endpoint can pre-provision a CE
+user by stable UID when granted a library before first login. It obtains
+`/users/{uid}/context` through the same scoped machine JWT, creates an opaque
+native user with an unusable password, and sets native `Profile.login_id`.
+No forged OAuth subject, administrator password or browser login is created.
+The later verified SSO login reuses this native UID anchor.
+
+Existing CE accounts/volumes are not bulk imported or overwritten. Missing
+Directory credentials or invalid entity snapshots deny sync; Etech main login
+is independent and must remain available. Native `GroupUser` membership is
+refreshed **per UID** by the separate V2 subject TTL work package; do not enable
+the v0.9 full-membership cf-worker in parallel.

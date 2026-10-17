@@ -18,6 +18,7 @@ import requests
 from cloudfile_ext.v2.identity import NativeIdentity
 from cloudfile_ext.v2.memberships import GroupCatalog, Memberships
 from cloudfile_ext.v2.schema import FreshSchema, TABLES
+from cloudfile_ext.v2.native_discovery import NativeLibraryDiscovery
 
 
 def run():
@@ -138,6 +139,22 @@ port=8082
                     assert cursor.fetchone() is None
                     cursor.execute('SELECT repo_key FROM cf_library_storage WHERE repo_id=%s', (legacy,))
                     assert cursor.fetchone() is None
+                # In-place upgrade: same Repo UUID, same native file tree,
+                # original head and grants; metadata-only reconciliation.
+                discovery = NativeLibraryDiscovery(connection)
+                assert discovery.reconcile(legacy) == {'NATIVE_REGISTERED': 1}
+                assert discovery.reconcile(legacy) == {'NATIVE_REGISTERED': 1}
+                with connection.cursor() as cursor:
+                    cursor.execute('SELECT repo_key,state FROM cf_library_storage WHERE repo_id=%s', (legacy,))
+                    assert cursor.fetchone() == ('native-' + legacy, 'active')
+                    cursor.execute('SELECT storage_id FROM RepoStorageId WHERE repo_id=%s', (legacy,))
+                    assert cursor.fetchone() is None
+                assert seafile_api.get_repo(legacy).head_cmmt_id
+                assert seafile_api.post_dir(legacy, '/', 'registered-native', owner) == 0
+                assert (data / 'storage/fs' / legacy).is_dir()
+                assert not (storage / legacy).exists()
+                absent = str(uuid4())
+                assert discovery.reconcile(absent) == {'NATIVE_RESOURCE_MISSING': 1}
             repo = seafile_api.create_repo('Fresh native V2 runtime', '', owner)
             assert repo and seafile_api.get_repo(repo).id == repo
             assert seafile_api.check_permission(repo, username) is None

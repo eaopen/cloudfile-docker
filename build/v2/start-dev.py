@@ -11,12 +11,15 @@ from urllib.parse import urlsplit
 import pymysql
 
 from cloudfile_ext.v2.schema import FreshSchema
+from cloudfile_ext.v2.native_discovery import NativeLibraryDiscovery
 from web_paths import web_settings, nginx_config, read_settings
 
 
 source = Path('/opt/cloudfile-v2/source')
 shared = Path('/shared')
 existing = (shared / 'seafile/seafile-data').is_dir()
+if (shared / 'seafile/conf').exists() and not existing:
+    raise RuntimeError('NATIVE_STORAGE_MISSING: original Seafile data mount is not connected')
 data = shared / ('seafile/seafile-data' if existing else 'seafile-data')
 ccnet = shared / ('seafile/ccnet' if existing else 'ccnet')
 logs = shared / ('seafile/logs' if existing else 'logs')
@@ -77,8 +80,6 @@ else:
                     cursor.execute(filename.read_text())
                     while cursor.nextset():
                         pass
-    with pymysql.connect(host=host, user=user, password=password, database=names['files'], autocommit=True) as connection:
-        FreshSchema(connection, (source / 'seafile-server/scripts/sql/mysql/cloudfile-v2.sql').read_text()).install()
     (conf / 'seafile.conf').write_text(f'''[database]
 type=mysql
 host={host}
@@ -98,6 +99,14 @@ auto_local_root=/shared/library-storage
     # Fresh deployments may seed native OAuth/OIDC settings before first boot.
     # Retain them on restart rather than silently disabling the login provider.
     settings.update(read_settings(conf / 'seahub_settings.py', {'LOGIN_URL', 'LOGIN_REDIRECT_URL'}))
+
+# Run the same idempotent native-library discovery for both existing CE upgrades
+# and fresh instances. Never create a replacement Repo in a new/empty database.
+with pymysql.connect(host=host, user=user, password=password, database=names['files'],
+                     charset='utf8mb4', autocommit=True) as connection:
+    NativeLibraryDiscovery.check_native_schema(connection)
+    FreshSchema(connection, (source / 'seafile-server/scripts/sql/mysql/cloudfile-v2.sql').read_text()).install()
+    print('CloudFile V2 native library discovery:', NativeLibraryDiscovery(connection).reconcile(), flush=True)
 
 settings['ENABLE_OAUTH'] = bool(settings.get('OAUTH_CLIENT_ID') and settings.get('OAUTH_CLIENT_SECRET'))
 

@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 import pymysql
 
 from cloudfile_ext.v2.schema import FreshSchema
-from web_paths import web_settings, nginx_config, read_settings, checkout_capable
+from web_paths import web_settings, nginx_config, read_settings
 
 
 source = Path('/opt/cloudfile-v2/source')
@@ -61,9 +61,7 @@ if existing:
                 (source / 'seafile-server/scripts/sql/mysql/cloudfile-v2.sql').read_text(),
                 edit_ddl=(source / 'seafile-server/scripts/sql/mysql/cloudfile-v2-edit.sql').read_text(),
             ).verify()
-    agent_edit = checkout_capable(existing=True, guard_installed=guard_installed)
 else:
-    agent_edit = checkout_capable(existing=False)
     host, password, user = os.environ['DB_HOST'], os.environ['DB_PASSWORD'], 'cfv2'
     names = {'account': 'cfv2_ccnet', 'files': 'cfv2_seafile', 'hub': 'cfv2_seahub'}
     public_url = os.environ['PUBLIC_URL']

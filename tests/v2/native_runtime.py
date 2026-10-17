@@ -61,6 +61,9 @@ def run():
             conf, ccnet, data = root / 'conf', root / 'ccnet', root / 'seafile-data'
             for directory in (conf, ccnet, data):
                 directory.mkdir()
+            # Deliberately pass a legacy false key only when Guard exists:
+            # native C/Go must ignore it and still enforce Checkout.
+            legacy_false = '[cloudfile]\\nv2_edit_enabled=false\\n' if checkout else ''
             (conf / 'seafile.conf').write_text(f'''[database]
 type=mysql
 host={sql_host}
@@ -73,9 +76,7 @@ connection_charset=utf8mb4
 [fileserver]
 use_go_fileserver=true
 port=8082
-[cloudfile]
-v2_edit_enabled={'true' if checkout else 'false'}
-''')
+{legacy_false}''')
             os.environ.update(SEAFILE_DATA_DIR=str(data), SEAFILE_CENTRAL_CONF_DIR=str(conf),
                 SEAFILE_MYSQL_DB_HOST=sql_host, SEAFILE_MYSQL_DB_PORT=str(sql_port), SEAFILE_MYSQL_DB_USER=database_user,
                 SEAFILE_MYSQL_DB_PASSWORD=database_password,

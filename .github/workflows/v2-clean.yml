@@ -3,6 +3,8 @@ name: CloudFile V2 clean CE14 isolated checks
 on:
   push:
     branches: [dev, dev2-clean, feature/v2-rust-guard-only]
+  pull_request:
+    branches: [dev]
   workflow_dispatch:
 
 permissions:

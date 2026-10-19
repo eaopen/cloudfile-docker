@@ -209,8 +209,9 @@ native binary rebuild is involved.
 ## 内部文件读取：复用 Seafile 原生票据（2026-10-19）
 
 本候选版本固定 Server `89ae96652389024730ac9d3927ed3be908534ce9`
-与 Hub `ddabb3a7abf29db7bc6ee8f654a547fbbd381946`。
-两个仓库均以受保护的 tag `cf-v2-download-20261019` 固定上述提交：禁止移动和删除，
+与 Hub `bfc7651f188b8a537a466e7ee0bc143bc6acb85e`。
+Server 使用受保护 tag `cf-v2-download-20261019`，Hub 使用
+`cf-v2-download-oauth-20261020` 固定上述提交：禁止移动和删除，
 使临时候选分支清理后仍可获取源码。构建仍以 `source-set.json` 的完整 SHA 为准，
 不把可变分支或 tag 名代替 SHA 锁定。
 注意：干净 CE14 V2 源码必须从专用最小候选提交抽取；最新 fork dev
@@ -261,3 +262,11 @@ requests canonical before authorization and leaves commit-specific history
 requests on their original path. The new Hub overlay contains only this native
 FileView change on top of the previous reviewed overlay; no full-fork modules
 are imported. Current dispatch regressions run against the newly selected pin.
+
+### DEV 发布前的 OAuth 现场修补保留（2026-10-20）
+
+DEV 的 OAuth Profile 唯一性冲突修补原先只存在于容器写层。为避免本次下载更新
+覆盖已运行的登录修补，将其捕获到干净 Hub 提交 `bfc7651f188b8a537a466e7ee0bc143bc6acb85e`，
+并由禁止更新/删除的 tag `cf-v2-download-oauth-20261020` 保留。
+下载模块与上一版完全相同；既有 UID 绑定和登录主体刷新检查继续执行。
+完整 fork dev 已有对应 Profile 冲突处理，无需替换其 OAuth 实现。

@@ -38,5 +38,5 @@ deploy/compose/data/
 deploy/compose/.env.verify
 deploy/compose/.*.verify.yml
 
-# verify-local.sh 的临时 Compose 目录
+# verify-local.sh ����ʱ Compose Ŀ¼
 .local-verify/

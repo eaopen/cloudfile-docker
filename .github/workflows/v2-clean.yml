@@ -1,0 +1,176 @@
+name: CloudFile V2 clean CE14 isolated checks
+
+on:
+  push:
+    branches: [dev, dev2-clean, feature/v2-rust-guard-only, feature/v2-checkout-default-on]
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudfile-v2-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  web-paths:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check only the canonical path and ingress changes
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends nginx
+          command -v nginx
+          python3 -m unittest discover -s tests -p test_v2_web_paths.py -v
+
+  native-and-schema:
+    runs-on: ubuntu-24.04
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: '1'
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s --health-timeout=5s --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: cloudfile-docker
+          fetch-depth: 0
+      - name: Read immutable source-set pins
+        id: pins
+        run: |
+          python3 -c "import json; c=json.load(open('cloudfile-docker/build/v2/source-set.json'))['components']; print('server='+c['cloudfile-server']['overlay_commit']); print('hub='+c['cloudfile-hub']['overlay_commit'])" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: eaopen/cloudfile-server
+          ref: ${{ steps.pins.outputs.server }}
+          path: cloudfile-server
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: eaopen/cloudfile-hub
+          ref: ${{ steps.pins.outputs.hub }}
+          path: cloudfile-hub
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify selected upstream ancestry
+        run: |
+          git -C cloudfile-docker merge-base --is-ancestor 822c24c9908c4cc9f602987fcf8bc362d3f0454e HEAD
+          git -C cloudfile-server merge-base --is-ancestor b6179eb3d73b04c67a00412ebaf964153c4ad2c0 HEAD
+          git -C cloudfile-hub merge-base --is-ancestor 15ec1aa7114c013929509e0aad756b5365a29ce6 HEAD
+      - name: Install isolated test packages
+        run: |
+          python3 -m pip install --quiet 'pymysql>=1.1,<2' 'redis>=5,<8' 'PyJWT>=2.8,<3' 'requests>=2.31,<3' 'Django>=5.2,<5.3'
+      - name: Assert isolated upstream assembly and three-table runtime
+        env:
+          CF_TEST_DB_PORT: '3306'
+          CF_TEST_REDIS_PORT: '6379'
+        run: |
+          python3 -m unittest discover -s cloudfile-docker/tests -p test_v2_source_assembly.py -v
+          python3 cloudfile-docker/tools/prepare-v2-source.py --workspace . --output /tmp/cfv2-clean
+          python3 cloudfile-docker/tools/check-v2-fresh.py --source /tmp/cfv2-clean
+
+  native-ce14-runtime:
+    needs: native-and-schema
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: '1'
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s --health-timeout=5s --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: cloudfile-docker
+          fetch-depth: 0
+      - name: Read immutable source-set pins
+        id: pins
+        run: |
+          python3 -c "import json; c=json.load(open('cloudfile-docker/build/v2/source-set.json'))['components']; print('server='+c['cloudfile-server']['overlay_commit']); print('hub='+c['cloudfile-hub']['overlay_commit'])" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: eaopen/cloudfile-server
+          ref: ${{ steps.pins.outputs.server }}
+          path: cloudfile-server
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: eaopen/cloudfile-hub
+          ref: ${{ steps.pins.outputs.hub }}
+          path: cloudfile-hub
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: cloudfile-server/fileserver/go.mod
+          cache-dependency-path: cloudfile-server/fileserver/go.sum
+      - name: Install native CE14 build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+            build-essential autoconf automake libtool libtool-bin pkg-config cmake intltool valac \
+            libglib2.0-dev libjansson-dev libevent-dev libsqlite3-dev \
+            libmariadb-dev libmariadb-dev-compat libssl-dev libcurl4-openssl-dev \
+            libarchive-dev libargon2-dev libhiredis-dev libonig-dev libunwind-dev \
+            libjwt-dev libfuse-dev libldap2-dev libxml2-dev libxslt-dev \
+            uuid-dev libevhtp-dev
+          python3 -m pip install --quiet 'pymysql>=1.1,<2' 'redis>=5,<8' 'PyJWT>=2.8,<3' 'requests>=2.31,<3' 'Django>=5.2,<5.3' 'requests>=2.31,<3' 'PyJWT>=2,<3'
+      - name: Assemble exact selected native source
+        run: |
+          python3 cloudfile-docker/tools/prepare-v2-source.py --workspace . --output /tmp/cfv2-clean
+          test ! -e /tmp/cfv2-clean/seahub/cloudfile_extensions
+          test ! -e /tmp/cfv2-clean/seafile-server/server/cloudfile-policy.c
+      - name: Check routed and native Go storage
+        working-directory: /tmp/cfv2-clean/seafile-server/fileserver
+        run: |
+          go test -race ./objstore
+          go vet ./...
+      - name: Build native CE14 C server and Go fileserver
+        env:
+          CF_V2_BUILD_JOBS: '2'
+        run: |
+          bash cloudfile-docker/build/v2/build-native.sh /tmp/cfv2-clean /tmp/cfv2-prefix
+      - name: Start actual CE14 RPC / fileserver and verify file bytes
+        env:
+          CF_V2_SOURCE: /tmp/cfv2-clean
+          CF_V2_PREFIX: /tmp/cfv2-prefix
+          CF_TEST_DB_HOST: 127.0.0.1
+          CF_TEST_DB_PORT: '3306'
+          CF_TEST_REDIS_PORT: '6379'
+          REDIS_HOST: 127.0.0.1
+          PYTHONPATH: /tmp/cfv2-clean/seahub:/tmp/cfv2-clean/seafile-server/python:/tmp/cfv2-clean/libsearpc
+          LD_LIBRARY_PATH: /tmp/cfv2-prefix/lib
+        run: |
+          python3 cloudfile-docker/tests/v2/native_runtime.py
+          CF_V2_AUTO_STORAGE=1 python3 cloudfile-docker/tests/v2/native_runtime.py
+          CF_V2_TEST_CHECKOUT=1 python3 cloudfile-docker/tests/v2/native_runtime.py

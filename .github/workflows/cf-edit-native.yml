@@ -1,0 +1,58 @@
+name: CF-EDIT pinned native compile (feature)
+on:
+  push:
+    branches: [feature/v2-rust-guard-only, dev]
+    paths:
+      - "build/v2/source-set.json"
+      - ".github/workflows/cf-edit-native.yml"
+  pull_request:
+    branches: [dev]
+    paths:
+      - "build/v2/source-set.json"
+      - ".github/workflows/cf-edit-native.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout feature assembly
+        uses: actions/checkout@v4
+      - name: Read immutable source-set pins
+        id: pins
+        run: |
+          python3 -c "import json; c=json.load(open('build/v2/source-set.json'))['components']; print('server='+c['cloudfile-server']['overlay_commit']); print('hub='+c['cloudfile-hub']['overlay_commit'])" >> "$GITHUB_OUTPUT"
+      - name: Checkout immutable Server dev commit
+        uses: actions/checkout@v4
+        with:
+          repository: eaopen/cloudfile-server
+          ref: ${{ steps.pins.outputs.server }}
+          fetch-depth: 0  # pinned upstream CE14 SHA must exist, not just feature tip
+          path: workspace/cloudfile-server
+      - name: Checkout immutable Hub dev commit
+        uses: actions/checkout@v4
+        with:
+          repository: eaopen/cloudfile-hub
+          ref: ${{ steps.pins.outputs.hub }}
+          fetch-depth: 0
+          path: workspace/cloudfile-hub
+      - name: Assemble only reviewed pinned CE14 sources
+        run: |
+          python3 tools/prepare-v2-source.py \
+            --workspace workspace --output prepared \
+            --server-ref ${{ steps.pins.outputs.server }} --hub-ref ${{ steps.pins.outputs.hub }}
+      - name: Install disposable native build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            autoconf automake intltool valac libtool pkg-config cmake make gcc g++ \
+            git python3 libglib2.0-dev libjansson-dev libsqlite3-dev \
+            libmariadb-dev libcurl4-openssl-dev libssl-dev libevent-dev \
+            libarchive-dev libfuse-dev libfuse3-dev libhiredis-dev \
+            libargon2-dev libjwt-dev libz-dev uuid-dev zlib1g-dev libjson-glib-dev
+      - name: Native C and Go compilation against exact source pins
+        env:
+          CF_V2_BUILD_JOBS: "2"
+        run: bash build/v2/build-native.sh "$GITHUB_WORKSPACE/prepared" "$RUNNER_TEMP/cfv2" all

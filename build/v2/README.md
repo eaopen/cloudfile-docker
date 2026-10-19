@@ -204,3 +204,29 @@ CSRF validation consumes the JSON stream; keep both CSRF and authentication
 checks. Token callers and the V2 batch schema are unchanged. The regression
 reproduces RawPostDataException on the prior image; no schema, tag migration or
 native binary rebuild is involved.
+
+## Scoped Single-File Downloads
+
+The paired Hub/Server pins include the path-scoped native download mint RPC,
+WebAccess scope field, and Go reader. Keep all three in the same release: an
+older Go reader still refuses the protected library's file ticket. The source
+manifest explicitly includes the RPC, Python binding and Vala changes so a
+prepared CE tree cannot silently omit part of this fix.
+
+Hub authorizes the authenticated user's exact canonical file path once, then
+native binds its current object ID to a read-only grant for at most one hour
+(or the shorter native configured lifetime). `reuse=1` permits repeated GET,
+HEAD and Range. Consumption does not query Hub or ACL SQL; permissions changed
+after signing take effect when the existing grant expires. This is the agreed
+internal-document performance tradeoff, with no new table or invalidation bus.
+
+The native response reports `X-CloudFile-Download-TTL`; EAP must cap its fixed,
+reusable redirect TTL below that lifetime. Both HTTP and HTTPS and existing file
+prefix aliases remain valid. Legacy unscoped tickets and virtual-library paths
+retain their existing guards; ZIP and write scope are not enlarged.
+
+Validation uses disposable databases and real C/Go bytes, including parallel
+reads, natural expiry, deny-at-signing, and continuing a signed read with ACL SQL
+unavailable. It does not certify a deployed Etech/fileview browser session or
+perform a deployment. Build and release the paired CloudFile sources and EAP
+change before treating the running preview issue as resolved.

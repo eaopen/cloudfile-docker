@@ -23,7 +23,7 @@
         "fileserver/cf_v2_acl.go",
         "fileserver/cf_v2_acl_test.go"
       ],
-      "overlay_commit": "e171bf19c8f1a4798925f2303425bf5d11d8397d",
+      "overlay_commit": "5ba3f55a9d2242b18c3eda65a1ea29e014bc54ca",
       "native_patches": [
         "common/Makefile.am",
         "common/obj-backend-fs.c",
@@ -43,7 +43,14 @@
         "server/http-tx-mgr.c",
         "server/repo-op.c",
         "server/web-accesstoken-mgr.c",
-        "fileserver/sync_api.go"
+        "fileserver/sync_api.go",
+        "common/rpc-service.c",
+        "include/seafile-rpc.h",
+        "lib/webaccess.vala",
+        "python/seafile/rpcclient.py",
+        "python/seaserv/api.py",
+        "server/seaf-server.c",
+        "server/web-accesstoken-mgr.h"
       ]
     },
     "cloudfile-hub": {
@@ -52,7 +59,7 @@
       "overlay": [
         "cloudfile_ext/v2"
       ],
-      "overlay_commit": "7e39aa683dfef8554fd24cfd377498d603caa912",
+      "overlay_commit": "e32cecdcae7ebc16b86523416ffb28136779c5c2",
       "native_patches": [
         "seahub/urls.py",
         "seahub/oauth/views.py",
@@ -61,7 +68,8 @@
         "seahub/api2/endpoints/dir.py",
         "seahub/api2/endpoints/repo_tags.py",
         "seahub/api2/endpoints/file_tag.py",
-        "seahub/file_tags/models.py"
+        "seahub/file_tags/models.py",
+        "seahub/api2/views.py"
       ]
     }
   },

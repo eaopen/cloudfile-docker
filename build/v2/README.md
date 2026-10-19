@@ -209,7 +209,7 @@ native binary rebuild is involved.
 ## 内部文件读取：复用 Seafile 原生票据（2026-10-19）
 
 本候选版本固定 Server `89ae96652389024730ac9d3927ed3be908534ce9`
-与 Hub `73f4d2c974811542302f9a95c0bd644101b1ff71`。
+与 Hub `ddabb3a7abf29db7bc6ee8f654a547fbbd381946`。
 注意：干净 CE14 V2 源码必须从专用最小候选提交抽取；最新 fork dev
 包含不在干净 CE14 依赖集合内的历史模块（如 SSO），不能直接以最新
 dev SHA 作为 V2 build overlay。完整 fork dev 对应的开发整合 PR 分别是
@@ -251,3 +251,10 @@ unconfigured native calls raise errors. Passing these unit tests is not native
 runtime or DEV browser acceptance. Database/Redis cases keep their declared
 prerequisites; the existing native-and-schema/native-ce14-runtime jobs cover the
 actual clean CE14 database and byte-transfer path.
+
+
+The 2026-10-19 compatibility follow-up keeps root-relative native download
+requests canonical before authorization and leaves commit-specific history
+requests on their original path. The new Hub overlay contains only this native
+FileView change on top of the previous reviewed overlay; no full-fork modules
+are imported. Current dispatch regressions run against the newly selected pin.

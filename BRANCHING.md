@@ -257,3 +257,23 @@ Node 24，容器固定 `24.21.0`。日历、SDoc 编辑器及锁文件采用上�
 在已登记 `common/branch-mgr.c` 和 `common/rpc-service.c` 条件接缝中区分服务器装配的 directory_access 模式：正常入口继续要求库资格，目录入口仅以当前 ACL/共享资格限定访问。RPC 只接受 OIDC Web 条件中的 true 模式标记，不将其视为授权；不修改旧 local_session/Agent 管理机制。Hub 新增独立目录取流/上传更新路由，旧路由预检查和既有管理工厂恢复原机制。原生最终规则与数据仍复用同一套机制。
 
 全局库管理员内容资格：`common/user-mgr.{c,h}` 读取原生账号与 AdminRole；Hub 的 `seahub/share/utils.py` 复用原生管理能力。不新增权限存储，目录 ACL 与写入校验不变。
+
+
+### Native CI runtime and regression alignment (2026-10-19)
+
+Hub `.github/workflows/test.yml` must select the CloudFile Server dev submodule
+and initialize the shipped V2 DDL: upstream Server does not export the scoped
+file-download RPC required by this fork. The external disposable test harness
+checks out that branch instead of merging an old upstream gitlink into it.
+This CI entry point cannot be replaced by an unreferenced new file.
+
+Existing `tests/api/` cases are updated in place because those are the native
+integration suite's public endpoint regressions. Negative share-management
+cases use ordinary rw users instead of independently qualified system admins;
+403 assertions remain. Management-marker success cases establish live native
+access first. Legacy native FileTag/creator persistence is tested on the full
+fork; RepoTags/source and CSRF behavior are independently tested on the pinned
+clean V2 source. Pagination asserts the existing V2 200/500 bounds and separates
+malformed input (400) from a well-formed stale revision (409). Same-name library
+creation verifies distinct UUIDs rather than a removed name-uniqueness premise.
+No authorization failure is reclassified as success to make CI green.

@@ -188,6 +188,46 @@ port=8082
             assert downloaded.status_code == 200 and downloaded.content == content
             ranged = requests.get(url, headers={'Range': 'bytes=17-89'}, timeout=30)
             assert ranged.status_code == 206 and ranged.content == content[17:90]
+
+            # Regression: an existing Seafile object-only URL must not bypass
+            # a library's directory ACL. A separately issued native scoped
+            # read ticket, on the other hand, is a fixed read grant until
+            # expiry: repeat HEAD/GET/Range without querying ACL on each read.
+            scoped = seafile_api.get_scoped_download_token(
+                repo, '/project/proof.txt', username, False)
+            assert scoped and scoped['file_id'] == file_id
+            assert 0 < scoped['expires_in'] <= 3600
+            scoped_url = ('http://127.0.0.1:8082/files/' +
+                          scoped['token'] + '/proof.txt')
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    'INSERT INTO cf_dir_acl (repo_id,path_hash,path,'
+                    'subject_type,provider,namespace,external_id,'
+                    'permission,inherit,share_mode,revision) '
+                    'VALUES (%s,UNHEX(SHA2(%s,256)),%s,'
+                    "'user','etech','','uid-runtime','r',1,0,%s)",
+                    (repo, '/project', '/project', str(uuid4())))
+            try:
+                assert requests.get(url, timeout=30).status_code == 403, (
+                    'Old object-only download unexpectedly bypassed ACL')
+                assert requests.head(scoped_url, timeout=30).status_code == 200
+                for _ in range(2):
+                    scoped_read = requests.get(scoped_url, timeout=30)
+                    assert scoped_read.status_code == 200
+                    assert scoped_read.content == content
+                scoped_range = requests.get(
+                    scoped_url, headers={'Range': 'bytes=17-89'}, timeout=30)
+                assert scoped_range.status_code == 206
+                assert scoped_range.content == content[17:90]
+            finally:
+                # This test checks the read seam, not write ACL lifecycle.
+                # Restore the original ACL state for the remainder of the
+                # native storage/edit/GC runtime suite.
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        'DELETE FROM cf_dir_acl WHERE repo_id=%s AND path=%s',
+                        (repo, '/project'))
+
             # Rust's ordinary-edit transport MUST work both with AND without
             # the optional Guard table. Authenticate with the same scoped,
             # short-lived browser ticket contract; compare the actual File ID.
@@ -360,7 +400,10 @@ port=8082
                 cross_volume_copy=automatic, schema_outage_denied=automatic, allocation_rollback=automatic, key_reuse_denied=automatic,
                 native_group_share=True, rust_optimistic_cas_without_guard=not checkout, rust_optimistic_cas_with_guard=checkout,
                 http_upload_bytes=len(content), branch_commit_changed=True,
-                http_download_bytes=len(content), http_range=True, rename=True, delete=True,
+                http_download_bytes=len(content), http_range=True,
+                scoped_native_download_verified=True,
+                legacy_unscoped_ticket_denied_with_acl=True,
+                rename=True, delete=True,
                 extension_tables=sorted(TABLES | EDIT_TABLES if checkout else TABLES),
                 checkout_guard_verified=checkout, oidc_login_verified=False, directory_acl_verified=False), sort_keys=True))
             # Shut down before removing private temporary files/databases.

@@ -20,7 +20,7 @@ server=$workspace/cloudfile-server
 
 # Keep local and CI checks on the same isolated dependency set. Never install
 # into the developer's system Python or silently skip HTTP/auth tests.
-if ! python3 -c 'import pytest, django, requests, jwt, cryptography, pymysql, requests_oauthlib, redis, rest_framework' >/dev/null 2>&1; then
+if ! python3 -c 'import pytest, django, requests, jwt, cryptography, pymysql, requests_oauthlib, redis, rest_framework, yaml' >/dev/null 2>&1; then
     if [[ "${CF_CHECK_ENV_READY:-0}" != 1 ]] && command -v uv >/dev/null 2>&1; then
         exec env CF_CHECK_ENV_READY=1 uv run --no-project \
             --with-requirements "$here/check-requirements.txt" bash "$0" "$@"
@@ -96,10 +96,10 @@ run "V05-01 只读容量诊断测试" python3 -m unittest discover -s "$hub/test
 
 # 2. Hub 侧扩展测试（能力分支上还包括与 C 端共用用例集的求解器测试）
 if [[ -d $hub ]]; then
-    # pytest 收集不到用例时退出码是 5。基线上确实一个能力测试都没有，那是
-    # 正常状态，不该判为失败——但真正的失败（退出码 1）仍然要红。
-    run "Hub 扩展测试 (Python)" bash -c \
-        "cd '$hub' && python3 -m pytest cloudfile_ext/ -q; rc=\$?; [ \$rc -eq 0 ] || [ \$rc -eq 5 ]"
+    # The native HTTP unit tests use explicit RPC/ORM doubles and real DRF;
+    # upstream runtime integration remains in the dedicated Seahub CI job.
+    run "Hub 扩展测试 (Python)" python3 "$docker_repo/tools/check-hub-contracts.py" cloudfile_ext/ --ignore=cloudfile_ext/v2/tests
+    run "Hub 干净 V2 HTTP 契约 (固定 source-set)" python3 "$docker_repo/tools/check-hub-contracts.py" --v2
     # Current contracts use isolated SQL fixtures and minimal Django settings,
     # not Seahub's native runtime or its upstream integration test settings.
     run "Hub 当前契约与 Agent 路由" bash -c \

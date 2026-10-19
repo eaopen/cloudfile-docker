@@ -234,3 +234,20 @@ Etech 按默认 3600 秒配置并保留 5 秒余量，如现场缩短 native TTL
 此处只是构建版本锁定，**不代表已在 DEV 部署或完成文件预览 E2E**。
 上线需分别验证 C/Go 构建、授权/拒绝签发、重复读取及到期行为，
 并逐仓排除与本修复无关的基线 CI 失败。
+
+
+## CI test source boundaries
+
+`tools/run-checks.sh` runs full-fork extension and current-contract tests in
+separate interpreters from the V2 HTTP suite. `tools/check-hub-contracts.py --v2`
+assembles the exact immutable `source-set.json` production files, prints both
+pins, and runs current V2 regression tests against those modules. Full-fork
+native tag/OAuth seams are not interchangeable with the reviewed clean overlay.
+No production pin or feature behavior changes as part of this CI repair.
+
+The fast HTTP fixture retains real Django/DRF permissions, session CSRF and JSON
+parsing. Only native RPC/accounts/ORM boundaries are explicit test doubles;
+unconfigured native calls raise errors. Passing these unit tests is not native
+runtime or DEV browser acceptance. Database/Redis cases keep their declared
+prerequisites; the existing native-and-schema/native-ce14-runtime jobs cover the
+actual clean CE14 database and byte-transfer path.

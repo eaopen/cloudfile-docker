@@ -208,8 +208,12 @@ native binary rebuild is involved.
 
 ## 内部文件读取：复用 Seafile 原生票据（2026-10-19）
 
-本候选版本固定 Server `5ba3f55a9d2242b18c3eda65a1ea29e014bc54ca`
-与 Hub `e32cecdcae7ebc16b86523416ffb28136779c5c2`。
+本候选版本固定 Server `89ae96652389024730ac9d3927ed3be908534ce9`
+与 Hub `73f4d2c974811542302f9a95c0bd644101b1ff71`。
+注意：干净 CE14 V2 源码必须从专用最小候选提交抽取；最新 fork dev
+包含不在干净 CE14 依赖集合内的历史模块（如 SSO），不能直接以最新
+dev SHA 作为 V2 build overlay。完整 fork dev 对应的开发整合 PR 分别是
+Server #12 和 Hub #28，两者不应直接用于 clean-source-set 构建。
 两个组件需要同步发布：Hub 对当前账号及目标文件使用 V2 Authority
 做一次签发权限检查；Server 从该规范路径解析当前文件对象，签发
 最多一小时的原生票据；C 和 Go Fileserver 只为此类受信任单文件

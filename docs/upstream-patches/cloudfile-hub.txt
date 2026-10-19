@@ -101,3 +101,11 @@ tests/seahub/views/file/test_file.py
 
 seahub/share/utils.py
 seahub/api2/endpoints/smart_link.py
+
+# CI runtime and API regression alignment; rationale in BRANCHING.md.
+tests/api/endpoints/test_dir_shared_items.py
+tests/api/endpoints/test_dir_view.py
+tests/api/endpoints/test_file_tag.py
+tests/api/endpoints/test_group_libraries.py
+tests/api/test_group_repos.py
+tests/api/test_repo_history_limit.py

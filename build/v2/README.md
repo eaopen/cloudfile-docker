@@ -204,3 +204,33 @@ CSRF validation consumes the JSON stream; keep both CSRF and authentication
 checks. Token callers and the V2 batch schema are unchanged. The regression
 reproduces RawPostDataException on the prior image; no schema, tag migration or
 native binary rebuild is involved.
+
+
+## 内部文件读取：复用 Seafile 原生票据（2026-10-19）
+
+本候选版本固定 Server `89ae96652389024730ac9d3927ed3be908534ce9`
+与 Hub `73f4d2c974811542302f9a95c0bd644101b1ff71`。
+注意：干净 CE14 V2 源码必须从专用最小候选提交抽取；最新 fork dev
+包含不在干净 CE14 依赖集合内的历史模块（如 SSO），不能直接以最新
+dev SHA 作为 V2 build overlay。完整 fork dev 对应的开发整合 PR 分别是
+Server #12 和 Hub #28，两者不应直接用于 clean-source-set 构建。
+两个组件需要同步发布：Hub 对当前账号及目标文件使用 V2 Authority
+做一次签发权限检查；Server 从该规范路径解析当前文件对象，签发
+最多一小时的原生票据；C 和 Go Fileserver 只为此类受信任单文件
+读票据跳过旧的无范围库级 ACL 守卫。票据消费只查原生对象/操作/过期，
+无新表、无每次读取 Hub/ACL SQL、无主动撤权。改权限只影响后续签发，
+已签发链接自然到期。
+
+Etech 需要配合 `jcetech/etech-eap` PR #9 请求 `reuse=1`，
+允许浏览器/预览工具重复 GET、HEAD、Range。它暂时保留原有 Redis
+浏览器跳转票据，避免修改已使用的前端接口；ZIP 中转仍一次性。
+HTTP/HTTPS 与 `/cfhttp`、`/seafhttp` 继续由部署代理决定。
+
+兼容边界：原生无路径旧票据、虚拟库、历史版本、ZIP、块下载以及
+上传/独占编辑不借此修复放宽权限。Hub 返回实际 native TTL；
+Etech 按默认 3600 秒配置并保留 5 秒余量，如现场缩短 native TTL，
+必须同步缩短 Etech 的中转有效期。
+
+此处只是构建版本锁定，**不代表已在 DEV 部署或完成文件预览 E2E**。
+上线需分别验证 C/Go 构建、授权/拒绝签发、重复读取及到期行为，
+并逐仓排除与本修复无关的基线 CI 失败。

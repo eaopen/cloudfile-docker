@@ -53,8 +53,11 @@ python -m cloudfile_ext.v2 storage-reconcile \
   `ORPHAN_DIRECTORY` 只报告，不登记、不删除。
 
 CLI 使用 `CF_V2_DB_HOST/PORT/USER/PASSWORD/NAME`；bootstrap 从现有
-`SEAFILE_MYSQL_DB_*` 变量传入，保持实例原数据库。首次缺表时 CLI 只幂等建立当前合同的
-`cf_library_storage`，不读取旧表。以上不是自动数据迁移；切换执行及 DEV/生产发布需按环境审批。
+`SEAFILE_MYSQL_DB_*` 变量传入，保持实例原数据库。
+CLI 的 `SEAFILE_DATA_DIR` 与 `SEAFILE_CENTRAL_CONF_DIR` 显式设为当前实例真实原生目录，
+覆盖陈旧环境值，避免 Seafile Python 初始化读到其他实例。dry-run 严格只读；首次缺表仅报告 `SCHEMA_MISSING`，不是业务 BLOCKED。
+预检无异常后，apply 才幂等建立当前合同的 `cf_library_storage`，不读取旧表。
+`STATE_DRIFT` 仅报告、不阻断启动、不更新生命周期；保留 Server 的 reserved/active/retired 终判。以上不是自动数据迁移；切换执行及 DEV/生产发布需按环境审批。
 
 ## 验证与边界
 

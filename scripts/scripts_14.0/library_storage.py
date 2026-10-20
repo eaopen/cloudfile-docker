@@ -122,6 +122,8 @@ def configure_auto_storage(conf, generated_body, installdir, environment=None):
     # Resolve that upstream layout without relaxing managed-root validation.
     native = (conf.parent.parent / 'seafile-data').resolve(strict=True)
     cli_env = dict(environment)
+    cli_env['SEAFILE_DATA_DIR'] = str(native)
+    cli_env['SEAFILE_CENTRAL_CONF_DIR'] = str(conf.parent.resolve(strict=True))
     # The persisted Seafile configuration, rather than a future Compose value,
     # describes the current routing that must pass the transition preflight.
     cli_env.pop('CF_STORAGE_CLASSES_JSON', None)

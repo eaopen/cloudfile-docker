@@ -36,7 +36,8 @@ class LibraryStorageConfigTests(unittest.TestCase):
         self.calls = []
         self.env = dict(CF_LIBRARY_STORAGE='auto', SEAFILE_MYSQL_DB_HOST='existing-db',
                         SEAFILE_MYSQL_DB_PASSWORD='secret', SEAFILE_MYSQL_DB_SEAFILE_DB_NAME='original_db',
-                        CF_STORAGE_CLASSES_JSON='new-env-must-not-override-persisted')
+                        CF_STORAGE_CLASSES_JSON='new-env-must-not-override-persisted',
+                        SEAFILE_DATA_DIR='/stale-data', SEAFILE_CENTRAL_CONF_DIR='/stale-conf')
         self.root_patch = patch.object(storage, 'LIBRARY_ROOT', str(self.root))
         self.root_patch.start()
         self.addCleanup(self.root_patch.stop)
@@ -51,6 +52,8 @@ class LibraryStorageConfigTests(unittest.TestCase):
         self.assertEqual('original_db', kwargs['env']['CF_V2_DB_NAME'])
         self.assertNotIn('secret', command)
         self.assertNotIn('CF_STORAGE_CLASSES_JSON', kwargs['env'])
+        self.assertEqual(str((self.top / 'seafile-data').resolve()), kwargs['env']['SEAFILE_DATA_DIR'])
+        self.assertEqual(str(self.conf.parent.resolve()), kwargs['env']['SEAFILE_CENTRAL_CONF_DIR'])
         self.assertEqual(str((self.top / 'seafile-data').resolve()), command[command.index('--seafile-data') + 1])
         self.calls.append((command, config))
         return self.report(command)
@@ -179,6 +182,20 @@ class LibraryStorageConfigTests(unittest.TestCase):
             self.assertEqual('existing.json', config['storage']['storage_classes_file'])
             self.assertEqual('multiple', config['block_backend']['name'])
         self.assertNotIn('existing.json', self.conf.read_text())
+
+    def test_schema_missing_and_state_drift_allow_explicit_apply(self):
+        for status in ('SCHEMA_MISSING', 'STATE_DRIFT'):
+            with self.subTest(status=status):
+                modes = []
+                def cli(command, **kwargs):
+                    modes.append(command[-1])
+                    report = json.loads(self.cli(command, **kwargs).stdout)
+                    report['summary'][status] = 1
+                    report['schema'] = {'status': status if status == 'SCHEMA_MISSING' else 'READY'}
+                    return subprocess.CompletedProcess(command, 0, json.dumps(report), '')
+                self.configure(cli)
+                self.assertEqual(['--dry-run', '--apply'], modes)
+                self.assertIn('name = filesystem', self.conf.read_text())
 
     def test_preflight_blocked_or_pinned_does_not_write_or_apply(self):
         for blocked, pinned in ((1, 0), (0, 1)):

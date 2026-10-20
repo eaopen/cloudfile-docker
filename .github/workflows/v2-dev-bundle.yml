@@ -86,6 +86,12 @@ jobs:
           manifest = json.loads(Path('cloudfile-docker/build/v2/source-set.json').read_text())
           manifest['components']['cloudfile-server']['overlay_commit'] = os.environ['SERVER_SHA']
           manifest['components']['cloudfile-hub']['overlay_commit'] = os.environ['HUB_SHA']
+          # The Go filesystem backend is an execution seam, not an additive
+          # V2 module. Without it a current-dev image can silently retain the
+          # upstream tempfiles EXDEV behavior even after Server's fix merges.
+          native = manifest['components']['cloudfile-server']['native_patches']
+          if 'fileserver/objstore/backend_fs.go' not in native:
+              native.append('fileserver/objstore/backend_fs.go')
           Path('/tmp/current-v2-source-set.json').write_text(json.dumps(manifest, indent=2) + '\n')
           PY
           python3 cloudfile-docker/tools/prepare-v2-source.py \

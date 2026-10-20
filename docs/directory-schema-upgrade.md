@@ -1,4 +1,11 @@
-# Directory authority schema
+# Directory authority schema (historical 001–042 runner)
+
+> **Not the current V2 schema entry.** This document is retained for offline
+> inspection of historical deployments. Current `dev` uses three V2 core
+> tables (optionally one current Guard); do **not** run `directory-apply` or
+> `SchemaRunner.apply` on a V2 database. Start with the read-only
+> `cloudfile-v2-schema.py plan` in
+> [current V2 schema recovery](v2-schema-recovery.md).
 
 `cf_dir_acl` and `cf_dir_admin` belong to the native Seafile
 database (`SEAFILE_MYSQL_DB_SEAFILE_DB_NAME`, normally `seafile_db`). Hub policy

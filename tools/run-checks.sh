@@ -87,6 +87,8 @@ run "自动本地存储 Python 策略" python3 -m pytest "$docker_repo/tests/tes
 # and optional Checkout readers before any build; this never connects to a DB.
 run "跨仓 SQL 表结构契约" python3 "$docker_repo/tools/check-sql-contracts.py" --server "$server" --hub "$hub"
 run "SQL 结构漂移回归" python3 "$docker_repo/tests/test_sql_contracts.py" --server "$server" --hub "$hub"
+# Explicit DEV conversion must preserve rule/group identity and reject live Guards.
+run "V2 四表修复数据映射" python3 "$docker_repo/tests/test_repair_v2_four_tables.py"
 # Fresh DDL must remain resumable and must never turn restart into an upgrade.
 run "新部署 DDL 初始化" python3 -m unittest discover -s "$docker_repo/tests" -p test_fresh_schema.py -q
 run "v0.6 新安装每库独立目录 Compose 契约" python3 -m unittest discover -s "$docker_repo/tests" -p test_v06_default_library_storage.py -q

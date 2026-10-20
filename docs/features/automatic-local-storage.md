@@ -1,45 +1,74 @@
-# 默认按库自动分配本地存储
+# 按库自动分配本地存储
 
-更新：2026-10-11。**v0.6 复用已实现的 C/Go/Python 路由**，本次只补新安装默认 Compose 配置、契约验证和运维说明，不重做用户已在一套 CloudFile 环境验证的真实库。2026-10-08 原目标仍成立：逐库登记存储类和 bind mount 会使每次建库依赖运维修改部署并重启。一个父目录挂载，后端首次使用时按稳定 key 创建子后端。
+更新：2026-10-20。当前 `dev` 使用 V2 本地路由，物理对象布局保持
+`<root>/<key>/storage/<commits|fs|blocks>/<repo_id>`。不搬数据、不改 Repo ID 或对象格式。
+Seafile 原生 `RepoStorageId` 是库路由事实来源；不读取、转换或清理旧表
+`cf_library_storage_key`，该表原样保留。
 
-## 新安装的开箱即用配置（不改变已有部署）
+## 新安装
 
-1. **仅新安装**：在 `deploy/compose/` 内执行 `cp .env.example .env`，新模板默认设置 `COMPOSE_FILE=docker-compose.yml:docker-compose.auto-library-storage.yml`。之后仍使用 `docker compose up -d`；不需要逐个创建库时修改 Compose 或静态存储类。
-2. 覆盖文件 `deploy/compose/docker-compose.auto-library-storage.yml` 把 `CF_LIBRARY_STORAGE_HOST_DIR=./data/libraries` **一次性**挂载至主服务及 `cf-worker` 的 `/shared/seafile/library-storage`，该目录必须持久化并包含在运维备份清单内。若调整父目录，只改新装环境这一项，并在部署前确认源目录与权限；**不得把旧库绑定目录当作新的空目录**。
-3. 新模板沿用当前多存储引导兼容开关 `CF_ENABLE_S3_STORAGE=true` 与 `SEAF_SERVER_STORAGE_TYPE=multiple`，这是已有代码的历史开关名称，**实际配置为本地文件系统，没有 S3 后端或凭据**。存储类 `legacy-default` 是已有 Seafile 本地对象路径，`auto-local` 为非默认存储类模板，供原生建库绑定到每库子目录。
-4. 现有 CloudFile / DEV / PROD 的 `.env` 和持久化 `seafile.conf` **完全不自动变更**。已经启用独立父目录的环境保持原挂载、配置和 `RepoStorageId`。新版本更新文件不会自动覆盖原有 `.env`，但**手工套用新 overlay 就属于存储变更**，必须先核对旧库位置、实例备份与回退，禁止无迁移方案直接切换已有 S3/legacy 实例。
-5. 不采用每库独立目录的**全新安装**可把 `.env` 的 `COMPOSE_FILE` 改回 `docker-compose.yml`；特殊 S3/存储类部署沿用已有显式配置及受控存储迁移工具，不与新默认模板叠加。
+1. 从 `deploy/compose/.env.example` 创建 `.env`，新模板明确设置
+   `CF_LIBRARY_STORAGE=auto`，并选择 `docker-compose.auto-library-storage.yml`。
+2. 运维先创建宿主机 `CF_LIBRARY_STORAGE_HOST_DIR` 指定的真实目录，并设置服务读写权限；
+   默认是 `deploy/compose/data/libraries`。Compose 使用 `create_host_path: false`，
+   不会悄悄创建缺失的挂载源。不要把旧对象目录替换成空目录。
+3. 主服务和 worker 一次性挂载同一个父目录，容器内统一为
+   `/shared/seafile/library-storage`。启动时还会拒绝根或任一级祖先为符号链接、
+   根不存在或不是目录；不会自动创建存储根。
+4. bootstrap 写 `[cloudfile_v2] auto_local_root=/shared/seafile/library-storage`，
+   `[storage] enable_storage_classes=false`，三个对象后端均使用 `name=fs`。
+   新模式不生成 multi 类，也不依赖 `CF_ENABLE_S3_STORAGE`。现有 V2 Server 在首个
+   commit 前预留库目录，并使用已有 active/retired 生命周期；此配置不重写路由实现。
 
-**仅做配置解析核对（不启动容器、不写库）**：
+直接运行 bootstrap 的新装也默认 auto，但显式选择旧 S3/multiple 变量的安装保留旧模式。
+只有新装判断能使用默认值；不能用“环境变量缺失”判定现有实例需要切换。
 
-```bash
-cd deploy/compose
-docker compose --env-file .env.example config --quiet
-# 检查组合配置中的 cloudfile / cf-worker 父目录挂载及两个 storage class
-python3 -m unittest discover -s ../../tests -p test_v06_default_library_storage.py -v
+## 已有安装与显式切换
+
+已有 `.env`、Seafile 对象目录和存储类继续使用原配置。**升级镜像、更新 Compose 文件、
+或者没有设置 `CF_LIBRARY_STORAGE` 都不会自行切换旧实例。** 旧组合
+`CF_ENABLE_S3_STORAGE=true`、`SEAF_SERVER_STORAGE_TYPE=multiple` 和 auto-local 模板
+继续按旧方式运行。旧 overlay 的环境默认值被移除后，bootstrap 仍保留已落盘的旧后端段。
+已有 V2 `auto_local_root` 的实例在重启时保持 V2，并仍执行预检。
+
+切换需要运维显式设置 `CF_LIBRARY_STORAGE=auto`，并保留正确的父目录挂载。在改写
+`seafile.conf` 前，bootstrap 用临时候选配置执行 Hub 当前的统一 CLI；候选配置保留原
+`[storage]`、原存储类 JSON 文件以及原数据库，只有 V2 root 补成上述固定位置。
+不会使用独立 `cfv2_*` 数据库。连接信息通过环境变量传递，不放入命令参数。
+
+```text
+python -m cloudfile_ext.v2 storage-reconcile \
+  --seafile-conf <candidate-seafile.conf> --seafile-data <existing-seafile-data> --dry-run
 ```
 
+- CLI 输出完整 JSON 报告，bootstrap 原样输出；`BLOCKED`、执行失败或报告格式异常均拒绝启动。
+- `NATIVE_CLASS_PINNED` 也会阻止切换。它表示原生默认类仍被 `RepoStorageId` 引用，
+  不能直接关闭存储类。运维须检查报告，再针对选定 ID 显式执行
+  `storage-reconcile --apply --normalize-native-class <id>`，bootstrap 不自动选择类或删除路由。
+- 预检通过后，bootstrap 再执行同一 CLI 的 `--apply`，仅补齐受支持原生库和自动库的
+  `cf_library_storage` 登记，之后才原子替换为 filesystem 配置。
+- dry-run/apply 任一步失败，原 `seafile.conf` 保持原样。apply 以每库事务执行，跨库部分
+  成功可能已经登记，重试幂等；不会以配置回滚掩盖未完成的预检。
+- 不支持的 S3/其他后端、非法 key、缺失/符号链接目录及路由冲突均需处理后重新预检。
+  `ORPHAN_DIRECTORY` 只报告，不登记、不删除。
 
-## 契约
+CLI 使用 `CF_V2_DB_HOST/PORT/USER/PASSWORD/NAME`；bootstrap 从现有
+`SEAFILE_MYSQL_DB_*` 变量传入，保持实例原数据库。首次缺表时 CLI 只幂等建立当前合同的
+`cf_library_storage`，不读取旧表。以上不是自动数据迁移；切换执行及 DEV/生产发布需按环境审批。
 
-- 宿主机父目录可按环境设置（新装默认为 `./data/libraries`，已有实际部署可采用其他绝对路径），统一挂载为容器内 `/shared/seafile/library-storage`；主服务和 worker 使用同一读写挂载。**每库子目录由存储引擎自行处理，禁止逐库增加 Compose mount。**
-- 存储类 JSON 保留既有 `legacy-default`，新增唯一模板 `auto-local`，`is_auto: true`、`is_default: false`，三个 `fs` 后端的 `dir` 均为上述容器父目录。模板不是一个可直接写入的共享后端。
-- 新库未显式选择后端时，原生建库在初始 commit 前绑定 `auto-local:<repo UUID>`。CloudFile 建库 API 可提交 `repo_key`，此时绑定 `auto-local:<repo_key>`。默认导入提交已有配置中的 key，不新增部署配置或重启。
-- key 为 1–80 个 ASCII 小写字母、数字或连字符，首尾必须为字母或数字。目录为父目录/key；拒绝路径穿越和 key 目录符号链接。
-- `cf_library_storage_key` 使用 key 主键、repo UUID 唯一约束，原子保留绑定。永久删除保留绑定记录作为 GC 定位和 key 占用记录，避免旧对象混入同名新库。显示名变更不改变 key。
-- 既有未绑定库仍走 `legacy-default`；既有显式本地/S3 存储类继续使用原配置。自定义磁盘通过预登记的例外存储类选择，客户端不能指定任意宿主机路径。
-- C、Go fileserver、Python 对象读取器遵守同一 ID 和目录规则，未知存储类仍拒绝回落。虚拟库继承原库绑定。GC 通过保留的 key 记录清理正确子目录，不能依赖进程已缓存该库。
+## 验证与边界
 
-## 验证要求
+```bash
+python3 -m unittest discover -s tests -p test_library_storage_config.py -v
+python3 -m unittest discover -s tests -p test_settings_block_order.py -v
+python3 -m unittest discover -s tests -p test_v06_default_library_storage.py -v
+python3 tools/test-bootstrap-settings.py
+cd deploy/compose
+# 只解析配置，不启动容器或创建目录。
+docker compose --env-file .env.example config --quiet
+```
 
-跨层 key 用例位于 `automatic-local-storage-cases.json`。除单位测试外，须以同一运行镜像验证：不修改 Compose/存储 JSON、不重启容器，连续创建两个不同 key 的库，上传下载及目录/文件搜索，重启后读取，重复 key 拒绝，原有库读取，以及永久删除后的物理对象清理。
-
-普通建库入口未填写 key 时使用 UUID，可保证无需配置即可独立存储；组织命名 key 由受控建库 API 或通用导入配置指定。网页上的专用 key 输入界面不在此变更范围。
-
-## 构建接线
-
-Python 依赖保持锁定上游 SHA，`patches/seafobj/automatic-local-storage.patch` 提供惰性字典及虚拟库原库路由，`cloudfile-build.sh` 对 seafobj 应用补丁，失败即终止构建。C/Go 代码在 server fork 内；本次生产候选基于原生产 `d93b51b` 加存储改动单独构建，避免带入较新开发分支的编辑/RPC 改动。
-
-## 提交门禁
-
-新增 key 保留表对应 `release.yaml` 的 `database_schema: 3`，启动仍以 `IF NOT EXISTS` 增量建表。统一 `tools/run-checks.sh` 执行补丁内 Python 策略、C 共享 key 用例和 Go 对象存储路由测试。C 用例由 Python 读取共享 JSON 并调用真实策略，仅依赖 glib，避免为纯策略测试引入原生 JSON 库。
+专项检查覆盖新装、旧环境保留、显式切换、根校验、原配置库存预检、BLOCKED/PINNED 拒绝、
+apply 失败配置不变及重启幂等。生成配置块保留原位置，避免本地别名或覆盖变量在重启时失效。
+真实旧库、跨挂载上传下载、历史版本、恢复、GC 和 fsck 仍需匹配 Server/Hub 镜像及数据副本验证；
+配置测试不代表 DEV/生产验收完成。

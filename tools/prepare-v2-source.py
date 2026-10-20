@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 
@@ -102,6 +103,11 @@ def assemble(workspace, output, source_set, refs):
             receipt['components'][component] = {'native_commit': base, 'overlay_commit': overlay_ref,
                                                 'overlay_sha256': digests,
                                                 'native_before_sha256': native_patch_digests}
+        subprocess.run([
+            sys.executable, str(Path(__file__).resolve().parents[1] /
+                           'build/v2/check-native-source.py'),
+            str(stage / 'seafile-server'),
+        ], check=True)
         (stage / 'v2-source-receipt.json').write_text(json.dumps(receipt, indent=2, sort_keys=True) + '\n')
         stage.rename(output)
     except BaseException:

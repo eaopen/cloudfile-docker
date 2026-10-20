@@ -7,6 +7,7 @@ USER root
 ARG TARGETARCH
 ENV CCACHE_DIR=/root/.cache/ccache
 COPY --from=cf-build build-native.sh /build-native.sh
+COPY --from=cf-build check-native-source.py /check-native-source.py
 COPY libsearpc /source/libsearpc
 COPY libevhtp /source/libevhtp
 RUN --mount=type=cache,id=cfv2-ccache-${TARGETARCH},from=cf-cache,source=ccache,target=/root/.cache/ccache \

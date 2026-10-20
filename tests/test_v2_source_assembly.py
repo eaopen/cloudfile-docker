@@ -24,6 +24,10 @@ class SourceAssemblyTest(unittest.TestCase):
             self.git(repo, 'config', 'user.name', 'V2 Source Test')
             self.git(repo, 'config', 'user.email', 'test@example.invalid')
             (repo / 'native.txt').write_text('fixed upstream file')
+            if name == 'cloudfile-server':
+                for directory in ('server', 'server/gc', 'fuse'):
+                    (repo / directory).mkdir(parents=True, exist_ok=True)
+                    (repo / directory / 'Makefile.am').write_text('# native fixture\n')
             self.git(repo, 'add', '.')
             self.git(repo, 'commit', '-qm', 'native fixture')
             base = self.git(repo, 'rev-parse', 'HEAD').strip()
@@ -85,6 +89,19 @@ class SourceAssemblyTest(unittest.TestCase):
 
     def test_absolute_legacy_import_is_rejected(self):
         self._bad_import('from cloudfile_extensions.jobs.store import JobStore\n')
+
+    def test_native_dependency_failure_never_publishes_receipt(self):
+        repo = self.root / 'cloudfile-server'
+        (repo / 'server/Makefile.am').write_text('server_SOURCES = missing.c\n')
+        self.git(repo, 'add', '.')
+        self.git(repo, 'commit', '-qm', 'broken native manifest')
+        self.config['components']['cloudfile-server']['native_patches'] = [
+            'server/Makefile.am']
+        output = self.root / 'failed'
+        with self.assertRaises(subprocess.CalledProcessError):
+            module.assemble(self.root, output, self.config, self.refs)
+        self.assertFalse(output.exists())
+        self.assertEqual(list(self.root.glob('.cf-v2-source-*')), [])
 
     def test_relative_import_cannot_escape_isolated_package(self):
         self._bad_import('from .. import registry\n')

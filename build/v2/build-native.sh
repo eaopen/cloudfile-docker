@@ -8,6 +8,7 @@ case "$target" in all|sources|dependencies|server) ;; *) exit 2 ;; esac
 jobs=${CF_V2_BUILD_JOBS:-4}
 [[ $jobs =~ ^[1-9][0-9]*$ ]] || exit 2
 if [[ $target != dependencies ]]; then
+    python3 "$(dirname "$0")/check-native-source.py" "$source_root/seafile-server"
     # The host validates the full source receipt before Docker packaging.
     # This server-only stage intentionally does not COPY the combined receipt:
     # a Hub-only SHA update must not recompile native C/Go.

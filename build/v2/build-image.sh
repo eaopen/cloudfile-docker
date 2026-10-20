@@ -4,6 +4,7 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
 source_root=$(cd "${1:?prepared V2 source directory required}" && pwd)
+python3 "$here/check-native-source.py" "$source_root/seafile-server"
 # Read-only receipt check BEFORE any tagging, fetching or building. The
 # combined receipt stays with the final image, not the Server C/Go build layer.
 python3 - "$source_root" <<'PY'

@@ -22,8 +22,8 @@ CloudFile Server 负责 C/Go 底层文件、权限与存储；Hub 负责 Web/API
 
 **版本与构建事实必须分开：**
 - `dev` 表示当前 CloudFile V2 **代码开发线**，不等于正在部署的镜像，也不等于已运行通过的组合。
-- `build/v2/source-set.json` 是其中一次固定 CE14/V2 源码快照；内部 `overlay_commit` 可能早于最新 `dev`，不能仅凭文件名推断为当前 HEAD。
-- 根目录 `release.yaml` 及 `build/cloudfile_14.0/` 保留较早扩展版发布配方与证据；在确认它们的有效源码组合前，**不得直接用其浮动 `ref: dev` 发布当前 V2**。
+- `docs/history/storage-build-20261020/v2/source-set.json` 是其中一次固定 CE14/V2 源码快照；内部 `overlay_commit` 可能早于最新 `dev`，不能仅凭文件名推断为当前 HEAD。
+- 根目录 `release.yaml` 与 `build/cloudfile_14.0/` 是当前唯一构建实现；三仓分支在开工时经远端解析一次，生成 `build-receipt.json`，后续仅按收据里的 SHA 构建和验证。旧白名单组装已归档到 `docs/history/storage-build-20261020/`，不作构建入口。
 - 真正构建/交付时，须明确 Server、Hub、Docker 的具体 Commit SHA、上游 CE 源码基线与镜像 Digest；历史 V2-clean CI 成功不代表最新 `dev` 已联验。
 
 ## 不扩大改动范围

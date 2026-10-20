@@ -40,3 +40,9 @@ deploy/compose/.*.verify.yml
 
 # verify-local.sh µÄÁÙÊ± Compose Ä¿Â¼
 .local-verify/
+
+# Generated source locks, receipts, and focused test logs.
+build/seafile_14.0/release.json
+build/*/build-receipt.json
+build/*/captured-sources.json
+build/*/test-results/

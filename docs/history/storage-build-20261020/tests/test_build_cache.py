@@ -9,7 +9,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / 'build/seafile_14.0/seafile-build.sh'
+SCRIPT = ROOT / 'docs/history/storage-build-20261020/native-build/seafile-build.sh'
 FUNCTION = SCRIPT.read_text().split('function install_python_dependencies() {', 1)[1].split(
     'function clone_code()', 1)[0]
 FUNCTION = 'function install_python_dependencies() {' + FUNCTION

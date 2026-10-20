@@ -13,7 +13,7 @@
 #
 # Usage: ./docker-build.sh <version>            e.g. 14.0.0-cf.0
 
-set -e
+set -euo pipefail
 
 if [[ $# != 1 ]]; then
     echo ''
@@ -26,6 +26,8 @@ version=$1
 
 here=$(cd "$(dirname "$0")" && pwd)
 repo_root=$(cd "$here/../.." && pwd)
+receipt=${CF_BUILD_RECEIPT:-$repo_root/build/cloudfile_14.0/build-receipt.json}
+python3 "$repo_root/build/seafile_14.0/build_receipt.py" verify "$receipt" --recipe "$repo_root" >/dev/null
 source "$repo_root/tools/build-platform.sh"
 
 dist=$repo_root/build/cloudfile_14.0/seafile-server-${version}
@@ -36,7 +38,7 @@ if [[ ! -d $dist ]]; then
 fi
 
 "$repo_root/tools/verify-release-artifact.sh" "$dist"
-package_digest=$(python3 "$repo_root/build/cloudfile_14.0/stamp-current-package.py" "$dist" "$version")
+package_digest=$(python3 "$repo_root/build/cloudfile_14.0/stamp-current-package.py" "$dist" "$version" --receipt "$receipt")
 server_commit=$(sed -n 's/^seafile-server: //p' "$dist/cloudfile-build-info.txt")
 hub_commit=$(sed -n 's/^seahub: //p' "$dist/cloudfile-build-info.txt")
 docker_commit=$(sed -n 's/^cloudfile-docker: //p' "$dist/cloudfile-build-info.txt")
@@ -119,5 +121,6 @@ else
         -t "$image" "$context"
 fi
 
+python3 "$repo_root/build/seafile_14.0/build_receipt.py" image "$receipt" "$image"
 echo ''
 echo "Built ${image}"

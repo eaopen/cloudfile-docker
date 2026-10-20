@@ -14,7 +14,7 @@ CloudFile Docker 负责三仓源码组装、镜像构建、部署配置、跨仓
 
 ## V2 构建与旧版入口的区别
 
-- [V2 源码组装及开发运行说明](build/v2/README.md)：描述 `build/v2/` 路径。`source-set.json` 是一次**固定源码快照**，不能默认它等于三个仓库最新 `dev`。
+- [当前完整构建与收据](docs/storage-build.md)：从三仓 `dev` 解析固定 SHA 后构建，旧白名单组装仅在历史目录保留。
 - 根目录 [`release.yaml`](release.yaml) 和 `build/cloudfile_14.0/` 保留较早版本的发布和 CE14 扩展构建方式；**不要未经核实就直接将它们用于当前 V2 `dev` 构建或部署**。
 - [历史技术文档](docs/history/README.md) 仅用于追溯旧版行为。实际 V2 的授权、Tag、Checkout 等内置能力以当前 V2 代码/契约为准，不恢复旧 `CF_ENABLE_*` 参数。
 
@@ -28,6 +28,6 @@ CloudFile Docker 负责三仓源码组装、镜像构建、部署配置、跨仓
 | [cloudfile-hub](https://github.com/eaopen/cloudfile-hub) | Web/API、SSO、目录/文件访问、可选增强能力 |
 | [cloudfile-docker](https://github.com/eaopen/cloudfile-docker) | 构建、运行、部署与跨仓版本组合 |
 
-更多资料：[开发约束](AGENTS.md) · [部署文档](docs/deployment.md) · [V2 源码组装](build/v2/README.md) · [上游改动清单](docs/upstream-patches/)。
+更多资料：[开发约束](AGENTS.md) · [部署文档](docs/deployment.md) · [完整构建](docs/storage-build.md) · [上游改动清单](docs/upstream-patches/)。
 
 本仓保留原上游 Seafile 组件的许可证及各自授权；请核对 [LICENSE.txt](LICENSE.txt) 和具体组件的许可证。

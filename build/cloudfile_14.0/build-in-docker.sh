@@ -28,6 +28,19 @@ fi
 version=$1
 here=$(cd "$(dirname "$0")" && pwd)
 repo_root=$(cd "$here/../.." && pwd)
+receipt_tool="$repo_root/build/seafile_14.0/build_receipt.py"
+receipt=${CF_BUILD_RECEIPT:-$here/build-receipt.json}
+if [[ -z ${CF_BUILD_RECEIPT:-} ]]; then
+    resolve_args=(--manifest "$repo_root/release.yaml" --version "$version" --output "$receipt")
+    for component in SERVER HUB DOCKER; do
+        key="CF_${component}_REF"
+        option=$(printf '%s' "$component" | tr '[:upper:]' '[:lower:]')
+        [[ -z ${!key:-} ]] || resolve_args+=("--${option}-ref" "${!key}")
+    done
+    python3 "$receipt_tool" resolve "${resolve_args[@]}"
+fi
+python3 "$receipt_tool" verify "$receipt" --recipe "$repo_root" --version "$version" >/dev/null
+receipt=$(cd "$(dirname "$receipt")" && pwd)/$(basename "$receipt")
 source "$repo_root/tools/build-platform.sh"
 base_image=${CF_BASE_IMAGE:-$(python3 "$here/read-manifest.py" \
     "$repo_root/release.yaml" build_base_image)}
@@ -101,6 +114,7 @@ fi
 # 把可覆盖的 ref 透传进容器，方便构建特性分支；CF_FORCE_REBUILD=1
 # 强制全量重建、忽略 cloudfile-build.sh 的分层缓存。
 env_args=()
+env_args+=(-e "CF_BUILD_RECEIPT=/cf-receipts/$(basename "$receipt")")
 for v in CF_SERVER_REF CF_HUB_REF CF_SERVER_URL CF_HUB_URL \
          CF_SEAFOBJ_REF CF_SEAFDAV_REF CF_SEAFEVENTS_REF \
          CF_LIBSEARPC_REF CF_LIBEVHTP_REF CF_FORCE_REBUILD \
@@ -176,6 +190,7 @@ docker run --rm -i "${pull_arg[@]}" \
     "${env_args[@]}" \
     "${cache_args[@]}" \
     "${mount_args[@]+"${mount_args[@]}"}" \
+    -v "$(dirname "$receipt"):/cf-receipts" \
     -v "$repo_root:/work" \
     -w /work/build/cloudfile_14.0 \
     "$base_image" \

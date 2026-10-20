@@ -18,6 +18,7 @@ COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 REQUIRED_FILES = (
     "seafile/bin/seaf-server", "seafile/bin/fileserver", "seafile/bin/seaf-fuse",
     "seafile/lib/libcloudfile_acl.so.1", "seahub/cloudfile_extensions/apps.py",
+    "seahub/thirdpart/bin/gunicorn",
 )
 
 
@@ -128,6 +129,13 @@ def write_provenance(package, captured, manifest_path):
 
 def verify_package(package, manifest_path):
     manifest = load_manifest(manifest_path)
+    raw = json.loads(Path(manifest_path).read_text())
+    if raw.get("schema") == 2:
+        for name in ("local_storage", "objstore"):
+            result = raw.get("tests", {}).get(name, {})
+            if (result.get("status") != "passed" or not result.get("command")
+                    or not re.fullmatch(r"[0-9a-f]{64}", result.get("log_sha256", ""))):
+                raise ValueError("receipt lacks successful focused test evidence: " + name)
     target = Path(package) / RECORD_NAME
     if not target.is_file() or target.is_symlink():
         raise ValueError("native package lacks build provenance; rebuild before image assembly")

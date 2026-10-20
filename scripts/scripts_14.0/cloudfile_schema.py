@@ -15,6 +15,11 @@ def prepare_fresh_schema(shared_dir):
     return marker
 
 
+def _v2_schema_dir(installdir):
+    """Packaged CloudFile Server DDL alongside the installed CE SQL."""
+    return Path(installdir) / 'sql' / 'mysql'
+
+
 def initialize_fresh_schema(marker, installdir, environment=None):
     marker = Path(marker)
     if not marker.exists():
@@ -27,7 +32,7 @@ def initialize_fresh_schema(marker, installdir, environment=None):
     try:
         import pymysql
         from cloudfile_ext.v2.schema import FreshSchema
-        schema_dir = Path(installdir) / 'sql' / 'mysql'
+        schema_dir = _v2_schema_dir(installdir)
         # One current V2 DDL owner; never replay the old 001..042 migration
         # catalog into a fresh database (it creates an incompatible Guard,
         # directory ACL and group mapping structure).

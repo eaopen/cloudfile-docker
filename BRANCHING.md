@@ -2,23 +2,30 @@
 # CloudFile 三仓分支模型
 
 > **用途**：规定 `cloudfile-server`、`cloudfile-hub`、`cloudfile-docker` 共用的分支、发布和上游同步规则。
-> **适用版本**：CloudFile `14.0.0-cf.0`，基于 Seafile CE 14 源码重构。
+> **适用范围**：CloudFile V2 开发主线（Seafile CE 14 基线）；产品版本与 CE 版本分开标识，正式发布版本由冻结的构建清单声明。
 > **状态**：当前有效；构建 ref 以 [`release.yaml`](release.yaml) 为准，详细门槛见 [`docs/BRANCHES.md`](docs/BRANCHES.md)。
 
 ## 分支类型
 
+V2 只有一个持续集成主线：`dev`。分支名用于**隔离开发目的与产品代际**，不能代替 Server/Hub/Docker 的提交锁定。详细规则、历史分支治理和跨仓 CI 见 [docs/BRANCHES.md](docs/BRANCHES.md)。
+
 | 分支 | 用途 | 生命周期 |
 |---|---|---|
-| `dev` | 集成基线：扩展点、构建、部署和已验收能力；全部能力开关默认关闭 | 长期 |
-| `feature/<name>` | 单个耦合能力簇 | 验收后合回 `dev` 并删除 |
-| `fix/<name>` | 独立缺陷修复 | 验证后合回 `dev` 并删除 |
-| `sync/upstream-YYYYMMDD` | 三仓同步上游的临时工作分支 | 同步与回归完成后删除 |
+| `dev` | 当前 CloudFile V2 集成线，非 V0.9 / CE14 原生快照 | 长期 |
+| `feature/v2/<work>-<topic>` | V2 能力（多仓耦合使用同一 work ID） | 验收后合入 `dev` 并删除 |
+| `fix/v2/<work>-<topic>` | V2 缺陷修复 | 验收后合入 `dev` 并删除 |
+| `docs/v2/<topic>` | V2 文档调整，不改变运行代码 | 评审后删除 |
+| `sync/ce14/<YYYYMMDD>` | Seafile CE14 上游同步 | 验收后删除 |
+| `release/v2.x.y` | 仅 Docker 仓的临时发布冻结工作线 | 打 Tag 后结束 |
+| `hotfix/v2.x.y/<topic>` | 从已冻结版本修复，只进入对应版本和 `dev` | 验证后删除 |
+| `maintenance/v0.9/<topic>` | 确需维护 V0.9 时，从归档旧版本派生 | 临时，严禁合并整枝到 V2 |
+| `archive/*`、`seafile/*` | 只读历史快照或上游来源 | 保留，不作为新任务基线 |
 
-长期能力分支只用于不准备进入产品的客户定制、实验或许可证不兼容实现。能力不能长期各自分叉：构建脚本每仓只接受一个 ref，正式组合必须在 `dev` 上通过默认关闭的开关隔离和集成验证。
+旧 `dev2`、`dev2-clean`、`dev14`、`feature/v09-*` 不是新的 V2 开发入口；先确认外部引用及未移植差异，再执行非破坏性归档与清理。历史在途分支（例如 `feature/local-object-staging-20261020`）先完成原任务，不因规则发布而强制改名。
 
 ## 上游基线
 
-未 fork 组件按 `release.yaml` 的 `upstream` SHA 锁定；CloudFile fork 使用 `forks` 下的 URL/ref。上游未发布 CE 14 tag，不能用 Pro tag 代替 CE 基线。
+未 fork 组件按 `release.yaml` 的 `upstream` SHA 锁定；CloudFile fork 使用 `forks` 下的 URL/ref。上游已有 CE14 发布 Tag；基线使用 `release.yaml` 的 `ce_anchor` 与固定源码提交，不得用 Pro Tag 或移动分支代替。
 
 ```bash
 python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_server.ref
@@ -177,8 +184,7 @@ CloudFile 的改动跟着文件走，登记路径随之改写：
 跨 Hub/Server 的语义先更新共享规格和用例，再同步实现。
 
 发布时将三个仓库的最终提交写入 `release.yaml` 的 `server_commit`、`hub_commit`、`docker_commit`，
-然后在 GitHub Actions 中从 `prod` 分支手动运行 `CloudFile production build`，填写版本并
-选择 `incremental` 或 `full`。日常小改用增量路径，正式复核、上游升级或缓存对照用保留的
+然后在 GitHub Actions 中选择**确实存在且已冻结发布清单的 Docker ref**，手动运行 `CloudFile production build`，填写版本并选择 `incremental` 或 `full`。当前三仓没有 `prod` 分支，不再把旧文档中的 `prod` 当作已配置的发布入口。日常小改用增量路径，正式复核、上游升级或缓存对照用保留的
 CE 全量路径；通过后再使用同一版本 tag。普通 push 不触发生产编译；增量构建计划会校验
 声明的 Server/Hub 提交与实际解析结果一致。未填写提交的开发清单不能当作可追溯发布记录。
 

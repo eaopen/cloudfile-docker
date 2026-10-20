@@ -121,6 +121,14 @@ def main():
     args = parser.parse_args()
     config = args.source_set or (Path(__file__).resolve().parents[1] / 'build/v2/source-set.json')
     sources = json.loads(config.read_text())
+    if not args.source_set:
+        # Preserve the historical allowlist only for explicit frozen builds.
+        # The current Server dev filesystem backend writes each block beside
+        # its final path; omitting this seam silently restores cross-mount EXDEV.
+        native_patches = sources['components']['cloudfile-server']['native_patches']
+        go_seam = 'fileserver/objstore/backend_fs.go'
+        if go_seam not in native_patches:
+            native_patches.append(go_seam)
     selected = {
         'cloudfile-hub': args.hub_ref,
         'cloudfile-server': args.server_ref,

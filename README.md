@@ -1,96 +1,33 @@
 [CloudFile product home / 产品总入口](https://github.com/eaopen/cloudfile) · [English](https://github.com/eaopen/cloudfile/blob/main/README.md) · [简体中文](https://github.com/eaopen/cloudfile/blob/main/README.zh-CN.md)
 
-<!-- generated-by: gsd-doc-writer -->
 # CloudFile Docker
 
-> **用途**：提供 CloudFile 的源码构建、镜像、Compose 部署、发布清单与跨仓规格入口。
-> **适用版本**：CloudFile `14.0.0-cf.0`，基于 Seafile CE 14 源码重构。
-> **状态**：当前有效；发布组件 ref 与版本以 [`release.yaml`](release.yaml) 为唯一真相。
+> **当前开发：GitHub 默认 `dev` = CloudFile V2**，基于 Seafile CE14。Server、Hub、Docker 三仓的 `dev` 含义一致；V0.x 和已归档的 `dev2`、`dev2-clean` 不是当前开发入口。
 
-CloudFile Docker 面向需要在 Seafile CE 14 基础上部署企业扩展能力的开发和运维团队；本仓不承载 Seahub 或 seaf-server 业务实现，而是负责把三个 CloudFile 仓库构建、打包并部署为可验证的系统。
+CloudFile Docker 负责三仓源码组装、镜像构建、部署配置、跨仓契约及发布来源记录。CloudFile Server 提供 C/Go 文件数据面与权限终判，CloudFile Hub 提供 Web、API、SSO 和功能扩展。
 
-CloudFile 面向客户和使用者的产品总入口为 [eaopen/cloudfile](https://github.com/eaopen/cloudfile)。
-本仓是构建、部署、发布与跨仓技术规格的维护位置。当前架构、部署、配置、能力状态、路线图和
-上游贡献建议统一维护在 [`docs/`](docs/README.md)；代码、配置、测试与 `release.yaml` 的证据
-优先于规划文档，历史稿不作为当前功能说明。
+## 日常开发
 
-## 项目组成
+只使用简单规则：`dev` 为主线，新功能 `feat/<功能>`，问题修复 `fix/<问题>`，文档 `docs/<主题>`，旧版本归 `archive/<历史名称>`。**不需要增加 `v2/`、日期或任务编号作为强制前缀。** 跨仓任务可同名，但只在涉及修改的仓库建立分支。详见 [BRANCHING.md](BRANCHING.md) 和 [docs/BRANCHES.md](docs/BRANCHES.md)。
 
-| 项目 | 职责 | 文档入口 |
-|---|---|---|
-| `cloudfile-server` | Seafile Server fork；权限终判、写入生命周期和存储扩展 | [`../cloudfile-server/doc/README.md`](../cloudfile-server/doc/README.md) |
-| `cloudfile-hub` | Seahub fork；Web/API、扩展注册和能力界面 | [`../cloudfile-hub/docs/README.md`](../cloudfile-hub/docs/README.md) |
-| `cloudfile-docker` | 构建、镜像、部署、跨仓规格、文档与发布清单 | [`docs/README.md`](docs/README.md) |
-| `cloudfile-local-agent` | 本地查看与编辑的 Native Messaging Host | [`../cloudfile-local-agent/README.md`](../cloudfile-local-agent/README.md) |
-| `cloudfile-chrome-extension` | 浏览器与本地 Agent 之间的受限桥接 | [`../cloudfile-chrome-extension/README.md`](../cloudfile-chrome-extension/README.md) |
-| `seafile`、`seafobj` | 上游依赖检出，不属于 CloudFile 扩展能力实现 | 各上游仓库 README |
+**V2 当前源码 ≠ 已验证的源码组合 ≠ 已打包镜像 ≠ 已部署环境。** 跨仓联验和交付时须记录 Server、Hub、Docker 的固定 SHA 及镜像 Digest。
 
-## 边界
+## V2 构建与旧版入口的区别
 
-- **复用 Seafile CE**：资料库、同步、WebDAV、分享、预览，以及 CE 源码中已有的 LDAP/SAML/OIDC、OnlyOffice、metadata 和 AI 接口。
-- **CloudFile 新增**：扩展注册、目录 ACL、组织映射、审计、可替换检索、多存储、外部资料源、写入生命周期，以及对应构建和门禁。
-- **外部组件**：MariaDB、Redis、Caddy、SeaSearch、Meilisearch、Metadata Server、seafile-ai、OnlyOffice、SeaDoc 和对象/文件存储；其许可证、容量、备份和可用性由部署方负责。
+- [V2 源码组装及开发运行说明](build/v2/README.md)：描述 `build/v2/` 路径。`source-set.json` 是一次**固定源码快照**，不能默认它等于三个仓库最新 `dev`。
+- 根目录 [`release.yaml`](release.yaml) 和 `build/cloudfile_14.0/` 保留较早版本的发布和 CE14 扩展构建方式；**不要未经核实就直接将它们用于当前 V2 `dev` 构建或部署**。
+- [历史技术文档](docs/history/README.md) 仅用于追溯旧版行为。实际 V2 的授权、Tag、Checkout 等内置能力以当前 V2 代码/契约为准，不恢复旧 `CF_ENABLE_*` 参数。
 
-CloudFile 包含自有服务端扩展，因此按 [`release.yaml`](release.yaml) 锁定源码并自建 CE 14 发行包和镜像。当前结论见 [`docs/overview.md`](docs/overview.md)，完整决策过程已归档。
+**不因每次小改动重新编译。** 文档修改无需测试和构建；代码只针对受影响模块做必要检查。需要镜像或三仓真实运行验收时，在明确的集成或发布任务中选定固定 SHA，再按实际入口操作；不要把旧 CI 的成功误称为最新 V2 已验收。
 
-## 快速部署
+## 项目仓库与参考
 
-```bash
-git clone https://github.com/eaopen/cloudfile-docker.git
-cd cloudfile-docker/deploy/compose
-cp .env.example .env
-```
+| 仓库 | 职责 |
+| --- | --- |
+| [cloudfile-server](https://github.com/eaopen/cloudfile-server) | 文件存储、底层权限、C/Go 原生文件服务 |
+| [cloudfile-hub](https://github.com/eaopen/cloudfile-hub) | Web/API、SSO、目录/文件访问、可选增强能力 |
+| [cloudfile-docker](https://github.com/eaopen/cloudfile-docker) | 构建、运行、部署与跨仓版本组合 |
 
-修改 `.env` 中的主机名、管理员密码和数据库密码，然后：
+更多资料：[开发约束](AGENTS.md) · [部署文档](docs/deployment.md) · [V2 源码组装](build/v2/README.md) · [上游改动清单](docs/upstream-patches/)。
 
-```bash
-docker compose config --quiet
-docker compose up -d
-docker compose logs -f cloudfile
-```
-
-新增能力开关默认关闭；各项默认值以所选发行版本配置为准。可选 profile、能力开关、TLS、数据目录和备份边界见 [`deploy/compose/README.md`](deploy/compose/README.md)。
-
-## 从源码构建
-
-需要 Linux 或 Docker：
-
-```bash
-./build/cloudfile_14.0/build-in-docker.sh 14.0.0-cf.0
-./image/cloudfile_14.0/docker-build.sh 14.0.0-cf.0
-```
-
-构建依赖、ref 覆盖和产物位置见 [`build/README.md`](build/README.md)。
-
-## 验证
-
-```bash
-./tools/run-checks.sh
-./tools/verify-local.sh preflight
-```
-
-完整基线构建与整机回归：
-
-```bash
-./tools/verify-local.sh
-```
-
-专项能力门禁使用 `./tools/verify-local.sh cap <capability>`；支持的能力名以脚本的 `CAPABILITIES` 表为准。
-
-## 文档
-
-- [`docs/README.md`](docs/README.md)：当前文档地图与阅读顺序。
-- [`docs/overview.md`](docs/overview.md)：产品定位、上游策略与仓库边界。
-- [`docs/architecture.md`](docs/architecture.md)：系统组件、控制面和数据面。
-- [`docs/deployment.md`](docs/deployment.md)：部署形态与生产边界。
-- [`docs/configuration.md`](docs/configuration.md)：环境变量与配置语义。
-- [`docs/feature-matrix.md`](docs/feature-matrix.md)：CE 复用、CloudFile 新增、外部组件与验证状态。
-- [`docs/history/README.md`](docs/history/README.md)：失效方案和旧流程索引。
-
-开始部署前阅读 [`docs/deployment.md`](docs/deployment.md) 和
-[`docs/configuration.md`](docs/configuration.md)。判断能力是否可用时，以
-[`docs/feature-matrix.md`](docs/feature-matrix.md) 中的状态、限制和证据为准。
-
-## 许可证
-
-本仓沿用 [Apache License 2.0](LICENSE.txt)。各上游源码、官方二进制镜像和第三方组件仍受各自许可证约束。
+本仓保留原上游 Seafile 组件的许可证及各自授权；请核对 [LICENSE.txt](LICENSE.txt) 和具体组件的许可证。

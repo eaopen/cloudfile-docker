@@ -118,6 +118,7 @@ core 依据适用的目录 ACL/共享授予资格（`server/cloudfile-policy.h:4
 - 库根与任何未共享路径一律不放行，答案由 `cf_v2_share.c` 向 Hub 的
   `/cloudfile/acl/check/` 求证（同 Go fileserver 用的那个内部 JWT 通道，见
   `cf_v2_acl_check_json()`），响应里的 `permissions` 逐检查项给出级别；
+- 注册仅检查标准 V2 三表 `cf_library_storage`、`cf_dir_acl`、`cf_sso_group_map` 与内部 Hub 通道；不依赖已退役的 `cf_managed_library` 或新增功能开关。未安装 V2、表不齐或通道不可用时保留原生拒绝；实际路径授权仍由 Hub 判定。
 - C/Go 的终判不变：Go 写入口仍走 `cfACLPath`/`cfACLFinal`，C 仍走提交事务内的检查。
 
 这条缝**只覆盖 API 写入口**（上传链接、新建目录、重命名、移动、删除、seafdav）。

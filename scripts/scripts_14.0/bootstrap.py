@@ -838,7 +838,8 @@ def write_cloudfile_seafile_conf():
     dir_acl_enabled -- so a new capability needs no change here.
     """
     lines = _seafile_conf_cloudfile_lines()
-    from library_storage import auto_storage_enabled, configure_auto_storage, retained_legacy_storage
+    from library_storage import (auto_storage_enabled, configure_auto_storage,
+                                 retained_legacy_storage, retained_legacy_switch)
     conf_path = join(topdir, 'conf', 'seafile.conf')
     fresh = globals().get('_cloudfile_fresh_install', False)
     if auto_storage_enabled(conf_path, os.environ, fresh=fresh):
@@ -921,7 +922,13 @@ def write_cloudfile_seafile_conf():
 
     if (not cf_enabled('CF_ENABLE_S3_STORAGE') or
             not get_conf('SEAF_SERVER_STORAGE_TYPE', '').strip()):
-        lines.append(retained_legacy_storage(conf_path))
+        retained = retained_legacy_storage(conf_path)
+        # Retained multi routing keeps its allocator switch; otherwise new
+        # libraries would silently move from automatic directories to default.
+        if retained and retained_legacy_switch(conf_path):
+            lines = ['s3_storage_enabled = true\n' if line == 's3_storage_enabled = false\n' else line
+                     for line in lines]
+        lines.append(retained)
     _replace_block(join(topdir, 'conf', 'seafile.conf'),
                    CF_BEGIN, CF_END, ''.join(lines))
 

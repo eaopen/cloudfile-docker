@@ -58,6 +58,21 @@ def retained_legacy_storage(path):
     return output.getvalue()
 
 
+def retained_legacy_switch(path):
+    """Keep the legacy allocator switch together with retained storage classes.
+
+    The removed Compose overlay also supplied CF_ENABLE_S3_STORAGE=true. Its
+    persisted multi routing survives without that value, so new libraries must
+    keep the same automatic allocation rather than silently using the default.
+    """
+    path = Path(path)
+    if not path.exists():
+        return False
+    current = _read_config(path)
+    return (current.getboolean('storage', 'enable_storage_classes', fallback=False) and
+            current.getboolean('cloudfile', 's3_storage_enabled', fallback=False))
+
+
 def _require_root():
     root = Path(LIBRARY_ROOT)
     for path in (root, *root.parents):

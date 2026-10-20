@@ -6,7 +6,8 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock
 
-BUILD = Path(__file__).resolve().parents[1] / 'build/v2'
+# Archived with the historical V2 launcher it exercises.
+BUILD = Path(__file__).resolve().parents[1] / 'v2'
 spec = importlib.util.spec_from_file_location('native_config', BUILD / 'native_config.py')
 native = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(native)

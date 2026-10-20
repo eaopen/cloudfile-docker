@@ -278,7 +278,8 @@ services:
       # seafile-ai service below). Harmless with no file present:
       # seahub/config_parser.py logs a warning and returns {} rather than
       # raising, so this is safe to set even with CF_AI_ENABLED=false.
-      SEAFILE_CENTRAL_CONF_DIR: /opt/seafile/conf
+      SEAFILE_DATA_DIR: /shared/seafile/seafile-data
+      SEAFILE_CENTRAL_CONF_DIR: /shared/seafile/conf
       # -- SSO (inert unless CF_ENABLE_SSO is true) --
       # No `:?` on any of these: compose interpolates the whole file whatever
       # profile is active, so a required marker here would break a plain
@@ -429,6 +430,8 @@ services:
       REDIS_PORT: "6379"
       TIME_ZONE: ${TIME_ZONE:-Etc/UTC}
       SEAFILE_RPC_PIPE_PATH: /shared/seafile/runtime
+      SEAFILE_DATA_DIR: /shared/seafile/seafile-data
+      SEAFILE_CENTRAL_CONF_DIR: /shared/seafile/conf
       # Keep the worker's task registry in sync with the application. New
       # periodic extension tasks can therefore be enabled with the same .env.
       CF_ENABLE_SSO: ${CF_ENABLE_SSO:-false}

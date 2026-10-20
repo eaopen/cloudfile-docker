@@ -13,7 +13,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
 
 
-BUILD = Path(__file__).resolve().parents[1] / 'build/v2'
+# Archived with the historical V2 launcher it exercises.
+BUILD = Path(__file__).resolve().parents[1] / 'v2'
 spec = importlib.util.spec_from_file_location('web_paths', BUILD / 'web_paths.py')
 paths = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(paths)
@@ -103,8 +104,8 @@ class SettingsTest(unittest.TestCase):
     def test_fileserver_proxies_overwrite_client_real_ip(self):
         # The Go fileserver records X-Real-IP from loopback as the Checkout IP,
         # so every nginx location in front of it must replace the client value.
-        root = BUILD.parents[1]
-        for name in ('build/v2/nginx-dev.conf', 'services/seafile.nginx.conf',
+        root = Path(__file__).resolve().parents[4]
+        for name in ('docs/history/storage-build-20261020/v2/nginx-dev.conf', 'services/seafile.nginx.conf',
                      'templates/seafile.nginx.conf.template'):
             for block in (root / name).read_text().split('location')[1:]:
                 if 'proxy_pass http://127.0.0.1:8082' in block:

@@ -68,7 +68,7 @@ class LibraryStorageConfigTests(unittest.TestCase):
             storage.configure_auto_storage(self.conf, '[cloudfile]\nexample = true\n', self.installdir, self.env)
         return output.getvalue()
 
-    def bootstrap_writer(self, environment):
+    def bootstrap_writer(self, environment, lines=('[cloudfile]\nexample = true\n',)):
         source = SOURCE.with_name('bootstrap.py')
         names = {'write_cloudfile_seafile_conf', '_replace_block'}
         nodes = [node for node in ast.parse(source.read_text()).body
@@ -79,7 +79,7 @@ class LibraryStorageConfigTests(unittest.TestCase):
                          get_conf=lambda key, default='': environment.get(key, default),
                          cf_enabled=lambda key: environment.get(key, 'false') == 'true',
                          logwarning=lambda message: None,
-                         _seafile_conf_cloudfile_lines=lambda: ['[cloudfile]\nexample = true\n'])
+                         _seafile_conf_cloudfile_lines=lambda: list(lines))
         exec(compile(ast.Module(body=nodes, type_ignores=[]), str(source), 'exec'), namespace)
         return namespace['write_cloudfile_seafile_conf']
 
@@ -111,6 +111,29 @@ class LibraryStorageConfigTests(unittest.TestCase):
         self.assertEqual('existing.json', config['storage']['storage_classes_file'])
         self.assertEqual('multiple', config['block_backend']['name'])
         self.assertFalse(config.has_section('cloudfile_v2'))
+
+    def test_bootstrap_legacy_multi_keeps_automatic_allocator_switch(self):
+        self.conf.write_text(self.original + storage.BEGIN + '\n[cloudfile]\ns3_storage_enabled = true\n' +
+                             '[storage]\nenable_storage_classes = true\nstorage_classes_file = existing.json\n' +
+                             '[block_backend]\nname = multiple\n' + storage.END + '\n')
+        generated = ('[cloudfile]\n', 's3_storage_enabled = false\n')
+        with patch.dict(sys.modules, {'library_storage': storage}), patch.dict(os.environ, {}, clear=True):
+            self.bootstrap_writer({'CF_ENABLE_S3_STORAGE': 'false'}, generated)()
+        config = ConfigParser(interpolation=None)
+        config.read(self.conf)
+        self.assertEqual('true', config['cloudfile']['s3_storage_enabled'])
+        self.assertEqual('multiple', config['block_backend']['name'])
+
+    def test_bootstrap_without_retained_multi_keeps_switch_disabled(self):
+        self.conf.write_text(self.original + storage.BEGIN + '\n[cloudfile]\ns3_storage_enabled = true\n' +
+                             storage.END + '\n')
+        generated = ('[cloudfile]\n', 's3_storage_enabled = false\n')
+        with patch.dict(sys.modules, {'library_storage': storage}), patch.dict(os.environ, {}, clear=True):
+            self.bootstrap_writer({'CF_ENABLE_S3_STORAGE': 'false'}, generated)()
+        config = ConfigParser(interpolation=None)
+        config.read(self.conf)
+        self.assertEqual('false', config['cloudfile']['s3_storage_enabled'])
+        self.assertFalse(config.has_section('storage'))
 
     def test_bootstrap_s3_switch_without_removed_overlay_type_keeps_multi(self):
         original = self.original + storage.BEGIN + '\n[cloudfile]\nexample = true\n' + (

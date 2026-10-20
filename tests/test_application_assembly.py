@@ -80,7 +80,7 @@ class ApplicationAssemblyTests(unittest.TestCase):
         self.assertTrue((self.package / 'seahub/media/assets/frontend/static/js/old.js').exists())
 
     def test_changed_native_pin_refuses_reuse_without_creating_output(self):
-        self.manifest['sources']['seafile-server']['ref'] = 'a' * 40
+        self.manifest['sources']['seafile-server']['ref'] = 'c' * 40
         self.manifest_path.write_text(json.dumps(self.manifest))
         with self.assertRaisesRegex(ValueError, 'non-Hub'):
             self.run_assembly()

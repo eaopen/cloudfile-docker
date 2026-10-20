@@ -28,6 +28,7 @@ import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BOOTSTRAP = os.path.join(HERE, '..', 'scripts', 'scripts_14.0', 'bootstrap.py')
+sys.path.insert(0, os.path.dirname(BOOTSTRAP))
 
 failures = []
 

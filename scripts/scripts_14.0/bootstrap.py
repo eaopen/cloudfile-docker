@@ -124,27 +124,19 @@ def _replace_block(path, begin, end, body):
         with open(path, 'r') as fp:
             lines = fp.readlines()
 
-    out, skipping = [], False
-    for line in lines:
-        if line.strip() == begin:
-            skipping = True
-            continue
-        if skipping:
-            if line.strip() == end:
-                skipping = False
-            continue
-        out.append(line)
-
-    while out and out[-1].strip() == '':
-        out.pop()
-
+    # Preserve local aliases and overrides after the generated block.
+    starts = [i for i, line in enumerate(lines) if line.strip() == begin]
+    ends = [i for i, line in enumerate(lines) if line.strip() == end]
+    block = begin + '\n' + body + end + '\n'
+    if starts or ends:
+        if len(starts) != 1 or len(ends) != 1 or ends[0] < starts[0]:
+            raise ValueError('invalid generated settings markers in %s' % path)
+        updated = ''.join(lines[:starts[0]]) + block + ''.join(lines[ends[0] + 1:])
+    else:
+        updated = ''.join(lines).rstrip() + ('\n\n' if lines else '') + block
     with open(path, 'w') as fp:
-        fp.writelines(out)
-        if out:
-            fp.write('\n\n')
-        fp.write(begin + '\n')
-        fp.write(body)
-        fp.write(end + '\n')
+        fp.write(updated)
+
 
 
 def write_cloudfile_settings():
@@ -846,6 +838,12 @@ def write_cloudfile_seafile_conf():
     dir_acl_enabled -- so a new capability needs no change here.
     """
     lines = _seafile_conf_cloudfile_lines()
+    from library_storage import auto_storage_enabled, configure_auto_storage, retained_legacy_storage
+    conf_path = join(topdir, 'conf', 'seafile.conf')
+    fresh = globals().get('_cloudfile_fresh_install', False)
+    if auto_storage_enabled(conf_path, os.environ, fresh=fresh):
+        configure_auto_storage(conf_path, ''.join(lines), installdir)
+        return
 
     # Keep the S3 configuration in the same restart-safe generated block as
     # the feature switches.  The server processes need these values in
@@ -921,6 +919,9 @@ def write_cloudfile_seafile_conf():
                     if name != 'bucket':
                         lines.append('%s = %s\n' % (name, value))
 
+    if (not cf_enabled('CF_ENABLE_S3_STORAGE') or
+            not get_conf('SEAF_SERVER_STORAGE_TYPE', '').strip()):
+        lines.append(retained_legacy_storage(conf_path))
     _replace_block(join(topdir, 'conf', 'seafile.conf'),
                    CF_BEGIN, CF_END, ''.join(lines))
 
@@ -1457,6 +1458,9 @@ def apply_sso_hierarchy_schema_compatibility():
 
 
 def init_seafile_server():
+    global _cloudfile_fresh_install
+    _cloudfile_fresh_install = (not exists(join(shared_seafiledir, 'seafile-data')) or
+                               exists(join(shared_seafiledir, '.cloudfile-schema-init-pending')))
     version_stamp_file = get_version_stamp_file()
     if exists(join(shared_seafiledir, 'seafile-data')):
         if not exists(version_stamp_file):

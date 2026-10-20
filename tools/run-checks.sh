@@ -83,6 +83,10 @@ run "前端产物完整性契约" "$docker_repo/tests/tools/test-production-arti
 run "最终发布包完整性契约" "$docker_repo/tests/tools/test-release-artifact.sh"
 # Validate the exact dependency patch payload, not an unrelated local checkout.
 run "自动本地存储 Python 策略" python3 -m pytest "$docker_repo/tests/test_automatic_local_storage.py" -q
+# Table names can belong to incompatible reviewed layouts. Check actual DDL
+# and optional Checkout readers before any build; this never connects to a DB.
+run "跨仓 SQL 表结构契约" python3 "$docker_repo/tools/check-sql-contracts.py" --server "$server" --hub "$hub"
+run "SQL 结构漂移回归" python3 "$docker_repo/tests/test_sql_contracts.py" --server "$server" --hub "$hub"
 # Fresh DDL must remain resumable and must never turn restart into an upgrade.
 run "新部署 DDL 初始化" python3 -m unittest discover -s "$docker_repo/tests" -p test_fresh_schema.py -q
 run "v0.6 新安装每库独立目录 Compose 契约" python3 -m unittest discover -s "$docker_repo/tests" -p test_v06_default_library_storage.py -q

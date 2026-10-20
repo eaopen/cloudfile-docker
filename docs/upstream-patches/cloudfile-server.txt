@@ -22,6 +22,8 @@ common/obj-backend.h
 common/obj-store.c
 common/obj-store.h
 configure.ac
+# Upload repair: preserve the final Guard fence; retry only Branch-head conflicts
+# and surface Guard/schema errors immediately. Native publication owns this seam.
 fileserver/fileop.go
 fileserver/sync_api.go
 fileserver/go.mod

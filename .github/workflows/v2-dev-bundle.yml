@@ -1,10 +1,9 @@
 name: CloudFile V2 current dev source bundle
 
+# Run this integration snapshot only after the selected changes are ready.
+# Ordinary commits and documentation edits must not trigger compilation or
+# runtime test infrastructure; native builds remain separately approved.
 on:
-  push:
-    branches: [dev]
-  pull_request:
-    branches: [dev]
   workflow_dispatch:
 
 permissions:

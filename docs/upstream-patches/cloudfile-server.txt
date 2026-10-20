@@ -30,6 +30,7 @@ fileserver/go.mod
 fileserver/go.sum
 fileserver/objstore/objstore.go
 fileserver/objstore/objstore_test.go
+# Existing checkout_enabled gates Guard discovery; table presence never enables Checkout.
 fileserver/option/option.go
 include/seafile-rpc.h
 fuse/Makefile.am

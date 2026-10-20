@@ -19,21 +19,27 @@ INDEXES = {
 }
 
 
-def verify_v2_schema(connection):
+def verify_v2_schema(connection, checkout_enabled=False):
     """Check the installed core contract without CREATE, ALTER, DML or repair.
 
     This is a startup gate, not a replacement for release SQL/data validation.
-    The four-table baseline explicitly includes the optional edit table; an
-    empty Guard does not require Checkout/Checkin for ordinary file transfers.
+    The four-table baseline includes the optional edit table, but disabled
+    Checkout does not qualify or require that table for ordinary file transfers.
     """
     with connection.cursor() as cursor:
         # Legacy tables are migration inputs/archives, never runtime fallbacks.
         # Reject mixed databases even when the four new tables themselves match.
         cursor.execute("SELECT TABLE_NAME FROM information_schema.TABLES "
                        "WHERE TABLE_SCHEMA=DATABASE() AND LOWER(LEFT(TABLE_NAME,2))='cf'")
-        if {row[0] for row in cursor.fetchall()} != set(COLUMNS):
-            raise ValueError('runtime database must contain exactly the four approved CloudFile tables')
+        installed = {row[0] for row in cursor.fetchall()}
+        required = set(COLUMNS) if checkout_enabled else set(COLUMNS) - {'cf_edit_guard'}
+        if not required <= installed or installed - set(COLUMNS):
+            raise ValueError('runtime database contains missing core or unapproved CloudFile tables')
         for table, names in COLUMNS.items():
+            # An unfinished, disabled Checkout must never prevent file service
+            # startup because its Guard is missing or has an incompatible shape.
+            if table == 'cf_edit_guard' and not checkout_enabled:
+                continue
             cursor.execute('SELECT ENGINE,TABLE_COLLATION FROM information_schema.TABLES '
                            'WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=%s', (table,))
             if cursor.fetchall() != (('InnoDB', 'utf8mb4_bin'),):
@@ -75,7 +81,10 @@ def verify_development_schema(installdir=None, environment=None):
             database=environment.get('SEAFILE_MYSQL_DB_SEAFILE_DB_NAME', 'seafile_db'),
             charset='utf8mb4', autocommit=True, connect_timeout=5,
         )
-        verify_v2_schema(connection)
+        requested = str(environment.get('CF_ENABLE_CHECKOUT', 'false')).lower()
+        if requested not in ('true', 'false'):
+            raise ValueError('invalid Checkout setting')
+        verify_v2_schema(connection, checkout_enabled=requested == 'true')
     except Exception:
         # Driver details may contain credentials. Never invoke a legacy runner
         # or restore old fields when this fails: use the fixed release SQL pack.

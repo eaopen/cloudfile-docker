@@ -46,15 +46,22 @@ class DevelopmentSchemaTest(unittest.TestCase):
         cursor = ReadOnlyCursor()
         connection = Mock(); connection.cursor.return_value = cursor
         SCHEMA.verify_v2_schema(connection)
-        self.assertEqual(len(cursor.calls), 13)
+        self.assertEqual(len(cursor.calls), 10)
         connection.commit.assert_not_called()
         connection.rollback.assert_not_called()
 
     def test_old_layout_hash_and_missing_index_fail_without_repair(self):
         for defect in ('old_guard', 'text_hash', 'missing_index', 'legacy_table'):
             connection = Mock(); connection.cursor.return_value = ReadOnlyCursor(defect)
-            with self.assertRaises(ValueError): SCHEMA.verify_v2_schema(connection)
+            with self.assertRaises(ValueError): SCHEMA.verify_v2_schema(connection, checkout_enabled=True)
             connection.commit.assert_not_called()
+
+    def test_disabled_checkout_ignores_guard_layout_and_index(self):
+        for defect in ('old_guard', 'missing_index'):
+            cursor = ReadOnlyCursor(defect)
+            connection = Mock(); connection.cursor.return_value = cursor
+            SCHEMA.verify_v2_schema(connection)
+            self.assertEqual(len(cursor.calls), 10)
 
     def test_connection_failure_is_sanitized_and_requires_sql(self):
         driver = ModuleType('pymysql'); driver.connect = Mock(side_effect=RuntimeError('private-fixture-value'))

@@ -310,30 +310,14 @@ def _settings_block_sso():
         if login_id_claim and login_id_claim not in attribute_map:
             attribute_map[login_id_claim] = (False, 'login_id')
 
-        # EAP uses a verified business UID, not the employee number, in Profile.
-        # Keep the bridge opt-in because generic OAuth providers lack this claim.
-        eap_identity = boolean('CF_SSO_EAP_PROFILE_IDENTITY', 'false')
-        if eap_identity:
-            if uid_claim != 'sub' or login_id_claim != 'userId' or 'openid' not in scope:
-                raise Exception('EAP identity requires sub, userId and openid')
-            attribute_map['userId'] = (True, 'login_id')
-            attribute_map['preferred_username'] = (True, 'employee_no')
-            lines += [
-                'CF_SSO_EAP_OIDC_ISSUER = %r' % endpoint('CF_SSO_EAP_OIDC_ISSUER'),
-                'CF_SSO_EAP_OIDC_JWKS_URL = %r' % endpoint('CF_SSO_EAP_OIDC_JWKS_URL'),
-            ]
-        else:
-            # 2026-10-13：EAP 的会话校验（AuthentikSupport.verifyCloudFileIdentity /
-            # verifyCookieIdentity）要求 Profile.login_id == EAP 业务 UID。未启用桥接时
-            # 该字段取自下面配置的 login_id claim（取值由 IdP 决定）或根本没有来源，
-            # 两者都无法保证是业务 UID —— 口径不齐会让 SSO 旁路静默失败。
-            # 这里只告警不改生成结果：非 EAP 的通用 OIDC 部署仍可照常运行。
-            logwarning('CF_SSO_EAP_PROFILE_IDENTITY is off: Profile.login_id is %s, which cannot be '
-                       'guaranteed to be the EAP business UID. Enable the EAP identity bridge '
-                       'for EAP deployments.'
-                       % ('taken from the %r claim' % login_id_claim if login_id_claim
-                          else 'left unset'))
-        lines.append('CF_SSO_EAP_PROFILE_IDENTITY = %r' % eap_identity)
+        # V2 provisions through trusted Directory; the retired bridge must stay off.
+        if boolean('CF_SSO_EAP_PROFILE_IDENTITY', 'false'):
+            raise Exception('CF_SSO_EAP_PROFILE_IDENTITY is retired; keep false and '
+                            'use trusted Directory identity preparation')
+        lines.append('CF_SSO_EAP_PROFILE_IDENTITY = False')
+        if login_id_claim == 'login_id':
+            logwarning('For Etech set CF_SSO_OAUTH_LOGIN_ID_CLAIM=userId; '
+                       'Profile.login_id must contain the business UID')
 
         lines += [
             'ENABLE_OAUTH = True',

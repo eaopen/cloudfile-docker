@@ -21,7 +21,7 @@ cloudfile-docker   构建、镜像、部署与跨仓规格
 | 类型 | 命名 | 起点与去向 |
 |---|---|---|
 | 唯一开发主线 | `dev` | 三仓当前均代表 V2；不再另开 dev2/dev3/dev14 |
-| 新特性 | `feature/v2/<work>-<topic>` | 从各仓 `dev` 创建，只建确有改动的仓；测试后合回各仓 `dev` |
+| 新特性 | `feat/v2/<work>-<topic>` | 从各仓 `dev` 创建，只建确有改动的仓；测试后合回各仓 `dev` |
 | 修复 | `fix/v2/<work>-<topic>` | 从 `dev` 创建；修复完成后删除 |
 | 文档 | `docs/v2/<topic>` | 从 `dev` 创建；不混入运行代码 |
 | 同步上游 | `sync/ce14/<YYYYMMDD>` | 在受影响仓从 `dev` 创建，更新 CE anchor 后删除 |
@@ -30,7 +30,7 @@ cloudfile-docker   构建、镜像、部署与跨仓规格
 | 遗留维护 | `maintenance/v0.9/<topic>` | 仅从 V0.9 归档建立，不直接合入 V2；所需修复单独移植 |
 | 只读来源 | `archive/*`、`seafile/*` | 历史 / 上游，不接受常规开发提交 |
 
-`<work>` 可以是 Issue ID 或统一短工作编号；跨仓任务使用同一 ID 和语义（例如 `feature/v2/cf-123-local-object-staging`）。同名仅用于识别任务，**不能当成版本兼容证明**。历史在途分支不强制改名，先完成现有 PR 再按新命名执行。
+`<work>` 可以是 Issue ID 或统一短工作编号；跨仓任务使用同一 ID 和语义（例如 `feat/v2/cf-123-local-object-staging`）。同名仅用于识别任务，**不能当成版本兼容证明**。历史在途分支不强制改名，先完成现有 PR 再按新命名执行。
 
 长期客户定制与产品主线隔离，不能用未经验证的长期 `feature/*` 来充当可发布版本。
 
@@ -47,8 +47,8 @@ cloudfile-docker   构建、镜像、部署与跨仓规格
 
 ## 旧分支退役检查（2026-10-20 快照）
 
-- `dev2-clean`、`dev14` 在三仓均是 `dev` 的祖先：确认引用后归档/删除，不作为新任务起点；`v2-clean.yml` 当前还将 `dev2-clean` 写在触发分支中。
-- `dev2` 在三仓均与 `dev` 分叉，不得整枝合入。已有 `archive/dev2-m1-20261016` 与各仓当前 `dev2` 指向同一 SHA，仍须盘点未移植改动后清理旧别名。
+- `dev2-clean` 在三仓均是 `dev` 的祖先，已于 2026-10-20 迁移到 `archive/dev2-clean-20261020` 并移除原分支。`dev14` 仍存在，按引用复核后再处理；`v2-clean.yml` 当前仍有过期的 `dev2-clean` 触发名，需单独修复。
+- `dev2` 在三仓均与 `dev` 分叉，不得整枝合入。已于 2026-10-20 创建 `archive/dev2-retired-20261020`，确认 SHA 与 `archive/dev2-m1-20261016` / 原 `dev2` 一致，再移除原 `dev2` 分支。独有提交仅供历史移植评估。
 - `archive/v0.9-dev-20261016` 保留为旧版来源，`feature/v09-directory-access` 不可直接合并进当前 V2。
 - Hub 旧 `feature/v2-*`、`fix/v2-*` 的未合入提交及开放 PR 必须逐个核对；需要的能力重新从 `dev` 派生，不做自动批量合并或删除。
 - `seafile/*`、`master`、`seahub-ce` 等上游来源按照用途保留，不因名称看起来“旧”就删除。

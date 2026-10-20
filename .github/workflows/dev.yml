@@ -58,5 +58,5 @@ jobs:
 
       - name: Test source selection rules without building images
         run: |
-          python3 -m unittest discover -s tests -p test_v2_source_assembly.py -q
-          python3 -m unittest discover -s tests -p test_v2_build_policy.py -q
+          python3 -m unittest discover -s tests -p test_build_receipt.py -q
+          python3 -m unittest discover -s tests -p test_current_build_policy.py -q

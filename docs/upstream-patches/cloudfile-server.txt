@@ -59,3 +59,4 @@ common/user-mgr.c
 common/user-mgr.h
 
 fileserver/fileserver.go
+server/gc/seafile-session.c

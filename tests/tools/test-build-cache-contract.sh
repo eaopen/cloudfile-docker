@@ -30,7 +30,7 @@ require_text "$container_script" 'all|backend|frontend|package'
 require_text "$build_script" 'function export_backend_artifact()'
 require_text "$build_script" 'function export_frontend_artifact()'
 require_text "$build_script" 'CF_BUILD_TARGET == package'
-require_text "$build_script" "manifest_get_optional 'server_commit'"
+require_text "$build_script" 'build_receipt.py'
 
 fingerprint_body=$(sed -n \
     '/^function frontend_fingerprint()/,/^}/p' "$build_script")

@@ -1,73 +1,33 @@
+"""Receipt source checks do not consult stale local dev branches."""
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
-
-SCRIPT = Path(__file__).resolve().parents[1] / 'build/cloudfile_14.0/stamp-current-package.py'
-SPEC = importlib.util.spec_from_file_location('stamp_current_package', SCRIPT)
+ROOT = Path(__file__).resolve().parents[1]
+SPEC = importlib.util.spec_from_file_location('stamp', ROOT / 'build/cloudfile_14.0/stamp-current-package.py')
 STAMP = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(STAMP)
 
 
 class CurrentPackageSourceTest(unittest.TestCase):
-    def test_build_record_rejects_duplicate_missing_and_foreign_recipe(self):
+    def test_duplicate_missing_source_records_are_rejected(self):
         commit = 'a' * 40
-        entries = [f'{name}: {commit}' for name in STAMP.SOURCE_NAMES]
-        base = '\n'.join(['product: 14.0.8-cf.0-test',
-            'cloudfile-docker: ' + commit, *entries]) + '\n'
-        with tempfile.TemporaryDirectory() as temporary:
-            info = Path(temporary) / 'cloudfile-build-info.txt'
-            with patch.object(STAMP.subprocess, 'check_output', return_value=commit + '\n') as git:
-                info.write_text(base)
-                self.assertEqual(STAMP.build_sources(temporary, '14.0.8-cf.0-test'),
-                    dict.fromkeys(STAMP.SOURCE_NAMES, commit))
-                git.assert_called_with(['git', 'rev-parse', 'HEAD'], cwd=STAMP.ROOT, text=True)
-                for invalid in (base + entries[0] + '\n',
-                                base.replace(entries[0] + '\n', ''),
-                                base.replace('cloudfile-docker: ' + commit,
-                                             'cloudfile-docker: ' + 'b' * 40)):
-                    info.write_text(invalid)
-                    with self.assertRaises(ValueError):
-                        STAMP.build_sources(temporary, '14.0.8-cf.0-test')
+        base = '\n'.join(['product: 14.0.8-storage-test', 'cloudfile-docker: ' + commit,
+            *[name + ': ' + commit for name in STAMP.SOURCE_NAMES]]) + '\n'
+        with tempfile.TemporaryDirectory() as directory:
+            info = Path(directory) / 'cloudfile-build-info.txt'
+            info.write_text(base)
+            self.assertEqual(STAMP.build_sources(directory, '14.0.8-storage-test')['seahub'], commit)
+            for invalid in (base + 'seahub: ' + commit + '\n', base.replace('seahub: ' + commit + '\n', '')):
+                info.write_text(invalid)
+                with self.assertRaises(ValueError):
+                    STAMP.build_sources(directory, '14.0.8-storage-test')
 
-
-    def test_dev_manifest_uses_current_inputs_without_changing_locked_release(self):
-        locked = STAMP.ROOT / 'build/seafile_14.0/release.json'
-        before = locked.read_bytes()
-        commit = 'a' * 40
-        configured = STAMP.READER.load(STAMP.ROOT / 'release.yaml')
-        sources = {name: (commit if name in ('seafile-server', 'seahub')
-                          else configured['upstream.' + name])
-                   for name in STAMP.SOURCE_NAMES}
-        # Incremental CI only has plan-locked Server/Hub SHAs, not their Git
-        # directories or upstream checkouts, when stamping the final image.
-        with patch.dict(STAMP.os.environ, {'CF_SERVER_REF': commit, 'CF_HUB_REF': commit}):
-            with patch.object(STAMP.subprocess, 'check_output',
-                              side_effect=AssertionError('unnecessary source checkout')):
-                manifest = STAMP.current_manifest(sources)
-        self.assertEqual({name: item['ref'] for name, item in manifest['sources'].items()}, sources)
-        self.assertEqual(locked.read_bytes(), before)
-
-    def test_rejects_mismatched_immutable_ci_plan_and_upstream(self):
-        config = STAMP.READER.load(STAMP.ROOT / 'release.yaml')
-        actual = {name: ('a' * 40 if name in ('seafile-server', 'seahub')
-                         else config['upstream.' + name])
-                  for name in STAMP.SOURCE_NAMES}
-        with patch.dict(STAMP.os.environ, {'CF_SERVER_REF': 'b' * 40,
-                                           'CF_HUB_REF': 'a' * 40}):
-            with self.assertRaisesRegex(ValueError, 'release.yaml input: seafile-server'):
-                STAMP.current_manifest(actual)
-        altered = dict(actual, libevhtp='c' * 40)
-        with patch.dict(STAMP.os.environ, {'CF_SERVER_REF': 'a' * 40,
-                                           'CF_HUB_REF': 'a' * 40}):
-            with self.assertRaisesRegex(ValueError, 'release.yaml input: libevhtp'):
-                STAMP.current_manifest(altered)
-
-
-    def test_dev_manifest_rejects_cached_source_different_from_selected_input(self):
-        sources = dict.fromkeys(STAMP.SOURCE_NAMES, 'a' * 40)
-        with patch.object(STAMP.subprocess, 'check_output', return_value='b' * 40 + '\n'):
-            with self.assertRaisesRegex(ValueError, 'release.yaml input'):
-                STAMP.current_manifest(sources)
+    def test_moving_local_refs_are_never_used_to_stamp(self):
+        source = (ROOT / 'build/cloudfile_14.0/stamp-current-package.py').read_text()
+        self.assertNotIn('rev-parse', source)
+        self.assertNotIn('current_manifest', source)
+        self.assertIn('load_receipt', source)

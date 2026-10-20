@@ -49,9 +49,19 @@ def validate_override(path, expected_commit):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("path")
-    parser.add_argument("expected_commit")
+    parser.add_argument("expected_commit", nargs="?")
+    parser.add_argument("--receipt", help="Generated receipt, never branch configuration")
+    parser.add_argument("--source", choices=("seafile-server", "seahub"))
     arguments = parser.parse_args()
-    print(validate_override(arguments.path, arguments.expected_commit))
+    expected = arguments.expected_commit
+    if arguments.receipt:
+        from source_manifest import load_manifest
+        if not arguments.source:
+            parser.error("--source is required with --receipt")
+        expected = load_manifest(arguments.receipt)["sources"][arguments.source]["ref"]
+    if expected is None:
+        parser.error("a receipt or an immutable expected commit is required")
+    print(validate_override(arguments.path, expected))
 
 
 if __name__ == "__main__":

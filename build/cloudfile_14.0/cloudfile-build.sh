@@ -16,7 +16,7 @@
 #   CF_SERVER_REF=feature/my-branch ./cloudfile-build.sh 14.0.0-cf.0
 #   CF_BUILD_JOBS=8 ./cloudfile-build.sh 14.0.0-cf.0   (parallel C/Go jobs)
 
-set -e
+set -euo pipefail
 
 if [[ $# != 1 ]]; then
     echo ''
@@ -56,18 +56,31 @@ function manifest_get_optional() {
     python3 "${current_dir}/read-manifest.py" "$manifest" "$1" 2>/dev/null || true
 }
 
-cloudfile_server_url=${CF_SERVER_URL:-$(manifest_get 'forks.cloudfile_server.url')}
-cloudfile_hub_url=${CF_HUB_URL:-$(manifest_get 'forks.cloudfile_hub.url')}
-manifest_server_commit=$(manifest_get_optional 'server_commit')
-manifest_hub_commit=$(manifest_get_optional 'hub_commit')
-cloudfile_server_ref=${CF_SERVER_REF:-${manifest_server_commit:-$(manifest_get 'forks.cloudfile_server.ref')}}
-cloudfile_hub_ref=${CF_HUB_REF:-${manifest_hub_commit:-$(manifest_get 'forks.cloudfile_hub.ref')}}
-
-seafobj_ref=${CF_SEAFOBJ_REF:-$(manifest_get 'upstream.seafobj')}
-seafdav_ref=${CF_SEAFDAV_REF:-$(manifest_get 'upstream.seafdav')}
-seafevents_ref=${CF_SEAFEVENTS_REF:-$(manifest_get 'upstream.seafevents')}
-libsearpc_ref=${CF_LIBSEARPC_REF:-$(manifest_get 'upstream.libsearpc')}
-libevhtp_ref=${CF_LIBEVHTP_REF:-$(manifest_get 'upstream.libevhtp')}
+receipt_tool="$repo_root/build/seafile_14.0/build_receipt.py"
+receipt=${CF_BUILD_RECEIPT:-$current_dir/build-receipt.json}
+if [[ -z ${CF_BUILD_RECEIPT:-} ]]; then
+    args=(--manifest "$manifest" --version "$version" --output "$receipt")
+    for component in SERVER HUB DOCKER; do
+        key="CF_${component}_REF"
+        option=$(printf '%s' "$component" | tr '[:upper:]' '[:lower:]')
+        [[ -z ${!key:-} ]] || args+=("--${option}-ref" "${!key}")
+    done
+    python3 "$receipt_tool" resolve "${args[@]}"
+fi
+export CF_BUILD_RECEIPT="$receipt"
+python3 "$receipt_tool" verify "$receipt" --version "$version" >/dev/null
+locked_manifest="$repo_root/build/seafile_14.0/release.json"
+python3 "$receipt_tool" lock "$receipt" "$locked_manifest"
+lock_reader="$repo_root/build/seafile_14.0/source_manifest.py"
+cloudfile_server_url=${CF_SERVER_URL:-$(python3 "$lock_reader" "$receipt" url seafile-server)}
+cloudfile_hub_url=${CF_HUB_URL:-$(python3 "$lock_reader" "$receipt" url seahub)}
+cloudfile_server_ref=$(python3 "$lock_reader" "$receipt" ref seafile-server)
+cloudfile_hub_ref=$(python3 "$lock_reader" "$receipt" ref seahub)
+seafobj_ref=$(python3 "$lock_reader" "$receipt" ref seafobj)
+seafdav_ref=$(python3 "$lock_reader" "$receipt" ref seafdav)
+seafevents_ref=$(python3 "$lock_reader" "$receipt" ref seafevents)
+libsearpc_ref=$(python3 "$lock_reader" "$receipt" ref libsearpc)
+libevhtp_ref=$(python3 "$lock_reader" "$receipt" ref libevhtp)
 
 # ============================================================================
 # 分层构建（layered build）
@@ -381,27 +394,14 @@ function checkout_ref() {
         git clean -xfd
     fi
 
-    # Five upstream components are immutable full SHAs. Once their objects are
-    # present, fetching the same repositories on every build only adds network
-    # latency. Fork refs are branches, so they still fetch on every run and can
-    # never silently reuse a stale local branch.
-    if [[ $ref =~ ^[0-9a-fA-F]{40}$ ]] && git cat-file -e "${ref}^{commit}" 2>/dev/null; then
-        echo "Using locally cached commit ${ref}"
-    elif git fetch --no-tags origin "$ref"; then
-        target=FETCH_HEAD
-    else
-        # Compatibility fallback for servers that reject fetching a raw SHA or
-        # require tags to be advertised before the ref can be resolved.
-        git fetch --tags origin
-        if git show-ref --verify --quiet "refs/remotes/origin/${ref}"; then
-            target="origin/${ref}"
-        fi
+    # Branches were resolved before any build. Cached objects are safe only
+    # when they match that exact receipt SHA. A failed fetch has no fallback.
+    [[ $ref =~ ^[0-9a-f]{40}$ ]] || { echo "Unresolved build input: $dir" >&2; exit 2; }
+    if ! git cat-file -e "${ref}^{commit}" 2>/dev/null; then
+        git fetch --no-tags origin "$ref"
     fi
-    if ! git checkout --detach "$target" 2>/dev/null; then
-        # A SHA that predates the shallow fetch, or a branch not yet local.
-        git fetch origin "$ref"
-        git checkout --detach FETCH_HEAD
-    fi
+    git checkout --detach "$ref"
+    [[ $(git rev-parse HEAD) == "$ref" ]] || exit 2
     cd "${code_path}"
 }
 
@@ -426,6 +426,15 @@ function fetch() {
     checkout_ref seafile-server "$cloudfile_server_ref"
     checkout_ref seahub         "$cloudfile_hub_ref"
 
+    # Capture pristine receipt-matched sources before approved dependency
+    # patches and generated build files modify the worktrees.
+    python3 - "$receipt" "$code_path" "$current_dir/captured-sources.json" "$repo_root" <<'PY_CAPTURE'
+import json, sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[4]) / 'build/seafile_14.0'))
+from package_provenance import capture_sources
+Path(sys.argv[3]).write_text(json.dumps(capture_sources(sys.argv[1], sys.argv[2])))
+PY_CAPTURE
     # Python readers must resolve the same automatic per-key roots as C/Go.
     apply_patches seafobj
     apply_patches seafdav
@@ -473,16 +482,26 @@ function write_build_info() {
     # A cached distribution may already carry a provenance record from an
     # earlier recipe commit. Rewriting build-info invalidates that record;
     # the image builder must verify and stamp the current bytes again.
+    if [[ -e "${package_dir}/cloudfile-build.json" || -L "${package_dir}/cloudfile-build.json" ]]; then
+        python3 "$repo_root/build/seafile_14.0/package_provenance.py" "$package_dir" "$receipt" >/dev/null
+    fi
     rm -f "${package_dir}/cloudfile-build.json"
     {
         echo "product: ${version}"
         echo "architecture: $(uname -m)"
         echo "jobs: ${CF_BUILD_JOBS}"
-        echo "cloudfile-docker: $(git -C "$repo_root" rev-parse HEAD)"
+        echo "cloudfile-docker: $(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["lock"]["docker_commit"])' "$receipt")"
         for d in seafile-server seahub seafobj seafdav seafevents libsearpc libevhtp; do
             echo "${d}: $(git -C "${code_path}/${d}" rev-parse HEAD)"
         done
     } > "$out"
+    python3 - "$package_dir" "$receipt" "$current_dir/captured-sources.json" "$repo_root" <<'PY_STAMP'
+import json, sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[4]) / 'build/seafile_14.0'))
+from package_provenance import write_provenance
+write_provenance(sys.argv[1], json.loads(Path(sys.argv[3]).read_text()), sys.argv[2])
+PY_STAMP
     echo ''
     cat "$out"
 }
@@ -742,6 +761,7 @@ function dist_fingerprint() {
         echo "arch: $(uname -m)"
         echo "script: $(sha256sum "${current_dir}/cloudfile-build.sh" | cut -d' ' -f1)"
         echo "builder: $(sha256sum "${current_dir}/cloudfile-build.py" | cut -d' ' -f1)"
+        python3 -c 'import json,sys; print("docker-recipe=" + json.load(open(sys.argv[1]))["lock"]["docker_commit"])' "$receipt"
     } | sha256sum | cut -d' ' -f1
 }
 
@@ -927,6 +947,11 @@ layer_start 2 source "克隆并检出七个组件（commit 锁定）"
 clone_code
 fetch
 layer_done source
+
+if [[ $CF_BUILD_TARGET == all || $CF_BUILD_TARGET == backend ]]; then
+    # Even cached builds need evidence attached to this build's receipt.
+    bash "$current_dir/run-storage-tests.sh" "$receipt" "$code_path/seafile-server"
+fi
 
 if [[ $CF_BUILD_TARGET == backend ]]; then
     layer_start 3 backend "C/Go 编译（独立进程，不与前端构建争抢内存）"

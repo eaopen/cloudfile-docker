@@ -61,6 +61,14 @@ class PackageProvenanceTests(unittest.TestCase):
             self.stamp()
         self.assertFalse((self.package / RECORD_NAME).exists())
 
+    def test_missing_web_entrypoint_is_rejected_before_image_assembly(self):
+        # A valid dependency import tree can still omit pip's console scripts.
+        # Check the actual launcher required by seahub.sh, before deployment.
+        (self.package / 'seahub/thirdpart/bin/gunicorn').unlink()
+        with self.assertRaisesRegex(ValueError, 'seahub/thirdpart/bin/gunicorn'):
+            self.stamp()
+        self.assertFalse((self.package / RECORD_NAME).exists())
+
     def test_changed_manifest_cannot_relabel_old_package(self):
         self.stamp()
         self.manifest["sources"]["seahub"]["ref"] = "a" * 40

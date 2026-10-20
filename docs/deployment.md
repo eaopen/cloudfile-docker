@@ -75,13 +75,21 @@ docker compose logs -f cloudfile
 
 核心栈包括 `cloudfile`、`db`、`cache` 和 `proxy`。首次启动会初始化数据库与 Seafile
 配置；`scripts/scripts_14.0/start.py` 在每次启动时重写带 `CF_BEGIN`/`CF_END` 标记的
-CloudFile 配置块，并幂等应用 `cloudfile.sql`。
+CloudFile 配置块。**当前 V2 不再自动执行历史 `cloudfile.sql`、001–042 版本化建表器和旧审计表建表器。**
 
-新部署在启动 Server/Hub 前使用随镜像交付的版本化 schema runner 创建并校验当前
-DDL（包括资源表、统一编辑锁表及迁移记录），避免只创建旧集成表而遗漏写入屏障依赖。
-初始化意图保存在共享卷 `.cloudfile-schema-init-pending`；失败时停止启动并保留标记，
-重启后按正式 runner 的断点继续。既有数据目录且无该标记时不自动升级。
-文件锁与 Checkout 仍默认关闭，建表不代表启用能力。
+**仅全新安装**从 Server 随发行包交付的 `cloudfile-v2.sql` 建立三张核心表
+(`cf_library_storage`、`cf_dir_acl`、`cf_sso_group_map`)；
+明确启用了 `CF_ENABLE_CHECKOUT` 或 `CF_ENABLE_FILE_LOCK` 时，额外使用
+`cloudfile-v2-edit.sql` 建立当前单表 `cf_edit_guard`。
+初始化意图保存在共享卷 `.cloudfile-schema-init-pending`；失败停止启动并保留标记，
+不自动重放旧迁移，也不自动改写已有数据目录。
+
+**已有部署先运行只读结构盘点**，不要靠重新启动覆盖旧 Guard。检查命令：
+`python3 /scripts/cloudfile-v2-schema.py plan`，也可使用 `check` 获得非零退出状态。
+如果旧 `cf_edit_guard` 仍使用 `lifecycle_ref` / `lease_until` 等字段，
+Go 文件服务会明确以 `CF_EDIT_SCHEMA_MISMATCH` 拒绝启动，而不是让普通上传因
+SQL 1176 反复重试。完整停机、备份、数据审查和人工迁移边界见
+[当前 V2 数据库迁移说明](v2-schema-recovery.md)。
 
 ## 可选 profile
 

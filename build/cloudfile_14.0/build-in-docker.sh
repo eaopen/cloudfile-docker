@@ -197,7 +197,7 @@ docker run --rm -i "${pull_arg[@]}" \
     bash -c "
         set -e
         export TZ=Etc/UTC
-        git config --global --add safe.directory '*'
+        git -C /tmp config --global --add safe.directory '*'
         ccache --zero-stats
         trap 'ccache --show-stats || true' EXIT
         ./cloudfile-build.sh '$version'

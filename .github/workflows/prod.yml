@@ -111,7 +111,7 @@ jobs:
           docker run --rm --privileged --pull=never \
             -v "$PWD/cloudfile-docker:/work" -v "$PWD/cloudfile-server:/server:ro" \
             -e CF_TEST_BIND_MOUNTS=1 -w /work cloudfile-build-base:ce14-v2 \
-            bash -ec 'git config --global --add safe.directory "*"; bash build/cloudfile_14.0/run-storage-tests.sh build/cloudfile_14.0/build-receipt.json /server'
+            bash -ec 'git -C /tmp config --global --add safe.directory "*"; bash build/cloudfile_14.0/run-storage-tests.sh build/cloudfile_14.0/build-receipt.json /server'
       - uses: actions/upload-artifact@v4
         if: always()
         with:

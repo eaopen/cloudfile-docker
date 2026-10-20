@@ -30,10 +30,12 @@ esac
 
 here=$(cd "$(dirname "$0")" && pwd)
 repo_root=$(cd "$here/.." && pwd)
-# The old CE14 release.yaml and build path do not assemble V2 source-set.
-# Reject a plausible but incorrect V2-dev image before touching any registry.
-if [[ $(git -C "$repo_root" symbolic-ref --quiet --short HEAD 2>/dev/null || true) == dev ]]; then
-    echo "CloudFile dev is V2; this script packages legacy CE14 source. Use reviewed legacy maintenance/archive or a separately validated V2 release." >&2
+# This command intentionally packages the historical recipe only. Require
+# an explicit maintenance branch even for push-only mode or detached HEAD;
+# never let an old recipe package current dev just because the checkout moved.
+docker_branch=$(git -C "$repo_root" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+if [[ "$docker_branch" != maintenance/v0.9/* ]]; then
+    echo "Historical release requires an approved maintenance/v0.9/* Docker branch; current dev and detached refs are refused." >&2
     exit 2
 fi
 workspace=$(cd "$repo_root/.." && pwd)
@@ -41,6 +43,19 @@ server_repo=$workspace/cloudfile-server
 hub_repo=$workspace/cloudfile-hub
 manifest=$repo_root/release.yaml
 reader=$repo_root/build/cloudfile_14.0/read-manifest.py
+server_pin=$(python3 "$reader" "$manifest" server_commit)
+hub_pin=$(python3 "$reader" "$manifest" hub_commit)
+docker_pin=$(python3 "$reader" "$manifest" docker_commit)
+for pin in "$server_pin" "$hub_pin" "$docker_pin"; do
+    [[ "$pin" =~ ^[0-9a-f]{40}$ ]] || {
+        echo "Historical release requires explicit immutable server/hub/docker commits." >&2
+        exit 2
+    }
+done
+[[ "$docker_pin" == "$(git -C "$repo_root" rev-parse HEAD)" ]] || {
+    echo "Historical Docker checkout differs from frozen commit." >&2
+    exit 2
+}
 dist=$repo_root/build/cloudfile_14.0/seafile-server-$version
 local_image=$(python3 "$reader" "$manifest" image)
 local_image=${local_image%%:*}:$version
@@ -110,11 +125,10 @@ if [[ $mode != push ]]; then
         echo "Updating $(basename "$repo") ($branch)"
         git_at "$repo" pull --ff-only origin "$branch"
     done
-    server_ref=$(python3 "$reader" "$manifest" forks.cloudfile_server.ref)
-    hub_ref=$(python3 "$reader" "$manifest" forks.cloudfile_hub.ref)
-    [[ $(git_at "$server_repo" symbolic-ref --short HEAD) == "$server_ref" &&
-       $(git_at "$hub_repo" symbolic-ref --short HEAD) == "$hub_ref" ]] || {
-        echo "Local Server/Hub branches differ from release.yaml refs." >&2
+    [[ $(git_at "$server_repo" rev-parse HEAD) == "$server_pin" &&
+       $(git_at "$hub_repo" rev-parse HEAD) == "$hub_pin" &&
+       $(git_at "$repo_root" rev-parse HEAD) == "$docker_pin" ]] || {
+        echo "Historical checkout differs from frozen Server/Hub/Docker commit; do not build floating dev." >&2
         exit 2
     }
     if [[ ${CF_FORCE_REBUILD:-0} != 1 ]] && can_reuse_build; then

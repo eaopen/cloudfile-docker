@@ -112,11 +112,11 @@ jobs:
           path: cloudfile-docker
           fetch-depth: 1
 
-      - name: Reject legacy production packaging on V2 dev
+      - name: Restrict the historical release recipe to explicit maintenance refs
         shell: bash
         run: |
-          if [[ "$GITHUB_REF_NAME" == "dev" ]]; then
-            echo "::error::CloudFile dev is V2. This workflow packages the historical CE14 extension recipe; run a reviewed maintenance/archive ref for legacy versions, or use a separate approved V2 release path."
+          if [[ "$GITHUB_REF_NAME" != maintenance/v0.9/* ]]; then
+            echo "::error::Historical packaging is allowed only from an explicitly approved maintenance/v0.9/* ref; never from CloudFile dev or a detached feature snapshot."
             exit 2
           fi
 
@@ -124,14 +124,21 @@ jobs:
         id: refs
         working-directory: cloudfile-docker
         run: |
-          server_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml server_commit || true)
-          hub_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml hub_commit || true)
-          if [[ -z $server_ref ]]; then
-            server_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_server.ref)
-          fi
-          if [[ -z $hub_ref ]]; then
-            hub_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_hub.ref)
-          fi
+          server_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml server_commit)
+          hub_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml hub_commit)
+          docker_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml docker_commit)
+          # A legacy maintenance build must never fall back to the current
+          # floating dev branches after changing only the Docker ref.
+          for pin in "$server_ref" "$hub_ref" "$docker_ref"; do
+            if [[ ! $pin =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::Historical release requires all three immutable *_commit pins"
+              exit 2
+            fi
+          done
+          [[ $docker_ref == "$(git rev-parse HEAD)" ]] || {
+            echo "::error::Historical Docker commit differs from frozen release manifest"
+            exit 2
+          }
           echo "server_ref=$server_ref" >> "$GITHUB_OUTPUT"
           echo "hub_ref=$hub_ref" >> "$GITHUB_OUTPUT"
 

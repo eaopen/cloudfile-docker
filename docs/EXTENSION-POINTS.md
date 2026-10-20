@@ -76,6 +76,7 @@ seasearch、Elasticsearch、企业自有检索服务都可以是同一个 kind �
 | 扩展点 | 上游调用点 | 基线行为 |
 |---|---|---|
 | `CfPermFunc` | `rpc-service.c` 的 `check_permission_by_path` | 透传原生权限 |
+| `CfShareGrantFunc` | `rpc-service.c` 的 `check_permission_by_path`，**仅当原生库权限为空** | 不注册 → 原生拒绝照旧 |
 | `CfDirentFilterFunc` | `rpc-service.c` 的目录列举 RPC 出口 | 不过滤 |
 | `CfRestrictedFunc` | `cf_find_restricted_path` RPC → 同步 / 打包下载 | 返回 NULL（子树全可达） |
 | `CfFileOpPrepareFunc` | `repo-op.c` 全部 19 个写入口；Go 写入口经 `cf_fileop_prepare` RPC | 放行 |
@@ -106,6 +107,23 @@ provider 无法把它放宽回来（`:106-107`）。所以这条 Hook **结构�
 `cf_policy_check_read()` 的语义：它以 `ce_permission=0` 表示**合法非成员**，由 scoped
 core 依据适用的目录 ACL/共享授予资格（`server/cloudfile-policy.h:48-56`）。给
 `cf_ext_check_permission` 补 SQL 字段永远得不到这个效果——它在第一步就已经返回了。
+
+**同一件事在原生写入口上另有一条缝：`CfShareGrantFunc`（2026-10-20）。**
+`cf_ext_check_permission` 的链救不了写侧是有原因的，把它掰过来代价更大：
+链的语义是"从原生权限出发收紧"，而非成员的共享是"从零开始给资格"，两者混在一起
+就没法再断言"每个 provider 只收紧"。所以写侧用一条**明说的、单独的**缝：
+
+- `seafile_check_permission_by_path()` 在原生库权限为空时（且**不是** RPC 失败）才问
+  `cf_ext_share_grant()`，它返回该**精确路径**上的 `r`/`rw`，永不返回 `admin`；
+- 库根与任何未共享路径一律不放行，答案由 `cf_v2_share.c` 向 Hub 的
+  `/cloudfile/acl/check/` 求证（同 Go fileserver 用的那个内部 JWT 通道，见
+  `cf_v2_acl_check_json()`），响应里的 `permissions` 逐检查项给出级别；
+- C/Go 的终判不变：Go 写入口仍走 `cfACLPath`/`cfACLFinal`，C 仍走提交事务内的检查。
+
+这条缝**只覆盖 API 写入口**（上传链接、新建目录、重命名、移动、删除、seafdav）。
+同步协议与 Web 直传走 `http-server.c` / `sync_api.go` 的库级 `check_permission` 及其
+按 repo+user+op 缓存——那里没有可携带路径的缓存键，也沿用"同步协议按库拒绝"的既有
+结论，非成员仍不进入这两条协议。
 
 完整契约（谁判、判到什么范围、哪些入口不得当终判）见
 [权限终判契约](permission-adjudication-contract.md)。

@@ -34,7 +34,21 @@ for component, directory in (('cloudfile-server', 'seafile-server'),
                 or not source.is_file() or not isinstance(expected, str)
                 or hashlib.sha256(source.read_bytes()).hexdigest() != expected):
             raise SystemExit('Source receipt mismatch: ' + component + '/' + name)
-print('Prepared source receipt verified; no compilation performed')
+# A clean CE14 build must not inherit Makefile references to files that
+# exist only in the legacy fork. Reject missing inputs before Docker pulls,
+# cache mutation or any costly native C compilation.
+import re
+native_makefile = root / 'seafile-server/server/Makefile.am'
+if not native_makefile.is_file():
+    raise SystemExit('Missing native Server Makefile')
+dependencies = set(re.findall(r'\\.\\./common/[A-Za-z0-9_.-]+\\.(?:c|h)',
+                              native_makefile.read_text(encoding='utf-8')))
+missing = sorted(item for item in dependencies
+                 if not (native_makefile.parent / item).is_file())
+if missing:
+    raise SystemExit('Native C build references %s missing inputs: %s' %
+                     (len(missing), ', '.join(missing[:12])))
+print('Prepared source receipt and native recipe verified; no compilation performed')
 PY
 image=${2:-cloudfile:v2-dev}
 platform=${CF_PLATFORM:-$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}')}

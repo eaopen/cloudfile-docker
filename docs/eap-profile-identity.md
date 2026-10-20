@@ -1,53 +1,52 @@
-# EAP、Authentik 与 CloudFile 身份契约
+# Etech 身份集成（当前 V2）
 
-采用原生 Profile，不新增 `cf_eap_user_binding`。EAP UID 为业务权限主体，
-Authentik 继续接受工号与密码；OIDC 的稳定 `sub` 不替换为工号或 UID。
+更新：2026-10-20。本文适用于 CloudFile 当前 V2 dev；不恢复旧 EAP OAuth Bridge。
 
-| 字段 | 用途 |
-|---|---|
-| `sub` | 现有 provider 内稳定的 OIDC 身份，保留原绑定 |
-| `userId` | 字符串 EAP UID；ID Token、userinfo 与 EAP 必须一致 |
-| `preferred_username` | EAP 工号；仅命名新账号 |
-| `Profile.login_id` | EAP UID |
-| `Profile.user` | 新账号为 `工号@auth.local`；已有账号保持原值 |
-| `email` | 可选联系信息；共享邮箱不合并身份 |
+## 身份规则
 
-## 配置与上线顺序
+- Etech `userId` 是唯一业务身份，对应原生 `Profile.login_id`。
+- Directory 的 `attributes.employee_no` 当前承载 `org_user.account_`；允许数字账号、zhangsan、admin，禁止 cfadmin。合法字符为 ASCII 字母、数字、点、下划线和连字符，长度 1–200，不自动去空格；新原生用户名遵循 Seafile RPC 转小写的规则。登录账号不区分大小写，UID 仍精确匹配。
+- 新原生账号使用 `account@auth.local`，账号名冲突拒绝；admin 仍是普通非 staff 用户。
+- 已有 UID 精确绑定优先复用，保留 UUID 或历史后缀，不自动重命名、不按联系邮箱合并。
+- 管理员解析只接收 UID 作为依据；未知 UID 独立读取可信 Directory 的账号与有效状态。EAP 同步使用返回的真实原生账号，不能猜测工号邮箱。
+- 账号歧义只在有效用户间判断；停用历史记录不作为有效候选。多个有效 UID、大小写碰撞及 UID/账号碰撞拒绝解析，不选择最小 UID。
 
-`CF_SSO_EAP_PROFILE_IDENTITY=false` 默认关闭。先在 Authentik DEV 配置
-可信 EAP 目录解析得到的 `userId`，并同时输出到 ID Token 和 userinfo；
-不能由用户自行编辑属性指定 UID。EAP 的 DEV 登录兑换校验 UID 与本地用户相同。
+## 当前 V2 登录配置
 
-CloudFile 配置 `CF_SSO_OAUTH_UID_CLAIM=sub`、
-`CF_SSO_OAUTH_LOGIN_ID_CLAIM=userId`、scope 含 `openid`，并填写该 provider
-准确的 `CF_SSO_EAP_OIDC_ISSUER` 和 `CF_SSO_EAP_OIDC_JWKS_URL` 后，才启用
-`CF_SSO_EAP_PROFILE_IDENTITY=true`。app 与 worker 使用相同配置。
-现有 provider 名称、client ID、sub 模式应保留，避免产生另一套身份。
+当前镜像由 `build/v2/start-dev.py` 启动，从已有原生配置保留 `OAUTH_*` 和 Directory 连接设置，不调用 `scripts/scripts_14.0/bootstrap.py` 或其中的 `cloudfile.py`。
 
-回调使用一次性 state、nonce、S256 PKCE，并验证 RS256 签名、issuer、audience、
-过期时间和 userinfo 的 sub/UID。随后从受认证的 EAP 目录核对 UID、工号及有效状态，
-Profile 提交后触发登录权限刷新。新入口沿用已登记的 `seahub/oauth/views.py`
-最小分发补丁，身份逻辑位于 `cloudfile_ext/sso/eap_oauth.py`。
+Etech 需在已有 `seahub_settings.py` 中明确配置：
 
-## 存量与异常数据
+```python
+OAUTH_ATTRIBUTE_MAP = {
+    'sub': (True, 'uid'),
+    'userId': (True, 'login_id'),
+    'name': (False, 'name'),
+    'email': (False, 'contact_email'),
+}
+```
 
-- 已有 UID 精确绑定直接复用；旧工号 login_id 只允许在已有可信 provider/sub
-  绑定和当前 EAP 目录一致时升级为 UID。不进行批量工号猜测或账号合并。
-- EAP 有效用户按工号确定性选择字典序最小 UID，只保留选中记录的部门、角色关系，
-  不合并重复人员权限，不清理原始业务数据。`cfadmin` 排除在员工同步之外。
-- 重复 Profile 或跨组 UID 冲突保持未解析，只隔离受影响组的撤权；正常身份继续处理。
-  整体目录结构损坏、数据库不可用仍拒绝整次同步，不能当作空目录。
-- Seafile 原生建号通过 RPC，不能与 Profile SQL 回滚成同一事务。RPC 成功后 SQL
-  失败可能留下未绑定原生账号；重试遇到同名冲突会拒绝，需核对后人工修复。
-- 权限同步的 apply 开关、最大撤员数量与比例保护独立生效。本次身份配置不解除
-  DEV 的零撤员保护；同步拒绝保持可重试。
+`preferred_username` 不能映射为 Etech 的 `login_id`。配置了可信 Directory 而没有明确的 userId 映射时，Hub 拒绝登录，防止兼容逻辑把 UID 改写成账号。映射明确后，缺失 userId 也必须拒绝，不能退回按邮箱关联或随机建号。
 
-## 验证入口
+`CF_SSO_EAP_PROFILE_IDENTITY` 是已退役 Bridge 的开关，当前 V2 不得启用；旧文档建议设为 true 已失效。`/oidc/` 入口另需已有的 `OAUTH_OIDC_ISSUER`、`OAUTH_OIDC_JWKS_URI`，验证 ID Token 与 UserInfo 的身份一致性。Etech 首次 OIDC 建号要求 ID Token 和 UserInfo 均携带一致的 userId；可信 Directory 确认 UID、account 与有效状态后，由 V2 `SQLJITProvisioner` 创建/复用原生 User、Profile 并添加该 provider/sub 绑定。先登录或先 EAP 同步均得到同一 UID 原生用户。旧 OAuth 不创建用户，仅复用已有 UID。旧生成器若用于维护历史部署，显式 `CF_SSO_OAUTH_LOGIN_ID_CLAIM=userId` 才表示 UID 映射；不能照搬其启用 Bridge 的旧提示。
 
-Hub：`CF_TEST_DB_PORT=<隔离 MariaDB 端口> python -m pytest cloudfile_ext/ cloudfile_extensions/ -q`。
-OAuth 数据库测试覆盖新建、重复登录、停用、UID 变化、旧账号复用和 RPC 失败。
-Docker：`python3 tools/test-bootstrap-settings.py`，并对示例配置执行 compose config。
-EAP：Java 17 下执行目录测试及 `AuthentikSupportTest`；真实数据库用
-`CF_DIRECTORY_TEST_DB_PORT` 指向隔离 MariaDB。测试数据库随机创建并清理。
+普通 Seafile CE OAuth、LDAP 和管理员本地建号保持其自身规则。以上配置说明不表示已改动任何 DEV/PROD 环境变量或持久配置。
 
-这些是代码与本地回归入口，不代表 DEV 已完成发布或浏览器端登录验收。
+## 构建与验证边界
+
+最新 Docker dev 的默认组装会解析本地 Server/Hub dev 为固定 SHA，写入 `v2-source-receipt.json`；构建前需更新本地 dev，或显式传入已审核的 `--hub-ref`、`--server-ref`。`build/v2/source-set.json` 保留为显式 `--source-set` 历史快照，不能据它断言最新默认构建仍固定旧 Hub。
+
+OIDC 登录建号与 OAuth 可信 UID 适配器分别位于 `cloudfile_ext/v2/jit.py`、`cloudfile_ext/v2/oauth_identity.py`，随精简 V2 overlay 一起组装；旧包仅保留导入转发，不能让精简产物依赖 `cloudfile_extensions`。
+
+源码组装、模块测试和源码回执不等于镜像发布或 DEV 验收。本轮不改表、不运行数据库迁移、不清理历史账号、不部署。历史账号迁移单独审核，保留 UID、原生所有权、共享、组权限与认证绑定。
+
+
+## 2026-10-20 风险清单复核
+
+| 项目 | 最新 dev 的源码事实 |
+| --- | --- |
+| 构建始终固定 bfc7651f | 已过时：默认 dev 组装与显式历史快照已区分；实际运行镜像仍需另查 Digest，不能据源码推断已上线。 |
+| Authentik preset 用 preferred_username 覆盖 UID | 旧生成器仍有该配置，但当前 V2 镜像不调用它。持久配置可能沿用旧映射，故 Hub 对 Etech Directory 的错误映射拒绝登录，不自动改写 UID。 |
+| bootstrap 推荐已退役 Bridge | 旧生成器提示仍在；当前 V2 不调用它，本文替代旧 EAP 配置建议。 |
+| 可选 userId 缺失会回退 | 最新 dev 仍有该风险，本轮已改为由配置决定严格模式，缺少 UID 不回退。已有 Token 签发方法也必须提供业务 UID；没有重新启用普通无 Cookie 请求的旧 Token 回退。 |
+| by-login 多个有效账号选最小 UID | 最新 dev 仍有该行为，本轮改为歧义拒绝；只在职记录参与候选，单条有效记录不被停用历史记录阻断。登录账号不区分大小写，多个有效 UID 的大小写碰撞仍拒绝。 |

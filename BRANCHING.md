@@ -12,7 +12,7 @@ V2 只有一个持续集成主线：`dev`。分支名用于**隔离开发目的�
 | 分支 | 用途 | 生命周期 |
 |---|---|---|
 | `dev` | 当前 CloudFile V2 集成线，非 V0.9 / CE14 原生快照 | 长期 |
-| `feature/v2/<work>-<topic>` | V2 能力（多仓耦合使用同一 work ID） | 验收后合入 `dev` 并删除 |
+| `feat/v2/<work>-<topic>` | V2 能力（多仓耦合使用同一 work ID） | 验收后合入 `dev` 并删除 |
 | `fix/v2/<work>-<topic>` | V2 缺陷修复 | 验收后合入 `dev` 并删除 |
 | `docs/v2/<topic>` | V2 文档调整，不改变运行代码 | 评审后删除 |
 | `sync/ce14/<YYYYMMDD>` | Seafile CE14 上游同步 | 验收后删除 |

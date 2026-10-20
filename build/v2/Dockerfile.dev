@@ -23,7 +23,9 @@ RUN --mount=type=cache,id=cfv2-gomod,from=cf-cache,source=gomodcache,target=/go/
     go mod download
 
 FROM go-dependencies AS native
-COPY v2-source-receipt.json /source/v2-source-receipt.json
+# The combined receipt also changes on Hub-only commits; do not invalidate the
+# expensive native C/Go layer with unrelated Hub source. The exact receipt is
+# checked before the build and copied into the final runtime image below.
 COPY seafile-server /source/seafile-server
 RUN --mount=type=cache,id=cfv2-gomod,from=cf-cache,source=gomodcache,target=/go/pkg/mod \
     --mount=type=cache,id=cfv2-gobuild-${TARGETARCH},from=cf-cache,source=gocache,target=/root/.cache/go-build \

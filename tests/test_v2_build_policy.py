@@ -14,6 +14,8 @@ class DevSourcePolicy(unittest.TestCase):
         assembler = read("tools/prepare-v2-source.py")
         self.assertIn("if args.source_set else 'dev'", assembler)
         self.assertIn("sources['components'][component]['overlay_commit'] = commit", assembler)
+        self.assertIn("go_seam = 'fileserver/objstore/backend_fs.go'", assembler)
+        self.assertIn("native_patches.append(go_seam)", assembler)
         frozen = read(".github/workflows/v2-clean.yml")
         self.assertEqual(
             frozen.count("--source-set cloudfile-docker/build/v2/source-set.json"), 2

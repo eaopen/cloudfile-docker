@@ -30,7 +30,7 @@ EAP 修复只有 200/201 加完整原生单文件回执才能报成功，并核�
 
 推荐后续方案：现有实例维持 42 项迁移布局为事实源，分别为组目录和 ACL 写入补齐完整类型/必填列/唯一键/读回契约，先确认具体运行调用路径，再决定统一写入适配；不要用补默认空 name、删列、重建表或整枝复制旧实现掩盖不一致。ACL 还必须保持原生 Branch 事务、权限及生命周期终判。已应用迁移不可改写；确需变更用新增迁移并做显式版本验证。当前发现的两项额外风险未纳入本次上传补丁，不应把 SQL 门禁通过等同于所有业务写入兼容。
 
-release.yaml 的 database_schema: 3 是旧发布元数据，不等于当前迁移版本。持久卷不会因为新镜像自动执行全量迁移；fresh schema 是独立新库合同，不是现有卷的升级脚本。
+release.yaml 的 database_schema: 3 是旧发布元数据，不等于当前迁移版本。已有持久卷不会仅因新镜像执行 initialize_fresh_schema 的整套版本迁移，但 write_cloudfile_config → apply_cloudfile_schema 仍在每次启动执行 cloudfile.sql 的 CREATE IF NOT EXISTS，并执行多项 compatibility 建表/改列逻辑；不能把新安装标记测试通过理解成已有卷启动完全不写 DDL。fresh schema 是独立新库合同，不是现有卷的升级脚本。
 
 ## 新增防回归门禁
 
@@ -51,3 +51,7 @@ Docker tools/check-sql-contracts.py 只读检查同名 CREATE 冲突以及 Hub C
 - cloudfile-upload-guard-hub: `b3fa0b2d256d5a7286a3ee85da54fd9a97a7e11c`
 
 Docker 门禁及本报告随同一审查提交交付；均尚未部署。
+
+## 方案对比补充
+
+参见 [跨方案对比与补充计划](upload-plan-comparison-20261021.md)。补充了实际参与编译的 common/cf-lock.c、存储绑定两表共存、bootstrap 启动 DDL 边界，以及 EXDEV 和离线迁移验收；与尚未接入的 common/cf-v2-edit-fence.c 区分。

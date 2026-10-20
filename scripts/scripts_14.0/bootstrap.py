@@ -1384,12 +1384,16 @@ def write_cloudfile_config():
     write_cloudfile_seafile_conf()
     write_seafevents_search_config()
     write_seafevents_audit_config()
-    apply_cloudfile_schema()
-    apply_sso_hierarchy_schema_compatibility()
+    # CloudFile dev is V2. The only core database owner is cloudfile_ext.v2
+    # FreshSchema (three tables, plus one optional current edit Guard). Keep
+    # legacy helpers for historical manual recovery, but never automatically
+    # materialize old cf_sso_group_map/cf_audit_event or other v0.x tables:
+    # those would make a clean V2 install fail its exact-schema verification.
+    # Existing mixed deployments require an explicit offline plan; startup
+    # must not run legacy CREATE IF NOT EXISTS or silent ALTER migrations.
     apply_metadata_schema_compatibility()
     apply_tag_schema_compatibility()
     apply_starred_obj_id_schema_compatibility()
-    apply_audit_schema()
 
 
 def apply_sso_hierarchy_schema_compatibility():

@@ -4,6 +4,38 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
 source_root=$(cd "${1:?prepared V2 source directory required}" && pwd)
+# Read-only receipt check BEFORE any tagging, fetching or building. The
+# combined receipt stays with the final image, not the Server C/Go build layer.
+python3 - "$source_root" <<'PY'
+import hashlib
+import json
+import re
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+path = root / 'v2-source-receipt.json'
+if not path.is_file() or path.is_symlink():
+    raise SystemExit('Missing immutable V2 source receipt')
+receipt = json.loads(path.read_text(encoding='utf-8'))
+for component, directory in (('cloudfile-server', 'seafile-server'),
+                             ('cloudfile-hub', 'seahub')):
+    item = receipt.get('components', {}).get(component, {})
+    commits = (item.get('native_commit'), item.get('overlay_commit'))
+    if not all(isinstance(x, str) and re.fullmatch('[0-9a-f]{40}', x) for x in commits):
+        raise SystemExit('Incomplete source commits: ' + component)
+    checksums = item.get('overlay_sha256')
+    if not isinstance(checksums, dict) or not checksums:
+        raise SystemExit('Missing source checksums: ' + component)
+    for name, expected in checksums.items():
+        relative = Path(name)
+        source = root / directory / relative
+        if (relative.is_absolute() or '..' in relative.parts or source.is_symlink()
+                or not source.is_file() or not isinstance(expected, str)
+                or hashlib.sha256(source.read_bytes()).hexdigest() != expected):
+            raise SystemExit('Source receipt mismatch: ' + component + '/' + name)
+print('Prepared source receipt verified; no compilation performed')
+PY
 image=${2:-cloudfile:v2-dev}
 platform=${CF_PLATFORM:-$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}')}
 arch=${platform##*/}

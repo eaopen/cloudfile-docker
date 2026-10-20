@@ -112,18 +112,28 @@ jobs:
           path: cloudfile-docker
           fetch-depth: 1
 
+      - name: Restrict the historical release recipe to explicit maintenance refs
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_NAME" != maintenance/v0.9/* ]]; then
+            echo "::error::Historical packaging is allowed only from an explicitly approved maintenance/v0.9/* ref; never from CloudFile dev or a detached feature snapshot."
+            exit 2
+          fi
+
       - name: Read release refs
         id: refs
         working-directory: cloudfile-docker
         run: |
-          server_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml server_commit || true)
-          hub_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml hub_commit || true)
-          if [[ -z $server_ref ]]; then
-            server_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_server.ref)
-          fi
-          if [[ -z $hub_ref ]]; then
-            hub_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml forks.cloudfile_hub.ref)
-          fi
+          server_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml server_commit)
+          hub_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml hub_commit)
+          # Never fall back to floating dev; the Docker commit is recorded
+          # from the checked-out workflow SHA, not self-pinned in this file.
+          for pin in "$server_ref" "$hub_ref"; do
+            if [[ ! $pin =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::Historical release requires immutable server_commit and hub_commit pins"
+              exit 2
+            fi
+          done
           echo "server_ref=$server_ref" >> "$GITHUB_OUTPUT"
           echo "hub_ref=$hub_ref" >> "$GITHUB_OUTPUT"
 

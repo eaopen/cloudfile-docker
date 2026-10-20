@@ -116,13 +116,41 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--hub-ref')
     parser.add_argument('--server-ref')
+    parser.add_argument('--source-set', type=Path,
+                        help='Explicit frozen source-set; without this, select the local dev refs')
     args = parser.parse_args()
-    config = Path(__file__).resolve().parents[1] / 'build/v2/source-set.json'
+    config = args.source_set or (Path(__file__).resolve().parents[1] / 'build/v2/source-set.json')
     sources = json.loads(config.read_text())
-    refs = {
-        'cloudfile-hub': args.hub_ref or sources['components']['cloudfile-hub']['overlay_commit'],
-        'cloudfile-server': args.server_ref or sources['components']['cloudfile-server']['overlay_commit'],
+    if not args.source_set:
+        # Preserve the historical allowlist only for explicit frozen builds.
+        # The current Server dev filesystem backend writes each block beside
+        # its final path; omitting this seam silently restores cross-mount EXDEV.
+        native_patches = sources['components']['cloudfile-server']['native_patches']
+        go_seam = 'fileserver/objstore/backend_fs.go'
+        if go_seam not in native_patches:
+            native_patches.append(go_seam)
+    selected = {
+        'cloudfile-hub': args.hub_ref,
+        'cloudfile-server': args.server_ref,
     }
+    refs = {}
+    for component, requested in selected.items():
+        # CE native commits remain immutable. Review the CloudFile overlay
+        # plus its minimal native seams from the local dev ref and freeze the
+        # chosen commit before extraction. Explicit --source-set reproduces
+        # the exact historical/release allowlist.
+        ref = requested or (sources['components'][component]['overlay_commit']
+                            if args.source_set else 'dev')
+        try:
+            commit = git(args.workspace / component, 'rev-parse', '--verify',
+                         ref + '^{commit}').decode().strip()
+        except subprocess.CalledProcessError as error:
+            raise ValueError('missing source ref for %s: %s' % (component, ref)) from error
+        if not re.fullmatch('[0-9a-f]{40}', commit):
+            raise ValueError('invalid resolved source commit for ' + component)
+        if not args.source_set:
+            sources['components'][component]['overlay_commit'] = commit
+        refs[component] = commit
     receipt = assemble(args.workspace.resolve(), args.output.resolve(), sources, refs)
     print(json.dumps(receipt, indent=2, sort_keys=True))
 

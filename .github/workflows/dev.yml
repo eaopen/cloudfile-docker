@@ -1,53 +1,62 @@
-name: CloudFile development checks
+name: CloudFile quick source checks
 
+# Routine dev and PR changes must never trigger a cross-repository build,
+# native compilation, DB integration or deployment. Run those separately via
+# reviewed workflow_dispatch jobs when the relevant change needs them.
 on:
   push:
     branches: [dev]
+    paths-ignore:
+      - '**/*.md'
+      - '**/*.markdown'
+      - 'README*'
+      - 'AGENTS.md'
+      - 'docs/**'
+  pull_request:
+    branches: [dev]
+    paths-ignore:
+      - '**/*.md'
+      - '**/*.markdown'
+      - 'README*'
+      - 'AGENTS.md'
+      - 'docs/**'
+  workflow_dispatch:
 
-concurrency:
-  group: dev-checks-${{ github.ref }}
-  cancel-in-progress: true
+permissions:
+  contents: read
 
 jobs:
-  checks:
+  static:
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
-          path: cloudfile-docker
-          fetch-depth: 0
-
-      - uses: actions/checkout@v4
-        with:
-          repository: eaopen/cloudfile-server
-          ref: dev
-          path: cloudfile-server
-          fetch-depth: 0
-
-      - uses: actions/checkout@v4
-        with:
-          repository: eaopen/cloudfile-hub
-          ref: dev
-          path: cloudfile-hub
-          fetch-depth: 0
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: cloudfile-server/fileserver/go.mod
-          cache-dependency-path: cloudfile-server/fileserver/go.sum
-
-      - name: Install C test dependencies
+          fetch-depth: 2
+      - name: Check changed files
+        shell: bash
         run: |
-          sudo apt-get update -qq
-          # Native directory paging tests compile the real Vala objects and JSON RPC.
-          sudo apt-get install -y -qq libglib2.0-dev libjansson-dev valac pkg-config
+          set -euo pipefail
+          git diff --check HEAD^ HEAD
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
 
-      - name: Install isolated check dependencies
-        run: pip install --quiet -r cloudfile-docker/tools/check-requirements.txt
+          changed = subprocess.check_output(
+              ['git', 'diff', '--name-only', '-z', 'HEAD^', 'HEAD']
+          ).split(b'\0')
+          for raw in changed:
+              if not raw:
+                  continue
+              path = Path(raw.decode('utf-8'))
+              if path.is_file() and path.suffix == '.py':
+                  compile(path.read_bytes(), str(path), 'exec')
+          PY
+          while IFS= read -r path; do
+            [[ ! -f "$path" ]] || bash -n "$path"
+          done < <(git diff --name-only HEAD^ HEAD -- '*.sh')
 
-      - name: Run development checks
-        run: ./cloudfile-docker/tools/run-checks.sh
+      - name: Test source selection rules without building images
+        run: |
+          python3 -m unittest discover -s tests -p test_v2_source_assembly.py -q
+          python3 -m unittest discover -s tests -p test_v2_build_policy.py -q

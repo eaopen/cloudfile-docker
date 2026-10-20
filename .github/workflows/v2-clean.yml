@@ -1,10 +1,7 @@
-name: CloudFile V2 clean CE14 isolated checks
+name: CloudFile frozen V2 source-set (historical manual check)
 
+# Explicitly frozen 2026-10-16 source snapshot; this does NOT prove current dev.
 on:
-  push:
-    branches: [dev, dev2-clean, feature/v2-rust-guard-only, feature/v2-checkout-default-on]
-  pull_request:
-    branches: [dev]
   workflow_dispatch:
 
 permissions:
@@ -84,7 +81,7 @@ jobs:
           CF_TEST_REDIS_PORT: '6379'
         run: |
           python3 -m unittest discover -s cloudfile-docker/tests -p test_v2_source_assembly.py -v
-          python3 cloudfile-docker/tools/prepare-v2-source.py --workspace . --output /tmp/cfv2-clean
+          python3 cloudfile-docker/tools/prepare-v2-source.py --workspace . --source-set cloudfile-docker/build/v2/source-set.json --output /tmp/cfv2-clean
           python3 cloudfile-docker/tools/check-v2-fresh.py --source /tmp/cfv2-clean
 
   native-ce14-runtime:
@@ -147,7 +144,7 @@ jobs:
           python3 -m pip install --quiet 'pymysql>=1.1,<2' 'redis>=5,<8' 'PyJWT>=2.8,<3' 'requests>=2.31,<3' 'Django>=5.2,<5.3' 'requests>=2.31,<3' 'PyJWT>=2,<3'
       - name: Assemble exact selected native source
         run: |
-          python3 cloudfile-docker/tools/prepare-v2-source.py --workspace . --output /tmp/cfv2-clean
+          python3 cloudfile-docker/tools/prepare-v2-source.py --workspace . --source-set cloudfile-docker/build/v2/source-set.json --output /tmp/cfv2-clean
           test ! -e /tmp/cfv2-clean/seahub/cloudfile_extensions
           test ! -e /tmp/cfv2-clean/seafile-server/server/cloudfile-policy.c
       - name: Check routed and native Go storage

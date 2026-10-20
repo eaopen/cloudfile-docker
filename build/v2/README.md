@@ -1,7 +1,44 @@
 # Native V2 DEV Runtime
 
-Prepare the pinned CE14 source with `tools/prepare-v2-source.py`, then use the
-existing CE14 dependency images and cache directory:
+> Server/Hub/Docker `dev` is the only default development source. Source assembly
+> resolves the local Server/Hub `dev` refs to exact SHAs before reading files;
+> update the local `dev` refs first. The pinned `source-set.json` is retained
+> only as an explicitly selected historical snapshot with `--source-set`.
+> Cross-repository integration checks run on manual `workflow_dispatch`, not
+> on every code or documentation change. Neither source check publishes an image.
+
+### Current CI and incremental-build policy (2026-10-20)
+
+- Ordinary Server/Hub/Docker pull requests and `dev` pushes perform cheap
+  changed-source syntax/format checks only; pure Markdown changes skip CI.
+  Search/OIDC probes retain narrow path filters.
+- Full Seahub, C/Go/native, database, cross-repository and image builds are
+  **manual**. Reuse previous test evidence if its source SHA, prerequisites and
+  runner environment are unchanged. Neither CI nor release performs a deployment
+  or an automatic rollback.
+- `prepare-v2-source.py` selects the local Server/Hub `dev` refs by default,
+  resolves the SHAs once, and records the exact reviewed overlay in its receipt.
+  The CE14 native anchor and allowlisted native file seams do not float.
+- The combined source receipt is validated before any Docker build and retained
+  in the final image, **not** fed into the C/Go compiler layer. A Hub-only SHA
+  change should reuse that existing layer; this is a cache-key guarantee,
+  **not** a measured cache-hit claim. BuildKit, ccache, Go, npm and pip caches
+  may still be absent on a particular builder.
+- Legacy `release.yaml`/CE14 packaging is restricted to deliberately selected
+  maintenance refs and fixed Server/Hub SHA inputs, never the default V2 path.
+  Missing runtime launchers or invalid input hashes must fail explicitly rather
+  than copying or silently falling back to historical application files.
+
+**Approval boundary:** a manual integration or release check is not authorization
+to compile all targets, publish an image, change DEV/PROD containers, or roll
+back a deployment. Each operation requires its own approved scope.
+
+Prepare the CE14 source plus reviewed current CloudFile `dev` overlays with
+`python3 tools/prepare-v2-source.py --workspace . --output /path/to/prepared-source`
+from a three-repository workspace. To reproduce a historical source snapshot,
+supply `--source-set build/v2/source-set.json` explicitly instead.
+
+Then use the existing dependency images and cache directory:
 
 ```sh
 CF_BASE_IMAGE=cloudfile-build-base:ce14-v2 \
@@ -206,7 +243,10 @@ reproduces RawPostDataException on the prior image; no schema, tag migration or
 native binary rebuild is involved.
 
 
-## 内部文件读取：复用 Seafile 原生票据（2026-10-19）
+## 内部文件读取：复用 Seafile 原生票据（2026-10-19，历史构建快照）
+
+> 以下源码 SHA 与当时的构建限制用于复现 10 月 19 日的特定候选；
+> **不是当前 `dev` 的源码选择规则**。当前构建规则以上方说明为准。
 
 本候选版本固定 Server `89ae96652389024730ac9d3927ed3be908534ce9`
 与 Hub `bfc7651f188b8a537a466e7ee0bc143bc6acb85e`。

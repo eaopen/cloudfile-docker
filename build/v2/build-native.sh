@@ -8,7 +8,11 @@ case "$target" in all|sources|dependencies|server) ;; *) exit 2 ;; esac
 jobs=${CF_V2_BUILD_JOBS:-4}
 [[ $jobs =~ ^[1-9][0-9]*$ ]] || exit 2
 if [[ $target != dependencies ]]; then
-    test -f "$source_root/v2-source-receipt.json"
+    # The host validates the full source receipt before Docker packaging.
+    # This server-only stage intentionally does not COPY the combined receipt:
+    # a Hub-only SHA update must not recompile native C/Go.
+    test -f "$source_root/seafile-server/scripts/sql/mysql/cloudfile-v2.sql"
+    test -f "$source_root/seafile-server/common/cf-v2-storage.c"
     test ! -d "$source_root/seahub/cloudfile_extensions"
     test ! -f "$source_root/seafile-server/common/cf-ext.c"
 fi

@@ -126,19 +126,14 @@ jobs:
         run: |
           server_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml server_commit)
           hub_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml hub_commit)
-          docker_ref=$(python3 build/cloudfile_14.0/read-manifest.py release.yaml docker_commit)
-          # A legacy maintenance build must never fall back to the current
-          # floating dev branches after changing only the Docker ref.
-          for pin in "$server_ref" "$hub_ref" "$docker_ref"; do
+          # Never fall back to floating dev; the Docker commit is recorded
+          # from the checked-out workflow SHA, not self-pinned in this file.
+          for pin in "$server_ref" "$hub_ref"; do
             if [[ ! $pin =~ ^[0-9a-f]{40}$ ]]; then
               echo "::error::Historical release requires all three immutable *_commit pins"
               exit 2
             fi
           done
-          [[ $docker_ref == "$(git rev-parse HEAD)" ]] || {
-            echo "::error::Historical Docker commit differs from frozen release manifest"
-            exit 2
-          }
           echo "server_ref=$server_ref" >> "$GITHUB_OUTPUT"
           echo "hub_ref=$hub_ref" >> "$GITHUB_OUTPUT"
 

@@ -67,6 +67,101 @@ def verify_v2_schema(connection, checkout_enabled=False):
                 raise ValueError('required core index missing or changed')
 
 
+# Historical column names that identify an archived 029/042 layout rather than
+# a random drift. Used only for classification; never for migration decisions.
+LEGACY_MARKERS = {
+    'cf_edit_guard': {'resource_uid', 'lifecycle_ref', 'lease_until'},
+    'cf_dir_acl': {'lifecycle_ref'},
+}
+
+
+def inspect_v2_schema(connection, checkout_enabled=False):
+    """Classify an installed database without writes, migrations or failures.
+
+    The startup gate answers "may this instance serve traffic?"; this inventory
+    answers "what is actually installed?" so an operator can run the reviewed
+    SQL package with the right plan. It issues information_schema SELECTs only
+    and returns a JSON-serialisable report instead of raising on drift.
+    """
+    report = {
+        'status': 'current',
+        'checkout_enabled': bool(checkout_enabled),
+        'tables': {},
+        'extra_tables': [],
+    }
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT TABLE_NAME FROM information_schema.TABLES "
+                       "WHERE TABLE_SCHEMA=DATABASE() AND LOWER(LEFT(TABLE_NAME,2))='cf'")
+        installed = {row[0] for row in cursor.fetchall()}
+        report['extra_tables'] = sorted(installed - set(COLUMNS))
+        required = set(COLUMNS) if checkout_enabled else set(COLUMNS) - {'cf_edit_guard'}
+        for table, names in COLUMNS.items():
+            if table not in required:
+                # Disabled Checkout is not a defect: the optional table is
+                # reported without being qualified, matching the startup gate.
+                report['tables'][table] = 'optional-disabled'
+                continue
+            if table not in installed:
+                report['tables'][table] = 'missing'
+                continue
+            cursor.execute('SELECT COLUMN_NAME,DATA_TYPE,CHARACTER_MAXIMUM_LENGTH '
+                           'FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=%s', (table,))
+            columns = {name: (kind, length) for name, kind, length in cursor.fetchall()}
+            report['tables'][table] = _classify_table(cursor, table, columns, names)
+    report['status'] = _overall_status(report, required)
+    return report
+
+
+def _classify_table(cursor, table, columns, expected_names):
+    """Return current, legacy or incompatible for one installed table."""
+    # Same contract checks as the startup gate, but drift is reported instead
+    # of raised so a diagnostic run never looks like a failed deployment.
+    defects = []
+    if set(columns) != set(expected_names.split()):
+        defects.append('columns')
+    if table in ('cf_dir_acl', 'cf_edit_guard') and columns.get('path_hash') != ('binary', 32):
+        defects.append('path_hash')
+    if table == 'cf_sso_group_map' and columns.get('group_id', ('',))[0] != 'bigint':
+        defects.append('group_id')
+    cursor.execute('SELECT ENGINE,TABLE_COLLATION FROM information_schema.TABLES '
+                   'WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=%s', (table,))
+    if cursor.fetchall() != (('InnoDB', 'utf8mb4_bin'),):
+        defects.append('engine')
+    cursor.execute('SELECT INDEX_NAME,NON_UNIQUE,SEQ_IN_INDEX,COLUMN_NAME,SUB_PART '
+                   'FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=%s '
+                   'ORDER BY INDEX_NAME,SEQ_IN_INDEX', (table,))
+    indexes = {}
+    for name, non_unique, sequence, column, prefix in cursor.fetchall():
+        unique, parts = indexes.setdefault(name, (non_unique, []))
+        if prefix is not None or unique != non_unique or sequence != len(parts) + 1:
+            defects.append('index_shape')
+            continue
+        parts.append(column)
+    actual = {name: (unique, tuple(parts)) for name, (unique, parts) in indexes.items()}
+    if any(actual.get(name) != value for name, value in INDEXES[table].items()):
+        defects.append('index')
+    if not defects:
+        return 'current'
+    # Historical names prove the table is an archived layout, not arbitrary drift.
+    if LEGACY_MARKERS.get(table, set()) & set(columns):
+        return 'legacy'
+    return 'incompatible'
+
+
+def _overall_status(report, required):
+    """Collapse per-table states into one operator-facing status."""
+    states = [report['tables'][table] for table in sorted(required)]
+    if all(state == 'current' for state in states) and not report['extra_tables']:
+        return 'current'
+    if all(state == 'missing' for state in states):
+        return 'missing'
+    if 'legacy' in states:
+        return 'legacy'
+    if 'incompatible' in states:
+        return 'incompatible'
+    return 'mixed'
+
+
 def verify_development_schema(installdir=None, environment=None):
     """Fail startup with an operator action, never migrate a development DB."""
     environment = os.environ if environment is None else environment

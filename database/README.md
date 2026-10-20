@@ -29,3 +29,14 @@
 成熟版本自动升级必须另外给出明确的源/目标版本范围、完整依赖表清单、并发/停机边界、备份与中断恢复证据、全量数据转换验收以及发布审批；不能默认遍历历史迁移目录。上游成熟 Seafile 版本的原有升级流程与 CloudFile 开发期扩展 SQL 分开管理。
 
 历史 `cloudfile-directory-schema.py`、`SchemaRunner.apply()` 与 `tools/repair-v2-four-tables.py` 保留用于追溯，不作为新版开发期发布入口。已运行的容器仍使用旧启动代码，代码变更须随匹配版本发布后才能生效；此次规范和 SQL 交付不意味着已经替换 DEV 镜像或执行 PROD 升级。
+
+## 只读结构盘点（发布/排障前）
+
+启动校验只回答“能否起服务”，不说明“当前装的是哪套结构”。选 SQL 或排障前先运行只读盘点（`information_schema` 查询，不执行 DDL、不读取业务数据）：
+
+```bash
+python3 /scripts/cloudfile-v2-schema.py plan   # JSON：current/missing/legacy/incompatible/mixed + 额外 cf_* 表
+python3 /scripts/cloudfile-v2-schema.py check  # 非 current 退出码为 2，可直接作为发布门禁
+```
+
+`check` 依据 `CF_ENABLE_CHECKOUT` 决定是否要求 `cf_edit_guard`：关闭 Checkout 时该表标记为 `optional-disabled`，不阻塞普通文件服务；启用时按 V2 列/索引契约判定，旧 029 结构归类为 `legacy`，不自动修复。

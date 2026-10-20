@@ -92,6 +92,8 @@ run "V2 四表修复数据映射" python3 "$docker_repo/tests/test_repair_v2_fou
 # Fresh DDL must remain resumable and must never turn restart into an upgrade.
 run "开发期只读 Schema 启动校验" python3 -m unittest discover -s "$docker_repo/tests" -p test_fresh_schema.py -q
 run "独立 SQL 交付契约" python3 -m unittest discover -s "$docker_repo/tests" -p test_manual_sql_package.py -q
+# Operators need a read-only "what is installed" answer before choosing a SQL step.
+run "V2 Schema 只读盘点" python3 -m unittest discover -s "$docker_repo/tests" -p test_v2_schema_inventory.py -q
 run "v0.6 新安装每库独立目录 Compose 契约" python3 -m unittest discover -s "$docker_repo/tests" -p test_v06_default_library_storage.py -q
 run "RustFS/MinIO 存储类与 Compose 契约" python3 -m unittest discover -s "$docker_repo/tests" -p test_storage_class_config.py -q
 # CloudFile v0.5 W1-W3 standalone checks, no live Docker/DB dependencies.

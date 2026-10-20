@@ -130,7 +130,7 @@ jobs:
           # from the checked-out workflow SHA, not self-pinned in this file.
           for pin in "$server_ref" "$hub_ref"; do
             if [[ ! $pin =~ ^[0-9a-f]{40}$ ]]; then
-              echo "::error::Historical release requires all three immutable *_commit pins"
+              echo "::error::Historical release requires immutable server_commit and hub_commit pins"
               exit 2
             fi
           done

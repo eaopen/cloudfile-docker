@@ -277,3 +277,17 @@ clean V2 source. Pagination asserts the existing V2 200/500 bounds and separates
 malformed input (400) from a well-formed stale revision (409). Same-name library
 creation verifies distinct UUIDs rather than a removed name-uniqueness premise.
 No authorization failure is reclassified as success to make CI green.
+
+### 2026-10-20 本地对象目标目录暂存
+
+为消除默认存储和独立库 bind mount 的跨挂载 rename，C block/metadata 与
+Go 本地后端在最终对象分片目录创建唯一 `.cf-tmp-*`，写完、按调用要求同步、
+关闭后原子发布；失败仅清理本次暂存。C 枚举只接受规范对象名，库移除不
+删除活动暂存；崩溃残留只在停写维护中复核清理。不改上传续传暂存、ACL、
+库绑定或数据库。新增上游补丁 `fileserver/objstore/backend_fs.go` 必须原位
+修改才能覆盖原生本地对象写入，路由接缝无法替代后端的发布操作。
+
+当前 DEV 保留完整扩展版 Server `6fc5493` 的行为，独立适配提交 `e682060`；
+默认完整发行包固定该 Server 和当前 Hub `f398e24`，原生构建运行真实 C 后端
+及完整 Go 存储回归，显式传递跨仓契约路径。V2 专用适配保留在独立分支，
+不将其清洁源码或二进制装入当前完整扩展版。

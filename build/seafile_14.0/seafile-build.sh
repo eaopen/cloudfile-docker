@@ -26,6 +26,8 @@ if [[ $# -eq 1 && "$1" != "${version}" ]]; then
     exit 2
 fi
 mkdir -p "${code_path}"
+# Pass the shared contract explicitly: the isolated Server has no sibling Docker tree.
+export CF_AUTO_STORAGE_CASES="$current_dir/../../docs/features/automatic-local-storage-cases.json"
 
 function manifest_value() {
     python3 "${manifest_reader}" "${manifest}" "$2" "$1"

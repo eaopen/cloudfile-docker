@@ -59,3 +59,5 @@ common/user-mgr.c
 common/user-mgr.h
 
 fileserver/fileserver.go
+
+fileserver/objstore/backend_fs.go

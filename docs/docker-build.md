@@ -26,3 +26,17 @@ CF_PLATFORM=linux/amd64 build/seafile_14.0/build-local-image.sh
 ## 多架构发布
 
 如果部署端需要一个同时支持 ARM64/AMD64 的标签，先分别在对应架构上生成并验证发行包和应用镜像，再把两个单架构镜像推送到仓库，最后用 `docker buildx imagetools create -t <发布标签> <arm64-镜像> <amd64-镜像>` 创建清单。单个本地发行包不能直接生成多架构镜像；清单必须指向两个分别编译的镜像。部署端拉取清单时 Docker 会按 Linux 主机架构选择对应镜像。发布前逐架构运行 runtime 验证，并检查 `docker buildx imagetools inspect <发布标签>` 的平台列表。
+
+## 目标目录内暂存（2026-10-20）
+
+修改原因：共享 `tmpfiles` 与最终 blocks 的独立 bind mount 即使属于同一设备，
+Linux 仍拒绝跨挂载 rename。C/Go 本地对象写入统一在最终分片目录创建
+`.cf-tmp-*`，完整写入、按既有要求同步并关闭后原子 rename。失败只清理
+本次暂存，GC/fsck 枚举排除暂存名；库移除保留暂存并报告目录非空。
+
+默认完整发行包固定 Server `e682060`、保留当前 DEV Hub `f398e24`，并在
+构建时运行 C/Go 存储回归。V2 清洁镜像使用其自己的固定 Server `4b37039`；
+不能将 V2 原生二进制装进完整扩展版运行时，也不能切换当前数据卷来验证修复。
+HTTP 分片续传暂存与对象发布暂存分别处理，不改目录 ACL、库绑定、数据库或
+旧 tmpfiles 链接。进程崩溃残留仅在所有相关写入停止、清单人工复核后维护，
+不能启动时或按文件年龄在线自动删除。

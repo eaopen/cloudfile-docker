@@ -226,7 +226,10 @@ class Seafile(Project):
             'make -j%s' % conf[CONF_JOBS],
             'make install',
 
-            'cd fileserver && go build && cd -',
+            # Test the actual C backends and Go staging before packaging binaries;
+            # otherwise a valid package can silently retain cross-mount rename.
+            'bash tests/local_storage/run.sh',
+            'cd fileserver && go test ./objstore && go build && cd -',
 
             'cd notification-server && go build && cd -',
         ]

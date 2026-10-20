@@ -135,10 +135,10 @@ def main():
     }
     refs = {}
     for component, requested in selected.items():
-        # The CE source commits and patch allowlists stay pinned. Only CloudFile
-        # overlays default to the checked-out dev branch; freeze that ref once
-        # before any file is extracted. Explicit --source-set remains the route
-        # for historical/release snapshots.
+        # CE native commits remain immutable. Review the CloudFile overlay
+        # plus its minimal native seams from the local dev ref and freeze the
+        # chosen commit before extraction. Explicit --source-set reproduces
+        # the exact historical/release allowlist.
         ref = requested or (sources['components'][component]['overlay_commit']
                             if args.source_set else 'dev')
         try:

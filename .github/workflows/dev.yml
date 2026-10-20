@@ -53,9 +53,9 @@ jobs:
         run: |
           {
             echo '### Shared regression (not a V2 release certification)'
-            echo '- Docker: `'`git -C cloudfile-docker rev-parse HEAD`'`'
-            echo '- Server: `'`git -C cloudfile-server rev-parse HEAD`'`'
-            echo '- Hub: `'`git -C cloudfile-hub rev-parse HEAD`'`'
+            printf -- '- Docker: `%s`\n' "$(git -C cloudfile-docker rev-parse HEAD)"
+            printf -- '- Server: `%s`\n' "$(git -C cloudfile-server rev-parse HEAD)"
+            printf -- '- Hub: `%s`\n' "$(git -C cloudfile-hub rev-parse HEAD)"
             echo 'For the current V2 native source-set, use the separate V2 current bundle check.'
           } >> "$GITHUB_STEP_SUMMARY"
 

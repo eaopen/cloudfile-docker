@@ -386,6 +386,18 @@ def _settings_block_sso():
         % get_conf('CF_SERVICE_SSO_DIRECTORY_KEY_ID', ''),
         'CF_SERVICE_SSO_DIRECTORY_SERVICE_ID = %r'
         % get_conf('CF_SERVICE_SSO_DIRECTORY_SERVICE_ID', 'cloudfile'),
+        # The V2 ACL authority reads its own connection names
+        # (cloudfile_ext/v2/etech_directory.py: CF_DIRECTORY_URL / KEY_ID /
+        # SECRET / GROUP_OWNER). It must resolve the same subjects as the SSO
+        # membership sync, so derive them from the values above instead of
+        # asking operators to keep a second copy in .env. Without them every
+        # authorized request answers SUBJECT_UNAVAILABLE (503) -- DEV
+        # 2026-10-20, where hand-appended values were also wiped on restart.
+        'CF_DIRECTORY_URL = %r' % get_conf('CF_SERVICE_SSO_DIRECTORY_URL', ''),
+        'CF_DIRECTORY_KEY_ID = %r' % get_conf('CF_SERVICE_SSO_DIRECTORY_KEY_ID', ''),
+        'CF_DIRECTORY_SECRET = %r' % get_conf('CF_SERVICE_SSO_DIRECTORY_SECRET', ''),
+        # Native group creation requires an active staff owner.
+        'CF_DIRECTORY_GROUP_OWNER = %r' % get_conf('CF_SSO_GROUP_OWNER', ''),
         'CF_SSO_UID_DELTA_APPLY_ENABLED = %r'
         % get_conf('CF_SSO_UID_DELTA_APPLY_ENABLED', 'false'),
         'CF_SSO_UID_DELTA_MAX_REMOVALS = %r'

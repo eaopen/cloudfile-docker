@@ -49,7 +49,7 @@ hub_pin=$(python3 "$reader" "$manifest" hub_commit)
 # A commit cannot embed its own SHA in a tracked manifest.
 for pin in "$server_pin" "$hub_pin"; do
     [[ "$pin" =~ ^[0-9a-f]{40}$ ]] || {
-        echo "Historical release requires explicit immutable server/hub/docker commits." >&2
+        echo "Historical release requires explicit immutable server/hub commits; Docker SHA is recorded from its checkout." >&2
         exit 2
     }
 done

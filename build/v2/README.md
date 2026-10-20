@@ -1,10 +1,18 @@
 # Native V2 DEV Runtime
 
-> As of 2026-10-20, `source-set.json` is a pinned historical baseline, not the current `dev` bundle. The `v2-dev-bundle.yml` workflow resolves exact Server/Hub HEAD SHAs at job start, generates a temporary source-set, assembles that exact combination and saves an audit receipt. The older `v2-clean.yml` runs only when explicitly requested. Neither check is a production image release.
+> Server/Hub/Docker `dev` is the only default development source. Source assembly
+> resolves the local Server/Hub `dev` refs to exact SHAs before reading files;
+> update the local `dev` refs first. The pinned `source-set.json` is retained
+> only as an explicitly selected historical snapshot with `--source-set`.
+> Cross-repository integration checks run on manual `workflow_dispatch`, not
+> on every code or documentation change. Neither source check publishes an image.
 
+Prepare the CE14 source plus reviewed current CloudFile `dev` overlays with
+`python3 tools/prepare-v2-source.py --workspace . --output /path/to/prepared-source`
+from a three-repository workspace. To reproduce a historical source snapshot,
+supply `--source-set build/v2/source-set.json` explicitly instead.
 
-Prepare the pinned CE14 source with `tools/prepare-v2-source.py`, then use the
-existing CE14 dependency images and cache directory:
+Then use the existing dependency images and cache directory:
 
 ```sh
 CF_BASE_IMAGE=cloudfile-build-base:ce14-v2 \

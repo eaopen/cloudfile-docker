@@ -919,7 +919,8 @@ def write_cloudfile_seafile_conf():
                     if name != 'bucket':
                         lines.append('%s = %s\n' % (name, value))
 
-    if not cf_enabled('CF_ENABLE_S3_STORAGE'):
+    if (not cf_enabled('CF_ENABLE_S3_STORAGE') or
+            not get_conf('SEAF_SERVER_STORAGE_TYPE', '').strip()):
         lines.append(retained_legacy_storage(conf_path))
     _replace_block(join(topdir, 'conf', 'seafile.conf'),
                    CF_BEGIN, CF_END, ''.join(lines))

@@ -16,7 +16,7 @@ Seafile 原生 `RepoStorageId` 是库路由事实来源；不读取、转换或�
    `/shared/seafile/library-storage`。启动时还会拒绝根或任一级祖先为符号链接、
    根不存在或不是目录；不会自动创建存储根。
 4. bootstrap 写 `[cloudfile_v2] auto_local_root=/shared/seafile/library-storage`，
-   `[storage] enable_storage_classes=false`，三个对象后端均使用 `name=fs`。
+   `[storage] enable_storage_classes=false`，三个对象后端均使用 `name=filesystem`。
    新模式不生成 multi 类，也不依赖 `CF_ENABLE_S3_STORAGE`。现有 V2 Server 在首个
    commit 前预留库目录，并使用已有 active/retired 生命周期；此配置不重写路由实现。
 
@@ -70,5 +70,15 @@ docker compose --env-file .env.example config --quiet
 
 专项检查覆盖新装、旧环境保留、显式切换、根校验、原配置库存预检、BLOCKED/PINNED 拒绝、
 apply 失败配置不变及重启幂等。生成配置块保留原位置，避免本地别名或覆盖变量在重启时失效。
+原生 CE 的 `seafile-data` 链接会只读解析为真实目录后传给 CLI；托管库 root 仍禁止符号链接。
 真实旧库、跨挂载上传下载、历史版本、恢复、GC 和 fsck 仍需匹配 Server/Hub 镜像及数据副本验证；
 配置测试不代表 DEV/生产验收完成。
+
+原生配置合同还可用当前 Server 的真实 C guard 直接核验：
+
+```bash
+python3 tests/check_storage_config_native.py /path/to/cloudfile-server
+```
+
+该检查编译并执行生产 guard，接受生成的 `filesystem`，确认错误的 `fs` 被拒绝；
+存储类 JSON 中已有的 `backend: fs` 格式不变。

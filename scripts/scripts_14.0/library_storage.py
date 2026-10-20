@@ -91,7 +91,7 @@ def _render_auto(original, generated_body):
     body = generated_body + '\n[cloudfile_v2]\nauto_local_root = %s\n' % LIBRARY_ROOT
     body += '\n[storage]\nenable_storage_classes = false\n'
     for section in ('commit_object_backend', 'fs_object_backend', 'block_backend'):
-        body += '\n[%s]\nname = fs\n' % section
+        body += '\n[%s]\nname = filesystem\n' % section
     return ''.join(out).rstrip() + '\n\n' + BEGIN + '\n' + body + END + '\n'
 
 
@@ -118,7 +118,9 @@ def configure_auto_storage(conf, generated_body, installdir, environment=None):
         current.add_section('cloudfile_v2')
     current.set('cloudfile_v2', 'auto_local_root', LIBRARY_ROOT)
     hub = installdir / 'seahub'
-    native = conf.parent.parent / 'seafile-data'
+    # CE commonly links /opt/seafile/seafile-data to the persisted native tree.
+    # Resolve that upstream layout without relaxing managed-root validation.
+    native = (conf.parent.parent / 'seafile-data').resolve(strict=True)
     cli_env = dict(environment)
     # The persisted Seafile configuration, rather than a future Compose value,
     # describes the current routing that must pass the transition preflight.

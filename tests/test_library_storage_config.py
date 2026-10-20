@@ -25,6 +25,7 @@ class LibraryStorageConfigTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.top = Path(self.directory.name)
         (self.top / 'conf').mkdir()
+        (self.top / 'seafile-data').mkdir()
         self.conf = self.top / 'conf/seafile.conf'
         self.root = self.top / 'libraries'
         self.root.mkdir()
@@ -50,7 +51,7 @@ class LibraryStorageConfigTests(unittest.TestCase):
         self.assertEqual('original_db', kwargs['env']['CF_V2_DB_NAME'])
         self.assertNotIn('secret', command)
         self.assertNotIn('CF_STORAGE_CLASSES_JSON', kwargs['env'])
-        self.assertEqual(str(self.top / 'seafile-data'), command[command.index('--seafile-data') + 1])
+        self.assertEqual(str((self.top / 'seafile-data').resolve()), command[command.index('--seafile-data') + 1])
         self.calls.append((command, config))
         return self.report(command)
 
@@ -83,7 +84,6 @@ class LibraryStorageConfigTests(unittest.TestCase):
         source = SOURCE.with_name('bootstrap.py')
         node = next(node for node in ast.parse(source.read_text()).body
                     if isinstance(node, ast.FunctionDef) and node.name == 'init_seafile_server')
-        (self.top / 'seafile-data').mkdir()
         marker = self.top / '.cloudfile-schema-init-pending'
         marker.touch()
         namespace = dict(exists=os.path.exists, join=os.path.join, shared_seafiledir=str(self.top),
@@ -109,6 +109,24 @@ class LibraryStorageConfigTests(unittest.TestCase):
         self.assertEqual('multiple', config['block_backend']['name'])
         self.assertFalse(config.has_section('cloudfile_v2'))
 
+    def test_bootstrap_s3_switch_without_removed_overlay_type_keeps_multi(self):
+        original = self.original + storage.BEGIN + '\n[cloudfile]\nexample = true\n' + (
+            '[storage]\nenable_storage_classes = true\nstorage_classes_file = existing.json\n' +
+            ''.join('[%s]\nname = multiple\n' % section for section in
+                    ('commit_object_backend', 'fs_object_backend', 'block_backend'))) + storage.END + '\n'
+        self.conf.write_text(original)
+        environment = {'CF_ENABLE_S3_STORAGE': 'true', 'SEAF_SERVER_STORAGE_TYPE': ''}
+        with patch.dict(sys.modules, {'library_storage': storage}), patch.dict(os.environ, environment, clear=True):
+            self.bootstrap_writer(environment)()
+        config = ConfigParser(interpolation=None)
+        config.read(self.conf)
+        self.assertEqual('existing.json', config['storage']['storage_classes_file'])
+        self.assertEqual('true', config['storage']['enable_storage_classes'])
+        for section in ('commit_object_backend', 'fs_object_backend', 'block_backend'):
+            self.assertEqual('multiple', config[section]['name'])
+        self.assertFalse(config.has_section('cloudfile_v2'))
+        self.assertNotIn('auto_local_root', self.conf.read_text())
+
     def test_bootstrap_explicit_auto_ignores_legacy_s3_variable(self):
         environment = dict(self.env, CF_ENABLE_S3_STORAGE='true', SEAF_SERVER_STORAGE_TYPE='multiple')
         with patch.dict(sys.modules, {'library_storage': storage}), patch.dict(os.environ, environment, clear=True), \
@@ -133,11 +151,26 @@ class LibraryStorageConfigTests(unittest.TestCase):
         self.assertEqual('false', config['storage']['enable_storage_classes'])
         self.assertEqual(str(self.root), config['cloudfile_v2']['auto_local_root'])
         for section in ('commit_object_backend', 'fs_object_backend', 'block_backend'):
-            self.assertEqual('fs', config[section]['name'])
+            self.assertEqual('filesystem', config[section]['name'])
         self.assertEqual('persisted-db', config['database']['host'])
         self.assertEqual(2, len(output.splitlines()))
         self.assertTrue(storage.auto_storage_enabled(self.conf, {}))
         self.assertEqual([], list(self.conf.parent.glob('.storage-*')))
+
+    def test_native_layout_symlinks_are_resolved_but_managed_root_is_not(self):
+        shared = self.top / 'shared-seafile'
+        shared.mkdir()
+        (shared / 'seafile-data').mkdir()
+        (self.top / 'seafile-data').rmdir()
+        (self.top / 'seafile-data').symlink_to(shared / 'seafile-data', target_is_directory=True)
+        (self.top / 'conf').rename(shared / 'conf')
+        (self.top / 'conf').symlink_to(shared / 'conf', target_is_directory=True)
+        self.configure()
+        for command, _ in self.calls:
+            self.assertEqual(str(shared / 'seafile-data'), command[command.index('--seafile-data') + 1])
+        config = ConfigParser(interpolation=None)
+        config.read(self.conf)
+        self.assertEqual(str(self.root), config['cloudfile_v2']['auto_local_root'])
 
     def test_explicit_transition_inventories_original_classes(self):
         self.conf.write_text(self.original + '[storage]\nenable_storage_classes = true\nstorage_classes_file = existing.json\n[block_backend]\nname = multiple\n')

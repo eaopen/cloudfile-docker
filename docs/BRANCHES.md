@@ -32,7 +32,7 @@ cloudfile-docker   构建、镜像、部署与跨仓规格
 
 `<work>` 可以是 Issue ID 或统一短工作编号；跨仓任务使用同一 ID 和语义（例如 `feat/v2/cf-123-local-object-staging`）。同名仅用于识别任务，**不能当成版本兼容证明**。历史在途分支不强制改名，先完成现有 PR 再按新命名执行。
 
-长期客户定制与产品主线隔离，不能用未经验证的长期 `feature/*` 来充当可发布版本。
+长期客户定制与产品主线隔离，不能用未经验证的长期 `feat/*` 来充当可发布版本。
 
 ## 三仓组合与发布清单
 
@@ -126,7 +126,7 @@ docs/upstream-patches/cloudfile-docker.txt
 - 合并前确认能力分支不是 `dev` 的祖先，避免快进后误以为能力代码仍存在：
 
   ```bash
-  git merge-base --is-ancestor feature/<name> dev
+  git merge-base --is-ancestor feat/v2/<work>-<topic> dev
   ```
 
 旧排期、历史成本计数与 ACL 分支重建过程保留在 [`history/特性分支与持续维护-旧版.md`](history/特性分支与持续维护-旧版.md)，不作为当前操作依据。

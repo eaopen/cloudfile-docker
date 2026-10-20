@@ -1384,12 +1384,10 @@ def write_cloudfile_config():
     write_cloudfile_seafile_conf()
     write_seafevents_search_config()
     write_seafevents_audit_config()
-    apply_cloudfile_schema()
-    apply_sso_hierarchy_schema_compatibility()
-    apply_metadata_schema_compatibility()
-    apply_tag_schema_compatibility()
-    apply_starred_obj_id_schema_compatibility()
-    apply_audit_schema()
+    # Development upgrades (including compatibility columns) are explicit SQL
+    # releases. Restarting/config generation must not mutate a database or
+    # bring back retired fields after the four-table V2 conversion.
+    # Historical helpers remain for source traceability, not startup execution.
 
 
 def apply_sso_hierarchy_schema_compatibility():

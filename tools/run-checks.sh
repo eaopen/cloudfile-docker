@@ -90,7 +90,8 @@ run "SQL 结构漂移回归" python3 "$docker_repo/tests/test_sql_contracts.py" 
 # Explicit DEV conversion must preserve rule/group identity and reject live Guards.
 run "V2 四表修复数据映射" python3 "$docker_repo/tests/test_repair_v2_four_tables.py"
 # Fresh DDL must remain resumable and must never turn restart into an upgrade.
-run "新部署 DDL 初始化" python3 -m unittest discover -s "$docker_repo/tests" -p test_fresh_schema.py -q
+run "开发期只读 Schema 启动校验" python3 -m unittest discover -s "$docker_repo/tests" -p test_fresh_schema.py -q
+run "独立 SQL 交付契约" python3 -m unittest discover -s "$docker_repo/tests" -p test_manual_sql_package.py -q
 run "v0.6 新安装每库独立目录 Compose 契约" python3 -m unittest discover -s "$docker_repo/tests" -p test_v06_default_library_storage.py -q
 run "RustFS/MinIO 存储类与 Compose 契约" python3 -m unittest discover -s "$docker_repo/tests" -p test_storage_class_config.py -q
 # CloudFile v0.5 W1-W3 standalone checks, no live Docker/DB dependencies.

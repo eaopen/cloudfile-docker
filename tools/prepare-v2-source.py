@@ -116,8 +116,9 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--hub-ref')
     parser.add_argument('--server-ref')
+    parser.add_argument('--source-set', type=Path, help='Explicit immutable source-set manifest; defaults to frozen baseline.')
     args = parser.parse_args()
-    config = Path(__file__).resolve().parents[1] / 'build/v2/source-set.json'
+    config = args.source_set or (Path(__file__).resolve().parents[1] / 'build/v2/source-set.json')
     sources = json.loads(config.read_text())
     refs = {
         'cloudfile-hub': args.hub_ref or sources['components']['cloudfile-hub']['overlay_commit'],

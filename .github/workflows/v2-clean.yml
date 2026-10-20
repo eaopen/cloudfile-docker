@@ -1,10 +1,7 @@
-name: CloudFile V2 clean CE14 isolated checks
+name: CloudFile frozen V2 source-set (historical manual check)
 
+# Explicitly frozen 2026-10-16 source snapshot; this does NOT prove current dev.
 on:
-  push:
-    branches: [dev, dev2-clean, feature/v2-rust-guard-only, feature/v2-checkout-default-on]
-  pull_request:
-    branches: [dev]
   workflow_dispatch:
 
 permissions:

@@ -1,4 +1,4 @@
-name: CloudFile development checks
+name: CloudFile shared/legacy regression checks
 
 on:
   push:
@@ -48,6 +48,16 @@ jobs:
 
       - name: Install isolated check dependencies
         run: pip install --quiet -r cloudfile-docker/tools/check-requirements.txt
+
+      - name: Record checked shared/legacy source combination
+        run: |
+          {
+            echo '### Shared regression (not a V2 release certification)'
+            echo '- Docker: `'`git -C cloudfile-docker rev-parse HEAD`'`'
+            echo '- Server: `'`git -C cloudfile-server rev-parse HEAD`'`'
+            echo '- Hub: `'`git -C cloudfile-hub rev-parse HEAD`'`'
+            echo 'For the current V2 native source-set, use the separate V2 current bundle check.'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Run development checks
         run: ./cloudfile-docker/tools/run-checks.sh

@@ -30,6 +30,12 @@ esac
 
 here=$(cd "$(dirname "$0")" && pwd)
 repo_root=$(cd "$here/.." && pwd)
+# The old CE14 release.yaml and build path do not assemble V2 source-set.
+# Reject a plausible but incorrect V2-dev image before touching any registry.
+if [[ $(git -C "$repo_root" symbolic-ref --quiet --short HEAD 2>/dev/null || true) == dev ]]; then
+    echo "CloudFile dev is V2; this script packages legacy CE14 source. Use reviewed legacy maintenance/archive or a separately validated V2 release." >&2
+    exit 2
+fi
 workspace=$(cd "$repo_root/.." && pwd)
 server_repo=$workspace/cloudfile-server
 hub_repo=$workspace/cloudfile-hub

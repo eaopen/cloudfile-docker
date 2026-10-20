@@ -112,6 +112,14 @@ jobs:
           path: cloudfile-docker
           fetch-depth: 1
 
+      - name: Reject legacy production packaging on V2 dev
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_NAME" == "dev" ]]; then
+            echo "::error::CloudFile dev is V2. This workflow packages the historical CE14 extension recipe; run a reviewed maintenance/archive ref for legacy versions, or use a separate approved V2 release path."
+            exit 2
+          fi
+
       - name: Read release refs
         id: refs
         working-directory: cloudfile-docker

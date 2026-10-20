@@ -1,3 +1,4 @@
+# Historical CE14 extension release recipe. V2 dev uses build/v2/source-set.json and the V2 current-bundle CI; do not release V2 images from this manifest.
 # CloudFile release manifest.
 #
 # Upstream CE 14 is released now: haiwen/seafile-server and haiwen/seahub both

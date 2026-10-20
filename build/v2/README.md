@@ -1,5 +1,8 @@
 # Native V2 DEV Runtime
 
+> As of 2026-10-20, `source-set.json` is a pinned historical baseline, not the current `dev` bundle. The `v2-dev-bundle.yml` workflow resolves exact Server/Hub HEAD SHAs at job start, generates a temporary source-set, assembles that exact combination and saves an audit receipt. The older `v2-clean.yml` runs only when explicitly requested. Neither check is a production image release.
+
+
 Prepare the pinned CE14 source with `tools/prepare-v2-source.py`, then use the
 existing CE14 dependency images and cache directory:
 

@@ -124,27 +124,23 @@ def _replace_block(path, begin, end, body):
         with open(path, 'r') as fp:
             lines = fp.readlines()
 
-    out, skipping = [], False
-    for line in lines:
-        if line.strip() == begin:
-            skipping = True
-            continue
-        if skipping:
-            if line.strip() == end:
-                skipping = False
-            continue
-        out.append(line)
-
-    while out and out[-1].strip() == '':
-        out.pop()
+    # Keep the original position: local settings after this block can reference
+    # its variables or override them. Moving it to EOF breaks restart imports.
+    starts = [i for i, line in enumerate(lines) if line.strip() == begin]
+    ends = [i for i, line in enumerate(lines) if line.strip() == end]
+    block = begin + '\n' + body + end + '\n'
+    if starts or ends:
+        if len(starts) != 1 or len(ends) != 1 or ends[0] < starts[0]:
+            raise ValueError('invalid generated settings markers in %s' % path)
+        updated = ''.join(lines[:starts[0]]) + block + ''.join(lines[ends[0] + 1:])
+    else:
+        while lines and lines[-1].strip() == '':
+            lines.pop()
+        updated = ''.join(lines) + ('\n\n' if lines else '') + block
 
     with open(path, 'w') as fp:
-        fp.writelines(out)
-        if out:
-            fp.write('\n\n')
-        fp.write(begin + '\n')
-        fp.write(body)
-        fp.write(end + '\n')
+        fp.write(updated)
+
 
 
 def write_cloudfile_settings():

@@ -57,3 +57,6 @@ Docker 门禁及本报告随同一审查提交交付；均尚未部署。
 ## 方案对比补充
 
 参见 [跨方案对比与补充计划](upload-plan-comparison-20261021.md)。补充了实际参与编译的 common/cf-lock.c、存储绑定两表共存、bootstrap 启动 DDL 边界，以及 EXDEV 和离线迁移验收；与尚未接入的 common/cf-v2-edit-fence.c 区分。
+
+
+后续收敛：生产 C `common/cf-lock.c` 与 `cf_policy_check_unleased_write` 已改为 V2 path Guard，不再查询 Resource 或旧迁移台账。`python3 tests/cf-lock/run.py` 在 Server 仓编译完整生产锁屏障和 fileop 分发器及最终事务，12 项通过；Docker 隔离 MariaDB 另执行从生产 C 抽取的 SQL，空/活动/过期租约均符合预期。Go 的此前验证继续有效。未执行完整 Linux C 构建或镜像联验。

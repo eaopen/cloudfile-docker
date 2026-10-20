@@ -10,6 +10,7 @@ import argparse
 root=Path(__file__).resolve().parents[1]
 parser=argparse.ArgumentParser(description='Verify manual SQL on a disposable no-network MariaDB container; never target an existing DB')
 parser.add_argument('--hub',type=Path,default=root.parent/'cloudfile-hub')
+parser.add_argument('--server',type=Path,help='Server source for the native Guard SQL contract')
 parser.add_argument('--ssh-host',help='Optional test host with an existing mariadb:11.4 image')
 options=parser.parse_args()
 folder=root/'database/v2/20261021-four-table-baseline';hub=options.hub
@@ -32,6 +33,19 @@ VALUES ('11111111-1111-1111-1111-111111111111','01234567-89ab-cdef-0123-456789ab
 '''
 pack['fixture']=fixture
 pack['gate_source']=(root/'scripts/scripts_14.0/cloudfile_schema.py').read_text()
+# Execute SQL extracted from the changed production C entry points, rather
+# than a handwritten equivalent which could hide a field/encoding mismatch.
+import ast
+native = options.server or root.parent/'cloudfile-server'
+queries = []
+for path, name in [('common/cf-lock.c','load_exact ('),
+                   ('common/cf-lock.c','load_descendant ('),
+                   ('server/cloudfile-policy.c','cf_policy_check_unleased_write (')]:
+ source=(native/path).read_text().split(name,1)[1]
+ match=re.search(r'("SELECT path FROM cf_edit_guard FORCE INDEX[\s\S]+?)",\n',source)
+ if not match:raise RuntimeError('native Guard SQL not found')
+ queries.append(''.join(ast.literal_eval(part) for part in re.findall(r'"(?:\\.|[^"\\])*"',match[1]+'"')))
+pack['native_queries']=queries
 script='pack='+repr(pack)+'\n'+r'''
 import subprocess,uuid,time,json
 name='cf-v2-sql-test-'+uuid.uuid4().hex[:10]
@@ -59,6 +73,24 @@ try:
  result=sql("SELECT (SELECT COUNT(*) FROM cf_library_storage),(SELECT COUNT(*) FROM cf_sso_group_map),(SELECT COUNT(*) FROM cf_dir_acl),LENGTH(path_hash),permission,inherit,group_id FROM cf_dir_acl JOIN cf_sso_group_map USING(provider,subject_type,namespace,external_id);",'old_layout')
  if result!='1\t1\t1\t32\trw\t1\t7':raise RuntimeError('migration identity or data mismatch')
  print('PASS old layout migration, native group identity and ACL bytes',flush=True)
+ # The C barrier and final publication SQL must work with exactly four tables.
+ repo='01234567-89ab-cdef-0123-456789abcdef'; path='/parent/file'
+ def guard_query(query,args):
+  for arg in args:query=query.replace('?',"'"+arg.replace("'","''")+"'",1)
+  return sql(query,'old_layout')
+ import hashlib
+ args=[(repo,hashlib.sha256(path.encode()).hexdigest(),path),(repo,'/parent/%'),
+       (repo,hashlib.sha256(path.encode()).hexdigest(),path)]
+ for query,params in zip(pack['native_queries'],args):
+  if guard_query(query,params):raise RuntimeError('empty Guard unexpectedly conflicts')
+ sql("INSERT INTO cf_edit_guard(repo_id,path_hash,path,guard_id,owner_uid,owner_native_user,proof_digest,base_file_id,lease_expires_at) VALUES ('"+repo+"',UNHEX(SHA2('"+path+"',256)),'"+path+"','33333333-3333-3333-3333-333333333333','fixture','owner',REPEAT('a',64),REPEAT('b',40),UTC_TIMESTAMP(6)+INTERVAL 1 MINUTE)",'old_layout')
+ for query,params in zip(pack['native_queries'],args):
+  if guard_query(query,params)!=path:raise RuntimeError('active Guard not found by native SQL')
+ sql('UPDATE cf_edit_guard SET lease_expires_at=UTC_TIMESTAMP(6)-INTERVAL 1 SECOND','old_layout')
+ for query,params in zip(pack['native_queries'],args):
+  if guard_query(query,params):raise RuntimeError('expired Guard blocks a native write')
+ sql('DELETE FROM cf_edit_guard','old_layout')
+ print('PASS production C Guard SQL: empty, active, expired against four-table database',flush=True)
  sql("SET @cf_upgrade_archive_database='old_layout_archive'; SET @cf_upgrade_writers_stopped=1;\n"+pack['10-upgrade-029-042.sql'],'old_layout',ok=False)
  sql(pack['50-verify.sql'],'old_layout');print('PASS repeat rejected without destroying target or backups',flush=True)
  sql('ALTER TABLE cf_edit_guard DROP INDEX cf_edit_guard_active;','fresh');sql(pack['50-verify.sql'],'fresh',ok=False);print('PASS missing index rejected',flush=True)

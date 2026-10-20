@@ -1,6 +1,6 @@
 # 四表开发基线 SQL 包
 
-适用：Server `06efc4dea43c5200eea5dd2341f581536ad0838c` 的四表 DDL、Hub `fc9e89c53636432e2a6da824a8758d1b0a374316` 的对应 V2 读写合同。Docker 启动只读校验的配套提交随本包交付。旧 C/Hub 调用者对原结构的依赖须同时核对；SQL 包通过不代表所有历史功能都已迁移。
+适用：Server `06efc4dea43c5200eea5dd2341f581536ad0838c` 的四表 DDL、Hub `fc9e89c53636432e2a6da824a8758d1b0a374316` 的对应 V2 读写合同。Docker 启动只读校验的配套提交随本包交付。配套修复将原生锁屏障切换至 V2 Guard，Hub 根路由退出旧 Resource/Intent 控制面；SQL 包通过不表示这些已退役功能重新可用。
 
 ## 文件与执行顺序
 
@@ -56,6 +56,17 @@ python3 tests/test_manual_sql_integration.py --hub /path/to/cloudfile-hub
 python3 tests/test_manual_sql_integration.py --hub /path/to/cloudfile-hub --ssh-host test-host
 ```
 
-DEV/PROD 都应记录 SQL 校验和、三仓源码 SHA、目标数据库版本、备份位置、前后结构/数量、执行人及时间。验收至少包含普通上传→目录可见→下载哈希一致、0B/1B/中文文件名、已有锁保护及新旧实例重启不改表。50 和启动校验会拒绝混入历史 cf 表。现有 DEV 尚保留历史表及备份，不能直接套用新启动代码；须先审核完成归档并移除旧运行代码依赖。本次不修改现有 DEV 数据库或部署镜像。
+DEV/PROD 都应记录 SQL 校验和、三仓源码 SHA、目标数据库版本、备份位置、前后结构/数量、执行人及时间。验收至少包含普通上传→目录可见→下载哈希一致、0B/1B/中文文件名、已有锁保护及新旧实例重启不改表。50 和启动校验会拒绝混入历史 cf 表。现有 DEV 尚保留历史表及备份，部署前须审核执行 05 生成的归档 SQL；不得为了通过启动校验删除数据或恢复旧表。四表启动不再接入旧 PolicyHost，显式启用旧入口的配置会在启动时被拒绝并列出变量名。本次不修改现有 DEV 数据库或部署镜像。
 
 目标结构验收还需核对完整 SHOW CREATE（包括默认值与 CHECK 内容），50 不能代替所有业务语义和原生消费者测试。
+
+
+## 运行依赖收敛（2026-10-21）
+
+- 普通上传、下载、目录 ACL 与 Etech 目录同步使用现有 V2 入口；关闭 Checkout 时，C/Go/Hub 均不查询 Guard。
+- C fileop 锁屏障与普通写入事务只读 path-keyed Guard，不再关联 `cf_resource` 或查询 029 台账。活动租约阻止无受控凭据的写入（包括租约所有者）；SQL 故障拒绝写入。
+- Docker 不再为四表运行时安装旧 PolicyHost Gunicorn hooks，仅删除自己管理的旧 hook 块，保留操作者其它 hook。`CLOUDFILE_*` 的旧 OIDC/授权/编辑/传输/注释/审计/搜索入口若显式开启，启动拒绝；不会自动修改环境变量。原生 OAuth、`/oidc/` 和 V2 API 不属于该旧入口。
+- Hub 根路由只保留当前原生文件/库接口、原生库配置、V2 兼容只读别名及部署扩展；不再挂载旧 SchemaRunner 管理、同步、会话、Intent 和 capabilities 入口。管理使用 `/api/v2.1/cloudfile/authorization/v1/directory-rules/`，组同步使用 `/api/v2.1/admin/cloudfile/directory/entities/sync/`。旧只读别名采用现有 V2 的参数和回执，不保留历史字段。
+- 兼容读取：`extensions/authorization/v1/{effective-permission,shared-directories,directory-entries}/` 直接使用 V2 视图；旧 `directory-address`、`library-rules`、`directory-shares` 等历史路由不再提供。不能用保留历史表来恢复它们。
+
+本轮：配置/只读启动/SQL 契约 46 项；Hub 28 项及 7 个子用例；原生 C 锁屏障及最终事务 12 项；隔离 MariaDB 9 组场景（含从生产 C 抽取的空/活动/过期 Guard 查询）通过。未全量构建、部署或调整 DEV 环境；当前 DEV 历史表归档仍是部署前人工 SQL 步骤，不是启动时升级。

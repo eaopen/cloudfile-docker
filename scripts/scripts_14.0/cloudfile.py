@@ -252,9 +252,9 @@ def render_settings(environment=None):
     webdav_enabled = _boolean(environment, "CLOUDFILE_WEBDAV_ENABLED", False)
     authorization_enabled = _boolean(environment, "CLOUDFILE_AUTHORIZATION_ENABLED", False)
     local_edit_enabled = _boolean(environment, "CLOUDFILE_LOCAL_EDIT_ENABLED", False)
-    # Native administrator policy uses existing SQL/account authority, not OIDC.
-    # The session route remains an explicit alternative owning the same paths.
-    admin_policy_enabled = _boolean(environment, "CLOUDFILE_ADMIN_POLICY_ENABLED", not authorization_enabled)
+    # The old administrator control plane requires the retired multi-table
+    # schema. Current V2 DirectoryRules owns management and stays available.
+    admin_policy_enabled = _boolean(environment, "CLOUDFILE_ADMIN_POLICY_ENABLED", False)
     if admin_policy_enabled and authorization_enabled:
         raise ValueError("administrator policy requires distinct route ownership")
     editing_enabled = _boolean(environment, "CLOUDFILE_EDITING_ENABLED", False)
@@ -422,10 +422,27 @@ def write_settings(path, environment=None):
     return True
 
 
-def write_policy_worker_hooks(path, environment=None):
+def write_policy_worker_hooks(path, environment=None, *, v2=False):
     """Manage only our block; preserve and compose existing Gunicorn hooks."""
     environment = os.environ if environment is None else environment
     enabled = _boolean(environment, "CLOUDFILE_POLICY_WORKER_HOOKS", False)
+    if v2:
+        # The old PolicyHost validates the 42-migration Resource/Intent schema.
+        # V2 native OAuth, ACL and transfers use their direct adapters instead.
+        # Never silently enable retired routes or start that host on four tables.
+        retired = (
+            "CLOUDFILE_OIDC_ENABLED", "CLOUDFILE_ADMIN_POLICY_ENABLED", "CLOUDFILE_AUTHORIZATION_ENABLED",
+            "CLOUDFILE_TRANSFER_ENABLED", "CLOUDFILE_EDITING_ENABLED",
+            "CLOUDFILE_LOCAL_EDIT_ENABLED", "CLOUDFILE_ANNOTATIONS_ENABLED",
+            "CLOUDFILE_AUDIT_QUERY_ENABLED", "CLOUDFILE_AUDIT_EXPORT_ENABLED",
+            "CLOUDFILE_RESOURCE_SEARCH_ENABLED",
+        )
+        requested = [name for name in retired if _boolean(environment, name, False)]
+        if requested:
+            raise ValueError("V2 does not support retired schema-dependent routes: " + ", ".join(requested))
+        # Removing our generated block preserves operator hooks. It does not
+        # change environment variables, schema, or native V2 permissions.
+        enabled = False
     begin_marker = "# BEGIN CLOUDFILE POLICY WORKER HOOKS"
     end_marker = "# END CLOUDFILE POLICY WORKER HOOKS"
     try:

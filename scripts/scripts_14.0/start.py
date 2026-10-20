@@ -60,8 +60,8 @@ def main():
 
     wait_for_mysql()
     init_seafile_server()
+    write_policy_worker_hooks(join(topdir, 'conf', 'gunicorn.conf.py'), v2=True)
     write_cloudfile_settings(join(topdir, 'conf', 'seahub_settings.py'))
-    write_policy_worker_hooks(join(topdir, 'conf', 'gunicorn.conf.py'))
 
     check_upgrade()
 

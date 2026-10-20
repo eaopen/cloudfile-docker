@@ -63,3 +63,6 @@ common/user-mgr.h
 
 fileserver/fileserver.go
 server/gc/seafile-session.c
+
+# 2026-10-21：cf-lock.c/h 与 cloudfile-policy.c 是独立 CloudFile 文件。
+# C 普通写入/锁屏障使用 V2 单 Guard，Checkout 关闭不查询锁；不改原生调用点。

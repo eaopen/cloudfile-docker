@@ -43,3 +43,8 @@
 ## 后续兼容事项
 
 四表实际修复不代表所有旧调用者已经迁移。Docker 的 bootstrap 每次启动仍含集成 DDL，旧版本化 SchemaRunner 仍识别 resource/统一 ACL 结构；已编译 C cf-lock.c/cloudfile-policy.c 的部分路径及旧目录同步写入也仍有旧字段依赖。启动 Schema Owner、旧入口退出及所有原生锁/ACL 写入消费者需按 [方案对比](upload-plan-comparison-20261021.md)继续统一，发布或重启前必须覆盖相关测试。不能靠重新加旧字段、补默认值或清除真实锁来掩盖新旧代码不一致。
+
+
+### 后续源码修复状态
+
+启动已取消自动扩展 DDL；Docker 四表运行时不再加载旧 PolicyHost。原生 C 锁屏障/普通写终判已直接使用 V2 Guard，Hub 旧控制面路由已退出，V2 读取别名不再进入旧 NativeRead。现有 DEV 的历史表及同库备份仍须按独立 SQL 审核归档后再部署；本轮没有操作现有 DEV 表、环境变量或容器。详见 [运行依赖收敛](../database/v2/20261021-four-table-baseline/README.md)。

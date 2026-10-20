@@ -88,7 +88,7 @@ class FreshSchemaTest(unittest.TestCase):
         code = (Path(__file__).resolve().parents[1] /
                 'scripts/scripts_14.0/bootstrap.py').read_text()
         body = code.split('def write_cloudfile_config():', 1)[1].split(
-            '\\ndef apply_sso_hierarchy_schema_compatibility', 1)[0]
+            'def apply_sso_hierarchy_schema_compatibility', 1)[0]
         for call in ('apply_cloudfile_schema()', 'apply_sso_hierarchy_schema_compatibility()',
                      'apply_audit_schema()'):
             self.assertNotIn('    '+call, body)

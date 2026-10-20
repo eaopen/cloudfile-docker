@@ -45,17 +45,14 @@ manifest=$repo_root/release.yaml
 reader=$repo_root/build/cloudfile_14.0/read-manifest.py
 server_pin=$(python3 "$reader" "$manifest" server_commit)
 hub_pin=$(python3 "$reader" "$manifest" hub_commit)
-docker_pin=$(python3 "$reader" "$manifest" docker_commit)
-for pin in "$server_pin" "$hub_pin" "$docker_pin"; do
+# The Docker SHA is captured from the checkout in the build receipt.
+# A commit cannot embed its own SHA in a tracked manifest.
+for pin in "$server_pin" "$hub_pin"; do
     [[ "$pin" =~ ^[0-9a-f]{40}$ ]] || {
         echo "Historical release requires explicit immutable server/hub/docker commits." >&2
         exit 2
     }
 done
-[[ "$docker_pin" == "$(git -C "$repo_root" rev-parse HEAD)" ]] || {
-    echo "Historical Docker checkout differs from frozen commit." >&2
-    exit 2
-}
 dist=$repo_root/build/cloudfile_14.0/seafile-server-$version
 local_image=$(python3 "$reader" "$manifest" image)
 local_image=${local_image%%:*}:$version
@@ -126,9 +123,8 @@ if [[ $mode != push ]]; then
         git_at "$repo" pull --ff-only origin "$branch"
     done
     [[ $(git_at "$server_repo" rev-parse HEAD) == "$server_pin" &&
-       $(git_at "$hub_repo" rev-parse HEAD) == "$hub_pin" &&
-       $(git_at "$repo_root" rev-parse HEAD) == "$docker_pin" ]] || {
-        echo "Historical checkout differs from frozen Server/Hub/Docker commit; do not build floating dev." >&2
+       $(git_at "$hub_repo" rev-parse HEAD) == "$hub_pin" ]] || {
+        echo "Historical Server/Hub checkout differs from frozen commits; do not build floating dev." >&2
         exit 2
     }
     if [[ ${CF_FORCE_REBUILD:-0} != 1 ]] && can_reuse_build; then

@@ -116,14 +116,33 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--hub-ref')
     parser.add_argument('--server-ref')
-    parser.add_argument('--source-set', type=Path, help='Explicit immutable source-set manifest; defaults to frozen baseline.')
+    parser.add_argument('--source-set', type=Path,
+                        help='Explicit frozen source-set; without this, select the local dev refs')
     args = parser.parse_args()
     config = args.source_set or (Path(__file__).resolve().parents[1] / 'build/v2/source-set.json')
     sources = json.loads(config.read_text())
-    refs = {
-        'cloudfile-hub': args.hub_ref or sources['components']['cloudfile-hub']['overlay_commit'],
-        'cloudfile-server': args.server_ref or sources['components']['cloudfile-server']['overlay_commit'],
+    selected = {
+        'cloudfile-hub': args.hub_ref,
+        'cloudfile-server': args.server_ref,
     }
+    refs = {}
+    for component, requested in selected.items():
+        # The CE source commits and patch allowlists stay pinned. Only CloudFile
+        # overlays default to the checked-out dev branch; freeze that ref once
+        # before any file is extracted. Explicit --source-set remains the route
+        # for historical/release snapshots.
+        ref = requested or (sources['components'][component]['overlay_commit']
+                            if args.source_set else 'dev')
+        try:
+            commit = git(args.workspace / component, 'rev-parse', '--verify',
+                         ref + '^{commit}').decode().strip()
+        except subprocess.CalledProcessError as error:
+            raise ValueError('missing source ref for %s: %s' % (component, ref)) from error
+        if not re.fullmatch('[0-9a-f]{40}', commit):
+            raise ValueError('invalid resolved source commit for ' + component)
+        if not args.source_set:
+            sources['components'][component]['overlay_commit'] = commit
+        refs[component] = commit
     receipt = assemble(args.workspace.resolve(), args.output.resolve(), sources, refs)
     print(json.dumps(receipt, indent=2, sort_keys=True))
 

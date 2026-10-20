@@ -7,13 +7,13 @@
 - Etech `userId` 是唯一业务身份，对应原生 `Profile.login_id`。
 - Directory 的 `attributes.employee_no` 当前承载 `org_user.account_`；允许数字账号、zhangsan、admin，禁止 cfadmin。合法字符为 ASCII 字母、数字、点、下划线和连字符，长度 1–200，不自动去空格；新原生用户名遵循 Seafile RPC 转小写的规则。登录账号不区分大小写，UID 仍精确匹配。
 - 新原生账号使用 `account@auth.local`，账号名冲突拒绝；admin 仍是普通非 staff 用户。
-- 已有 UID 精确绑定优先复用，保留 UUID 或历史后缀，不自动重命名、不按联系邮箱合并。
+- 已有 UID 精确绑定优先复用，保留 UUID 或历史后缀，不自动重命名、不按联系邮箱合并。账号格式只限制新建；已有用户仍须通过 UID、在职状态、原生账号启用及认证绑定一致性检查，不能因 Directory 的账号为空或不符合新建规则而另建用户。
 - 管理员解析只接收 UID 作为依据；未知 UID 独立读取可信 Directory 的账号与有效状态。EAP 同步使用返回的真实原生账号，不能猜测工号邮箱。
 - 账号歧义只在有效用户间判断；停用历史记录不作为有效候选。多个有效 UID、大小写碰撞及 UID/账号碰撞拒绝解析，不选择最小 UID。
 
 ## 当前 V2 登录配置
 
-当前镜像由 `build/v2/start-dev.py` 启动，从已有原生配置保留 `OAUTH_*` 和 Directory 连接设置，不调用 `scripts/scripts_14.0/bootstrap.py` 或其中的 `cloudfile.py`。
+当前 V2 构建产物由 `build/v2/start-dev.py` 启动，从已有原生配置保留 `OAUTH_*` 和 Directory 连接设置，不调用 `scripts/scripts_14.0/bootstrap.py` 或其中的 `cloudfile.py`。实际 DEV 运行镜像必须另行核对，不能仅根据仓库启动脚本推断已部署。
 
 Etech 需在已有 `seahub_settings.py` 中明确配置：
 
@@ -31,6 +31,27 @@ OAUTH_ATTRIBUTE_MAP = {
 `CF_SSO_EAP_PROFILE_IDENTITY` 是已退役 Bridge 的开关，当前 V2 不得启用；旧文档建议设为 true 已失效。`/oidc/` 入口另需已有的 `OAUTH_OIDC_ISSUER`、`OAUTH_OIDC_JWKS_URI`，验证 ID Token 与 UserInfo 的身份一致性。Etech 首次 OIDC 建号要求 ID Token 和 UserInfo 均携带一致的 userId；可信 Directory 确认 UID、account 与有效状态后，由 V2 `SQLJITProvisioner` 创建/复用原生 User、Profile 并添加该 provider/sub 绑定。先登录或先 EAP 同步均得到同一 UID 原生用户。旧 OAuth 不创建用户，仅复用已有 UID。旧生成器若用于维护历史部署，显式 `CF_SSO_OAUTH_LOGIN_ID_CLAIM=userId` 才表示 UID 映射；不能照搬其启用 Bridge 的旧提示。
 
 普通 Seafile CE OAuth、LDAP 和管理员本地建号保持其自身规则。以上配置说明不表示已改动任何 DEV/PROD 环境变量或持久配置。
+
+## 复用现有 Authentik 的快速入口
+
+`/oidc/login/` 是原生 OAuth 客户端的严格 OIDC 入口，仍回调已有 `/oauth/callback/`，复用会话和 CSRF。它要求有效 ID Token、nonce、issuer、audience 和 UserInfo 身份一致性；若 Token 带有 `at_hash` 则同时验证。它不等同于旧扩展的 `identity/v1/begin` 流程，也不依赖启用该旧入口。
+
+在现有 Authentik 客户端已支持 `openid`、RS256 签名、UserInfo 与 ID Token 的一致 `userId`、原有 OAuth 回调的前提下，不需要修改 Authentik。2026-10-20 的 DEV 只读检查确认了这些配置前提及公开发现信息；尚未用员工真实登录验证 Token 和完整重定向链。
+
+CloudFile 持久配置的审核目标如下，本文不执行修改：
+
+```python
+CF_SSO_EAP_PROFILE_IDENTITY = False
+OAUTH_OIDC_ISSUER = 'http://10.9.8.162:6119/ssoauth/application/o/cloudfile/'
+OAUTH_OIDC_JWKS_URI = 'http://10.9.8.162:6119/ssoauth/application/o/cloudfile/jwks/'
+LOGIN_URL = '/seafile/oidc/login/'
+```
+
+这些地址只适用于该 DEV；其他部署应按实际 issuer、JWKS 和 `SITE_ROOT` 配置。`LOGIN_URL` 必须包含部署前缀，不能在 `/seafile/` 部署中直接写 `/oidc/login/`。HTTP DEV 还需已有的 `OAUTH_ENABLE_INSECURE_TRANSPORT=True`；生产 HTTPS 不应因此开启不安全传输。现有 `userId -> login_id` 映射、客户端和回调保持不变。
+
+发布前先核对持久配置与 Authentik 已有能力，再切换包含修复提交的镜像，并检查源码回执中的 Hub SHA。验收必须确认 EAP bootstrap 实际到达 CloudFile、未登录访问确实进入上述 `LOGIN_URL`，以及新用户首次登录可建号；不能把发现文档、HEAD 响应或源码单测当成完整 ssoAuth 验收。已有用户、新用户、管理员预建先于登录、第二种认证绑定都必须落到同一 UID 的原生账号；缺 UID、UID 冲突、账号冲突和停用必须拒绝。
+
+后续采用独立原生 OIDC 入口时，仍先核对同一客户端的回调允许列表，再验证按 UID 复用账号；DEV 已登记对应 `identity/v1/callback/`，无需重复添加。不在本次修复中恢复旧框架、引入新的绑定表或迁移历史用户。方式 A 的会话恢复、失败清理 Cookie 和文件历史改走 Cookie 单独实施。
 
 ## 构建与验证边界
 

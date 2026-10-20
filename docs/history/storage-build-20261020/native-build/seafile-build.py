@@ -578,7 +578,7 @@ def copy_scripts_and_libs():
 
     move_python_packages()
 
-    # copy fileserver 
+    # copy fileserver
     copy_fileserver()
     # copy notification-server
     copy_notification_server()

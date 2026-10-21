@@ -13,9 +13,15 @@
 | [项目概览](overview.md) | 基线、产品边界和事实口径 |
 | [当前架构](architecture.md) | 三仓职责、数据边界和故障隔离 |
 | [部署](deployment.md) | Compose 部署、升级、备份和恢复 |
-| [数据库 SQL 交付](../database/README.md) | 开发期四表建模、独立 SQL 升级及 DEV → PROD 迁移 |
+| [数据库 SQL 交付](../database/README.md) | 当前五表（存储、目录 ACL、SSO 组映射、编辑 Guard、审计）DDL 与部署校验 |
 | [配置](configuration.md) | 环境变量、profile 和配置生成规则 |
 | [扩展能力矩阵](feature-matrix.md) | 每项能力的状态、来源、定位、证据和上游策略 |
+
+## 当前权限权威入口
+
+- [V2 权限终判契约](permission-adjudication-contract.md)：当前不再区分“托管库/非托管库”；库与目录、共享目录、最终写入共用 V2 授权结果。
+- [当前 ACL 语义](acl-semantics.md) 与 [五表权限事实](permission-tables.md)：禁止恢复旧 `cf_managed_library` 门禁或以任意 ACL 行整库拒绝。
+- 历史 `v0.9` 和 RC 文档已撤销为仅供追溯，不得作为当前 `dev` 的代码或测试合同。
 
 ## 能力说明
 
@@ -25,7 +31,7 @@
 | [多存储与 S3 兼容存储](features/storage-backends.md) | 部署与兼容性说明；具体后端支持以发行版本为准 |
 | [外部资料联邦与虚拟目录挂载](features/external-directory-mount.md) | 规划；拟拆分为独立项目，为 AI 和 CloudFile 提供不同消费接口；**不属于虚拟目录 v1** |
 | [Seafile AI 与外接 LLM](features/seafile-ai.md) | 验证中；复用官方 Seafile AI，外接配置模型 |
-| [目录 ACL 语义](acl-semantics.md) | 验证中；active-authority 故障与修订契约尚待跨层实现 |
+| [目录 ACL 语义](acl-semantics.md) | 当前 V2 授权语义，真实 DEV 跨层仍需验收 |
 | [写入生命周期](fileop-lifecycle.md) | 验证中 |
 | [目录/文件操作日志](features/audit.md) | 验证中；已查询提交变更，完整操作与协议覆盖待补 |
 | [目录/文件标签机制](features/tags.md) | 验证中；CE 通路存在，当前门禁未验证目录/文件绑定闭环 |
@@ -41,7 +47,7 @@
 | [版本差异说明](edition-differences.md) | CE/Pro/CloudFile 特性与 API 差异的判定模型、"行为不符预期"排查流程与案例登记 |
 | [上游贡献建议](upstream-contribution.md) | 可提交、拆分后提交和内部保留的改动 |
 | [路线图](roadmap.md) | 仅保留未完成项，不承诺日期 |
-| [权限表与权限模型](permission-tables.md) | 权限相关表清单、字段语义、口径决策与收敛路线 |
+| [权限表与权限模型](permission-tables.md) | 当前五张扩展表及 CE 原生权限职责 |
 | [分支与上游跟随](BRANCHES.md) | 当前分支、合并门槛和同步步骤 |
 | [扩展点清单](EXTENSION-POINTS.md) | Hub/Server 扩展点及消费者技术参考 |
 | [历史版本](history/README.md) | 被替代方案、旧规划和决策过程索引 |

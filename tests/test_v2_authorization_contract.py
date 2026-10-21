@@ -43,9 +43,14 @@ class CurrentAuthorizationSpec(unittest.TestCase):
         for name in retired:
             self.assertFalse((ROOT / name).exists(), name)
         forbidden = re.compile(
-            r'\\b(?:INSERT\\s+INTO|SELECT\\s+[^\\n]*?\\s+FROM|UPDATE|DELETE\\s+FROM)\\s+cf_(?:managed_library|managed_library_share|library_share_revision)\\b',
+            r'\b(?:INSERT\s+INTO|SELECT\s+[^\n]*?\s+FROM|UPDATE|DELETE\s+FROM)\s+cf_(?:managed_library|managed_library_share|library_share_revision)\b',
             re.I,
         )
+        for sql in ('INSERT INTO cf_managed_library VALUES (1)',
+                    'SELECT * FROM cf_managed_library_share',
+                    'DELETE FROM cf_library_share_revision',
+                    'UPDATE cf_managed_library SET x=1'):
+            self.assertIsNotNone(forbidden.search(sql), sql)
         for file in (ROOT / 'tests').rglob('*.py'):
             if file == Path(__file__):
                 continue
@@ -57,6 +62,15 @@ class CurrentAuthorizationSpec(unittest.TestCase):
         self.assertNotIn('cloudfile_extensions', smoke)
         self.assertIn('Retired identity-runtime fixture is not a V2 acceptance test', smoke)
         self.assertIn('Retired CloudFile extension regression cannot run on V2', smoke)
+
+    def test_retired_policy_artifacts_are_not_packaged_or_tested(self):
+        provenance = (ROOT / 'build/seafile_14.0/package_provenance.py').read_text()
+        self.assertNotIn('libcloudfile_acl', provenance)
+        for name in ('tests/probe_identity_runtime.py', 'tests/test_jit_worker.py',
+                     'tests/test_audit_worker.py', 'tests/e2e/native_device_editing_e2e.py',
+                     'tests/e2e/native_cdc_editing_e2e.py', 'tests/e2e/native_optimistic_cdc_e2e.py',
+                     'tests/e2e/native_local_edit_baseline_e2e.py'):
+            self.assertFalse((ROOT / name).exists(), name)
 
 if __name__ == '__main__':
     unittest.main()

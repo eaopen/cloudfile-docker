@@ -98,41 +98,8 @@ def _strict_config(raw_value, name):
     return value
 
 
-def _policy_config(raw_value):
-    return _strict_config(raw_value, "CLOUDFILE_POLICY_CONFIG_JSON")
 
 
-def _oidc_config(raw_value):
-    value = _strict_config(raw_value, "CLOUDFILE_OIDC_CONFIG_JSON")
-    if value is None:
-        return None
-    required = {"issuer", "client_id", "client_secret", "redirect_uri",
-                "authorization_url", "token_url", "userinfo_url", "jwks_url"}
-    optional = {"user_id_claim", "ca_bundle", "end_session_url", "post_logout_redirect_uri"}
-    if not required <= value.keys() or value.keys() - required - optional:
-        raise ValueError("OIDC configuration has missing or unsupported fields")
-    if any(not isinstance(value[name], str) or not value[name] or "\x00" in value[name]
-           for name in required):
-        raise ValueError("OIDC configuration requires non-empty strings")
-    for name in ("issuer", "redirect_uri", "authorization_url", "token_url", "userinfo_url", "jwks_url",
-                 "end_session_url", "post_logout_redirect_uri"):
-        if value.get(name) is None:
-            continue
-        url = value[name]
-        if not isinstance(url, str) or any(ord(char) < 33 for char in url):
-            raise ValueError("OIDC endpoints require fixed HTTP or HTTPS URLs")
-        try:
-            parsed = urlparse(url)
-            valid = (parsed.scheme in ("http", "https") and parsed.hostname and not parsed.username
-                     and not parsed.password and not parsed.fragment)
-            parsed.port
-        except ValueError:
-            valid = False
-        if not valid:
-            raise ValueError("OIDC endpoints require fixed HTTP or HTTPS URLs")
-    if (value.get("end_session_url") is None) != (value.get("post_logout_redirect_uri") is None):
-        raise ValueError("OIDC logout endpoint and return URI must be configured together")
-    return value
 
 
 def _boolean(environment, name, default=False):
@@ -225,170 +192,35 @@ def _authentik_settings(environment):
     }
 
 
+RETIRED_POLICY_SETTINGS = ('CLOUDFILE_POLICY_CONFIG_JSON', 'CLOUDFILE_POLICY_WORKER_HOOKS', 'CLOUDFILE_AUTHORIZATION_ENABLED', 'CLOUDFILE_ADMIN_POLICY_ENABLED', 'CLOUDFILE_DIRECTORY_AUTHORIZATION', 'CLOUDFILE_OIDC_ENABLED', 'CLOUDFILE_OIDC_CONFIG_JSON', 'CLOUDFILE_OIDC_JIT_ENABLED', 'CLOUDFILE_OIDC_BACKCHANNEL_ENABLED', 'CLOUDFILE_TRANSFER_ENABLED', 'CLOUDFILE_EDITING_ENABLED', 'CLOUDFILE_LOCAL_EDIT_ENABLED', 'CLOUDFILE_LOCAL_EDIT_INSTANCE', 'CLOUDFILE_AGENT2_OPTIMISTIC_UPLOAD_ENABLED', 'CLOUDFILE_AGENT2_EXCLUSIVE_ENABLED', 'CLOUDFILE_RESOURCE_SECRET', 'CLOUDFILE_RESOURCE_SEARCH_ENABLED', 'CLOUDFILE_ANNOTATIONS_ENABLED', 'CLOUDFILE_AUDIT_QUERY_ENABLED', 'CLOUDFILE_AUDIT_EXPORT_ENABLED', 'CLOUDFILE_AUDIT_CURSOR_SECRET', 'CLOUDFILE_AUDIT_RESULT_ROOT')
+
 def render_settings(environment=None):
     environment = os.environ if environment is None else environment
+    requested = [name for name in RETIRED_POLICY_SETTINGS
+                 if str(environment.get(name, '')).strip().lower() not in ('', 'false', '0')]
+    if requested:
+        raise ValueError('Retired policy settings are unsupported: ' + ', '.join(requested))
     extension_apps = _extension_apps(environment.get("CLOUDFILE_EXTENSION_APPS", ""))
     urlconfs = _extension_urlconfs(environment.get("CLOUDFILE_EXTENSION_URLCONFS_JSON", ""))
     capabilities = _capabilities(environment.get("CLOUDFILE_CAPABILITIES_JSON", ""))
-    policy_config = _policy_config(environment.get("CLOUDFILE_POLICY_CONFIG_JSON", ""))
-    oidc_config = _oidc_config(environment.get("CLOUDFILE_OIDC_CONFIG_JSON", ""))
-    oidc_enabled = _boolean(environment, "CLOUDFILE_OIDC_ENABLED", False)
-    oidc_jit_enabled = _boolean(environment, "CLOUDFILE_OIDC_JIT_ENABLED", False)
-    oidc_backchannel_enabled = _boolean(environment, "CLOUDFILE_OIDC_BACKCHANNEL_ENABLED", False)
     authentik = _authentik_settings(environment)
-    if oidc_enabled and (oidc_config is None or policy_config is None
-            or not _boolean(environment, "CLOUDFILE_POLICY_WORKER_HOOKS", False)):
-        raise ValueError("enabled OIDC requires OIDC config, policy config and worker hooks")
-    # Native OIDC and the legacy Authentik OAuth preset coexist: the Hub keeps
-    # the OAuth login entry and dispatches browser sessions by authentication
-    # backend (cloudfile-hub a4cd1dc8e, docs/OIDC-OAUTH-COMPATIBILITY.md).
-    # Directories sharing and read tickets need the native OIDC host, so this
-    # combination must stay deployable instead of being rejected here.
-    if oidc_jit_enabled and not oidc_enabled:
-        raise ValueError("OIDC JIT requires the explicit OIDC host")
-    if oidc_backchannel_enabled and not oidc_enabled:
-        raise ValueError("OIDC backchannel requires the explicit OIDC host")
     capabilities.setdefault("auth.basic", {"enabled": True, "version": "14"})
-    webdav_enabled = _boolean(environment, "CLOUDFILE_WEBDAV_ENABLED", False)
-    authorization_enabled = _boolean(environment, "CLOUDFILE_AUTHORIZATION_ENABLED", False)
-    local_edit_enabled = _boolean(environment, "CLOUDFILE_LOCAL_EDIT_ENABLED", False)
-    # The old administrator control plane requires the retired multi-table
-    # schema. Current V2 DirectoryRules owns management and stays available.
-    admin_policy_enabled = _boolean(environment, "CLOUDFILE_ADMIN_POLICY_ENABLED", False)
-    if admin_policy_enabled and authorization_enabled:
-        raise ValueError("administrator policy requires distinct route ownership")
-    editing_enabled = _boolean(environment, "CLOUDFILE_EDITING_ENABLED", False)
-    editing_secret = environment.get("CLOUDFILE_RESOURCE_SECRET", "")
-    if editing_enabled and (not oidc_enabled or policy_config is None or
-            not _boolean(environment, "CLOUDFILE_POLICY_WORKER_HOOKS", False) or
-            len(editing_secret.encode("utf-8")) < 32):
-        raise ValueError("editing requires native OIDC, policy worker and a stable resource secret")
-    if editing_enabled and (not _boolean(environment, "CF_ENABLE_FILE_LOCK", False) or
-            environment.get("CF_LOCK_BACKEND", "cloudfile").lower() != "cloudfile"):
-        raise ValueError("editing requires the CloudFile native file-lock barrier")
-    local_edit_instance = environment.get("CLOUDFILE_LOCAL_EDIT_INSTANCE", "")
-    optimistic_upload_enabled = _boolean(environment, "CLOUDFILE_AGENT2_OPTIMISTIC_UPLOAD_ENABLED", False)
-    exclusive_enabled = _boolean(environment, "CLOUDFILE_AGENT2_EXCLUSIVE_ENABLED", False)
-    if local_edit_enabled:
-        if (not oidc_enabled or policy_config is None or
-                not _boolean(environment, "CLOUDFILE_POLICY_WORKER_HOOKS", False) or
-                len(editing_secret.encode("utf-8")) < 32):
-            raise ValueError("local edit requires native OIDC, policy worker and a stable resource secret")
-        parsed = urlparse(local_edit_instance)
-        if (parsed.scheme not in ("http", "https") or not parsed.hostname or
-                parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment or
-                parsed.netloc != parsed.netloc.lower() or parsed.netloc.endswith(":") or
-                local_edit_instance != parsed.scheme + "://" + parsed.netloc or
-                any(ord(c) < 33 or ord(c) > 126 for c in local_edit_instance) or
-                any(c in local_edit_instance for c in "%\\") or len(local_edit_instance) > 255):
-            raise ValueError("local edit requires a canonical public HTTP/HTTPS origin without a path")
-        try:
-            if parsed.port is not None and not 1 <= parsed.port <= 65535:
-                raise ValueError()
-        except ValueError:
-            raise ValueError("local edit requires a valid public origin port") from None
-        # Device proof instances and browser sessions must share one deployment origin.
-        callback = urlparse(oidc_config["redirect_uri"])
-        if parsed.scheme != callback.scheme or parsed.netloc != callback.netloc:
-            raise ValueError("local edit origin must match the registered native OIDC callback")
-    if optimistic_upload_enabled and not local_edit_enabled:
-        raise ValueError("optimistic Agent upload requires local edit")
-    if exclusive_enabled and not (local_edit_enabled and editing_enabled):
-        raise ValueError("exclusive Agent edit requires local edit and editing")
-    transfer_enabled = _boolean(environment, "CLOUDFILE_TRANSFER_ENABLED", False)
-    audit_query_enabled = _boolean(environment, "CLOUDFILE_AUDIT_QUERY_ENABLED", False)
-    audit_export_enabled = _boolean(environment, "CLOUDFILE_AUDIT_EXPORT_ENABLED", False)
-    audit_result_root = environment.get("CLOUDFILE_AUDIT_RESULT_ROOT") if audit_export_enabled else None
-    if audit_export_enabled and (not audit_query_enabled or not isinstance(audit_result_root, str)
-            or not os.path.isabs(audit_result_root) or "\x00" in audit_result_root):
-        raise ValueError("audit export requires audit query and an absolute private result directory")
-    raw_audit_secret = environment.get("CLOUDFILE_AUDIT_CURSOR_SECRET", "")
-    audit_secret = raw_audit_secret.encode("utf-8") if audit_query_enabled and raw_audit_secret else None
-    if audit_query_enabled and (not oidc_enabled or not authorization_enabled
-            or audit_secret is None or len(audit_secret) < 32):
-        raise ValueError("audit query requires OIDC, authorization and a cursor secret of at least 32 bytes")
-    if (authorization_enabled or transfer_enabled) and (policy_config is None
-            or not _boolean(environment, "CLOUDFILE_POLICY_WORKER_HOOKS", False)):
-        raise ValueError("enabled authorization or transfer requires policy config and worker hooks")
-    if transfer_enabled and not _boolean(environment, "ENABLE_GO_FILESERVER", False):
-        raise ValueError("enabled CloudFile transfer requires ENABLE_GO_FILESERVER=true")
-    capabilities.setdefault(
-        "protocol.webdav",
-        {"enabled": webdav_enabled, "version": "14"},
-    )
-    capabilities.setdefault(
-        "auth.oidc",
-        {"enabled": False, "version": "1", "provider": "authentik"},
-    )
-
+    capabilities.setdefault("protocol.webdav", {
+        "enabled": _boolean(environment, "CLOUDFILE_WEBDAV_ENABLED", False), "version": "14"})
+    capabilities.setdefault("auth.oidc", {"enabled": False, "version": "1", "provider": "authentik"})
     lines = [
         BEGIN_MARKER,
         f"EXTRA_INSTALLED_APPS = list(dict.fromkeys(globals().get('EXTRA_INSTALLED_APPS', []) + {pprint.pformat(['cloudfile_extensions', *extension_apps], sort_dicts=True)}))",
         "SITE_ROOT_URLCONF = 'cloudfile_extensions.root_urls'",
-        # A permission-runtime failure inside check_folder_permission is marked
-        # on the request; this middleware answers 503 instead of publishing the
-        # deny-on-error as a false 403 "Permission denied." (EXTRA_MIDDLEWARE is
-        # appended to MIDDLEWARE by seahub's load_local_settings.)
         "EXTRA_MIDDLEWARE = ['cloudfile_extensions.permission_middleware.CloudFilePermissionMiddleware']",
         f"CLOUDFILE_EXTENSION_URLCONFS = {pprint.pformat(urlconfs, sort_dicts=True)}",
         f"CLOUDFILE_CAPABILITIES = {pprint.pformat(capabilities, sort_dicts=True)}",
-        f"CLOUDFILE_POLICY_CONFIG = {pprint.pformat(policy_config, sort_dicts=True)}",
-        # v0.1 already requires an explicit Seafile owner for managed groups.
         f"CF_SSO_GROUP_OWNER = {environment.get('CF_SSO_GROUP_OWNER', '')!r}",
         f"CF_SSO_MAX_REMOVAL_RATIO = {environment.get('CF_SSO_MAX_REMOVAL_RATIO', '0.5')!r}",
-        f"CLOUDFILE_OIDC_ENABLED = {oidc_enabled!r}",
-        f"CLOUDFILE_OIDC_CONFIG = {pprint.pformat(oidc_config, sort_dicts=True)}",
-        f"CLOUDFILE_OIDC_JIT_ENABLED = {oidc_jit_enabled!r}",
-        f"CLOUDFILE_OIDC_BACKCHANNEL_ENABLED = {oidc_backchannel_enabled!r}",
-        f"CLOUDFILE_WEBDAV_SERVICE_ENABLED = {webdav_enabled!r}",
-        f"CLOUDFILE_AUTHORIZATION_ENABLED = {authorization_enabled!r}",
-        f"CLOUDFILE_LOCAL_EDIT_ENABLED = {local_edit_enabled!r}",
-        f"CLOUDFILE_ADMIN_POLICY_ENABLED = {admin_policy_enabled!r}",
+        f"CLOUDFILE_WEBDAV_SERVICE_ENABLED = {_boolean(environment, 'CLOUDFILE_WEBDAV_ENABLED', False)!r}",
         f"CF_NATIVE_DATABASE_NAME = {environment.get('SEAFILE_MYSQL_DB_CCNET_DB_NAME', 'ccnet_db')!r}",
-        f"CLOUDFILE_LOCAL_EDIT_INSTANCE = {local_edit_instance!r}" if local_edit_enabled else "CLOUDFILE_LOCAL_EDIT_INSTANCE = None",
-        f"CLOUDFILE_AGENT2_OPTIMISTIC_UPLOAD_ENABLED = {optimistic_upload_enabled!r}",
-        f"CLOUDFILE_AGENT2_EXCLUSIVE_ENABLED = {exclusive_enabled!r}",
-        ("def CLOUDFILE_LOCAL_EDIT_VERSION_READER(cursor, reference, evidence):\n"
-         "    from cloudfile_extensions.editing.runtime import native_file_version\n"
-         "    return native_file_version(cursor, reference, evidence)") if local_edit_enabled else
-            "CLOUDFILE_LOCAL_EDIT_VERSION_READER = None",
-        f"CLOUDFILE_EDITING_ENABLED = {editing_enabled!r}",
-        # Login and directory authority also use lifecycle-bound resources.
-        # Preserve their configured key even when online editing is disabled;
-        # PolicyHost validates the key/reader pair before accepting requests.
-        f"CLOUDFILE_RESOURCE_SECRET = {editing_secret.encode('utf-8')!r}" if editing_secret else
-            "CLOUDFILE_RESOURCE_SECRET = None",
-        ("def CLOUDFILE_RESOURCE_LIFECYCLE_READER(cursor, reference):\n"
-         "    from cloudfile_extensions.resources.native import NativeResourceReader\n"
-         "    from seaserv import seafile_api\n"
-         "    return NativeResourceReader(seafile_api)(cursor, reference)")
-        if (editing_enabled or local_edit_enabled or authorization_enabled or transfer_enabled or oidc_enabled) else
-            "CLOUDFILE_RESOURCE_LIFECYCLE_READER = None",
-        f"CLOUDFILE_TRANSFER_ENABLED = {transfer_enabled!r}",
-        f"CLOUDFILE_AUDIT_QUERY_ENABLED = {audit_query_enabled!r}",
-        f"CLOUDFILE_AUDIT_EXPORT_ENABLED = {audit_export_enabled!r}",
-        f"CLOUDFILE_AUDIT_RESULT_ROOT = {audit_result_root!r}",
-        f"CLOUDFILE_AUDIT_CURSOR_SECRET = {audit_secret!r}",
     ]
-    lines.extend(
-        f"{name} = {pprint.pformat(value, sort_dicts=True)}"
-        for name, value in authentik.items()
-    )
-    # Native OIDC owns the default login entry only when no legacy OAuth is
-    # configured. With one configured, both coexist: the Hub keeps the OAuth
-    # entry and dispatches browser sessions by authentication backend
-    # (cloudfile-hub a4cd1dc8e, docs/OIDC-OAUTH-COMPATIBILITY.md). Writing
-    # ENABLE_OAUTH = False here would silently switch off an operator's legacy
-    # login, which bootstrap.py explicitly refuses to do.
-    legacy_oauth = bool(authentik) or (
-        _boolean(environment, "CF_ENABLE_SSO", False)
-        and bool(environment.get("CF_SSO_OAUTH_CLIENT_ID", "").strip()))
-    if oidc_enabled and not legacy_oauth:
-        lines.append("ENABLE_OAUTH = False")
-        callback_path = urlparse(oidc_config["redirect_uri"]).path
-        if not callback_path.endswith("callback/"):
-            raise ValueError("native OIDC requires its registered callback path")
-        lines.append(f"LOGIN_URL = {callback_path[:-len('callback/')] + 'begin/'!r}")
+    lines.extend(f"{name} = {pprint.pformat(value, sort_dicts=True)}" for name, value in authentik.items())
     lines.extend((END_MARKER, ""))
     return "\n".join(lines)
 
@@ -423,26 +255,8 @@ def write_settings(path, environment=None):
 
 
 def write_policy_worker_hooks(path, environment=None, *, v2=False):
-    """Manage only our block; preserve and compose existing Gunicorn hooks."""
+    """Remove the retired owned block; never install a policy worker."""
     environment = os.environ if environment is None else environment
-    enabled = _boolean(environment, "CLOUDFILE_POLICY_WORKER_HOOKS", False)
-    if v2:
-        # The old PolicyHost validates the 42-migration Resource/Intent schema.
-        # V2 native OAuth, ACL and transfers use their direct adapters instead.
-        # Never silently enable retired routes or start that host on four tables.
-        retired = (
-            "CLOUDFILE_OIDC_ENABLED", "CLOUDFILE_ADMIN_POLICY_ENABLED", "CLOUDFILE_AUTHORIZATION_ENABLED",
-            "CLOUDFILE_TRANSFER_ENABLED", "CLOUDFILE_EDITING_ENABLED",
-            "CLOUDFILE_LOCAL_EDIT_ENABLED", "CLOUDFILE_ANNOTATIONS_ENABLED",
-            "CLOUDFILE_AUDIT_QUERY_ENABLED", "CLOUDFILE_AUDIT_EXPORT_ENABLED",
-            "CLOUDFILE_RESOURCE_SEARCH_ENABLED",
-        )
-        requested = [name for name in retired if _boolean(environment, name, False)]
-        if requested:
-            raise ValueError("V2 does not support retired schema-dependent routes: " + ", ".join(requested))
-        # Removing our generated block preserves operator hooks. It does not
-        # change environment variables, schema, or native V2 permissions.
-        enabled = False
     begin_marker = "# BEGIN CLOUDFILE POLICY WORKER HOOKS"
     end_marker = "# END CLOUDFILE POLICY WORKER HOOKS"
     try:
@@ -461,24 +275,7 @@ def write_policy_worker_hooks(path, environment=None, *, v2=False):
         base = current[:begin] + current[end:]
     else:
         base = current
-    block = ""
-    if enabled:
-        block = '\n'.join((begin_marker,
-            "_cf_previous_post_worker_init = globals().get('post_worker_init')",
-            "_cf_previous_worker_exit = globals().get('worker_exit')",
-            "def post_worker_init(worker):",
-            "    if _cf_previous_post_worker_init is not None:",
-            "        _cf_previous_post_worker_init(worker)",
-            "    from cloudfile_extensions.authorization.gunicorn import post_worker_init as cf_init",
-            "    cf_init(worker)",
-            "def worker_exit(server, worker):",
-            "    try:",
-            "        if _cf_previous_worker_exit is not None:",
-            "            _cf_previous_worker_exit(server, worker)",
-            "    finally:",
-            "        from cloudfile_extensions.authorization.gunicorn import worker_exit as cf_exit",
-            "        cf_exit(server, worker)", end_marker, ""))
-    updated = base + ("\n" if block and base and not base.endswith("\n") else "") + block
+    updated = base
     if updated == current:
         return False
     with open(path, "w", encoding="utf-8") as target:

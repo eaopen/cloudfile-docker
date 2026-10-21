@@ -1,5 +1,8 @@
 # 本地文件迁移与大资料库评估
 
+> 历史记录，非当前 V2 契约。文中旧 managed marker、Resource/Intent、委托与旧授权路由已退役；当前实施以 [权限终判契约](/docs/permission-adjudication-contract.md) 和现行源码为准。
+
+
 ## v0.2 离线管理员单库导入
 
 CF02-07 MVP 复用 v0.1 `a963c177e9e6e5e122c2e088620b2cc2bb63c2b1` 的

@@ -17,7 +17,7 @@ RECORD_NAME = "cloudfile-build.json"
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 REQUIRED_FILES = (
     "seafile/bin/seaf-server", "seafile/bin/fileserver", "seafile/bin/seaf-fuse",
-    "seafile/lib/libcloudfile_acl.so.1", "seahub/cloudfile_extensions/apps.py",
+    "seahub/cloudfile_extensions/apps.py",
     "seahub/thirdpart/bin/gunicorn",
 )
 

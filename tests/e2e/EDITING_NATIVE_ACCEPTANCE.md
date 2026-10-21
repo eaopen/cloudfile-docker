@@ -1,5 +1,8 @@
 # Editing Native 验收报告
 
+> 历史记录，非当前 V2 契约。文中旧 managed marker、Resource/Intent、委托与旧授权路由已退役；当前实施以 [权限终判契约](/docs/permission-adjudication-contract.md) 和现行源码为准。
+
+
 2026-09-30：真实单文件原生闭环通过，建议 **Editing Core Foundation = READY TO FREEZE**。这是原生事务基础的验收结论；本地编辑功能仍默认关闭，不代表可以正式开放完整产品功能。
 
 同日开发合并前使用当前 Hub 工作区重复执行原生回归，通过结果及 Agent 兼容边界见[开发合并回归](EDITING_DEV_MERGE_20260930.md)。原生 Server 构建快照与本次 Server 源码内容一致，报告后续引用的首次跑次仍保留为历史证据。

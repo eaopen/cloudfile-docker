@@ -112,3 +112,16 @@ tests/api/endpoints/test_file_tag.py
 tests/api/endpoints/test_group_libraries.py
 tests/api/test_group_repos.py
 tests/api/test_repo_history_limit.py
+
+# 2026-10-21 权限收敛修复：seahub/views/__init__.py：复用 ACLUnavailable 与现有权限中间件，避免策略故障被误报为 403；内容权限仍交给现有 Authority。
+
+# 2026-10-21 七类权限清理：注销旧票据/PolicyHost/独立 ACL 引擎；现行 Authority、CE 入口、V2 编辑与 Guard/CAS 保留。
+frontend/src/components/file-uploader/file-uploader.js
+frontend/src/components/logout/index.js
+frontend/src/features/library-view/toolbar/selected-dirents-toolbar/index.js
+frontend/src/hooks/file-operations/download.js
+seahub/templates/react_app.html
+
+# 2026-10-21 复检修复：seahub/api2/endpoints/file_tag.py：原生标签接口复用现有 tag_native/Authority 按目标路径裁决，校验定义与绑定的库归属；旧标签读保留，写收敛 CE FileTags。
+
+# 2026-10-21 VirtualRepo 兼容：cloudfile_ext/v2/acl_runtime.py 保留 CE 虚拟库共享资格，沿 origin_repo_id/origin_path 交给同一 Authority；不暴露源库路径，不创建新的共享表或引擎。轻量 share_mode 共享继续独立按目录资格处理。

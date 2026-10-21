@@ -13,6 +13,7 @@
 | [项目概览](overview.md) | 基线、产品边界和事实口径 |
 | [当前架构](architecture.md) | 三仓职责、数据边界和故障隔离 |
 | [部署](deployment.md) | Compose 部署、升级、备份和恢复 |
+| [数据库 SQL 交付](../database/README.md) | 开发期四表建模、独立 SQL 升级及 DEV → PROD 迁移 |
 | [配置](configuration.md) | 环境变量、profile 和配置生成规则 |
 | [扩展能力矩阵](feature-matrix.md) | 每项能力的状态、来源、定位、证据和上游策略 |
 

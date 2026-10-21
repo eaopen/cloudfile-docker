@@ -22,12 +22,15 @@ common/obj-backend.h
 common/obj-store.c
 common/obj-store.h
 configure.ac
+# Upload repair: preserve the final Guard fence; retry only Branch-head conflicts
+# and surface Guard/schema errors immediately. Native publication owns this seam.
 fileserver/fileop.go
 fileserver/sync_api.go
 fileserver/go.mod
 fileserver/go.sum
 fileserver/objstore/objstore.go
 fileserver/objstore/objstore_test.go
+# Existing checkout_enabled gates Guard discovery; table presence never enables Checkout.
 fileserver/option/option.go
 include/seafile-rpc.h
 fuse/Makefile.am
@@ -60,3 +63,6 @@ common/user-mgr.h
 
 fileserver/fileserver.go
 server/gc/seafile-session.c
+
+# 2026-10-21：cf-lock.c/h 与 cloudfile-policy.c 是独立 CloudFile 文件。
+# C 普通写入/锁屏障使用 V2 单 Guard，Checkout 关闭不查询锁；不改原生调用点。

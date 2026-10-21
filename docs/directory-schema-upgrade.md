@@ -1,3 +1,7 @@
+# 历史目录 Schema 迁移说明
+
+> 2026-10-21 起，当前新版只确认四张新增业务表，开发期统一使用 [独立 SQL 交付](../database/README.md)。本文的 008/009/042、cf_dir_admin 及 Python apply 命令仅供对应历史版本追溯，不是新版初始化或发布入口。
+
 # Directory authority schema
 
 `cf_dir_acl` and `cf_dir_admin` belong to the native Seafile

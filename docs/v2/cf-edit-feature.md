@@ -62,3 +62,10 @@ Checkout 本身是独占机制，但普通编辑**不申请锁、不续租、不
 
 
 只有 `cf_edit_guard` 为本功能扩展状态；**不重新引入服务器 Intent、设备账户、编辑 Session 或历史锁表。**
+
+
+## Checkout 与普通传输的边界（2026-10-21）
+
+Checkout 尚未完成，不得阻塞现有普通上传、下载或乐观编辑。当前复用已有 `CF_ENABLE_CHECKOUT`（原生配置 `[cloudfile] checkout_enabled`），默认 false；关闭时不探测/查询 Guard，不开放独占编辑操作，启动只校验基础表。显式启用后才校验 Guard，查询失败仍拒绝受保护的提交。
+
+库存储中配置“是否支持 Checkout、默认不支持”仅为后续规划；本次不新增字段，不修改 `cf_library_storage` 结构或数据。库级设计确认并进入实施时，再单独交付 SQL。

@@ -1345,8 +1345,8 @@ def write_seafevents_audit_config():
         return
     with open(path, 'r') as fp:
         lines = fp.readlines()
-    sections = ('[Audit]\\n', '[AUDIT]\\n')
-    indices = [i for i, line in enumerate(lines) if line in sections]
+    sections = ('[Audit]', '[AUDIT]')
+    indices = [i for i, line in enumerate(lines) if line.strip() in sections]
     if indices:
         for index in reversed(indices):
             end = len(lines)

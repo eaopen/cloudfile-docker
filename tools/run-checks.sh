@@ -92,6 +92,7 @@ else
     run "V2 4+1 运行表合同" python3 "$docker_repo/tools/check-sql-contracts.py" --server "$server" --hub "$hub"
     skip "Agent2 当前 SQL/接口检查" "未检出 $agent"
 fi
+run "当前 V2 ACL 无托管库文档合同" python3 "$docker_repo/tests/test_v2_authorization_contract.py"
 run "开发期只读 Schema 启动校验" python3 -m unittest discover -s "$docker_repo/tests" -p test_fresh_schema.py -q
 run "V2 Schema 只读盘点" python3 -m unittest discover -s "$docker_repo/tests" -p test_v2_schema_inventory.py -q
 run "v0.6 新安装每库独立目录 Compose 契约" python3 -m unittest discover -s "$docker_repo/tests" -p test_v06_default_library_storage.py -q

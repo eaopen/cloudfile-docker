@@ -10,9 +10,14 @@
 #
 # Since 2026-09-22 the extended properties/tags service (cloudfile-metadata)
 # and the background worker (cf-worker) are part of the default stack: the
-# metadata/tag switches default to on, and the directory-ACL capability that
-# also defaults to on registers periodic tasks only the worker can run.
+# metadata/tag switches default to on.
 # `--profile metadata` and `--profile worker` are accepted but start nothing extra.
+#
+# cf-worker runs one of two jobs: with CF_PROVIDER_SEARCH=meilisearch it is the
+# V2 Meilisearch indexer (Meilisearch itself never indexes CloudFile documents),
+# otherwise it is `manage.py cf_worker`, which exits 0 when no capability
+# registered a periodic task. cf-worker therefore restarts on failure only -- a
+# clean idle exit must stay exited instead of restarting forever.
 #
 # Copy .env.example to .env first. Defaults changed on 2026-09-22: the
 # capabilities that need no third party are on by default, so this stack is no
@@ -384,14 +389,24 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Background tasks: ACL rule migration/sync, search indexing, external-source
-  # scans, audit archiving.
+  # Background worker. Two mutually exclusive jobs, chosen by configuration:
   #
-  # In the default stack since 2026-09-22: directory ACL defaults to on, and its
-  # acl-path-migration / acl-rule-sync periodic tasks exist only here -- without
-  # the worker, rules do not follow rename/move and the periodic reconcile never
-  # runs. Safe to start by default because it waits for cloudfile to be healthy
-  # and restarts, so it cannot race the RPC socket at boot.
+  #   CF_PROVIDER_SEARCH=meilisearch -> the V2 Meilisearch indexer
+  #     (`python3 -m cloudfile_ext.v2.search.worker`, checkpoint
+  #     /shared/search-v2-checkpoint.json). Meilisearch answers queries but never
+  #     indexes CloudFile's derived documents itself, so this process is what
+  #     keeps the index current: it loops every 60s, confirms each index task,
+  #     and a failed batch keeps its checkpoint for retry.
+  #
+  #   otherwise -> `manage.py cf_worker`, which loops over the registry's
+  #     periodic tasks and exits 0 when none is registered. The V2 runtime
+  #     registers none today -- SSO directory sync is the push trigger
+  #     POST /api/v2.1/admin/cloudfile/directory/entities/sync/ -- so this branch
+  #     is a clean idle exit.
+  #
+  # Safe to keep in the default stack: it waits for cloudfile to be healthy, and
+  # restarts on failure only, so a clean idle exit stays exited instead of
+  # looping.
   cf-worker:
     image: ${CLOUDFILE_IMAGE:-cloudfile/cloudfile:14.0.0-cf.0}
     container_name: cloudfile-worker
@@ -400,6 +415,11 @@ services:
       - -lc
       - >
         /scripts/create_data_links.sh &&
+        if [ "$${CF_PROVIDER_SEARCH:-}" = "meilisearch" ]; then
+        export DJANGO_SETTINGS_MODULE=seahub.settings &&
+        exec /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub.sh python-env
+        python3 -m cloudfile_ext.v2.search.worker --checkpoint /shared/search-v2-checkpoint.json;
+        fi;
         exec /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub.sh python-env
         python3 /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub/manage.py cf_worker
     volumes:
@@ -507,7 +527,7 @@ services:
     depends_on:
       cloudfile:
         condition: service_healthy
-    restart: unless-stopped
+    restart: on-failure
 
   # One local staging directory maps to one existing library. The client has
   # its own image/state and never shares cf-worker's periodic-task process.

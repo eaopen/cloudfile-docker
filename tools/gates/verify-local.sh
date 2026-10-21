@@ -702,14 +702,20 @@ stage_compose() {
     # 2026-10-22 把 compose 移到 deploy/compose 后这里少建 data/*，首启直接报
     # "bind source path does not exist: .../data/libraries"。目录清单从解析后的
     # 配置里取，避免手工维护一份会漂移的列表；命名卷和绝对路径的宿主目录不动。
-    local mount
+    #
+    # 扫描结果里也有 bind 的**文件**（Caddyfile，上面已经 cp 进 STAGE_DIR），
+    # 所以只补不存在的路径：mkdir 一个已存在的文件会报 "File exists" 并返回 1。
+    local mounts mount
+    mounts=$(compose config) \
+        || fail "compose config 解析失败——无法准备 bind mount 源目录"
     while IFS= read -r mount; do
         [[ -n $mount ]] || continue
         case $mount in
-            "$STAGE_DIR"/*) mkdir -p "$mount" ;;
-            ./*)            mkdir -p "$STAGE_DIR/${mount#./}" ;;
+            "$STAGE_DIR"/*) [[ -e $mount ]] || mkdir -p "$mount" ;;
+            ./*)            [[ -e $STAGE_DIR/${mount#./} ]] \
+                                || mkdir -p "$STAGE_DIR/${mount#./}" ;;
         esac
-    done < <(compose config 2>/dev/null \
+    done < <(printf '%s\n' "$mounts" \
              | awk '/^[[:space:]]*source: /{print $2}' | sort -u)
 }
 

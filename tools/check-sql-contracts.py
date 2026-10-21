@@ -15,7 +15,7 @@ TABLES = frozenset({
 })
 DDL = ('cloudfile-v2.sql', 'cloudfile-v2-edit.sql', 'cloudfile-v2-audit.sql')
 SQL_TABLE = re.compile(
-    r'\\b(?:FROM|JOIN|INTO|UPDATE|TABLE|REFERENCES)\\s+[`"]?(cf_[a-z0-9_]+)',
+    r'\b(?:FROM|JOIN|INTO|UPDATE|TABLE|REFERENCES)\s+[`"]?(cf_[a-z0-9_]+)',
     re.IGNORECASE,
 )
 
@@ -25,7 +25,7 @@ def validate(server, hub, docker, agent=None):
     observed = set()
     for name in DDL:
         text = (sql_dir / name).read_text()
-        matches = re.findall(r'\\bCREATE TABLE (cf_[a-z0-9_]+)\\s*\\(', text)
+        matches = re.findall(r'\bCREATE TABLE (cf_[a-z0-9_]+)\s*\(', text)
         if not matches or len(matches) != len(set(matches)):
             raise ValueError('missing or duplicate DDL: ' + name)
         observed.update(matches)

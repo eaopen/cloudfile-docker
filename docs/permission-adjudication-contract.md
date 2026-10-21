@@ -34,7 +34,7 @@ CloudFile 不存在托管库这一概念。每个库均保留 Seafile CE 原生 
 
 当前 `dev` 的 Agent、文档、代码或测试不得再以 `cf_dir_acl` 任意记录存在为理由，声明“托管库”或拒绝整个库的普通访问。禁止重建 `cf_managed_library` / `cf_managed_library_share` / `cf_library_share_revision` 表、`managed_library_guard` / `allow_legacy_managed_reads` 开关、`checkLegacyLibrary()` / `cf_policy_check_legacy_library()` 等判断。
 
-特定协议没有用户/路径上下文时可以拒绝 **该操作**，但必须以缺少权限证明而非“库被托管”解释。历史测试的“库有一行 ACL ⇒ 拒绝库级所有入口”断言必须删除，不得作为正确性目标。
+特定协议没有用户/路径上下文时可以拒绝 **该操作**，但必须以缺少权限证明而非“库被托管”解释，不能据此拒绝已充分授权的普通目录访问。历史测试的“库有一行 ACL ⇒ 拒绝库级所有入口”断言必须删除，不得作为正确性目标。
 
 ## 5. 验收
 

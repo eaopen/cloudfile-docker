@@ -40,25 +40,25 @@ V2 内置 ACL、CE 原生 Tag 和已安装 Guard 的 Checkout 不应重新受旧
 
 不要提交 `deploy/compose/.env`、任何真实凭据、密钥、持久数据卷或镜像构建产物。文档中文，代码和 commit message 英文；上游既有风格优先。
 
-## 开发期数据库变更（2026-10-21）
+## 数据库唯一规则：当前五表
 
-- 新版当前只明确新增四张业务表：`cf_library_storage`、`cf_dir_acl`、`cf_sso_group_map`、`cf_edit_guard`。历史表仅作备份或迁移输入，不属于新版运行库及运行依赖；增加业务表须先确认，历史数据单独归档，不直接删除。
-- 开发期建表、升级及数据迁移通过 Docker 仓 `database/` 下独立、人工执行的 SQL 交付，DEV 验证与 PROD 发布复用固定脚本及校验和。启动/重启仅校验，不自动执行扩展 DDL、旧迁移链或兼容补丁。
-- 仅明确审核的成熟版本之间才考虑自动升级；须定义精确源/目标范围和数据/中断恢复验证。不得根据 dev 分支、表名存在或旧台账自动推断升级路径，不自动回滚。
+- V2 仅保留 `cf_library_storage`、`cf_dir_acl`、`cf_sso_group_map`、`cf_edit_guard`、`cf_audit_event`。新装五表一次性创建，已有卷只校验，不自动迁移或修补。
+- DEV 旧数据全部放弃。存储绑定从 Seafile 原生库重新发现，ACL/共享与组织角色从 Etech 重同步，Guard/审计从空表开始；旧 `cf_tag`/Resource/Intent/Session/Outbox 等绝不恢复。
+- DEV 如需清表重建，仅允许停写后由人工管理员按当前 DDL 操作，不做产品级迁移/历史追溯/归档库；**绝不删除或改写 Seafile 原生文件版本和存储路由**。
 
 ## Agent2 本地编辑 V2 边界
 
 - 当前 Hub Web API 是 `/api/v2.1/cloudfile/edit/v1/open/`，Agent2 URI 为 `cloudfile-open://v2/open`，Server Go 最终文件协议为 `/cf-edit/v1/*`。
 - 正常查看/编辑不创建服务端 Session；独占编辑只使用 `cf_edit_guard` 与 Agent2 本地 Journal。
-- **不得为修复缺表错误恢复 `cf_edit_session` / `cf_resource` / `cf_commit_intent` 或旧 `local-edit/v1/sessions` 路由。** 历史表归档、DEV 一次性清理由产品外工具负责。
+- **不得为修复缺表错误恢复 `cf_edit_session` / `cf_resource` / `cf_commit_intent` 或旧 `local-edit/v1/sessions` 路由。** 开发环境清理由人工管理员负责，产品不维护历史迁移工具。
 - GitHub `dev` 代码修复不等于 DEV 容器已升级；发布须确认 Server/Hub/Docker 三仓固定源码 SHA 和实际镜像，并定向验收本地查看、普通编辑、独占编辑。
 
 ## 当前镜像只携带 V2 初始化及运行入口
 
 - 启动调用 `cloudfile_schema.py`，只创建/校验 4+1 表；历史 `cloudfile.sql`、SchemaRunner 和旧 SQL Workers 不属于产品镜像。禁止为旧代码恢复 `cf_schema_migration` 或其他旧表。
-- 旧 DEV 修复工具保留在历史材料供一次性人工处理，不由构建、启动、升级、工作进程自动调用。禁止用测试历史脚本的成功状态声称当前 DEV 镜像已经升级。
+- 旧 DEV 修复/迁移材料不属于当前产品代码，不由构建、启动、升级或工作进程调用。禁止用测试历史脚本的成功状态声称当前 DEV 镜像已经升级。
 
 ## 轻量跨仓运行表检查
 
-- `tools/check-sql-contracts.py` 当前只检查 4+1 DDL 与 Server/Hub/Docker/可选 Agent2 **可运行** SQL 依赖，不再生成/更新旧 001–042 checksum 台账；历史 DEV 数据修复用独立一次性工具进行。
+- `tools/check-sql-contracts.py` 当前只检查 4+1 DDL 与 Server/Hub/Docker/可选 Agent2 **可运行** SQL 依赖，不再生成/更新旧 001–042 checksum 台账；DEV 数据直接舍弃重建，不提供历史数据修复工具。
 - `tools/run-checks.sh` 不再将历史 001–042 数据转换、旧四表 SQL 包作为日常产品测试。禁止每次小改动启动全量编译。

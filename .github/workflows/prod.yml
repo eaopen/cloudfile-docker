@@ -17,6 +17,12 @@ on:
         default: dev
         required: true
 
+# 同一组合不重复排队：手动触发两次同 version/server_ref 时，旧构建让位给新的。
+# 收据里的 SHA 是唯一构建输入，因此取消旧任务不会让产物对应到别的源码。
+concurrency:
+  group: cloudfile-receipt-${{ inputs.version }}-${{ inputs.server_ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

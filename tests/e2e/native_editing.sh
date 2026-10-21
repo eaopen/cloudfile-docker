@@ -68,11 +68,8 @@ if [[ "${CF_NATIVE_MANUAL_BASELINE_E2E:-0}" = 1 ]]; then
     docker exec "$runtime" python3 /tests/native_local_edit_baseline_e2e.py | tee "$lab/manual-baseline-test.log"
     printf 'Native baseline evidence: %s/native-local-edit-result.json\n' "$lab"
 fi
-if [[ "${CF_NATIVE_OPTIMISTIC_E2E:-0}" = 1 ]]; then
-    docker exec "$runtime" python3 /tests/native_optimistic_agent_e2e.py | tee "$lab/optimistic-test.log"
-    printf 'Optimistic Native evidence: %s/native-optimistic-result.json
-' "$lab"
-fi
+# The old optimistic Agent fixture needed retired Resource/Session and library
+# enrollment tables. V2 uses the Agent2 Guard and scoped Commit tests instead.
 if [[ "${CF_NATIVE_CDC_E2E:-0}" = 1 ]]; then
     docker exec "$runtime" python3 /tests/native_cdc_editing_e2e.py | tee "$lab/cdc-test.log"
     printf 'Guarded CDC evidence: %s/native-cdc-result.json\n' "$lab"

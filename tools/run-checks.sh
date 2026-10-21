@@ -109,7 +109,7 @@ if [[ -d $hub ]]; then
     # The native HTTP unit tests use explicit RPC/ORM doubles and real DRF;
     # upstream runtime integration remains in the dedicated Seahub CI job.
     run "Hub 扩展测试 (Python)" python3 "$docker_repo/tools/check-hub-contracts.py" cloudfile_ext/ --ignore=cloudfile_ext/v2/tests
-    run "Hub 干净 V2 HTTP 契约 (固定 source-set)" python3 "$docker_repo/tools/check-hub-contracts.py" --v2
+    run "Hub 当前 V2 HTTP 契约" python3 "$docker_repo/tools/check-hub-contracts.py" --v2
     # Current contracts use isolated SQL fixtures and minimal Django settings,
     # not Seahub's native runtime or its upstream integration test settings.
     run "Hub 当前契约与 Agent 路由" bash -c \

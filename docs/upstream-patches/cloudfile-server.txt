@@ -73,3 +73,5 @@ server/gc/seafile-session.c
 common/branch-mgr.h
 server/web-accesstoken-mgr.c
 server/web-accesstoken-mgr.h
+
+# 2026-10-21 复检修复：common/branch-mgr.c：add/del/update 三个 MySQL 分支写入口先锁 Branch(master)，再执行现有最终 ACL 校验，与 ACLStore 写入锁顺序一致；允许原生新建库尚无 master。

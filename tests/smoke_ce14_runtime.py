@@ -69,6 +69,12 @@ def run(image, native_regression=False, extensions_regression=False, identity_ru
         cf_import_runtime=False):
     if not __debug__:
         raise RuntimeError('Acceptance requires Python assertions enabled')
+    if identity_runtime:
+        raise RuntimeError('Retired identity-runtime fixture is not a V2 acceptance test')
+    if native_regression or extensions_regression:
+        raise RuntimeError(
+            'Retired CloudFile extension regression cannot run on V2; '
+            'use cloudfile-server/tests/test_cf_v2_acl_native.py with matched C/Go binaries and Hub source')
     prefix = 'cf02-smoke-' + secrets.token_hex(6)
     network = prefix + '-net'
     containers = []
@@ -225,19 +231,8 @@ def run(image, native_regression=False, extensions_regression=False, identity_ru
             status = request(base + '/file/?p=/probe.txt')['status']
             if status not in (401, 403):
                 raise RuntimeError('anonymous_file_status=' + str(status))
-            status = request('/seafhttp/cloudfile/read')['status']
-            if status != 401:
-                raise RuntimeError('secure_read_status=' + str(status))
             checks.append(stage)
-        if native_regression or extensions_regression:
-            raise RuntimeError("Retired CloudFile extension regression cannot run on V2; use the current Hub/Server ACL contracts.")
-        if identity_runtime:
-            # The pre-V2 identity fixtures import the retired CloudFile
-            # extension tree and use tables outside the five-table contract.
-            # Refuse this obsolete option; current V2 HTTP/ACL tests are the
-            # supported acceptance route.
-            raise RuntimeError("Retired identity-runtime fixture is not a V2 acceptance test")
-        return {'result': 'passed', 'scope': 'CE14 local admin/native file baseline; optional identity fixture separately scoped',
+        return {'result': 'passed', 'scope': 'CE14 local admin/native file baseline; directory ACL acceptance is separate',
                 'image_id': metadata['Id'], 'package_sha256': digest,
                 'source_seahub': labels.get('com.cloudfile.source.seahub'),
                 'source_server': labels.get('com.cloudfile.source.seafile-server'),
@@ -264,11 +259,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image', required=True)
     parser.add_argument('--native-regression', action='store_true',
-                        help='Also run the native actor import regression under real Seahub configuration')
+                        help='Retired option; use current Server V2 native ACL acceptance')
     parser.add_argument('--extensions-regression', action='store_true',
-                        help='Run extensions with a separate disposable SQL/Redis fixture')
+                        help='Retired option; use current Server V2 native ACL acceptance')
     parser.add_argument('--identity-runtime', action='store_true',
-                        help='Probe real TLS fixture OIDC/directory with actual CE accounts and SQL')
+                        help='Retired option; unavailable on V2')
     parser.add_argument('--identity-scenario', choices=['prebound', 'provisioning', 'logout', 'backchannel', 'transfer', 'web', 'annotations', 'audit', 'search'], default='prebound')
     parser.add_argument('--development-worker-overlay', action='store_true',
                         help='JIT development only: use host worker script; not packaged release evidence')

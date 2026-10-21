@@ -1,8 +1,9 @@
-"""Development startup checks contracts and never executes an upgrade."""
+"""Startup checks the installed contract and initializes only a fresh volume."""
 import ast
 import importlib.util
 from pathlib import Path
 import sys
+import tempfile
 from types import ModuleType
 import unittest
 from unittest.mock import Mock, patch
@@ -70,21 +71,113 @@ class DevelopmentSchemaTest(unittest.TestCase):
             with self.assertRaises(RuntimeError) as error: SCHEMA.verify_development_schema(environment=env)
         self.assertIn('SQL', str(error.exception)); self.assertNotIn('private-fixture-value', str(error.exception))
 
-    def test_startup_and_config_do_not_call_ddl_helpers(self):
+    def test_startup_initializes_fresh_volume_without_legacy_runner(self):
         bootstrap = ast.parse((ROOT/'scripts/scripts_14.0/bootstrap.py').read_text())
         function = next(n for n in bootstrap.body if isinstance(n, ast.FunctionDef) and n.name == 'write_cloudfile_config')
         names = {n.func.id for n in ast.walk(function) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
         self.assertFalse(any(name.startswith('apply_') for name in names))
         start = (ROOT/'scripts/scripts_14.0/start.py').read_text()
+        self.assertIn('prepare_fresh_schema(shared_seafiledir)', start)
+        self.assertIn('initialize_fresh_schema(schema_marker, installdir)', start)
         self.assertIn('verify_development_schema(installdir)', start)
         startup = ast.parse(start)
         hook = next(n for n in ast.walk(startup) if isinstance(n, ast.Call)
                     and isinstance(n.func, ast.Name) and n.func.id == 'write_policy_worker_hooks')
         self.assertTrue(any(k.arg == 'v2' and isinstance(k.value, ast.Constant)
                             and k.value.value is True for k in hook.keywords))
-        self.assertNotIn('initialize_fresh_schema', start)
-        self.assertNotIn('prepare_fresh_schema', start)
-        self.assertNotIn('SchemaRunner', (ROOT/'scripts/scripts_14.0/cloudfile_schema.py').read_text())
+        # Fresh initialization is allowed; legacy migration is not.
+        schema = (ROOT/'scripts/scripts_14.0/cloudfile_schema.py').read_text()
+        self.assertNotIn('SchemaRunner', schema)
+        self.assertNotIn('cloudfile.sql', schema)
+        self.assertNotIn('ALTER TABLE', schema.upper())
+
+
+class FreshInstallTest(unittest.TestCase):
+    """The marker authorizes one-time initialization, never an upgrade."""
+
+    class FakeFreshSchema:
+        calls = []
+        fail = False
+
+        def __init__(self, connection, ddl, *, edit_ddl=None):
+            self.ddl, self.edit_ddl = ddl, edit_ddl
+            FreshInstallTest.FakeFreshSchema.calls.append(self)
+
+        def install(self):
+            if FreshInstallTest.FakeFreshSchema.fail:
+                raise RuntimeError('private-fixture-value')
+
+    def setUp(self):
+        FreshInstallTest.FakeFreshSchema.calls = []
+        FreshInstallTest.FakeFreshSchema.fail = False
+
+    def _installdir(self, root):
+        installdir = Path(root) / 'seafile-server'
+        sql = installdir / 'sql' / 'mysql'
+        sql.mkdir(parents=True)
+        (sql / 'cloudfile-v2.sql').write_text('-- reviewed base DDL')
+        (sql / 'cloudfile-v2-edit.sql').write_text('-- reviewed optional Guard DDL')
+        (installdir / 'seahub').mkdir()
+        return installdir
+
+    def _run(self, root, checkout='false'):
+        marker = Path(root) / SCHEMA.MARKER_NAME
+        marker.write_text('')
+        driver = ModuleType('pymysql')
+        connection = Mock()
+        connection.get_autocommit.return_value = True
+        driver.connect = Mock(return_value=connection)
+        schema = ModuleType('cloudfile_ext.v2.schema')
+        schema.FreshSchema = FreshInstallTest.FakeFreshSchema
+        v2 = ModuleType('cloudfile_ext.v2')
+        v2.schema = schema
+        package = ModuleType('cloudfile_ext')
+        package.v2 = v2
+        env = {'SEAFILE_MYSQL_DB_HOST': 'db', 'SEAFILE_MYSQL_DB_PASSWORD': 'fixture',
+               'CF_ENABLE_CHECKOUT': checkout}
+        modules = {'pymysql': driver, 'cloudfile_ext': package,
+                   'cloudfile_ext.v2': v2, 'cloudfile_ext.v2.schema': schema}
+        with patch.dict(sys.modules, modules):
+            result = SCHEMA.initialize_fresh_schema(marker, self._installdir(root), env)
+        return result, marker, connection
+
+    def test_marker_only_for_volume_without_seafile_data(self):
+        with tempfile.TemporaryDirectory() as root:
+            fresh = Path(root) / 'fresh'
+            fresh.mkdir()
+            self.assertTrue(SCHEMA.prepare_fresh_schema(fresh).exists())
+            existing = Path(root) / 'existing'
+            (existing / 'seafile-data').mkdir(parents=True)
+            self.assertFalse(SCHEMA.prepare_fresh_schema(existing).exists())
+
+    def test_fresh_volume_installs_reviewed_ddl_once(self):
+        with tempfile.TemporaryDirectory() as root:
+            result, marker, connection = self._run(root)
+        self.assertTrue(result)
+        self.assertFalse(marker.exists())
+        self.assertEqual(len(FreshInstallTest.FakeFreshSchema.calls), 1)
+        self.assertIsNone(FreshInstallTest.FakeFreshSchema.calls[0].edit_ddl)
+        connection.close.assert_called_once()
+
+    def test_enabled_checkout_also_installs_the_optional_guard(self):
+        with tempfile.TemporaryDirectory() as root:
+            result, _, _ = self._run(root, checkout='true')
+        self.assertTrue(result)
+        self.assertIsNotNone(FreshInstallTest.FakeFreshSchema.calls[0].edit_ddl)
+
+    def test_failed_install_keeps_marker_and_hides_driver_details(self):
+        FreshInstallTest.FakeFreshSchema.fail = True
+        with tempfile.TemporaryDirectory() as root:
+            with self.assertRaises(RuntimeError) as error:
+                self._run(root)
+            self.assertTrue((Path(root) / SCHEMA.MARKER_NAME).exists())
+        self.assertIn('inspect', str(error.exception))
+        self.assertNotIn('private-fixture-value', str(error.exception))
+
+    def test_existing_volume_without_marker_never_runs_ddl(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.assertFalse(SCHEMA.initialize_fresh_schema(Path(root) / SCHEMA.MARKER_NAME, root, {}))
+        self.assertEqual(FreshInstallTest.FakeFreshSchema.calls, [])
 
 
 if __name__ == '__main__': unittest.main()

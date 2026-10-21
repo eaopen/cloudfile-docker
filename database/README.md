@@ -20,7 +20,9 @@
 当前包：[20261021-four-table-baseline](v2/20261021-four-table-baseline/README.md)。每个包说明源结构、目标结构、适用的 Server/Hub/Docker 提交、数据转换限制、执行顺序、验收与故障处理，并固定 SQL SHA256。
 
 - 新安装执行独立建表 SQL；已有实例按精确源结构选择升级 SQL。发现缺表、未知结构或非空 Guard 时停止并审查，不自动猜测映射。
-- 应用启动/重启检查运行库不混入历史 CloudFile 表；基础三表必须匹配，Guard 仅在显式启用 Checkout 时检查，不执行 CloudFile 开发期 DDL、数据回填或旧兼容修复；不使用开发期开关恢复自动升级。结构不匹配就停止并给出手动 SQL 提示。
+- **空卷首次启动会按镜像内随 Server 发行的 reviewed DDL 建表一次**（`/opt/seafile/seafile-server-*/sql/mysql/cloudfile-v2.sql`，启用 Checkout 时再加 `cloudfile-v2-edit.sql`），成功后删除 `/shared/seafile/.cloudfile-schema-init-pending` 意图文件；失败保留该文件，下次启动重试。
+- 初始化 ≠ 升级：只有"没有 `seafile-data` 的新卷"才会拿到意图文件，已有卷永远只做校验；应用重启不会因新代码、表名存在或旧台账而自动升级，也不执行回填、旧迁移链或兼容 DDL。结构不匹配就停止并给出手动 SQL 提示。
+- 应用启动/重启检查运行库不混入历史 CloudFile 表；基础三表必须匹配，Guard 仅在显式启用 Checkout 时检查。
 - 发布前备份、停止所有写入者；DEV 验证后将同一份 SQL 及校验和用于对应源结构的 PROD，不能把 DEV 业务数据覆盖 PROD。两环境结构不同则另写并审核迁移。
 - 数据库结构与业务数据迁移分别写清，禁止静默截断、猜测身份、重置真实锁 generation 或依赖 HTTP 200 作为落盘证明。业务对象引用须可核验。
 - 默认不自动回滚。MySQL/MariaDB DDL 可能隐式提交，中断后先查看候选表、归档表及数据；停止写入后由人工决定修复或恢复。不能仅因脚本失败就重跑或删除备份。

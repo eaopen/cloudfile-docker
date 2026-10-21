@@ -1,5 +1,7 @@
-"""Read-only startup gate; development DDL is applied with reviewed SQL files."""
+"""Startup schema gate plus one-time initialization for a new volume."""
 import os
+import sys
+from pathlib import Path
 
 # Keep these names aligned with database/v2/20261021-four-table-baseline/00-create.sql.
 # Table existence alone previously enabled an incompatible Guard on every upload.
@@ -73,6 +75,30 @@ LEGACY_MARKERS = {
     'cf_edit_guard': {'resource_uid', 'lifecycle_ref', 'lease_until'},
     'cf_dir_acl': {'lifecycle_ref'},
 }
+
+# Written only for a volume without seafile-data; it authorizes one-time
+# initialization and is removed after a verified install.
+MARKER_NAME = '.cloudfile-schema-init-pending'
+
+
+def _checkout_enabled(environment):
+    """Parse the explicit Checkout switch; an invalid value must not guess."""
+    requested = str(environment.get('CF_ENABLE_CHECKOUT', 'false')).lower()
+    if requested not in ('true', 'false'):
+        raise ValueError('invalid Checkout setting')
+    return requested == 'true'
+
+
+def _connect(environment):
+    import pymysql
+    return pymysql.connect(
+        host=environment['SEAFILE_MYSQL_DB_HOST'],
+        port=int(environment.get('SEAFILE_MYSQL_DB_PORT', '3306')),
+        user=environment.get('SEAFILE_MYSQL_DB_USER', 'seafile'),
+        password=environment['SEAFILE_MYSQL_DB_PASSWORD'],
+        database=environment.get('SEAFILE_MYSQL_DB_SEAFILE_DB_NAME', 'seafile_db'),
+        charset='utf8mb4', autocommit=True, connect_timeout=5, read_timeout=10,
+    )
 
 
 def inspect_v2_schema(connection, checkout_enabled=False):
@@ -162,24 +188,63 @@ def _overall_status(report, required):
     return 'mixed'
 
 
+def prepare_fresh_schema(shared_dir):
+    """Persist fresh-volume intent before CE creates its data directory.
+
+    Only a volume without seafile-data gets the marker, so a restart of an
+    existing deployment can never be mistaken for a fresh install.
+    """
+    shared_dir = Path(shared_dir)
+    marker = shared_dir / MARKER_NAME
+    if not (shared_dir / 'seafile-data').exists():
+        marker.touch(mode=0o600, exist_ok=True)
+    return marker
+
+
+def initialize_fresh_schema(marker, installdir, environment=None):
+    """Create the reviewed V2 tables once for a new volume.
+
+    Development-period *upgrades* stay manual, but a fresh volume still needs
+    its tables before the first request. The DDL is the reviewed CREATE set
+    shipped with the server image; FreshSchema refuses legacy or mixed layouts
+    instead of converting them. The marker is removed only after a verified
+    install, so a failed attempt is retried on the next start.
+    """
+    marker = Path(marker)
+    if not marker.exists():
+        return False
+    environment = os.environ if environment is None else environment
+    connection = None
+    try:
+        sql_dir = Path(installdir) / 'sql' / 'mysql'
+        ddl = (sql_dir / 'cloudfile-v2.sql').read_text()
+        edit_ddl = ((sql_dir / 'cloudfile-v2-edit.sql').read_text()
+                    if _checkout_enabled(environment) else None)
+        sys.path.insert(0, str(Path(installdir) / 'seahub'))
+        try:
+            from cloudfile_ext.v2.schema import FreshSchema
+        finally:
+            sys.path.pop(0)
+        connection = _connect(environment)
+        FreshSchema(connection, ddl, edit_ddl=edit_ddl).install()
+        marker.unlink()
+        return True
+    except Exception:
+        # Driver/schema errors may embed credentials or row values.
+        raise RuntimeError('CloudFile V2 fresh schema initialization failed; '
+                           'inspect existing cf_* tables before retry') from None
+    finally:
+        if connection is not None:
+            connection.close()
+
+
 def verify_development_schema(installdir=None, environment=None):
     """Fail startup with an operator action, never migrate a development DB."""
     environment = os.environ if environment is None else environment
     connection = None
     try:
-        import pymysql
-        connection = pymysql.connect(
-            host=environment['SEAFILE_MYSQL_DB_HOST'],
-            port=int(environment.get('SEAFILE_MYSQL_DB_PORT', '3306')),
-            user=environment.get('SEAFILE_MYSQL_DB_USER', 'seafile'),
-            password=environment['SEAFILE_MYSQL_DB_PASSWORD'],
-            database=environment.get('SEAFILE_MYSQL_DB_SEAFILE_DB_NAME', 'seafile_db'),
-            charset='utf8mb4', autocommit=True, connect_timeout=5,
-        )
-        requested = str(environment.get('CF_ENABLE_CHECKOUT', 'false')).lower()
-        if requested not in ('true', 'false'):
-            raise ValueError('invalid Checkout setting')
-        verify_v2_schema(connection, checkout_enabled=requested == 'true')
+        connection = _connect(environment)
+        verify_v2_schema(connection, checkout_enabled=_checkout_enabled(environment))
     except Exception:
         # Driver details may contain credentials. Never invoke a legacy runner
         # or restore old fields when this fails: use the fixed release SQL pack.

@@ -1,5 +1,7 @@
 # 部署
 
+> **版本口径**：当前 `dev` 只允许五张 CloudFile 扩展表（存储、目录 ACL、SSO 映射、Guard、审计）；无托管库、独立共享账本或运行态旧迁移。现行镜像/构建由根 `AGENTS.md` 和 `release.yaml` 管理；旧版本部署步骤仅作历史参考。
+
 > 用途：部署和维护当前 CloudFile Compose 栈
 > 适用版本：Seafile CE 14 参考基线，镜像版本以 `release.yaml` 为准
 > 当前状态：有效；生产启用可选能力前须核对功能矩阵

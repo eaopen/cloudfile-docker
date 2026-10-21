@@ -1,5 +1,7 @@
 # CloudFile V2 — 普通编辑始终可用，Checkout 默认启用
 
+> **当前数据约束**：Checkout 使用 `cf_edit_guard`，普通编辑没有 Session；整体 V2 仍只有 `cf_library_storage`、`cf_dir_acl`、`cf_sso_group_map`、`cf_edit_guard`、`cf_audit_event` 五表。Guard 不是托管库状态，不存在库分类开关。
+
 > 2026-10-17 配置语义收敛：**Checkout 是安装能力，不是普通编辑总开关。** 本次不部署生产；既有数据不做静默破坏性迁移。
 
 ## 两种编辑及唯一一张 Guard 表

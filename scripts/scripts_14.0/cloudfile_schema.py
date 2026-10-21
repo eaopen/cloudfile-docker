@@ -4,7 +4,7 @@ import os
 import sys
 from pathlib import Path
 
-# Keep these names aligned with database/v2/20261021-four-table-baseline/00-create.sql.
+# Exactly five V2 extension tables; CE native tables remain independent.
 # Table existence alone previously enabled an incompatible Guard on every upload.
 COLUMNS = {
     'cf_library_storage': 'repo_key repo_id state',
@@ -30,23 +30,17 @@ def verify_v2_schema(connection, checkout_enabled=False):
     """Check the installed core contract without CREATE, ALTER, DML or repair.
 
     This is a startup gate, not a replacement for release SQL/data validation.
-    The four-table baseline includes the optional edit table, but disabled
-    Checkout does not qualify or require that table for ordinary file transfers.
+    All five tables are installed in every new V2 deployment. Checkout runtime
+    activation is independent from the existence of the Guard table.
     """
     with connection.cursor() as cursor:
-        # Legacy tables are migration inputs/archives, never runtime fallbacks.
-        # Reject mixed databases even when the four new tables themselves match.
+        # Unknown extension tables cannot become implicit runtime dependencies.
         cursor.execute("SELECT TABLE_NAME FROM information_schema.TABLES "
                        "WHERE TABLE_SCHEMA=DATABASE() AND LOWER(LEFT(TABLE_NAME,2))='cf'")
         installed = {row[0] for row in cursor.fetchall()}
-        required = set(COLUMNS) if checkout_enabled else set(COLUMNS) - {'cf_edit_guard'}
-        if not required <= installed or installed - set(COLUMNS):
+        if installed != set(COLUMNS):
             raise ValueError('runtime database contains missing core or unapproved CloudFile tables')
         for table, names in COLUMNS.items():
-            # An unfinished, disabled Checkout must never prevent file service
-            # startup because its Guard is missing or has an incompatible shape.
-            if table == 'cf_edit_guard' and not checkout_enabled:
-                continue
             cursor.execute('SELECT ENGINE,TABLE_COLLATION FROM information_schema.TABLES '
                            'WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=%s', (table,))
             if cursor.fetchall() != (('InnoDB', 'utf8mb4_bin'),):
@@ -76,13 +70,6 @@ def verify_v2_schema(connection, checkout_enabled=False):
                 raise ValueError('required core index missing or changed')
 
 
-# Historical column names that identify an archived 029/042 layout rather than
-# a random drift. Used only for classification; never for migration decisions.
-LEGACY_MARKERS = {
-    'cf_edit_guard': {'resource_uid', 'lifecycle_ref', 'lease_until'},
-    'cf_dir_acl': {'lifecycle_ref'},
-}
-
 # Written only for a volume without seafile-data; it authorizes one-time
 # initialization and is removed after a verified install.
 MARKER_NAME = '.cloudfile-schema-init-pending'
@@ -111,10 +98,8 @@ def _connect(environment):
 def inspect_v2_schema(connection, checkout_enabled=False):
     """Classify an installed database without writes, migrations or failures.
 
-    The startup gate answers "may this instance serve traffic?"; this inventory
-    answers "what is actually installed?" so an operator can run the reviewed
-    SQL package with the right plan. It issues information_schema SELECTs only
-    and returns a JSON-serialisable report instead of raising on drift.
+    Inspects current five-table structure without writes. No legacy
+    layout recognition, fallback, upgrade or repair is performed.
     """
     report = {
         'status': 'current',
@@ -127,13 +112,8 @@ def inspect_v2_schema(connection, checkout_enabled=False):
                        "WHERE TABLE_SCHEMA=DATABASE() AND LOWER(LEFT(TABLE_NAME,2))='cf'")
         installed = {row[0] for row in cursor.fetchall()}
         report['extra_tables'] = sorted(installed - set(COLUMNS))
-        required = set(COLUMNS) if checkout_enabled else set(COLUMNS) - {'cf_edit_guard'}
+        required = set(COLUMNS)
         for table, names in COLUMNS.items():
-            if table not in required:
-                # Disabled Checkout is not a defect: the optional table is
-                # reported without being qualified, matching the startup gate.
-                report['tables'][table] = 'optional-disabled'
-                continue
             if table not in installed:
                 report['tables'][table] = 'missing'
                 continue
@@ -146,7 +126,7 @@ def inspect_v2_schema(connection, checkout_enabled=False):
 
 
 def _classify_table(cursor, table, columns, expected_names):
-    """Return current, legacy or incompatible for one installed table."""
+    """Return current or incompatible for one installed V2 table."""
     # Same contract checks as the startup gate, but drift is reported instead
     # of raised so a diagnostic run never looks like a failed deployment.
     defects = []
@@ -177,9 +157,6 @@ def _classify_table(cursor, table, columns, expected_names):
         defects.append('index')
     if not defects:
         return 'current'
-    # Historical names prove the table is an archived layout, not arbitrary drift.
-    if LEGACY_MARKERS.get(table, set()) & set(columns):
-        return 'legacy'
     return 'incompatible'
 
 
@@ -190,39 +167,20 @@ def _overall_status(report, required):
         return 'current'
     if all(state == 'missing' for state in states):
         return 'missing'
-    if 'legacy' in states:
-        return 'legacy'
     if 'incompatible' in states:
         return 'incompatible'
     return 'mixed'
 
 
 def prepare_fresh_schema(shared_dir, environment=None):
-    """Persist fresh-volume intent before CE creates its data directory.
-
-    Only a volume without seafile-data gets the marker, and an existing marker
-    is never rewritten: a retry must keep the original table plan so a changed
-    Checkout setting cannot add a table behind the operator's back. The marker
-    records the file identity of this volume, so a copied or restored marker
-    from another deployment is rejected instead of being replayed.
-    """
+    """Mark a genuinely new Seafile volume for one-time five-table setup."""
     shared_dir = Path(shared_dir)
     marker = shared_dir / MARKER_NAME
-    if marker.exists():
+    if marker.exists() or (shared_dir / 'seafile-data').exists():
         return marker
-    if (shared_dir / 'seafile-data').exists():
-        return marker
-    try:
-        checkout = _checkout_enabled(os.environ if environment is None else environment)
-    except ValueError:
-        # Invalid configuration fails the later startup gate; do not bake a
-        # guessed table plan into a volume that may then be reused.
-        return marker
-    plan = {'version': 1, 'checkout': checkout}
-    marker.write_text(json.dumps(plan), encoding='utf-8')
-    stat = marker.stat()
-    plan.update({'dev': stat.st_dev, 'ino': stat.st_ino})
-    marker.write_text(json.dumps(plan), encoding='utf-8')
+    marker.write_text(json.dumps({'new_volume': True}), encoding='utf-8')
+    info = marker.stat()
+    marker.write_text(json.dumps({'new_volume': True, 'dev': info.st_dev, 'ino': info.st_ino}), encoding='utf-8')
     marker.chmod(0o600)
     return marker
 
@@ -230,16 +188,14 @@ def prepare_fresh_schema(shared_dir, environment=None):
 def _fresh_plan(marker):
     """Read and validate the recorded initialization plan.
 
-    A missing identity, wrong version or foreign inode means the marker is not
-    proof of a fresh volume; initialization must stop instead of guessing.
+    A missing identity or foreign inode must never authorize initialization.
     """
     try:
         plan = json.loads(Path(marker).read_text(encoding='utf-8'))
         stat = Path(marker).stat()
     except Exception:
         raise RuntimeError('CloudFile V2 initialization marker is unreadable; inspect cf_* tables before retry') from None
-    if (not isinstance(plan, dict) or plan.get('version') != 1
-            or not isinstance(plan.get('checkout'), bool)
+    if (not isinstance(plan, dict) or plan.get('new_volume') is not True
             or (plan.get('dev'), plan.get('ino')) != (stat.st_dev, stat.st_ino)):
         raise RuntimeError('CloudFile V2 initialization marker is stale or belongs to another volume; '
                            'inspect cf_* tables and remove the marker only after review')
@@ -249,25 +205,20 @@ def _fresh_plan(marker):
 def initialize_fresh_schema(marker, installdir, environment=None):
     """Create the reviewed V2 tables once for a new volume.
 
-    Development-period *upgrades* stay manual, but a fresh volume still needs
-    its tables before the first request. The DDL is the reviewed CREATE set
-    shipped with the server image; FreshSchema refuses legacy or mixed layouts
-    instead of converting them. The table plan comes from the marker, never
-    from the current environment, so a retry after a configuration change
-    cannot add the optional Guard table. The marker is removed only after a
-    verified install, so a failed attempt is retried on the next start.
+    Install exactly five tables only on a new Seafile volume. No legacy
+    layouts are recognized, upgraded or migrated. The marker is removed only
+    after verified installation; a failed attempt remains available for retry.
     """
     marker = Path(marker)
     if not marker.exists():
         return False
-    plan = _fresh_plan(marker)
+    _fresh_plan(marker)
     connection = None
     try:
         sql_dir = Path(installdir) / 'sql' / 'mysql'
         ddl = (sql_dir / 'cloudfile-v2.sql').read_text()
         audit_ddl = (sql_dir / 'cloudfile-v2-audit.sql').read_text()
-        edit_ddl = ((sql_dir / 'cloudfile-v2-edit.sql').read_text()
-                    if plan['checkout'] else None)
+        edit_ddl = (sql_dir / 'cloudfile-v2-edit.sql').read_text()
         sys.path.insert(0, str(Path(installdir) / 'seahub'))
         try:
             from cloudfile_ext.v2.schema import FreshSchema
@@ -294,9 +245,8 @@ def verify_development_schema(installdir=None, environment=None):
         connection = _connect(environment)
         verify_v2_schema(connection, checkout_enabled=_checkout_enabled(environment))
     except Exception:
-        # Driver details may contain credentials. Never invoke a legacy runner
-        # or restore old fields when this fails: use the fixed release SQL pack.
-        raise RuntimeError('CloudFile development schema check failed; stop writers and apply the reviewed database/v2 SQL package before starting services') from None
+        # No historical schema upgrade or auto-repair in current V2.
+        raise RuntimeError('CloudFile V2 five-table schema mismatch; stop writers and recreate the DEV extension schema before starting services') from None
     finally:
         if connection is not None:
             connection.close()

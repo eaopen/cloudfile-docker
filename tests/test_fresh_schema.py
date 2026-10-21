@@ -99,8 +99,8 @@ class FreshInstallTest(unittest.TestCase):
         calls = []
         fail = False
 
-        def __init__(self, connection, ddl, *, edit_ddl=None):
-            self.ddl, self.edit_ddl = ddl, edit_ddl
+        def __init__(self, connection, ddl, *, edit_ddl=None, audit_ddl=None):
+            self.ddl, self.edit_ddl, self.audit_ddl = ddl, edit_ddl, audit_ddl
             FreshInstallTest.FakeFreshSchema.calls.append(self)
 
         def install(self):
@@ -117,6 +117,7 @@ class FreshInstallTest(unittest.TestCase):
         sql.mkdir(parents=True, exist_ok=True)
         (sql / 'cloudfile-v2.sql').write_text('-- reviewed base DDL')
         (sql / 'cloudfile-v2-edit.sql').write_text('-- reviewed optional Guard DDL')
+        (sql / 'cloudfile-v2-audit.sql').write_text('-- reviewed operation audit DDL')
         (installdir / 'seahub').mkdir(exist_ok=True)
         return installdir
 
@@ -159,6 +160,7 @@ class FreshInstallTest(unittest.TestCase):
         self.assertFalse(marker.exists())
         self.assertEqual(len(FreshInstallTest.FakeFreshSchema.calls), 1)
         self.assertIsNone(FreshInstallTest.FakeFreshSchema.calls[0].edit_ddl)
+        self.assertIsNotNone(FreshInstallTest.FakeFreshSchema.calls[0].audit_ddl)
         connection.close.assert_called_once()
 
     def test_enabled_checkout_plan_installs_the_optional_guard(self):

@@ -1,138 +1,76 @@
 #!/usr/bin/env python3
-"""Check reviewed cross-repository CREATE contracts without touching a database.
+"""Fast, read-only V2 4+1 table dependency gate.
 
-The complete migration runner remains responsible for ALTER/DROP and ledger
-checks. This gate catches new table-name collisions and optional Checkout
-columns/indexes drifting away from their actual reader before a build ships.
+No historical migrations, no schema checksum ledger, no Docker/DB access.
+Check only code that actually ships in current V2 runtime; inert historical
+source is never an excuse to recreate a legacy table.
 """
 import argparse
-import hashlib
-import importlib.util
-import json
 from pathlib import Path
 import re
 
-
-KNOWN_ISOLATED_LAYOUTS = {'cf_dir_acl', 'cf_sso_group_map', 'cf_edit_guard'}
-
-
-def sql_steps(value):
-    if isinstance(value, dict):
-        for name, child in value.items():
-            if name == 'sql' and isinstance(child, str):
-                yield child
-            else:
-                yield from sql_steps(child)
-    elif isinstance(value, list):
-        for child in value:
-            yield from sql_steps(child)
+TABLES = frozenset({
+    'cf_library_storage', 'cf_sso_group_map', 'cf_dir_acl',
+    'cf_edit_guard', 'cf_audit_event',
+})
+DDL = ('cloudfile-v2.sql', 'cloudfile-v2-edit.sql', 'cloudfile-v2-audit.sql')
+SQL_TABLE = re.compile(
+    r'\\b(?:FROM|JOIN|INTO|UPDATE|TABLE|REFERENCES)\\s+[`"]?(cf_[a-z0-9_]+)',
+    re.IGNORECASE,
+)
 
 
-def split_definitions(body):
-    depth, quote, start = 0, None, 0
-    for index, char in enumerate(body):
-        if char in "'\"`" and (index == 0 or body[index - 1] != '\\'):
-            if quote == char:
-                quote = None
-            elif quote is None:
-                quote = char
-        if quote is None:
-            if char == '(':
-                depth += 1
-            elif char == ')':
-                depth -= 1
-            elif char == ',' and depth == 0:
-                yield body[start:index].strip()
-                start = index + 1
-    yield body[start:].strip()
+def validate(server, hub, docker, agent=None):
+    sql_dir = server / 'scripts/sql/mysql'
+    observed = set()
+    for name in DDL:
+        text = (sql_dir / name).read_text()
+        matches = re.findall(r'\\bCREATE TABLE (cf_[a-z0-9_]+)\\s*\\(', text)
+        if not matches or len(matches) != len(set(matches)):
+            raise ValueError('missing or duplicate DDL: ' + name)
+        observed.update(matches)
+    if observed != TABLES:
+        raise ValueError('V2 DDL differs from 4+1: ' + str(sorted(observed ^ TABLES)))
+    if (sql_dir / 'cloudfile.sql').exists():
+        raise ValueError('retired CloudFile schema re-entered Server installation')
+    if (hub / 'cloudfile_extensions/schema').exists():
+        raise ValueError('retired 001-042 schema runner re-entered Hub runtime')
 
-
-def creates(sql):
-    sql = re.sub(r'--[^\n]*', '', sql)
-    for match in re.finditer(r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?(cf_\w+)`?\s*\((.*?)\)\s*ENGINE', sql, re.I | re.S):
-        name, body = match.groups()
-        columns, indexes = set(), {}
-        for definition in split_definitions(body):
-            first = definition.split()[0].strip('`').upper()
-            if first not in {'PRIMARY', 'KEY', 'UNIQUE', 'CONSTRAINT', 'FOREIGN', 'CHECK', 'INDEX'}:
-                columns.add(definition.split()[0].strip('`'))
-            primary = re.match(r'PRIMARY\s+KEY\s*\(([^)]+)\)', definition, re.I)
-            key = re.match(r'(UNIQUE\s+)?KEY\s+`?(\w+)`?\s*\(([^)]+)\)', definition, re.I)
-            if primary:
-                indexes['PRIMARY'] = (0, tuple(x.strip(' `') for x in primary[1].split(',')))
-            elif key:
-                indexes[key[2]] = (0 if key[1] else 1, tuple(x.strip(' `') for x in key[3].split(',')))
-        yield name, frozenset(columns), indexes
-
-
-def ddl_sources(server, hub):
-    for name in ('cloudfile.sql', 'cloudfile-v2.sql', 'cloudfile-v2-edit.sql'):
-        yield 'server/' + name, server / 'scripts/sql/mysql' / name
-    for path in sorted((hub / 'cloudfile_extensions/schema/migrations').glob('*.json')):
-        yield 'hub/' + path.name, path
-
-
-def reviewed_ddl_digest(path):
-    # Include ALTER/DROP, types, defaults and checks, not just CREATE column names.
-    # Canonical JSON ignores formatting while preserving every SQL statement.
-    value = path.read_text()
-    if path.suffix == '.json':
-        value = json.dumps(json.loads(value), sort_keys=True, ensure_ascii=False)
-    return hashlib.sha256(value.encode()).hexdigest()
-
-
-def audit(server, hub):
-    contracts = {}
-    definitions = 0
-    for name in ('cloudfile.sql', 'cloudfile-v2.sql', 'cloudfile-v2-edit.sql'):
-        path = server / 'scripts/sql/mysql' / name
-        for table, columns, indexes in creates(path.read_text()):
-            contracts.setdefault(table, []).append((name, columns, indexes))
-            definitions += 1
-    for path in sorted((hub / 'cloudfile_extensions/schema/migrations').glob('*.json')):
-        for statement in sql_steps(json.loads(path.read_text())):
-            for table, columns, indexes in creates(statement):
-                contracts.setdefault(table, []).append((path.name, columns, indexes))
-                definitions += 1
-    collisions = {name for name, layouts in contracts.items()
-                  if len({layout[1] for layout in layouts}) > 1}
-    unexpected = collisions - KNOWN_ISOLATED_LAYOUTS
-    if unexpected:
-        raise ValueError('new incompatible table-name collision: ' + ', '.join(sorted(unexpected)))
-    # Load only the dependency-free contract checker, never Django/settings/DDL.
-    path = hub / 'cloudfile_ext/v2/checkout_schema.py'
-    spec = importlib.util.spec_from_file_location('checkout_schema_contract', path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    guards = contracts.get('cf_edit_guard', [])
-    path_guard = next((x for x in guards if x[0] == 'cloudfile-v2-edit.sql'), None)
-    resource_guard = next((x for x in guards if x[0] == '029_editing_core.json'), None)
-    if path_guard is None or path_guard[1] != module.PATH_COLUMNS or path_guard[2] != module.PATH_INDEXES:
-        raise ValueError('path Checkout reader and CREATE DDL columns/indexes differ')
-    if resource_guard is None or resource_guard[1] != module.RESOURCE_COLUMNS:
-        raise ValueError('resource Checkout detector and migration DDL differ')
-    # A source change requires a deliberate SQL review and baseline update;
-    # merely retaining a known table name must never bless a new layout.
-    baseline = json.loads((Path(__file__).with_name('reviewed-sql-contracts.json')).read_text())
-    actual = {name: reviewed_ddl_digest(path) for name, path in ddl_sources(server, hub)}
-    drift = sorted(name for name in set(actual) | set(baseline) if actual.get(name) != baseline.get(name))
-    if drift:
-        raise ValueError('SQL review baseline changed: ' + ', '.join(drift))
-    return {'reviewed_ddl_sources': len(actual), 'create_definitions': definitions, 'table_names': len(contracts),
-            'isolated_layout_collisions': sorted(collisions),
-            'checkout_reader_contracts': 'matched'}
+    checks = [
+        (server, ['common', 'server', 'fileserver'], ('.c', '.go')),
+        (hub, ['cloudfile_ext/v2', 'cloudfile_ext/audit',
+               'cloudfile_ext/file_actions'], ('.py',)),
+        (docker, ['scripts/scripts_14.0'], ('.py',)),
+    ]
+    for root, dirs, suffixes in checks:
+        for directory in dirs:
+            for path in sorted((root / directory).rglob('*')):
+                if not path.is_file() or path.suffix not in suffixes:
+                    continue
+                if path.name.endswith('_test.go') or path.name.startswith('test_'):
+                    continue
+                src = path.read_text()
+                for match in SQL_TABLE.finditer(src):
+                    if match.group(1).lower() not in TABLES:
+                        raise ValueError('retired table SQL in ' +
+                                         str(path.relative_to(root)) + ': ' + match.group(1))
+    if agent is not None:
+        core = agent / 'crates/cloudfile-core/src'
+        for path in sorted(core.glob('*.rs')):
+            source = path.read_text()
+            if '/api/v2.1/cloudfile/agent-sessions/claim/' in source:
+                raise ValueError('Agent2 legacy SQL Session HTTP client: ' + path.name)
+    print('PASS current V2 4+1 DDL and active SQL dependencies')
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    workspace = Path(__file__).resolve().parents[2]
-    parser.add_argument('--server', type=Path, default=workspace / 'cloudfile-server')
-    parser.add_argument('--hub', type=Path, default=workspace / 'cloudfile-hub')
-    args = parser.parse_args()
-    try:
-        print(json.dumps(audit(args.server, args.hub), ensure_ascii=False, sort_keys=True))
-    except (OSError, ValueError, ImportError) as error:
-        parser.exit(1, 'SQL contract check failed: ' + str(error) + '\n')
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--server', type=Path, required=True)
+    ap.add_argument('--hub', type=Path, required=True)
+    ap.add_argument('--docker', type=Path, default=Path(__file__).resolve().parents[1])
+    ap.add_argument('--agent', type=Path)
+    args = ap.parse_args()
+    validate(args.server, args.hub, args.docker, args.agent)
 
 
 if __name__ == '__main__':

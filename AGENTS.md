@@ -57,3 +57,8 @@ V2 内置 ACL、CE 原生 Tag 和已安装 Guard 的 Checkout 不应重新受旧
 
 - 启动调用 `cloudfile_schema.py`，只创建/校验 4+1 表；历史 `cloudfile.sql`、SchemaRunner 和旧 SQL Workers 不属于产品镜像。禁止为旧代码恢复 `cf_schema_migration` 或其他旧表。
 - 旧 DEV 修复工具保留在历史材料供一次性人工处理，不由构建、启动、升级、工作进程自动调用。禁止用测试历史脚本的成功状态声称当前 DEV 镜像已经升级。
+
+## 轻量跨仓运行表检查
+
+- `tools/check-sql-contracts.py` 当前只检查 4+1 DDL 与 Server/Hub/Docker/可选 Agent2 **可运行** SQL 依赖，不再生成/更新旧 001–042 checksum 台账；历史 DEV 数据修复用独立一次性工具进行。
+- `tools/run-checks.sh` 不再将历史 001–042 数据转换、旧四表 SQL 包作为日常产品测试。禁止每次小改动启动全量编译。

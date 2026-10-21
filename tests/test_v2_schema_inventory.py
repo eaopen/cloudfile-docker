@@ -1,7 +1,7 @@
 """Read-only V2 schema inventory: classification, exit codes and secret safety.
 
 The inventory is the operator-facing counterpart of the startup gate: it must
-name what is installed (current/missing/legacy/mixed) without ever writing or
+name what is installed (current/missing/incompatible/mixed) without writing or
 echoing connection details.
 """
 import importlib.util
@@ -89,15 +89,10 @@ class InventoryTest(unittest.TestCase):
         self.assertEqual(report['tables']['cf_edit_guard'], 'current')
         self.assertEqual(report['extra_tables'], [])
 
-    def test_disabled_checkout_is_not_a_guard_defect(self):
+    def test_checkout_toggle_does_not_hide_guard_defects(self):
         report = probe(defect='legacy_guard', checkout=False)
-        self.assertEqual(report['status'], 'current')
-        self.assertEqual(report['tables']['cf_edit_guard'], 'optional-disabled')
-
-    def test_legacy_guard_is_classified_without_repair(self):
-        report = probe(defect='legacy_guard', checkout=True)
-        self.assertEqual(report['tables']['cf_edit_guard'], 'legacy')
-        self.assertEqual(report['status'], 'legacy')
+        self.assertEqual(report['status'], 'incompatible')
+        self.assertEqual(report['tables']['cf_edit_guard'], 'incompatible')
 
     def test_missing_core_table_and_extra_table_are_mixed(self):
         self.assertEqual(probe(defect='missing_table')['status'], 'mixed')
@@ -122,7 +117,7 @@ class InventoryCliTest(unittest.TestCase):
         return code, stdout.getvalue(), stderr.getvalue()
 
     def test_plan_always_succeeds_and_check_fails_on_drift(self):
-        drift = {'status': 'legacy', 'checkout_enabled': True, 'tables': {}, 'extra_tables': []}
+        drift = {'status': 'incompatible', 'checkout_enabled': True, 'tables': {}, 'extra_tables': []}
         self.assertEqual(self.run_cli('plan', drift)[0], 0)
         self.assertEqual(self.run_cli('check', drift)[0], 2)
         self.assertEqual(self.run_cli('check', {'status': 'current', 'tables': {}, 'extra_tables': []})[0], 0)

@@ -11,6 +11,7 @@ COLUMNS = {
     'cf_sso_group_map': 'provider subject_type namespace external_id group_id',
     'cf_dir_acl': 'repo_id path_hash path subject_type provider namespace external_id permission inherit share_mode revision',
     'cf_edit_guard': 'repo_id path_hash path guard_id generation owner_uid owner_native_user terminal_type terminal_name checkout_ip proof_digest base_file_id lease_expires_at created_at updated_at',
+    'cf_audit_event': 'id repo_id object_type object_id operation operator source before after source_path target_path path_hash commit_id result failure_reason occurred_at',
 }
 INDEXES = {
     'cf_library_storage': {'PRIMARY': (0, ('repo_key',)), 'library_storage_repo': (0, ('repo_id',))},
@@ -19,6 +20,9 @@ INDEXES = {
                    'acl_shared_subject': (1, ('provider','subject_type','namespace','external_id','share_mode','repo_id'))},
     'cf_edit_guard': {'PRIMARY': (0, ('repo_id','path_hash')), 'cf_edit_guard_id': (0, ('guard_id',)),
                       'cf_edit_guard_active': (1, ('repo_id','guard_id')), 'cf_edit_guard_owner': (1, ('owner_uid','guard_id'))},
+    'cf_audit_event': {'PRIMARY': (0, ('id',)),
+        'cf_audit_repo_time': (1, ('repo_id','occurred_at','id')),
+        'cf_audit_path_time': (1, ('repo_id','path_hash','occurred_at','id'))},
 }
 
 
@@ -54,6 +58,8 @@ def verify_v2_schema(connection, checkout_enabled=False):
                 raise ValueError('core column layout mismatch')
             if table in ('cf_dir_acl', 'cf_edit_guard') and columns['path_hash'] != ('binary', 32):
                 raise ValueError('core path hash must be BINARY(32)')
+            if table == 'cf_audit_event' and columns['path_hash'] != ('binary', 32):
+                raise ValueError('audit path hash must be BINARY(32)')
             if table == 'cf_sso_group_map' and columns['group_id'][0] != 'bigint':
                 raise ValueError('native group identity must be BIGINT')
             cursor.execute('SELECT INDEX_NAME,NON_UNIQUE,SEQ_IN_INDEX,COLUMN_NAME,SUB_PART '
@@ -147,6 +153,8 @@ def _classify_table(cursor, table, columns, expected_names):
     if set(columns) != set(expected_names.split()):
         defects.append('columns')
     if table in ('cf_dir_acl', 'cf_edit_guard') and columns.get('path_hash') != ('binary', 32):
+        defects.append('path_hash')
+    if table == 'cf_audit_event' and columns.get('path_hash') != ('binary', 32):
         defects.append('path_hash')
     if table == 'cf_sso_group_map' and columns.get('group_id', ('',))[0] != 'bigint':
         defects.append('group_id')
@@ -257,6 +265,7 @@ def initialize_fresh_schema(marker, installdir, environment=None):
     try:
         sql_dir = Path(installdir) / 'sql' / 'mysql'
         ddl = (sql_dir / 'cloudfile-v2.sql').read_text()
+        audit_ddl = (sql_dir / 'cloudfile-v2-audit.sql').read_text()
         edit_ddl = ((sql_dir / 'cloudfile-v2-edit.sql').read_text()
                     if plan['checkout'] else None)
         sys.path.insert(0, str(Path(installdir) / 'seahub'))
@@ -265,7 +274,7 @@ def initialize_fresh_schema(marker, installdir, environment=None):
         finally:
             sys.path.pop(0)
         connection = _connect(environment or os.environ)
-        FreshSchema(connection, ddl, edit_ddl=edit_ddl).install()
+        FreshSchema(connection, ddl, edit_ddl=edit_ddl, audit_ddl=audit_ddl).install()
         marker.unlink()
         return True
     except Exception:

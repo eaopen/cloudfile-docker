@@ -43,9 +43,14 @@ class CurrentAuthorizationSpec(unittest.TestCase):
         for name in retired:
             self.assertFalse((ROOT / name).exists(), name)
         forbidden = re.compile(
-            r'\\b(?:INSERT\\s+INTO|SELECT\\s+[^\\n]*?\\s+FROM|UPDATE|DELETE\\s+FROM)\\s+cf_(?:managed_library|managed_library_share|library_share_revision)\\b',
+            r'\b(?:INSERT\s+INTO|SELECT\s+[^\n]*?\s+FROM|UPDATE|DELETE\s+FROM)\s+cf_(?:managed_library|managed_library_share|library_share_revision)\b',
             re.I,
         )
+        for sql in ('INSERT INTO cf_managed_library VALUES (1)',
+                    'SELECT * FROM cf_managed_library_share',
+                    'DELETE FROM cf_library_share_revision',
+                    'UPDATE cf_managed_library SET x=1'):
+            self.assertIsNotNone(forbidden.search(sql), sql)
         for file in (ROOT / 'tests').rglob('*.py'):
             if file == Path(__file__):
                 continue

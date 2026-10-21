@@ -36,7 +36,8 @@ class PackageProvenanceTests(unittest.TestCase):
             path = self.package / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"installed fixture bytes")
-        (self.package / "seafile/lib/core-link.so").symlink_to("libcloudfile_acl.so.1")
+        (self.package / "seafile/lib").mkdir(exist_ok=True)
+        (self.package / "seafile/lib/core-link.so").symlink_to("../bin/seaf-server")
         self.captured = dict(schema=1, manifest=self.manifest,
             source_commits={name: value["ref"] for name, value in self.manifest["sources"].items()})
 
@@ -80,7 +81,7 @@ class PackageProvenanceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "content differs"):
             verify_package(self.package, self.manifest_path)
         link.unlink()
-        link.symlink_to("libcloudfile_acl.so.1")
+        link.symlink_to("../bin/seaf-server")
         (self.package / "extra.py").write_text("unrecorded")
         with self.assertRaisesRegex(ValueError, "content differs"):
             verify_package(self.package, self.manifest_path)

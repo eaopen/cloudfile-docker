@@ -1,5 +1,8 @@
 # v0.9 目录管理与地址接口
 
+> 历史记录，非当前 V2 契约。文中旧 managed marker、Resource/Intent、委托与旧授权路由已退役；当前实施以 [权限终判契约](/docs/permission-adjudication-contract.md) 和现行源码为准。
+
+
 状态：目录管理、发现、地址解析和目录分页 API 已实现，新增目录访问下载/上传预检查与原生 scoped 终判已接通；管理界面已统一编辑 ACL 权限与共享开关。完整发布验收仍需真实身份 HTTP 及制品验证。权限语义见 [目录资格契约](directory-access-v09.md)。
 
 ## 接口

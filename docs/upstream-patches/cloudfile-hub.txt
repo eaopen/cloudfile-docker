@@ -114,3 +114,10 @@ tests/api/test_group_repos.py
 tests/api/test_repo_history_limit.py
 
 # 2026-10-21 权限收敛修复：seahub/views/__init__.py：复用 ACLUnavailable 与现有权限中间件，避免策略故障被误报为 403；内容权限仍交给现有 Authority。
+
+# 2026-10-21 七类权限清理：注销旧票据/PolicyHost/独立 ACL 引擎；现行 Authority、CE 入口、V2 编辑与 Guard/CAS 保留。
+frontend/src/components/file-uploader/file-uploader.js
+frontend/src/components/logout/index.js
+frontend/src/features/library-view/toolbar/selected-dirents-toolbar/index.js
+frontend/src/hooks/file-operations/download.js
+seahub/templates/react_app.html

@@ -114,18 +114,19 @@ class FreshInstallTest(unittest.TestCase):
     def _installdir(self, root):
         installdir = Path(root) / 'seafile-server'
         sql = installdir / 'sql' / 'mysql'
-        sql.mkdir(parents=True)
+        sql.mkdir(parents=True, exist_ok=True)
         (sql / 'cloudfile-v2.sql').write_text('-- reviewed base DDL')
         (sql / 'cloudfile-v2-edit.sql').write_text('-- reviewed optional Guard DDL')
-        (installdir / 'seahub').mkdir()
+        (installdir / 'seahub').mkdir(exist_ok=True)
         return installdir
 
-    def _run(self, root, checkout='false'):
-        marker = Path(root) / SCHEMA.MARKER_NAME
-        marker.write_text('')
+    def _env(self, checkout='false'):
+        return {'SEAFILE_MYSQL_DB_HOST': 'db', 'SEAFILE_MYSQL_DB_PASSWORD': 'fixture',
+                'CF_ENABLE_CHECKOUT': checkout}
+
+    def _init(self, root, marker, checkout='false'):
         driver = ModuleType('pymysql')
         connection = Mock()
-        connection.get_autocommit.return_value = True
         driver.connect = Mock(return_value=connection)
         schema = ModuleType('cloudfile_ext.v2.schema')
         schema.FreshSchema = FreshInstallTest.FakeFreshSchema
@@ -133,13 +134,11 @@ class FreshInstallTest(unittest.TestCase):
         v2.schema = schema
         package = ModuleType('cloudfile_ext')
         package.v2 = v2
-        env = {'SEAFILE_MYSQL_DB_HOST': 'db', 'SEAFILE_MYSQL_DB_PASSWORD': 'fixture',
-               'CF_ENABLE_CHECKOUT': checkout}
         modules = {'pymysql': driver, 'cloudfile_ext': package,
                    'cloudfile_ext.v2': v2, 'cloudfile_ext.v2.schema': schema}
         with patch.dict(sys.modules, modules):
-            result = SCHEMA.initialize_fresh_schema(marker, self._installdir(root), env)
-        return result, marker, connection
+            result = SCHEMA.initialize_fresh_schema(marker, self._installdir(root), self._env(checkout))
+        return result, connection
 
     def test_marker_only_for_volume_without_seafile_data(self):
         with tempfile.TemporaryDirectory() as root:
@@ -152,27 +151,56 @@ class FreshInstallTest(unittest.TestCase):
 
     def test_fresh_volume_installs_reviewed_ddl_once(self):
         with tempfile.TemporaryDirectory() as root:
-            result, marker, connection = self._run(root)
+            shared = Path(root) / 'shared'
+            shared.mkdir()
+            marker = SCHEMA.prepare_fresh_schema(shared, self._env('false'))
+            result, connection = self._init(root, marker, 'false')
         self.assertTrue(result)
         self.assertFalse(marker.exists())
         self.assertEqual(len(FreshInstallTest.FakeFreshSchema.calls), 1)
         self.assertIsNone(FreshInstallTest.FakeFreshSchema.calls[0].edit_ddl)
         connection.close.assert_called_once()
 
-    def test_enabled_checkout_also_installs_the_optional_guard(self):
+    def test_enabled_checkout_plan_installs_the_optional_guard(self):
         with tempfile.TemporaryDirectory() as root:
-            result, _, _ = self._run(root, checkout='true')
+            shared = Path(root) / 'shared'
+            shared.mkdir()
+            marker = SCHEMA.prepare_fresh_schema(shared, self._env('true'))
+            result, _ = self._init(root, marker, 'true')
         self.assertTrue(result)
         self.assertIsNotNone(FreshInstallTest.FakeFreshSchema.calls[0].edit_ddl)
 
-    def test_failed_install_keeps_marker_and_hides_driver_details(self):
+    def test_failed_install_keeps_marker_and_retry_uses_the_original_plan(self):
         FreshInstallTest.FakeFreshSchema.fail = True
         with tempfile.TemporaryDirectory() as root:
+            shared = Path(root) / 'shared'
+            shared.mkdir()
+            marker = SCHEMA.prepare_fresh_schema(shared, self._env('false'))
             with self.assertRaises(RuntimeError) as error:
-                self._run(root)
-            self.assertTrue((Path(root) / SCHEMA.MARKER_NAME).exists())
+                self._init(root, marker, 'false')
+            self.assertTrue(marker.exists())
+            # A configuration flip during the failed attempt must not add the
+            # optional Guard table: retry keeps the recorded plan.
+            FreshInstallTest.FakeFreshSchema.fail = False
+            result, _ = self._init(root, marker, 'true')
+            self.assertTrue(result)
         self.assertIn('inspect', str(error.exception))
-        self.assertNotIn('private-fixture-value', str(error.exception))
+        self.assertFalse(marker.exists())
+        self.assertIsNone(FreshInstallTest.FakeFreshSchema.calls[-1].edit_ddl)
+
+    def test_marker_copied_from_another_volume_is_refused(self):
+        with tempfile.TemporaryDirectory() as root:
+            source = Path(root) / 'source'
+            source.mkdir()
+            self.assertTrue(SCHEMA.prepare_fresh_schema(source, self._env('false')).exists())
+            existing = Path(root) / 'existing'
+            (existing / 'seafile-data').mkdir(parents=True)
+            stray = existing / SCHEMA.MARKER_NAME
+            stray.write_bytes((source / SCHEMA.MARKER_NAME).read_bytes())
+            with self.assertRaises(RuntimeError) as error:
+                self._init(root, stray, 'false')
+        self.assertIn('volume', str(error.exception))
+        self.assertEqual(FreshInstallTest.FakeFreshSchema.calls, [])
 
     def test_existing_volume_without_marker_never_runs_ddl(self):
         with tempfile.TemporaryDirectory() as root:

@@ -1,4 +1,5 @@
 """Startup schema gate plus one-time initialization for a new volume."""
+import json
 import os
 import sys
 from pathlib import Path
@@ -188,17 +189,53 @@ def _overall_status(report, required):
     return 'mixed'
 
 
-def prepare_fresh_schema(shared_dir):
+def prepare_fresh_schema(shared_dir, environment=None):
     """Persist fresh-volume intent before CE creates its data directory.
 
-    Only a volume without seafile-data gets the marker, so a restart of an
-    existing deployment can never be mistaken for a fresh install.
+    Only a volume without seafile-data gets the marker, and an existing marker
+    is never rewritten: a retry must keep the original table plan so a changed
+    Checkout setting cannot add a table behind the operator's back. The marker
+    records the file identity of this volume, so a copied or restored marker
+    from another deployment is rejected instead of being replayed.
     """
     shared_dir = Path(shared_dir)
     marker = shared_dir / MARKER_NAME
-    if not (shared_dir / 'seafile-data').exists():
-        marker.touch(mode=0o600, exist_ok=True)
+    if marker.exists():
+        return marker
+    if (shared_dir / 'seafile-data').exists():
+        return marker
+    try:
+        checkout = _checkout_enabled(os.environ if environment is None else environment)
+    except ValueError:
+        # Invalid configuration fails the later startup gate; do not bake a
+        # guessed table plan into a volume that may then be reused.
+        return marker
+    plan = {'version': 1, 'checkout': checkout}
+    marker.write_text(json.dumps(plan), encoding='utf-8')
+    stat = marker.stat()
+    plan.update({'dev': stat.st_dev, 'ino': stat.st_ino})
+    marker.write_text(json.dumps(plan), encoding='utf-8')
+    marker.chmod(0o600)
     return marker
+
+
+def _fresh_plan(marker):
+    """Read and validate the recorded initialization plan.
+
+    A missing identity, wrong version or foreign inode means the marker is not
+    proof of a fresh volume; initialization must stop instead of guessing.
+    """
+    try:
+        plan = json.loads(Path(marker).read_text(encoding='utf-8'))
+        stat = Path(marker).stat()
+    except Exception:
+        raise RuntimeError('CloudFile V2 initialization marker is unreadable; inspect cf_* tables before retry') from None
+    if (not isinstance(plan, dict) or plan.get('version') != 1
+            or not isinstance(plan.get('checkout'), bool)
+            or (plan.get('dev'), plan.get('ino')) != (stat.st_dev, stat.st_ino)):
+        raise RuntimeError('CloudFile V2 initialization marker is stale or belongs to another volume; '
+                           'inspect cf_* tables and remove the marker only after review')
+    return plan
 
 
 def initialize_fresh_schema(marker, installdir, environment=None):
@@ -207,25 +244,27 @@ def initialize_fresh_schema(marker, installdir, environment=None):
     Development-period *upgrades* stay manual, but a fresh volume still needs
     its tables before the first request. The DDL is the reviewed CREATE set
     shipped with the server image; FreshSchema refuses legacy or mixed layouts
-    instead of converting them. The marker is removed only after a verified
-    install, so a failed attempt is retried on the next start.
+    instead of converting them. The table plan comes from the marker, never
+    from the current environment, so a retry after a configuration change
+    cannot add the optional Guard table. The marker is removed only after a
+    verified install, so a failed attempt is retried on the next start.
     """
     marker = Path(marker)
     if not marker.exists():
         return False
-    environment = os.environ if environment is None else environment
+    plan = _fresh_plan(marker)
     connection = None
     try:
         sql_dir = Path(installdir) / 'sql' / 'mysql'
         ddl = (sql_dir / 'cloudfile-v2.sql').read_text()
         edit_ddl = ((sql_dir / 'cloudfile-v2-edit.sql').read_text()
-                    if _checkout_enabled(environment) else None)
+                    if plan['checkout'] else None)
         sys.path.insert(0, str(Path(installdir) / 'seahub'))
         try:
             from cloudfile_ext.v2.schema import FreshSchema
         finally:
             sys.path.pop(0)
-        connection = _connect(environment)
+        connection = _connect(environment or os.environ)
         FreshSchema(connection, ddl, edit_ddl=edit_ddl).install()
         marker.unlink()
         return True

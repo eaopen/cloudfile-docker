@@ -26,6 +26,72 @@ CloudFile Server 负责 C/Go 底层文件、权限与存储；Hub 负责 Web/API
 - 根目录 `release.yaml` 与 `build/cloudfile_14.0/` 是当前唯一构建实现；三仓分支在开工时经远端解析一次，生成 `build-receipt.json`，后续仅按收据里的 SHA 构建和验证。旧白名单组装已归档到 `docs/history/storage-build-20261020/`，不作构建入口。
 - 真正构建/交付时，须明确 Server、Hub、Docker 的具体 Commit SHA、上游 CE 源码基线与镜像 Digest；历史 V2-clean CI 成功不代表最新 `dev` 已联验。
 
+## Agent 镜像构建与发布操作规程（执行前必读）
+
+**这里描述的是仓库已经实现的机制，不是让 Agent 设计新构建系统。** 在本仓进行编译、构建镜像、联验或发布之前，必须先按本节选择现有入口；不得试错式地临时拼 Docker 命令、切换旧版 Dockerfile、重复安装依赖或绕开来源收据。代码事实优先级：`release.yaml` → 当前入口脚本 → `.github/workflows/{dev,prod}.yml`；旧文档与脚本冲突时以这些可执行入口为准，先记录冲突，不自行创造替代流程。
+
+### 唯一当前入口（从仓库根目录执行）
+
+| 工作 | 当前入口 | 执行条件 |
+| --- | --- | --- |
+| 普通提交、PR、纯文档 | `.github/workflows/dev.yml`、受影响文件的静态检查 | **不编译、不打镜像**；普通 push/PR 不触发完整 CI |
+| 明确要求集成测试 / 制作发行包 | `bash build/cloudfile_14.0/build-in-docker.sh <version>` | 仅在明确需要可运行产物时 |
+| 用既有发行包组装本地应用镜像 | `bash image/cloudfile_14.0/docker-build.sh <version>` | 必须先有同版本发行包及有效构建收据 |
+| 基础镜像缺失 / 基础依赖或 Dockerfile.base 确实改变 | `bash image/cloudfile_14.0/base-build.sh` | **低频维护操作**；优先恢复已经验证的同架构基础镜像 |
+| CI 三仓完整联验 | 手动运行 `.github/workflows/prod.yml`（`CloudFile receipt build`） | `workflow_dispatch`；当前是完整编译 + 隔离挂载测试，不是自动发布流水线 |
+| 推送 Registry、更新 Compose / DEV / PROD | 必须另有明确发布任务及目标镜像 / Registry / 环境 | **构建成功不等于已推送或已部署**；此仓当前 workflow 不自动 push / deploy |
+
+- `build/seafile_14.0/build-in-docker.sh` 与 `build/seafile_14.0/build-local-image.sh` 仅为转发到 `cloudfile_14.0` 的兼容包装，勿据此选择旧版构建方案。`docs/history/` 下脚本一律不可作为当前构建入口；`image/seafile_14.0/docker-build-push.sh`、`image/pro_seafile_*` 等上游/历史 push 入口不用于 CloudFile V2。
+- **`tools/release-dev162.sh` 当前显式只允许 `maintenance/v0.9/*` 历史维护分支，不支持 V2 `dev` 发布。** 即使旧 `docs/deployment.md` 仍有使用示例，也不得借此脚本发布当前 V2；不要删除脚本的保护条件来绕过限制。
+- `docs/docker-build.md` 中的 `CLOUDFILE_RUNTIME_BASE` / `cloudfile/runtime-base:*` 属于与当前入口不一致的说明；当前镜像链以 `release.yaml` 的 `build_base_image`（目前 `cloudfile-build-base:ce14-v2`）和 `CF_BASE_IMAGE` 为准。不要为了适配过时说明增加第二套 Runtime Base。
+
+### 已有依赖层和缓存如何复用（默认必须复用）
+
+1. **基础层（低频）**：`image/cloudfile_14.0/Dockerfile.base` 一次预装 Ubuntu/APT、C/Go、Node 和 Python 运行依赖；日常应用镜像 `image/cloudfile_14.0/Dockerfile` 直接 `FROM ${CLOUDFILE_BASE}`，**不重新执行 APT、安装 Node 或 pip 系统依赖**。先 `docker image inspect cloudfile-build-base:ce14-v2`，存在且架构匹配就直接用；不存在则按已验证来源 `docker pull` 或 `docker save/load` 恢复，只有基础层确需升级或明确授权重新创建时才运行 `base-build.sh`。
+2. **编译层（增量）**：`build-in-docker.sh` 把 `build/cloudfile_14.0/.cache/` 持久挂载到容器，自动复用 ccache、Go build/module、npm、pip、前端工具及 Python thirdpart 缓存；也可用 `CF_CACHE_DIR` 指向已有持久目录。**不要清缓存、`docker builder prune`、`--no-cache` 或临时改路径来“修复”一个普通构建失败。**
+3. **产物层（按输入指纹）**：`cloudfile-build.sh` 自带 `frontend` 和 `dist` 缓存命中/恢复逻辑。Hub 前端输入未变时恢复 webpack/assets/stats/locale；发行包输入未变时复用发行包。小改动不应该重新安装整个依赖树或全量编译；源码/架构/配方变化由已有指纹决定失效，不得手工伪造命中标记。
+4. **源码层（固定 SHA）**：每轮完整构建先从 Server、Hub、Docker 的所选分支解析一次 SHA 到 `build/cloudfile_14.0/build-receipt.json`；后续继续使用同一收据（必要时通过 `CF_BUILD_RECEIPT=/absolute/path/build-receipt.json` 传递），而不是在多阶段间重复读取浮动 `dev`。Docker 工作树必须干净，且 HEAD 与收据中的 Docker SHA 一致；未提交代码不会进入正式构建。
+5. **架构层**：默认构建宿主机原生 `linux/amd64` 或 `linux/arm64`；显式跨架构时需 `CF_PLATFORM` 与基础镜像架构一致。生产 AMD64 最好在 AMD64 runner/build host 构建，不要在 ARM Mac 上默默用 QEMU 做昂贵跨架构全编译。
+
+### Agent 正确执行顺序（确实需要制作镜像时）
+
+以下示例只生成本地发行包和镜像，不推送、不重启服务。`VERSION` 应使用此次任务指定的独立标签；示例仅供隔离测试，**不要用固定标签覆盖正在使用的镜像**。
+
+```bash
+# 0. 在 cloudfile-docker 根目录；先检查已提交源码与基础镜像
+git status --short
+git rev-parse HEAD
+docker image inspect cloudfile-build-base:ce14-v2 >/dev/null
+# 若基础镜像缺失：停止并从已验证缓存/Registry 恢复；不得立即重建。
+
+# 1. 仅在任务明确要求集成构建时，沿用已有收据与缓存
+VERSION=14.0.8-storage-test
+CF_BUILD_JOBS=2 bash build/cloudfile_14.0/build-in-docker.sh "$VERSION"
+
+# 2. 验证构建产物，使用当前脚本离线组装镜像
+bash tools/verify-release-artifact.sh "build/cloudfile_14.0/seafile-server-$VERSION"
+bash image/cloudfile_14.0/docker-build.sh "$VERSION"
+
+# 3. 核对来源收据、架构和镜像 ID，再报告结果
+python3 build/seafile_14.0/build_receipt.py verify \
+  build/cloudfile_14.0/build-receipt.json --recipe . --version "$VERSION"
+docker image inspect "cloudfile/cloudfile:$VERSION" \
+  --format '{{.Id}} {{.Architecture}}'
+```
+
+- 脚本自动检查包的来源/完整性，镜像组装指定 `--pull=false --network=none`，记录来源 SHA 与本地 image config digest。**不得跳过这些检查，不能把本地 image ID 称为已经推送的 Registry manifest digest。**
+- 指定其他 Server/Hub 分支时使用现有 `CF_SERVER_REF`、`CF_HUB_REF`；用于 PR 验证时 Docker 也必须在对应**已提交、干净且已推送**的分支，必要时配 `CF_DOCKER_REF`。不允许依赖未提交工作区或容器内任意克隆的 HEAD 来构建。构建缺远端 SHA 时停止，不能用旧 receipt 偷换新代码。
+- 如完整编译代价太高，先判断目标：**仅修改后端**无需主动重编前端；**仅修改 Web**无需主动编译 C/Go。脚本有 `CF_BUILD_TARGET=backend|frontend|package|all`，但 `package` 必须消费匹配 SHA、校验通过的 `cloudfile-backend` 和 `cloudfile-frontend` 产物；当前 `prod.yml` 仍运行完整 `all`，**不要声称 CI 已经拆分成三个 job**。没有现成跨 job 产物时使用脚本默认 `all`，依赖自身缓存，不自行发明新流水线。
+- 只为定位确定的缓存问题才有选择地设置 `CF_FORCE_FRONTEND_REBUILD=1` 或 `CF_FORCE_DIST_REBUILD=1`；`CF_FORCE_REBUILD=1` 是最后手段，禁止作为每次构建默认值。不得未经批准更改基础镜像依赖、当前 CI 触发策略或引入新 BuildKit/Makefile/Compose 流程。
+
+### 推送 / 部署分界与失败处理
+
+- 若只是完成代码或文档修改，**止于静态验证**；没有明确“构建”请求就不能主动执行上面的重任务。若只要求制作镜像，止于本地标签、收据和校验结果；**只有明确要求发布时**才在已授权目标 Registry 使用已校验版本化镜像执行 `docker tag` / `docker push`，并取得远端 digest。部署 Compose/DEV/PROD、数据升级和实际业务验收均是另一步，不能由 Agent 隐式执行。
+- 报告必须区分：①代码 SHA 已合入；②构建收据/受影响测试通过；③本地镜像 ID；④Registry digest（如果确实推送）；⑤环境镜像和运行验收（如果确实部署）。绝不把 CI 绿色、缓存命中或本地 `docker image inspect` 写成已经部署。
+- 若报缺基础镜像、架构错、receipt 不一致、测试失败或发行包不完整：**停在出错阶段**，报告现有缓存/镜像状态与具体错误，修复根因后仅重跑受影响阶段；不删除历史数据、不全量 prune、不切旧入口、不绕过 patch/测试/来源检查。
+
+更多技术细节以当前 [构建收据和集成验证](docs/storage-build.md)、[构建入口](build/cloudfile_14.0/build-in-docker.sh)、[镜像入口](image/cloudfile_14.0/docker-build.sh)、[当前 CI](.github/workflows/prod.yml) 为准。
+
 ## 不扩大改动范围
 
 优先复用 Seafile CE14 的原生行为与官方依赖，不因同步上游或小修引入平行框架；原生补丁及不可绕过的安全逻辑须记录在 [docs/upstream-patches/](docs/upstream-patches/)。

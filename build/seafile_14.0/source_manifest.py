@@ -24,10 +24,18 @@ def load_manifest(path):
     with Path(path).open(encoding="utf-8") as manifest_file:
         manifest = json.load(manifest_file)
 
+    # Configuration chooses branches; validation consumes only the generated
+    # immutable lock in a receipt (or its generated release.json projection).
+    if manifest.get("schema") == 2:
+        manifest = manifest["lock"]
+    return validate_manifest(manifest)
+
+
+def validate_manifest(manifest):
     if manifest.get("schema") != 1:
         raise ValueError("release manifest schema must be 1")
-    if manifest.get("product_version") != "v0.2":
-        raise ValueError("release manifest product_version must be v0.2")
+    if manifest.get("product_version") not in ("v0.2", "v2"):
+        raise ValueError("unknown locked product version")
     version = manifest.get("seafile_version")
     if not isinstance(version, str) or not re.fullmatch(r"14\.0\.\d+", version):
         raise ValueError("release manifest must select a Seafile 14.0 patch version")

@@ -22,8 +22,8 @@ CloudFile Server 负责 C/Go 底层文件、权限与存储；Hub 负责 Web/API
 
 **版本与构建事实必须分开：**
 - `dev` 表示当前 CloudFile V2 **代码开发线**，不等于正在部署的镜像，也不等于已运行通过的组合。
-- `build/v2/source-set.json` 是其中一次固定 CE14/V2 源码快照；内部 `overlay_commit` 可能早于最新 `dev`，不能仅凭文件名推断为当前 HEAD。
-- 根目录 `release.yaml` 及 `build/cloudfile_14.0/` 保留较早扩展版发布配方与证据；在确认它们的有效源码组合前，**不得直接用其浮动 `ref: dev` 发布当前 V2**。
+- `docs/history/storage-build-20261020/v2/source-set.json` 是其中一次固定 CE14/V2 源码快照；内部 `overlay_commit` 可能早于最新 `dev`，不能仅凭文件名推断为当前 HEAD。
+- 根目录 `release.yaml` 与 `build/cloudfile_14.0/` 是当前唯一构建实现；三仓分支在开工时经远端解析一次，生成 `build-receipt.json`，后续仅按收据里的 SHA 构建和验证。旧白名单组装已归档到 `docs/history/storage-build-20261020/`，不作构建入口。
 - 真正构建/交付时，须明确 Server、Hub、Docker 的具体 Commit SHA、上游 CE 源码基线与镜像 Digest；历史 V2-clean CI 成功不代表最新 `dev` 已联验。
 
 ## 不扩大改动范围
@@ -39,3 +39,9 @@ V2 内置 ACL、CE 原生 Tag 和已安装 Guard 的 Checkout 不应重新受旧
 **纯文档变更不编译、不跑测试、不构建镜像，也不部署。** 小范围代码改动优先检查受影响路径、复用已验证的证据；全量 C/Go/前端构建、三仓联验及镜像发布只在明确必要的阶段或发布任务开展。不要因一次文档提交自动要求全仓编译。
 
 不要提交 `deploy/compose/.env`、任何真实凭据、密钥、持久数据卷或镜像构建产物。文档中文，代码和 commit message 英文；上游既有风格优先。
+
+## 开发期数据库变更（2026-10-21）
+
+- 新版当前只明确新增四张业务表：`cf_library_storage`、`cf_dir_acl`、`cf_sso_group_map`、`cf_edit_guard`。历史表仅作备份或迁移输入，不属于新版运行库及运行依赖；增加业务表须先确认，历史数据单独归档，不直接删除。
+- 开发期建表、升级及数据迁移通过 Docker 仓 `database/` 下独立、人工执行的 SQL 交付，DEV 验证与 PROD 发布复用固定脚本及校验和。启动/重启仅校验，不自动执行扩展 DDL、旧迁移链或兼容补丁。
+- 仅明确审核的成熟版本之间才考虑自动升级；须定义精确源/目标范围和数据/中断恢复验证。不得根据 dev 分支、表名存在或旧台账自动推断升级路径，不自动回滚。

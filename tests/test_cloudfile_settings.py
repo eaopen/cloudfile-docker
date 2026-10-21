@@ -44,6 +44,31 @@ class CloudFileSettingsTest(unittest.TestCase):
             self.assertEqual(path.read_text(encoding="utf-8"), original)
             self.assertFalse(CLOUDFILE.write_policy_worker_hooks(path, {}))
 
+    def test_v2_removes_only_legacy_worker_hooks_without_starting_policy_host(self):
+        # A stale policy config/hook must not load a historical SchemaRunner.
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "gunicorn.conf.py"
+            original = "def post_worker_init(worker):\n    worker.append('native')\n"
+            path.write_text(original)
+            env = {"CLOUDFILE_POLICY_WORKER_HOOKS": "true"}
+            CLOUDFILE.write_policy_worker_hooks(path, env)
+            CLOUDFILE.write_policy_worker_hooks(path, env, v2=True)
+            self.assertEqual(path.read_text(), original)
+            namespace = {}; exec(path.read_text(), namespace)
+            events = []; namespace['post_worker_init'](events)
+            self.assertEqual(events, ['native'])
+            self.assertEqual(env, {"CLOUDFILE_POLICY_WORKER_HOOKS": "true"})
+
+    def test_v2_refuses_retired_routes_before_mutating_hooks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "gunicorn.conf.py"
+            path.write_text("# operator config\n")
+            for key in ('CLOUDFILE_EDITING_ENABLED', 'CLOUDFILE_AUTHORIZATION_ENABLED',
+                        'CLOUDFILE_OIDC_ENABLED', 'CLOUDFILE_RESOURCE_SEARCH_ENABLED'):
+                with self.assertRaisesRegex(ValueError, key):
+                    CLOUDFILE.write_policy_worker_hooks(path, {key: 'true'}, v2=True)
+                self.assertEqual(path.read_text(), "# operator config\n")
+
     def test_policy_exit_cleanup_runs_after_existing_hook_failure(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "gunicorn.conf.py"
@@ -104,10 +129,10 @@ class CloudFileSettingsTest(unittest.TestCase):
             self.assertIn("before = True", rendered)
             self.assertIn("after = True", rendered)
 
-    def test_administrator_policy_defaults_on_without_oidc_or_extra_secrets(self):
+    def test_retired_administrator_policy_defaults_off_without_loading_its_schema(self):
         values = {}
         exec(CLOUDFILE.render_settings({}), values)
-        self.assertIs(values['CLOUDFILE_ADMIN_POLICY_ENABLED'], True)
+        self.assertIs(values['CLOUDFILE_ADMIN_POLICY_ENABLED'], False)
         self.assertIs(values['CLOUDFILE_OIDC_ENABLED'], False)
         self.assertIsNone(values['CLOUDFILE_POLICY_CONFIG'])
         with self.assertRaisesRegex(ValueError, 'administrator policy'):

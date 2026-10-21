@@ -1,4 +1,4 @@
-# Historical CE14 extension release recipe. V2 dev uses build/v2/source-set.json and the V2 current-bundle CI; do not release V2 images from this manifest.
+# Current single CloudFile build entry: full Server/Hub dev trees.
 # CloudFile release manifest.
 #
 # Upstream CE 14 is released now: haiwen/seafile-server and haiwen/seahub both
@@ -9,30 +9,26 @@
 # no CE tag to point at.
 #
 # The build script (build/cloudfile_14.0/cloudfile-build.sh) reads this file and
-# checks out exactly these refs. Bump the SHAs here, never in the build script.
+# resolves these branch refs once into build-receipt.json before any build.
 
 product: 14.0.0-cf.0
 image: cloudfile/cloudfile:14.0.0-cf.0
 build_base_image: cloudfile-build-base:ce14-v2
 ubuntu_base_image: ubuntu:24.04
 
-# Filled in at release time with the CloudFile commit each image was built from.
-server_commit: ""
-hub_commit: ""
-docker_commit: ""
-
 # CloudFile forks.
 #
-# `dev` is the extension baseline: seams, build and deploy machinery, and no
-# capabilities. A capability build points these at its own long-lived branch,
-# e.g. ref: feature/dir-acl on both. CF_SERVER_REF / CF_HUB_REF override them
-# without editing this file.
+# dev is the sole active V2 line. Explicit PR refs may be selected for tests;
+# the resulting immutable source lock is generated, never maintained here.
 forks:
   cloudfile_server:
     url: https://github.com/eaopen/cloudfile-server.git
     ref: dev
   cloudfile_hub:
     url: https://github.com/eaopen/cloudfile-hub.git
+    ref: dev
+  cloudfile_docker:
+    url: https://github.com/eaopen/cloudfile-docker.git
     ref: dev
 
 # Not forked. These are the upstream commits each fork is currently synced to.
@@ -69,12 +65,9 @@ ce_anchor:
   seafile_server: 17e4b875c2118233830316392ed76a736b374c69
   seahub: 3c408439bfca54dbad61e2f6cdb706d2dcdf9f7a
 
-# Bump when cf_* tables change shape; the upgrade path keys off this.
-# 1 -> 2 (2026-08-17): added cf_dir_admin (directory-level delegated manage).
-# Additive, IF NOT EXISTS, auto-applied by the bootstrap on every start -- no
-# manual migration step.
-# 2 -> 3 (2026-10-08): reserve automatic library keys in cf_library_storage_key.
-# Additive bootstrap table; retain reservations for cold GC and key uniqueness.
+# Historical manifest counter retained for receipt compatibility only.
+# It is not a schema owner and must not trigger bootstrap DDL. V2 uses the
+# fixed, manually executed SQL package in database/v2/20261021-four-table-baseline/.
 database_schema: 3
 # Bump when cloudfile_ext.registry hook signatures change.
 extension_api: 1

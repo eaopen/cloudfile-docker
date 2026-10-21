@@ -8,5 +8,7 @@
 .gitignore
 README.md
 build/README.md
+# Development DDL is delivered as manual SQL; runtime config must not repair tables.
 scripts/scripts_14.0/bootstrap.py
+# Startup performs a read-only four-table contract gate before writers start.
 scripts/scripts_14.0/start.py

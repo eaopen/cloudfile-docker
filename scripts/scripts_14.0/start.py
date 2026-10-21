@@ -21,7 +21,7 @@ from upgrade import check_upgrade
 from bootstrap import init_seafile_server, write_cloudfile_config
 from cloudfile import write_settings as write_cloudfile_settings
 from cloudfile import write_policy_worker_hooks
-from cloudfile_schema import prepare_fresh_schema, initialize_fresh_schema
+from cloudfile_schema import prepare_fresh_schema, initialize_fresh_schema, verify_development_schema
 
 
 shared_seafiledir = '/shared/seafile'
@@ -59,12 +59,13 @@ def main():
         print(e)
 
     wait_for_mysql()
-    # Record fresh-install intent before CE creates its data directory. This
-    # initializes current DDL without upgrading existing deployments on restart.
+    # A truly new volume is marked before CE creates seafile-data. Existing
+    # volumes are never marked, so this marker can only authorize one-time
+    # initialization, never an automatic upgrade of an existing layout.
     schema_marker = prepare_fresh_schema(shared_seafiledir)
     init_seafile_server()
+    write_policy_worker_hooks(join(topdir, 'conf', 'gunicorn.conf.py'), v2=True)
     write_cloudfile_settings(join(topdir, 'conf', 'seahub_settings.py'))
-    write_policy_worker_hooks(join(topdir, 'conf', 'gunicorn.conf.py'))
 
     check_upgrade()
 
@@ -72,7 +73,11 @@ def main():
     # rearranged conf/, so flipping a CF_ENABLE_* switch in .env takes effect
     # on restart rather than only at first bootstrap.
     write_cloudfile_config()
+    # Fresh volumes create the reviewed V2 tables once. Existing layouts are
+    # only verified below: development-period upgrades stay manual, and an
+    # incompatible table is refused instead of being converted automatically.
     initialize_fresh_schema(schema_marker, installdir)
+    verify_development_schema(installdir)
     # Legacy defaults must load before the native extension overrides.
     write_cloudfile_settings(join(topdir, 'conf', 'seahub_settings.py'))
 

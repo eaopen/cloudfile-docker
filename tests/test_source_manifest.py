@@ -23,21 +23,19 @@ class SourceManifestTest(unittest.TestCase):
         script = (BUILD_DIR / "seafile-build.sh").read_text(encoding="utf-8")
 
         self.assertIn("set -euo pipefail", script)
-        self.assertIn("CLOUDFILE_SERVER_SOURCE", script)
-        self.assertIn("CLOUDFILE_HUB_SOURCE", script)
+        self.assertIn('cloudfile_14.0/cloudfile-build.sh', script)
 
     def test_local_image_builder_is_fail_closed_and_labels_source_pins(self):
         script = (BUILD_DIR / "build-local-image.sh").read_text(encoding="utf-8")
 
         self.assertIn("set -euo pipefail", script)
-        self.assertIn("com.cloudfile.source.seafile-server", script)
-        self.assertIn("com.cloudfile.source.seahub", script)
+        self.assertIn('image/cloudfile_14.0/docker-build.sh', script)
         self.assertNotIn("docker push", script)
 
     def test_release_manifest_is_valid_and_pins_cloudfile_sources(self):
-        manifest = SOURCE_MANIFEST.load_manifest(BUILD_DIR / "release.json")
+        manifest = SOURCE_MANIFEST.load_manifest(BUILD_DIR.parents[1] / "tests/fixtures/source-lock.json")
 
-        self.assertEqual(manifest["product_version"], "v0.2")
+        self.assertEqual(manifest["product_version"], "v2")
         self.assertEqual(manifest["seafile_version"], "14.0.8")
         self.assertEqual(
             manifest["sources"]["seahub"]["url"],
@@ -50,7 +48,7 @@ class SourceManifestTest(unittest.TestCase):
         )
 
     def test_incomplete_source_set_is_rejected(self):
-        manifest = json.loads((BUILD_DIR / "release.json").read_text(encoding="utf-8"))
+        manifest = json.loads((BUILD_DIR.parents[1] / "tests/fixtures/source-lock.json").read_text(encoding="utf-8"))
         del manifest["sources"]["seahub"]
 
         with tempfile.TemporaryDirectory() as directory:

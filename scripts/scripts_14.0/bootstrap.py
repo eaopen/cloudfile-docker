@@ -124,27 +124,19 @@ def _replace_block(path, begin, end, body):
         with open(path, 'r') as fp:
             lines = fp.readlines()
 
-    out, skipping = [], False
-    for line in lines:
-        if line.strip() == begin:
-            skipping = True
-            continue
-        if skipping:
-            if line.strip() == end:
-                skipping = False
-            continue
-        out.append(line)
-
-    while out and out[-1].strip() == '':
-        out.pop()
-
+    # Preserve local aliases and overrides after the generated block.
+    starts = [i for i, line in enumerate(lines) if line.strip() == begin]
+    ends = [i for i, line in enumerate(lines) if line.strip() == end]
+    block = begin + '\n' + body + end + '\n'
+    if starts or ends:
+        if len(starts) != 1 or len(ends) != 1 or ends[0] < starts[0]:
+            raise ValueError('invalid generated settings markers in %s' % path)
+        updated = ''.join(lines[:starts[0]]) + block + ''.join(lines[ends[0] + 1:])
+    else:
+        updated = ''.join(lines).rstrip() + ('\n\n' if lines else '') + block
     with open(path, 'w') as fp:
-        fp.writelines(out)
-        if out:
-            fp.write('\n\n')
-        fp.write(begin + '\n')
-        fp.write(body)
-        fp.write(end + '\n')
+        fp.write(updated)
+
 
 
 def write_cloudfile_settings():
@@ -318,30 +310,14 @@ def _settings_block_sso():
         if login_id_claim and login_id_claim not in attribute_map:
             attribute_map[login_id_claim] = (False, 'login_id')
 
-        # EAP uses a verified business UID, not the employee number, in Profile.
-        # Keep the bridge opt-in because generic OAuth providers lack this claim.
-        eap_identity = boolean('CF_SSO_EAP_PROFILE_IDENTITY', 'false')
-        if eap_identity:
-            if uid_claim != 'sub' or login_id_claim != 'userId' or 'openid' not in scope:
-                raise Exception('EAP identity requires sub, userId and openid')
-            attribute_map['userId'] = (True, 'login_id')
-            attribute_map['preferred_username'] = (True, 'employee_no')
-            lines += [
-                'CF_SSO_EAP_OIDC_ISSUER = %r' % endpoint('CF_SSO_EAP_OIDC_ISSUER'),
-                'CF_SSO_EAP_OIDC_JWKS_URL = %r' % endpoint('CF_SSO_EAP_OIDC_JWKS_URL'),
-            ]
-        else:
-            # 2026-10-13：EAP 的会话校验（AuthentikSupport.verifyCloudFileIdentity /
-            # verifyCookieIdentity）要求 Profile.login_id == EAP 业务 UID。未启用桥接时
-            # 该字段取自下面配置的 login_id claim（取值由 IdP 决定）或根本没有来源，
-            # 两者都无法保证是业务 UID —— 口径不齐会让 SSO 旁路静默失败。
-            # 这里只告警不改生成结果：非 EAP 的通用 OIDC 部署仍可照常运行。
-            logwarning('CF_SSO_EAP_PROFILE_IDENTITY is off: Profile.login_id is %s, which cannot be '
-                       'guaranteed to be the EAP business UID. Enable the EAP identity bridge '
-                       'for EAP deployments.'
-                       % ('taken from the %r claim' % login_id_claim if login_id_claim
-                          else 'left unset'))
-        lines.append('CF_SSO_EAP_PROFILE_IDENTITY = %r' % eap_identity)
+        # V2 provisions through trusted Directory; the retired bridge must stay off.
+        if boolean('CF_SSO_EAP_PROFILE_IDENTITY', 'false'):
+            raise Exception('CF_SSO_EAP_PROFILE_IDENTITY is retired; keep false and '
+                            'use trusted Directory identity preparation')
+        lines.append('CF_SSO_EAP_PROFILE_IDENTITY = False')
+        if login_id_claim == 'login_id':
+            logwarning('For Etech set CF_SSO_OAUTH_LOGIN_ID_CLAIM=userId; '
+                       'Profile.login_id must contain the business UID')
 
         lines += [
             'ENABLE_OAUTH = True',
@@ -858,6 +834,13 @@ def write_cloudfile_seafile_conf():
     dir_acl_enabled -- so a new capability needs no change here.
     """
     lines = _seafile_conf_cloudfile_lines()
+    from library_storage import (auto_storage_enabled, configure_auto_storage,
+                                 retained_legacy_storage, retained_legacy_switch)
+    conf_path = join(topdir, 'conf', 'seafile.conf')
+    fresh = globals().get('_cloudfile_fresh_install', False)
+    if auto_storage_enabled(conf_path, os.environ, fresh=fresh):
+        configure_auto_storage(conf_path, ''.join(lines), installdir)
+        return
 
     # Keep the S3 configuration in the same restart-safe generated block as
     # the feature switches.  The server processes need these values in
@@ -933,6 +916,15 @@ def write_cloudfile_seafile_conf():
                     if name != 'bucket':
                         lines.append('%s = %s\n' % (name, value))
 
+    if (not cf_enabled('CF_ENABLE_S3_STORAGE') or
+            not get_conf('SEAF_SERVER_STORAGE_TYPE', '').strip()):
+        retained = retained_legacy_storage(conf_path)
+        # Retained multi routing keeps its allocator switch; otherwise new
+        # libraries would silently move from automatic directories to default.
+        if retained and retained_legacy_switch(conf_path):
+            lines = ['s3_storage_enabled = true\n' if line == 's3_storage_enabled = false\n' else line
+                     for line in lines]
+        lines.append(retained)
     _replace_block(join(topdir, 'conf', 'seafile.conf'),
                    CF_BEGIN, CF_END, ''.join(lines))
 
@@ -1404,12 +1396,10 @@ def write_cloudfile_config():
     write_cloudfile_seafile_conf()
     write_seafevents_search_config()
     write_seafevents_audit_config()
-    apply_cloudfile_schema()
-    apply_sso_hierarchy_schema_compatibility()
-    apply_metadata_schema_compatibility()
-    apply_tag_schema_compatibility()
-    apply_starred_obj_id_schema_compatibility()
-    apply_audit_schema()
+    # Development upgrades (including compatibility columns) are explicit SQL
+    # releases. Restarting/config generation must not mutate a database or
+    # bring back retired fields after the four-table V2 conversion.
+    # Historical helpers remain for source traceability, not startup execution.
 
 
 def apply_sso_hierarchy_schema_compatibility():
@@ -1469,6 +1459,9 @@ def apply_sso_hierarchy_schema_compatibility():
 
 
 def init_seafile_server():
+    global _cloudfile_fresh_install
+    _cloudfile_fresh_install = (not exists(join(shared_seafiledir, 'seafile-data')) or
+                               exists(join(shared_seafiledir, '.cloudfile-schema-init-pending')))
     version_stamp_file = get_version_stamp_file()
     if exists(join(shared_seafiledir, 'seafile-data')):
         if not exists(version_stamp_file):

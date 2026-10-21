@@ -28,6 +28,7 @@ import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BOOTSTRAP = os.path.join(HERE, '..', 'scripts', 'scripts_14.0', 'bootstrap.py')
+sys.path.insert(0, os.path.dirname(BOOTSTRAP))
 
 failures = []
 
@@ -373,27 +374,17 @@ def test_upstream_packages():
 
 
 def test_eap_identity():
-    # Exercise generated settings: a compose flag alone must not silently enable
-    # a callback whose provider lacks the UID or signature verification URLs.
-    env = dict(BASE_ENV, CF_SSO_EAP_PROFILE_IDENTITY='true',
-               CF_SSO_OAUTH_LOGIN_ID_CLAIM='userId',
-               CF_SSO_EAP_OIDC_ISSUER='https://idp.example.com/application/o/cloudfile/',
-               CF_SSO_EAP_OIDC_JWKS_URL='https://idp.example.com/application/o/cloudfile/jwks/')
+    env = dict(BASE_ENV, CF_SSO_EAP_PROFILE_IDENTITY='false',
+               CF_SSO_OAUTH_LOGIN_ID_CLAIM='userId')
     values = evaluate(load('_settings_block_sso', env)())
-    check('EAP bridge explicitly enabled', values['CF_SSO_EAP_PROFILE_IDENTITY'] is True)
-    check('EAP uses UID and employee as separate claims',
-          values['OAUTH_ATTRIBUTE_MAP']['userId'] == (True, 'login_id')
-          and values['OAUTH_ATTRIBUTE_MAP']['preferred_username'] == (True, 'employee_no'))
-    for key, invalid in [('CF_SSO_OAUTH_LOGIN_ID_CLAIM', 'login_id'),
-                         ('CF_SSO_OAUTH_UID_CLAIM', 'email'),
-                         ('CF_SSO_EAP_OIDC_JWKS_URL', ''),
-                         ('CF_SSO_EAP_OIDC_ISSUER', '')]:
-        try:
-            load('_settings_block_sso', dict(env, **{key: invalid}))()
-        except Exception:
-            check('EAP rejects invalid ' + key, True)
-        else:
-            check('EAP rejects invalid ' + key, False)
+    check('V2 bridge stays disabled', values['CF_SSO_EAP_PROFILE_IDENTITY'] is False)
+    check('Etech maps business UID', values['OAUTH_ATTRIBUTE_MAP']['userId'] == (False, 'login_id'))
+    try:
+        load('_settings_block_sso', dict(env, CF_SSO_EAP_PROFILE_IDENTITY='true'))()
+    except Exception:
+        check('Retired bridge rejected', True)
+    else:
+        check('Retired bridge rejected', False)
 
 
 def test_search():

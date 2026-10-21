@@ -166,7 +166,7 @@ services:
       # -- CloudFile switches --
       # Read on every start, so flipping one and restarting takes effect.
       CF_ENABLE_SSO: ${CF_ENABLE_SSO:-false}
-      CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-false}
+      CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-true}
       CF_ENABLE_AUDIT: ${CF_ENABLE_AUDIT:-true}
       # Write lifecycle gate instrument. Not a capability -- see
       # cloudfile-server/common/cf-fileop-test.h.
@@ -224,6 +224,7 @@ services:
       CLOUDFILE_EDITING_ENABLED: ${CLOUDFILE_EDITING_ENABLED:-false}
       CLOUDFILE_RESOURCE_SECRET: ${CLOUDFILE_RESOURCE_SECRET:-}
       CF_ENABLE_LOCAL_APP: ${CF_ENABLE_LOCAL_APP:-false}
+      CF_LIBRARY_STORAGE: ${CF_LIBRARY_STORAGE:-}
       CF_ENABLE_S3_STORAGE: ${CF_ENABLE_S3_STORAGE:-false}
       SEAF_SERVER_STORAGE_TYPE: ${SEAF_SERVER_STORAGE_TYPE:-}
       S3_COMMIT_BUCKET: ${S3_COMMIT_BUCKET:-}
@@ -277,7 +278,8 @@ services:
       # seafile-ai service below). Harmless with no file present:
       # seahub/config_parser.py logs a warning and returns {} rather than
       # raising, so this is safe to set even with CF_AI_ENABLED=false.
-      SEAFILE_CENTRAL_CONF_DIR: /opt/seafile/conf
+      SEAFILE_DATA_DIR: /shared/seafile/seafile-data
+      SEAFILE_CENTRAL_CONF_DIR: /shared/seafile/conf
       # -- SSO (inert unless CF_ENABLE_SSO is true) --
       # No `:?` on any of these: compose interpolates the whole file whatever
       # profile is active, so a required marker here would break a plain
@@ -428,10 +430,12 @@ services:
       REDIS_PORT: "6379"
       TIME_ZONE: ${TIME_ZONE:-Etc/UTC}
       SEAFILE_RPC_PIPE_PATH: /shared/seafile/runtime
+      SEAFILE_DATA_DIR: /shared/seafile/seafile-data
+      SEAFILE_CENTRAL_CONF_DIR: /shared/seafile/conf
       # Keep the worker's task registry in sync with the application. New
       # periodic extension tasks can therefore be enabled with the same .env.
       CF_ENABLE_SSO: ${CF_ENABLE_SSO:-false}
-      CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-false}
+      CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-true}
       CF_ENABLE_AUDIT: ${CF_ENABLE_AUDIT:-true}
       # Write lifecycle gate instrument. Not a capability -- see
       # cloudfile-server/common/cf-fileop-test.h.
@@ -483,6 +487,7 @@ services:
       CLOUDFILE_EDITING_ENABLED: ${CLOUDFILE_EDITING_ENABLED:-false}
       CLOUDFILE_RESOURCE_SECRET: ${CLOUDFILE_RESOURCE_SECRET:-}
       CF_ENABLE_LOCAL_APP: ${CF_ENABLE_LOCAL_APP:-false}
+      CF_LIBRARY_STORAGE: ${CF_LIBRARY_STORAGE:-}
       CF_ENABLE_S3_STORAGE: ${CF_ENABLE_S3_STORAGE:-false}
       CF_ENABLE_EXTERNAL_SOURCES: ${CF_ENABLE_EXTERNAL_SOURCES:-false}
       CF_EXTERNAL_SOURCES_ROOTS: ${CF_EXTERNAL_SOURCES_ROOTS:-/shared/external}

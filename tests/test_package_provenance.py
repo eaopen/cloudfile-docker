@@ -27,7 +27,7 @@ class PackageProvenanceTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        self.manifest = load_manifest(BUILD / "release.json")
+        self.manifest = load_manifest(BUILD.parents[1] / "tests/fixtures/source-lock.json")
         self.manifest_path = self.root / "release.json"
         self.manifest_path.write_text(json.dumps(self.manifest))
         self.package = self.root / "package"
@@ -63,7 +63,7 @@ class PackageProvenanceTests(unittest.TestCase):
 
     def test_changed_manifest_cannot_relabel_old_package(self):
         self.stamp()
-        self.manifest["sources"]["seahub"]["ref"] = "a" * 40
+        self.manifest["sources"]["seahub"]["ref"] = "b" * 40
         self.manifest_path.write_text(json.dumps(self.manifest))
         with self.assertRaisesRegex(ValueError, "differs from the release manifest"):
             verify_package(self.package, self.manifest_path)
@@ -129,67 +129,25 @@ class PackageProvenanceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "immutable"):
             capture_sources(self.manifest_path, sources)
 
-    def test_image_assembly_rejects_stale_package_before_docker_is_called(self):
-        builder = self.root / "build/seafile_14.0"
-        builder.mkdir(parents=True)
-        for name in ("build-local-image.sh", "source_manifest.py", "package_provenance.py",
-                     "image_platform.py", "release.json"):
-            shutil.copyfile(BUILD / name, builder / name)
-        shutil.copytree(self.package, builder / "seafile-server-14.0.8", symlinks=True)
-        binaries = self.root / "bin"
-        binaries.mkdir()
-        marker = self.root / "docker-called"
-        docker = binaries / "docker"
-        docker.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\n')
-        docker.chmod(0o755)
-        result = subprocess.run(["bash", str(builder / "build-local-image.sh")],
-            env={**os.environ, "PATH": str(binaries) + os.pathsep + os.environ["PATH"]},
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertFalse(marker.exists())
-        self.assertIn("Native package validation failed", result.stderr)
-
-    def test_image_assembly_uses_shared_base_and_original_local_tag(self):
-        native_arch = {"arm64": "arm64", "aarch64": "arm64",
-                       "x86_64": "amd64", "amd64": "amd64"}[platform.machine()]
-        header = bytearray(20)
-        header[:6] = b"\x7fELF\x02\x01"
-        header[18:20] = struct.pack("<H", 183 if native_arch == "arm64" else 62)
-        for name in ("seafile/bin/seaf-server", "seafile/bin/fileserver"):
-            (self.package / name).write_bytes(header)
+    def test_failed_focused_tests_reject_receipt(self):
         self.stamp()
-        binary = self.root / "bin"
-        binary.mkdir()
-        calls = self.root / "docker-calls"
-        docker = binary / "docker"
-        docker.write_text('''#!/bin/sh
-printf '%s\\n' "$*" >> "$CF_DOCKER_CALLS"
-case "$*" in
-  *Architecture*) echo ''' + native_arch + ''' ;;
-  *com.cloudfile.runtime-base.version*) echo 14.0.8 ;;
-  *'{{.Id}}'*) echo sha256:fixture ;;
-esac
-''')
-        docker.chmod(0o755)
-        environment = {**os.environ, "PATH": str(binary) + os.pathsep + os.environ["PATH"],
-                       "CLOUDFILE_PACKAGE_DIR": str(self.package), "CF_DOCKER_CALLS": str(calls)}
-        environment.pop("CF_PLATFORM", None)
-        result = subprocess.run(["bash", str(BUILD / "build-local-image.sh")],
-            env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        recorded = calls.read_text()
-        self.assertIn("--platform linux/" + native_arch, recorded)
-        self.assertIn("cloudfile/runtime-base:14.0.8-local", recorded)
-        self.assertIn("cloudfile/cloudfile:14.0.8-v0.2-local", recorded)
-        self.assertNotIn("Dockerfile.runtime-base", recorded)
-        calls.write_text("")
-        environment["CF_PLATFORM"] = "linux/" + native_arch
-        result = subprocess.run(["bash", str(BUILD / "build-local-image.sh")],
-            env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        recorded = calls.read_text()
-        self.assertIn("cloudfile/cloudfile:14.0.8-v0.2-" + native_arch + "-local", recorded)
-        self.assertIn("cloudfile/runtime-base:14.0.8-" + native_arch + "-local", recorded)
+        receipt = {"schema": 2, "lock": self.manifest, "tests": {}}
+        self.manifest_path.write_text(json.dumps(receipt))
+        with self.assertRaisesRegex(ValueError, "successful focused test evidence"):
+            verify_package(self.package, self.manifest_path)
+        for name in ("local_storage", "objstore"):
+            receipt["tests"][name] = {"status": "passed", "command": "fixture", "log_sha256": "a" * 64}
+        self.manifest_path.write_text(json.dumps(receipt))
+        verify_package(self.package, self.manifest_path)
+        receipt["tests"]["objstore"]["status"] = "failed"
+        self.manifest_path.write_text(json.dumps(receipt))
+        with self.assertRaisesRegex(ValueError, "successful focused test evidence"):
+            verify_package(self.package, self.manifest_path)
+
+    def test_missing_web_console_entry_point_is_rejected(self):
+        (self.package / "seahub/thirdpart/bin/gunicorn").unlink()
+        with self.assertRaisesRegex(ValueError, "gunicorn"):
+            self.stamp()
 
 
 if __name__ == "__main__":

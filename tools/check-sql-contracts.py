@@ -16,7 +16,6 @@ TABLES = frozenset({
 DDL = ('cloudfile-v2.sql', 'cloudfile-v2-edit.sql', 'cloudfile-v2-audit.sql')
 SQL_TABLE = re.compile(
     r'\b(?:FROM|JOIN|INTO|UPDATE|TABLE|REFERENCES)\s+[`"]?(cf_[a-z0-9_]+)',
-    re.IGNORECASE,
 )
 
 

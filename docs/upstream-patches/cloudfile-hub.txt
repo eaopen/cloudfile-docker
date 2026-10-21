@@ -123,3 +123,5 @@ frontend/src/hooks/file-operations/download.js
 seahub/templates/react_app.html
 
 # 2026-10-21 复检修复：seahub/api2/endpoints/file_tag.py：原生标签接口复用现有 tag_native/Authority 按目标路径裁决，校验定义与绑定的库归属；旧标签读保留，写收敛 CE FileTags。
+
+# 2026-10-21 VirtualRepo 兼容：cloudfile_ext/v2/acl_runtime.py 保留 CE 虚拟库共享资格，沿 origin_repo_id/origin_path 交给同一 Authority；不暴露源库路径，不创建新的共享表或引擎。轻量 share_mode 共享继续独立按目录资格处理。

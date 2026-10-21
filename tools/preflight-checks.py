@@ -148,17 +148,26 @@ def check_branch_ref_is_remote(repo):
         print('  ⊘ 读不到 cloudfile-build.sh，跳过分支检出校验')
         return
 
-    required = ('git fetch --no-tags origin "$ref"', 'target=FETCH_HEAD')
+    # 8ee34d1 起构建输入改为收据里的 40 位 SHA：缺对象时 fetch，再
+    # `checkout --detach "$ref"` 并用 rev-parse 复核。它比旧的 FETCH_HEAD 写法
+    # 更严格——可变分支名根本不参与检出——所以两种实现都满足"不复用本地同名
+    # 分支"这个意图，硬编码 FETCH_HEAD 只会把更好的实现判成失败。
+    fetches = 'git fetch --no-tags origin "$ref"' in build
+    resolves_head = 'target=FETCH_HEAD' in build
+    pins_sha = ('git checkout --detach "$ref"' in build
+                and re.search(r'git rev-parse HEAD\s*\)\s*==\s*"\$ref"', build)
+                and 'Unresolved build input' in build)
     # 8-15 构建加速提交把清理合并成一行：先删 seafile-server 再删
     # seafile-server-${version}。这里只要求"rm -rf 后出现版本化发行目录"这一
     # 意图，别用整行字面量匹配——否则未来再调整清理顺序又会误报。
     cleans_release = re.search(
         r'rm -rf .*"\$\{current_dir\}/seafile-server-\$\{version\}"', build)
-    if all(fragment in build for fragment in required) and cleans_release:
-        ok('构建分支使用远端 tip，重建前清理旧发行包')
+    if fetches and (resolves_head or pins_sha) and cleans_release:
+        ok('构建输入按不可变提交检出，重建前清理旧发行包')
     else:
         bad('构建分支或发行目录可能复用旧产物',
-            '可变 ref 必须 fetch 后检出 FETCH_HEAD，并在重建前清理旧发行目录。')
+            '可变 ref 必须 fetch 后锁定到具体提交（FETCH_HEAD 或收据 SHA 加\n'
+            'rev-parse 复核），并在重建前清理旧发行目录。')
 
 
 def check_offline_image_build(repo):
@@ -353,10 +362,20 @@ def check_workflow_layout(repo):
 
     dev = read(os.path.join(wf_dir, 'dev.yml'))
     prod = read(os.path.join(wf_dir, 'prod.yml'))
-    if 'branches: [dev]' not in dev or 'pull_request:' in dev or 'docker compose' in dev:
-        bad('dev.yml 必须仅在 dev 推送时运行快速检查，且不得运行容器 E2E')
+    # a7e8c2b 起 dev 同时挂 push[dev] 和 pull_request[dev]：目的是在合入前就挡住
+    # 越界改动。本检查的意图是"dev 通道只做快速静态检查、不跑容器 E2E"，不是
+    # 限定触发方式——旧的"不得出现 pull_request"断言与现行配置直接冲突。
+    dev_push = re.search(r'^\s*push:\s*$\n\s*branches:\s*\[dev\]', dev, re.M)
+    pr_block = re.search(
+        r'^\s*pull_request:\s*$\n\s*branches:\s*\[([^\]]*)\]', dev, re.M)
+    pr_on_dev = pr_block is None or pr_block.group(1).strip() == 'dev'
+    container_free = 'docker compose' not in dev and 'tests/e2e/' not in dev
+    if dev_push and pr_on_dev and container_free:
+        ok('dev.yml 只做 dev 快速检查，不跑容器 E2E')
     else:
-        ok('dev.yml 仅运行开发快速检查')
+        bad('dev.yml 必须指向 dev、不得运行容器 E2E',
+            'push 必须为 [dev]；pull_request 若存在也只能指向 dev；'
+            '不得出现 docker compose 或 tests/e2e/。')
     # b2b2b84 起改为 workflow_dispatch（incremental/full 两种模式），不再挂
     # push 触发；本检查的意图是「prod 不跑容器验收」，不是限定触发方式。
     trigger_ok = 'branches: [prod]' in prod or 'workflow_dispatch:' in prod

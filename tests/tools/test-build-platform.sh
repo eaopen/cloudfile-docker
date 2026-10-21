@@ -4,7 +4,7 @@ set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 repo_root=$(cd "$here/../.." && pwd)
-source "$repo_root/tools/build-platform.sh"
+source "$repo_root/tools/build/build-platform.sh"
 
 assert_eq() {
     local expected=$1 actual=$2

@@ -19,7 +19,7 @@ def load_module(name, path):
     return module
 
 
-prepare = load_module("migration_prepare", ROOT / "tools" / "prepare-migration.py")
+prepare = load_module("migration_prepare", ROOT / "tools" / "migrate" / "prepare-migration.py")
 selection = load_module("migration_selection", ROOT / "image" / "migration" / "selection.py")
 preflight = load_module("migration_preflight", ROOT / "image" / "migration" / "preflight.py")
 

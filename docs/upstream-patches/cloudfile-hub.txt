@@ -20,7 +20,7 @@
 # 后两个（search）是一起的，缺一不可：不改 utils/__init__.py 的话，CE 部署上
 # 六个搜索入口都因为 HAS_FILE_SEARCH=False 而根本不路由到 search_files，
 # provider 永远不会被调用。两处都是加法（或上 / 未选中则回落），不改变原生行为。
-# 理由与取舍见 docs/EXTENSION-POINTS.md 第六节。
+# 理由与取舍见 hub 仓 cloudfile_ext/registry.py 与扩展点登记。
 #
 # 最后两个（fsck/gc）是离线 S3 维护 wrapper 的一部分，见
 # feat(storage): add offline S3 maintenance wrappers。上游两个脚本内部调用

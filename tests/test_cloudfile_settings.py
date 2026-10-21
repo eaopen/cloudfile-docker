@@ -6,7 +6,7 @@ from types import ModuleType
 from unittest.mock import Mock, patch
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "scripts_14.0" / "cloudfile.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "scripts_cf14.0" / "cloudfile.py"
 SPEC = importlib.util.spec_from_file_location("cloudfile_settings", SCRIPT)
 CLOUDFILE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CLOUDFILE)

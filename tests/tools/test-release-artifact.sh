@@ -3,7 +3,7 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "$0")/../.." && pwd)
-verify=$repo_root/tools/verify-release-artifact.sh
+verify=$repo_root/tools/build/verify-release-artifact.sh
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT
 

@@ -10,7 +10,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location("storage_config", ROOT / "tools/storage-class-config.py")
+SPEC = importlib.util.spec_from_file_location("storage_config", ROOT / "tools/ops/storage-class-config.py")
 config = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(config)
 
@@ -48,7 +48,7 @@ class StorageClassConfigTests(unittest.TestCase):
     def test_cli_private_file_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "override.json"
-            args = ["python3", str(ROOT / "tools/storage-class-config.py"), "--fresh", "--output", str(out)]
+            args = ["python3", str(ROOT / "tools/ops/storage-class-config.py"), "--fresh", "--output", str(out)]
             first = subprocess.run(args, env=dict(os.environ, **self.env), capture_output=True)
             self.assertEqual(0, first.returncode, first.stderr)
             self.assertEqual(0o600, out.stat().st_mode & 0o777)
@@ -58,7 +58,7 @@ class StorageClassConfigTests(unittest.TestCase):
             self.assertEqual(body, out.read_bytes())
 
     def test_business_gate_selects_provider(self):
-        script = (ROOT / "tools/verify-local.sh").read_text()
+        script = (ROOT / "tools/gates/verify-local.sh").read_text()
         function = re.search(r"cap_storage_env\(\) \{.*?^\}", script, re.S | re.M).group(0)
         for provider in ("rustfs", "minio", "invalid"):
             proc = subprocess.run(["bash", "-c", function + "\ncap_storage_env"],

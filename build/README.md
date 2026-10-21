@@ -155,5 +155,5 @@ bash -n image/cloudfile_14.0/docker-build.sh
 完整的本地基线构建与整机验证入口是：
 
 ```bash
-./tools/verify-local.sh
+./tools/gates/verify-local.sh
 ```

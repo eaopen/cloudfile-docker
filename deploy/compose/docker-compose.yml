@@ -191,7 +191,7 @@ services:
       # interpolates the whole file regardless of which profile is active, so
       # neither value is marked required (':?'); bootstrap.py refuses to start
       # when CF_ENABLE_ONLYOFFICE=true and either is empty, which is the
-      # startup gate OFFICE-01 requires. See scripts/scripts_14.0/bootstrap.py
+      # startup gate OFFICE-01 requires. See scripts/scripts_cf14.0/cloudfile_bootstrap.py
       # _settings_block_office().
       ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-}
       ONLYOFFICE_APIJS_URL: ${ONLYOFFICE_APIJS_URL:-}
@@ -246,7 +246,7 @@ services:
       ENABLE_METADATA_MANAGEMENT: ${CF_ENABLE_METADATA:-true}
       INNER_METADATA_SERVER_URL: ${CF_METADATA_SERVER_URL:-http://cloudfile-metadata:8084}
       MD_FILE_COUNT_LIMIT: ${CF_METADATA_FILE_COUNT_LIMIT:-100000}
-      # -- AI (docs/features/seafile-ai.md: reuse Seafile AI; deployment layer) --
+      # -- AI (本仓部署配置: reuse Seafile AI; deployment layer) --
       # Per https://manual.seafile.com/14.0/extension/seafile-ai/.
       # ENABLE_SEAFILE_AI/SEAFILE_AI_SERVER_URL/SEAFILE_AI_SECRET_KEY and
       # ENABLE_FACE_RECOGNITION are read straight from the process environment
@@ -444,7 +444,7 @@ services:
       # interpolates the whole file regardless of which profile is active, so
       # neither value is marked required (':?'); bootstrap.py refuses to start
       # when CF_ENABLE_ONLYOFFICE=true and either is empty, which is the
-      # startup gate OFFICE-01 requires. See scripts/scripts_14.0/bootstrap.py
+      # startup gate OFFICE-01 requires. See scripts/scripts_cf14.0/cloudfile_bootstrap.py
       # _settings_block_office().
       ONLYOFFICE_JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-}
       ONLYOFFICE_APIJS_URL: ${ONLYOFFICE_APIJS_URL:-}
@@ -536,7 +536,7 @@ services:
         condition: service_healthy
     restart: "no"
 
-  # Default full-text backend (docs/search.md): upstream CE 14.0 already
+  # Default full-text backend (本仓部署配置): upstream CE 14.0 already
   # integrates SeaSearch end to end (indexing and querying both happen inside
   # seafevents, driven by the [SEASEARCH] block cloudfile-docker's bootstrap
   # writes from CF_ENABLE_SEARCH/CF_SEASEARCH_TOKEN) -- CloudFile's only job
@@ -642,7 +642,7 @@ services:
       start_period: 5s
     restart: unless-stopped
 
-  # docs/features/seafile-ai.md: reuse Seafile's on-demand tagging, summary,
+  # 本仓部署配置: reuse Seafile's on-demand tagging, summary,
   # image caption and OCR integration, which is not Pro-gated
   # (ENABLE_SEAFILE_AI). CloudFile does not build a parallel AI backend or
   # automatic ingest pipeline; extend only after a verified requirement.

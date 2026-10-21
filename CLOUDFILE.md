@@ -1,23 +1,43 @@
 # CloudFile v0.2 容器集成
 
-本仓库从 `build/seafile_14.0/release.json` 锁定 CloudFile 与上游 Seafile 14.0.8 源码，避免构建时重新落到未定制的上游 Seahub。`seafile-build.sh` 可不传版本；如传入版本，必须与清单一致。
+本仓库从根目录 `release.yaml` 解析并锁定 CloudFile 与上游 Seafile 14.0.8 源码，避免构建时重新落到未定制的上游 Seahub。构建时把解析结果写成 `build/cloudfile_14.0/release.json` 并记录到收据里；`release.json` 是产物，不手工维护。
 
-日常构建使用 `build/seafile_14.0/build-in-docker.sh`，复用 v0.1 Docker `51f4e6520f84ef3551e222c024bfdcbeffbcec1c` 的预制工具链/架构门禁/持久缓存方案。默认已有 `cloudfile-build-base:ce14-v2`，按宿主 arm64/amd64 原生运行；基础镜像架构不符拒绝。通过 `CF_BASE_IMAGE`、`CF_PLATFORM`、`CF_BUILD_JOBS`、`CF_CACHE_DIR` 覆盖。若当前工作区保留 `.v0.1-local/cloudfile-docker/cloudfile_14.0/.cache`，默认直接复用其中 ccache/Go/pip 缓存；否则用本仓库忽略的 `.cache`。缓存不是来源证明，所有源码与最终包仍执行完整 pin/摘要校验。
+日常构建使用 `build/cloudfile_14.0/build-in-docker.sh`，复用 v0.1 Docker `51f4e6520f84ef3551e222c024bfdcbeffbcec1c` 的预制工具链/架构门禁/持久缓存方案。默认已有 `cloudfile-build-base:ce14-v2`，按宿主 arm64/amd64 原生运行；基础镜像架构不符拒绝。通过 `CF_BASE_IMAGE`、`CF_PLATFORM`、`CF_BUILD_JOBS`、`CF_CACHE_DIR` 覆盖。若当前工作区保留 `.v0.1-local/cloudfile-docker/cloudfile_14.0/.cache`，默认直接复用其中 ccache/Go/pip 缓存；否则用本仓库忽略的 `.cache`。缓存不是来源证明，所有源码与最终包仍执行完整 pin/摘要校验。
 
 ```sh
-build/seafile_14.0/build-in-docker.sh
-build/seafile_14.0/build-local-image.sh
+build/cloudfile_14.0/build-in-docker.sh
+build/cloudfile_14.0/build-local-image.sh
 ```
 
 预制工具链入口跳过 APT，已有相同 SHA checkout 不重复 fetch。Python thirdpart 安装缓存只在需求清单、Python/架构及工具链 image ID 相同且完成标记存在时复用；改依赖或 `CF_FORCE_THIRDPART_REFRESH=true` 重装，失败保留上个完整目录。编译缓存持久化并不代表每个新临时构建目录均命中，具体命中率需实际构建统计；本轮不将语法/缓存单测冒充完整 native 增量构建提速实测。
 
-尚未由人工推送的本地提交可通过 `CLOUDFILE_SERVER_SOURCE`、`CLOUDFILE_HUB_SOURCE` 提供给构建容器。两个值必须是绝对路径，且工作区干净、HEAD 与 `release.json` 的 40 位提交完全一致；构建器会复制 Git 对象后再构建，不修改来源仓库。未设置时继续只从清单中的 HTTPS 远端构建。例如在构建容器中把两个仓库只读挂载到 `/sources/cloudfile-server`、`/sources/cloudfile-hub`，并把对应环境变量设为这些容器内路径。该覆盖只用于本地已提交但尚未推送的 CloudFile 源码，不能绕过 release pin。
+尚未由人工推送的本地提交可通过 `CLOUDFILE_SERVER_SOURCE`、`CLOUDFILE_HUB_SOURCE` 提供给构建容器。两个值必须是绝对路径，且工作区干净、HEAD 与收据里的 40 位提交完全一致；构建器会复制 Git 对象后再构建，不修改来源仓库。未设置时继续只从清单中的 HTTPS 远端构建。例如在构建容器中把两个仓库只读挂载到 `/sources/cloudfile-server`、`/sources/cloudfile-hub`，并把对应环境变量设为这些容器内路径。该覆盖只用于本地已提交但尚未推送的 CloudFile 源码，不能绕过 release pin。
 
 全部七个构建来源均锁定 40 位提交。构建开始时核对实际 checkout HEAD 与清单、拒绝修改或未跟踪文件；只在完整包成功生成后写入 `cloudfile-build.json`，记录清单、实际提交与全部安装文件/目录/执行权限/符号链接摘要。每次在新临时目录构建，成功校验后保留旧包并替换，失败不覆盖上一个包。
 
-源码包成功生成后，运行 `build/seafile_14.0/build-local-image.sh [镜像标签]`。默认标签保持 `cloudfile/cloudfile:14.0.8-v0.2-local`；显式指定 `CF_PLATFORM` 时才自动带架构后缀。依赖镜像共用，不按开发用途拆分。脚本校验原包及复制后的临时 Docker context，并确认原生二进制架构与目标平台一致；缺来源记录、源码 pin 不符或内容改变均拒绝。镜像元数据记录产品版本、Seafile 版本、Hub/Server 精确提交和 `com.cloudfile.package.sha256`；它只构建本地镜像，不执行 push。跨架构构建与缓存规则见 [Docker 构建方案](docs/docker-build.md)。
+源码包成功生成后，运行 `build/cloudfile_14.0/build-local-image.sh [镜像标签]`。默认标签保持 `cloudfile/cloudfile:14.0.8-v0.2-local`；显式指定 `CF_PLATFORM` 时才自动带架构后缀。依赖镜像共用，不按开发用途拆分。脚本校验原包及复制后的临时 Docker context，并确认原生二进制架构与目标平台一致；缺来源记录、源码 pin 不符或内容改变均拒绝。镜像元数据记录产品版本、Seafile 版本、Hub/Server 精确提交和 `com.cloudfile.package.sha256`；它只构建本地镜像，不执行 push。跨架构构建与缓存规则见 `image/cloudfile_14.0/docker-build.sh` 与本文件上文。
 
-运行依赖与应用镜像分层：`Dockerfile.runtime-base` 延续 CE14 的 Ubuntu/Python/系统依赖，默认继续使用 `cloudfile/runtime-base:14.0.8-local`；显式指定架构时使用 `14.0.8-<架构>-local`，已有同架构旧镜像可自动沿用。日常应用 Dockerfile 只复制脚本和发行包，没有 APT/pip。记录基础镜像 ID，并用对应内容标识本地 tag 构建。`CLOUDFILE_RUNTIME_BASE` 可指定已经生成的同 CE 版本、同架构依赖镜像；`CLOUDFILE_REFRESH_RUNTIME_BASE=true` 显式重新运行基础镜像构建。该重新构建仍使用 BuildKit 缓存；维护依赖版本/安全更新时需明确更新基础定义并验证，不把这个参数当作自动更新所有通配版本依赖。
+构建基础镜像与应用镜像两层，CloudFile 只维护自己的一层：
+
+- `image/cloudfile_14.0/Dockerfile.base` → `cloudfile-build-base:ce14-v2`：Ubuntu 24.04 + APT 编译/运行依赖 + Node，由 `image/cloudfile_14.0/base-build.sh` 构建。只在依赖变化时重建，日常构建直接复用。
+- `image/cloudfile_14.0/Dockerfile` → `cloudfile/cloudfile:<version>`：只 `COPY` 脚本与发行包，不做 APT/pip。基础镜像按宿主架构自动探测，`CF_PLATFORM` 可覆盖且只接受 `amd64`/`arm64`。
+
+上游 `image/seafile_14.0/`、`image/pro_seafile_*/` 保持与上游一致、可独立构建；CloudFile 不修改它们的构建步骤，也不引入第二套 runtime base（历史上出现过的 `Dockerfile.runtime-base` 与 `CLOUDFILE_RUNTIME_BASE` 已删除，勿再新增）。
+
+同样的规矩也适用于目录结构：`build/seafile_14.0`、`scripts/scripts_14.0` 保持上游原样，CloudFile 的构建实现与启动脚本分别在 `build/cloudfile_14.0`、`scripts/scripts_cf14.0`。镜像把两个 scripts 目录摊平到 `/scripts`，`start.py` 里只有三段标了 `CloudFile hook` 的调用是我们加的。
+
+## 对外路径与 nginx 别名
+
+`services/cloudfile.nginx.conf` 是 CloudFile 自己的站点配置（上游的 `services/seafile.nginx.conf` 不动），额外提供两条别名：
+
+| 对外路径 | 实际去向 | 用途 |
+|---|---|---|
+| `/seafile/` | seahub `127.0.0.1:8000` | 原生站点根（`SITE_ROOT`） |
+| `/cfile/` | 重写到 `/seafile/` 后同上 | EAP 配置的 CloudFile 基址、旧链接 |
+| `/seafhttp` | Go fileserver `127.0.0.1:8082`（去前缀） | seahub 生成的绝对下载/上传地址 |
+| `/cfhttp` | 同上，去前缀后同一条路由 | CloudFile 侧基址、本地 Agent、旧链接 |
+
+两个别名都只做前缀改写，不改请求体：Go fileserver 按裸路径（`/files/...`、`/cf-edit/v1/...`）路由，把前缀原样转发过去会得到 404。`X-Real-IP` 在两条 fileserver 路由上都强制覆盖——Go 侧信任来自 loopback 的这个头，客户端自带的值不能透传。
 
 ## 隔离运行验收
 
@@ -29,7 +49,7 @@ python3 tests/smoke_ce14_runtime.py --image cloudfile/cloudfile:14.0.8-v0.2-rc-w
 python3 tests/smoke_ce14_runtime.py --image cloudfile/cloudfile:14.0.8-v0.2-rc-work --identity-runtime
 ```
 
-基础验收明确使用 `ENABLE_GO_FILESERVER=true`，覆盖初始化、能力关闭态、本地管理员登录、建库、真实上传/下载字节、Range、显式更新及匿名拒绝。`--native-regression` 在实际 Seahub 配置运行 download actor 回归；`--extensions-regression` 使用另一个独立 SQL/Redis，复用既有扩展测试，报告通过/跳过/失败数量。扩展回归需同级 `eap-cloudfile/contracts` 两份共享 JSON 样本，复制到临时容器；原生 actor 自动在单独完整 Django 进程执行，其余 HTTP 单元夹具保留最小 settings，报告分别计数。报告不含密码或令牌。该夹具不证明真实 Authentik/eTech、HTTPS 委托授权、全入口权限、迁移恢复或 RC 完成。
+基础验收明确使用 `ENABLE_GO_FILESERVER=true`，覆盖初始化、能力关闭态、本地管理员登录、建库、真实上传/下载字节、Range、显式更新及匿名拒绝。`--native-regression` 在实际 Seahub 配置运行 download actor 回归；`--extensions-regression` 使用另一个独立 SQL/Redis，复用既有扩展测试，报告通过/跳过/失败数量。扩展回归只使用本仓夹具，不依赖外部仓库；原生 actor 自动在单独完整 Django 进程执行，其余 HTTP 单元夹具保留最小 settings，报告分别计数。报告不含密码或令牌。该夹具不证明真实 Authentik/eTech、HTTPS 委托授权、全入口权限、迁移恢复或 RC 完成。
 
 `--identity-runtime` 复用当前镜像，不重编译 C/Go 或执行全量扩展回归；真实 TLS 的本机测试 IdP/Directory 与原生 CE RPC/SQL、实际 cf schema、完整 Django Client 链验证管理员受控预绑定、RS256/JWKS/state/nonce/PKCE、冷缓存组织/角色投影且保留非托管组、持久会话/索引、重载及 CSRF 本地退出，以及身份冲突/原生停用/目录停用/目录故障拒绝。Django Client 显式模拟浏览器删除过期 cookie，不放宽服务器守卫。测试账号通过 CE RPC 创建，仅用于已有预绑定路径，不证明 JIT worker、RP/backchannel、真实 Authentik/eTech 或浏览器 TLS 入口已验收。
 
@@ -181,11 +201,11 @@ SEAFILE_SERVER_HOSTNAME=files.example.com
 
 该预设复用 CE OAuth 授权码/UserInfo 回调，不应单凭 `openid` scope 声称完整 OIDC 已验收。ID Token 签名、issuer/audience/有效期/nonce、UserInfo sub 一致性与退出流程须按产品身份特性单独实现和验证。
 
-v0.2 完整 OIDC 已实现受控 JIT 与预绑定，并取得当前 CE14 运行夹具分项证据；它与本节旧 OAuth 预设是不同部署模式，不能用旧的自动建号变量替代。持久身份沿用 CE 用户/原生绑定，动态主体只缓存 CF 专属 Redis，缓存过期刷新最新目录。实际外部联验与完整退出仍待，详见 `eap-cloudfile/docs/features/identity-directory.md`。
+v0.2 完整 OIDC 已实现受控 JIT 与预绑定，并取得当前 CE14 运行夹具分项证据；它与本节旧 OAuth 预设是不同部署模式，不能用旧的自动建号变量替代。持久身份沿用 CE 用户/原生绑定，动态主体只缓存 CF 专属 Redis，缓存过期刷新最新目录。实际外部联验与完整退出仍待。
 
 基础认证继续用于本地账户。WebDAV 不复用浏览器 OIDC 会话，应使用独立的 WebDAV 应用密码。CloudFile 不扩展客户端及同步功能。
 
-产品规划与上线设计在 `eap-cloudfile` 仓库；本文件仅说明当前容器配置，不代表目录 ACL、审计、搜索、标签、锁、本地编辑或迁移 API 已实现。
+产品规划与上线设计不在本仓；本文件仅说明当前容器配置，不代表目录 ACL、审计、搜索、标签、锁、本地编辑或迁移 API 已实现。
 
 ## 开发验证与完整验收分层
 
@@ -217,7 +237,7 @@ python3 tests/verify.py full
 
 `--image` 可指定本地镜像。`changed` 以生产模块/测试夹具的反向 Python import 闭包选择关联测试；身份修改另列 identity runtime 门禁。显式 `identity/authorization/transfer` 则运行整个组件依赖闭包，包含必要的暂存域消费者回归，不启动 v0.3 产品服务。schema/common/jobs/根接线、原生修改和未知路径保守要求完整门禁；动态导入不保证能由 AST 完全识别，提交/RC 前仍必须显式全量验收。`--changed-file repository/path` 仅用于明确指定范围或检查映射，不能冒充自动检测全部改动。
 
-契约门禁使用安装了 `eap-cloudfile/tools/design-requirements.txt` 的开发 Python；已有环境直接用 `--contract-python /path/to/venv/bin/python`，默认当前解释器。依赖缺失返回失败，不自动修改运行镜像、重新下载依赖或静默跳过。
+契约门禁使用已安装 `tools/gates/check-requirements.txt` 的开发 Python；已有环境直接用 `--contract-python /path/to/venv/bin/python`，默认当前解释器。依赖缺失返回失败，不自动修改运行镜像、重新下载依赖或静默跳过。
 
 退出码：0 为所选测试通过且无待执行门禁，1 为失败，2 为所选测试通过但报告中的运行/全量门禁尚待执行。报告记录模块集合、测试数量、跳过/错误、耗时、镜像 ID、源码 HEAD/dirty 与扩展源码摘要；执行期间源码变化拒绝通过。源码挂载只支持 Python 开发；Server dirty 或镜像 Server SHA 不匹配时拒绝组件集成，须先生成匹配 native 制品。`full` 先检查清单、干净 Hub/Server 与镜像来源一致，再执行全新 CE14、全部扩展回归、预绑定/JIT/RP/backchannel 四种独立身份夹具；仍不代表真实 Authentik/eTech/浏览器 TLS 或全部 RC 场景已通过。
 
@@ -261,15 +281,15 @@ Python/页面变化且 native/dependency pins 不变时，使用已验证包作�
 精确 SHA、既有 app 编译证据及文件 SHA；任何非 Hub release pin 变化拒绝复用。
 
 ```sh
-python3 build/seafile_14.0/assemble_application.py \
-  --base build/seafile_14.0/seafile-server-14.0.8 \
+python3 build/cloudfile_14.0/assemble_application.py \
+  --base build/cloudfile_14.0/seafile-server-14.0.8 \
   --hub ../cloudfile-hub \
-  --output build/seafile_14.0/seafile-server-14.0.8.application \
-  --manifest build/seafile_14.0/release.json \
-  --stats build/seafile_14.0/build-output.app-stats.json \
-  --evidence ../eap-cloudfile/docs/releases/evidence/cf02-page-2026-09-27.json
-CLOUDFILE_PACKAGE_DIR="$PWD/build/seafile_14.0/seafile-server-14.0.8.application" \
-  bash build/seafile_14.0/build-local-image.sh cloudfile/cloudfile:14.0.8-v0.2-rc-app
+  --output build/cloudfile_14.0/seafile-server-14.0.8.application \
+  --manifest build/cloudfile_14.0/release.json \
+  --stats build/cloudfile_14.0/build-output.app-stats.json \
+  --evidence ./evidence/cf02-page-2026-09-27.json
+CLOUDFILE_PACKAGE_DIR="$PWD/build/cloudfile_14.0/seafile-server-14.0.8.application" \
+  bash build/cloudfile_14.0/build-local-image.sh cloudfile/cloudfile:14.0.8-v0.2-rc-app
 ```
 
 output 必须不存在，已完成的包不可再盖章。stats 是之前 app-only 编译保存的生成

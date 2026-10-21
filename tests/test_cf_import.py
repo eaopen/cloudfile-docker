@@ -13,7 +13,7 @@ import unittest
 from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "migrate"))
 import cf_import
 
 

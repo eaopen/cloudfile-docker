@@ -41,7 +41,7 @@ jobs:
           SERVER_REF: ${{ inputs.server_ref }}
           HUB_REF: ${{ inputs.hub_ref }}
         run: |
-          python3 build/seafile_14.0/build_receipt.py resolve \
+          python3 build/cloudfile_14.0/build_receipt.py resolve \
             --manifest release.yaml --version "$VERSION" \
             --server-ref "$SERVER_REF" --hub-ref "$HUB_REF" \
             --docker-ref "$GITHUB_REF_NAME" --output build/cloudfile_14.0/build-receipt.json

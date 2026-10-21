@@ -15,7 +15,12 @@ import tempfile
 import unittest
 
 
-BUILD = Path(__file__).resolve().parents[1] / "build" / "seafile_14.0"
+# package_provenance.py and source_manifest.py are CloudFile code, so they live
+# in build/cloudfile_14.0/. Point at that directory explicitly instead of relying
+# on another test module having already put it on sys.path: importing them from
+# build/seafile_14.0/ (upstream, restored byte-for-byte) fails, and a bulk test
+# run would only hide that behind a sibling module's sys.path pollution.
+BUILD = Path(__file__).resolve().parents[1] / "build" / "cloudfile_14.0"
 sys.path.insert(0, str(BUILD))
 from package_provenance import (RECORD_NAME, REQUIRED_FILES, capture_sources,
                                 package_digest, verify_package, write_provenance)

@@ -18,7 +18,12 @@ from utils import (
     wait_for_mysql, setup_logging
 )
 from upgrade import check_upgrade
-from bootstrap import init_seafile_server, write_cloudfile_config
+from bootstrap import init_seafile_server
+# CloudFile hook (2026-10-22): upstream bootstrap.py is kept byte-identical to
+# seafile-docker, so everything CloudFile adds is imported from
+# scripts_cf14.0. Deleting the imports and the two marked blocks below leaves a
+# start.py that is identical to upstream's.
+from cloudfile_bootstrap import note_fresh_install, write_cloudfile_config
 from cloudfile import write_settings as write_cloudfile_settings
 from cloudfile import write_policy_worker_hooks
 from cloudfile_schema import prepare_fresh_schema, initialize_fresh_schema, verify_development_schema
@@ -63,6 +68,9 @@ def main():
     # volumes are never marked, so this marker can only authorize one-time
     # initialization, never an automatic upgrade of an existing layout.
     schema_marker = prepare_fresh_schema(shared_seafiledir)
+    # Same question, asked before init_seafile_server() creates seafile-data:
+    # after that call "is this a new volume?" can no longer be answered.
+    note_fresh_install()
     init_seafile_server()
     write_policy_worker_hooks(join(topdir, 'conf', 'gunicorn.conf.py'), v2=True)
     write_cloudfile_settings(join(topdir, 'conf', 'seahub_settings.py'))

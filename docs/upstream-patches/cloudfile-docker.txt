@@ -1,14 +1,22 @@
 # cloudfile-docker 允许修改的上游文件。
 #
-# 构建脚本、镜像、Compose 全部是新增文件，只有容器运行时脚本必须就地修改。
-# .dockerignore 是构建上下文排除的唯一入口，必须就地改；README.md 与
-# build/README.md 被改写为 CloudFile 文档（保持"先读这个文件"的约定路径单一，
-# 不用新文件制造第二份入口）。理由见 BRANCHING.md「上游改动登记」。
+# 规则：优先把新增内容放进 cloudfile 自己的平行目录（build/cloudfile_14.0、
+# image/cloudfile_14.0、scripts/scripts_cf14.0）。下面这些是"必须就地改"的
+# 例外——构建上下文排除与入口文档——改动的理由都写在文件内的注释里。理由与
+# 裁决顺序见 BRANCHING.md「上游改动登记」。
+#
+# 2026-10-22 起的收敛结果：
+#   · scripts/scripts_14.0/bootstrap.py 不再出现在这里：CloudFile 的配置生成
+#     整体搬到 scripts_cf14.0/cloudfile_bootstrap.py，bootstrap.py 与上游逐字节
+#     一致。
+#   · services/seafile.nginx.conf 也不再改：nginx 的 location 只能写在 server
+#     块里，所以我们自己持有一份 services/cloudfile.nginx.conf（新增文件，不在此
+#     清单内），由 image/cloudfile_14.0/Dockerfile 安装成 sites-enabled 的站点
+#     配置。代价是上游改这个文件时要同步过来，见该文件头部说明。
+#   · templates/ 不动：只有 scripts_10/11/12 用它，CloudFile 不构建那些版本。
 .dockerignore
 .gitignore
 README.md
 build/README.md
-# Development DDL is delivered as manual SQL; runtime config must not repair tables.
-scripts/scripts_14.0/bootstrap.py
-# Startup performs a read-only four-table contract gate before writers start.
+# 唯一保留的启动 hook：新增导入、note_fresh_install()、配置与建表调用。
 scripts/scripts_14.0/start.py

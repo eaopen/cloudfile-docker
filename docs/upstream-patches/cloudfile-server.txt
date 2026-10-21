@@ -1,7 +1,7 @@
 # cloudfile-server 允许修改的上游文件。
 #
 # 这份清单是 fork 维护成本的度量：新增文件几乎零成本，改上游文件则每次同步
-# 都要再付一次。tools/check-upstream-patches.sh 会强制它不被悄悄变长。
+# 都要再付一次。tools/gates/check-upstream-patches.sh 会强制它不被悄悄变长。
 #
 # 往这里加一行之前先问：能不能改成新增文件？加行时必须同步更新
 # BRANCHING.md 的说明，并在 PR 里写清为什么没有别的办法。

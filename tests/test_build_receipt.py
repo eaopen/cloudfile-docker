@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'build/seafile_14.0'))
+sys.path.insert(0, str(ROOT / 'build/cloudfile_14.0'))
 import build_receipt as receipt
 from source_manifest import load_manifest
 
@@ -71,7 +71,7 @@ class ReceiptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / 'receipt.json'
             receipt.atomic_json(target, self.resolve())
-            subprocess.run([sys.executable, str(ROOT / 'build/seafile_14.0/build_receipt.py'),
+            subprocess.run([sys.executable, str(ROOT / 'build/cloudfile_14.0/build_receipt.py'),
                             'test', str(target), 'local_storage', 'failed', '--command',
                             'bash tests/local_storage/run.sh', '--log-sha256', 'b' * 64],
                            check=True, capture_output=True)

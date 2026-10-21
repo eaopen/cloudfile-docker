@@ -27,8 +27,8 @@ version=$1
 here=$(cd "$(dirname "$0")" && pwd)
 repo_root=$(cd "$here/../.." && pwd)
 receipt=${CF_BUILD_RECEIPT:-$repo_root/build/cloudfile_14.0/build-receipt.json}
-python3 "$repo_root/build/seafile_14.0/build_receipt.py" verify "$receipt" --recipe "$repo_root" >/dev/null
-source "$repo_root/tools/build-platform.sh"
+python3 "$repo_root/build/cloudfile_14.0/build_receipt.py" verify "$receipt" --recipe "$repo_root" >/dev/null
+source "$repo_root/tools/build/build-platform.sh"
 
 dist=$repo_root/build/cloudfile_14.0/seafile-server-${version}
 if [[ ! -d $dist ]]; then
@@ -37,7 +37,7 @@ if [[ ! -d $dist ]]; then
     exit 1
 fi
 
-"$repo_root/tools/verify-release-artifact.sh" "$dist"
+"$repo_root/tools/build/verify-release-artifact.sh" "$dist"
 package_digest=$(python3 "$repo_root/build/cloudfile_14.0/stamp-current-package.py" "$dist" "$version" --receipt "$receipt")
 server_commit=$(sed -n 's/^seafile-server: //p' "$dist/cloudfile-build-info.txt")
 hub_commit=$(sed -n 's/^seahub: //p' "$dist/cloudfile-build-info.txt")
@@ -110,6 +110,7 @@ else
     trap 'rm -rf "$context"' EXIT
     mkdir -p "$context/scripts"
     cp -a "$repo_root/scripts/scripts_14.0" "$context/scripts/"
+    cp -a "$repo_root/scripts/scripts_cf14.0" "$context/scripts/"
     cp -a "$repo_root/services" "$context/services"
     cp -a "$dist" "$context/cloudfile_dist"
     sed 's|COPY --from=cloudfile_dist \. |COPY cloudfile_dist |' \
@@ -121,6 +122,6 @@ else
         -t "$image" "$context"
 fi
 
-python3 "$repo_root/build/seafile_14.0/build_receipt.py" image "$receipt" "$image"
+python3 "$repo_root/build/cloudfile_14.0/build_receipt.py" image "$receipt" "$image"
 echo ''
 echo "Built ${image}"

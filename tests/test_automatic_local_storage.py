@@ -14,7 +14,7 @@ part = patch.split('+++ b/seafobj/auto_local.py\n', 1)[1]
 source = '\n'.join(line[1:] for line in part.splitlines() if line.startswith('+'))
 policy = types.ModuleType('cf_auto_local_policy')
 exec(compile(source, 'auto_local.py', 'exec'), policy.__dict__)
-CASES = json.loads((ROOT / 'docs/features/automatic-local-storage-cases.json').read_text())
+CASES = json.loads((ROOT / 'tests' / 'cases' / 'automatic-local-storage-cases.json').read_text())
 
 
 @pytest.mark.parametrize('case', CASES)

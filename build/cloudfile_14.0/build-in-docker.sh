@@ -28,7 +28,7 @@ fi
 version=$1
 here=$(cd "$(dirname "$0")" && pwd)
 repo_root=$(cd "$here/../.." && pwd)
-receipt_tool="$repo_root/build/seafile_14.0/build_receipt.py"
+receipt_tool="$repo_root/build/cloudfile_14.0/build_receipt.py"
 receipt=${CF_BUILD_RECEIPT:-$here/build-receipt.json}
 if [[ -z ${CF_BUILD_RECEIPT:-} ]]; then
     resolve_args=(--manifest "$repo_root/release.yaml" --version "$version" --output "$receipt")
@@ -41,7 +41,7 @@ if [[ -z ${CF_BUILD_RECEIPT:-} ]]; then
 fi
 python3 "$receipt_tool" verify "$receipt" --recipe "$repo_root" --version "$version" >/dev/null
 receipt=$(cd "$(dirname "$receipt")" && pwd)/$(basename "$receipt")
-source "$repo_root/tools/build-platform.sh"
+source "$repo_root/tools/build/build-platform.sh"
 base_image=${CF_BASE_IMAGE:-$(python3 "$here/read-manifest.py" \
     "$repo_root/release.yaml" build_base_image)}
 

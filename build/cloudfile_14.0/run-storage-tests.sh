@@ -4,9 +4,9 @@ set -euo pipefail
 receipt=${1:?build receipt required}
 server=${2:?Server source required}
 here=$(cd "$(dirname "$0")" && pwd)
-tool="$here/../seafile_14.0/build_receipt.py"
-export CF_AUTO_STORAGE_CASES="$here/../../docs/features/automatic-local-storage-cases.json"
-expected=$(python3 "$here/../seafile_14.0/source_manifest.py" "$receipt" ref seafile-server)
+tool="$here/build_receipt.py"
+export CF_AUTO_STORAGE_CASES="$here/../../tests/cases/automatic-local-storage-cases.json"
+expected=$(python3 "$here/source_manifest.py" "$receipt" ref seafile-server)
 [[ $(git -C "$server" rev-parse HEAD) == "$expected" ]] || exit 2
 logs="$here/test-results"
 mkdir -p "$logs"

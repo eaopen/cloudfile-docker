@@ -64,7 +64,7 @@ class CurrentAuthorizationSpec(unittest.TestCase):
         self.assertIn('Retired CloudFile extension regression cannot run on V2', smoke)
 
     def test_retired_policy_artifacts_are_not_packaged_or_tested(self):
-        provenance = (ROOT / 'build/seafile_14.0/package_provenance.py').read_text()
+        provenance = (ROOT / 'build/cloudfile_14.0/package_provenance.py').read_text()
         self.assertNotIn('libcloudfile_acl', provenance)
         for name in ('tests/probe_identity_runtime.py', 'tests/test_jit_worker.py',
                      'tests/test_audit_worker.py', 'tests/e2e/native_device_editing_e2e.py',

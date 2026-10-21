@@ -15,7 +15,7 @@ from unittest.mock import Mock, patch
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / 'scripts/scripts_14.0'
+SCRIPTS = ROOT / 'scripts/scripts_cf14.0'
 SPEC = importlib.util.spec_from_file_location('schema_inventory', SCRIPTS / 'cloudfile_schema.py')
 SCHEMA = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(SCHEMA)

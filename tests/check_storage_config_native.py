@@ -14,7 +14,7 @@ import tempfile
 
 def main():
     server = Path(sys.argv[1]).resolve()
-    module_path = Path(__file__).resolve().parents[1] / 'scripts/scripts_14.0/library_storage.py'
+    module_path = Path(__file__).resolve().parents[1] / 'scripts/scripts_cf14.0/library_storage.py'
     spec = importlib.util.spec_from_file_location('library_storage', module_path)
     storage = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(storage)

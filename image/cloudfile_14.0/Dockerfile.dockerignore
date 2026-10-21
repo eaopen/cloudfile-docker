@@ -2,5 +2,7 @@
 !scripts/
 !scripts/scripts_14.0/
 !scripts/scripts_14.0/**
+!scripts/scripts_cf14.0/
+!scripts/scripts_cf14.0/**
 !services/
 !services/**

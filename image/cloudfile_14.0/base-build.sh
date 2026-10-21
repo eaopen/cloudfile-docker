@@ -13,7 +13,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 repo_root=$(cd "$here/../.." && pwd)
 manifest=$repo_root/release.yaml
 reader=$repo_root/build/cloudfile_14.0/read-manifest.py
-source "$repo_root/tools/build-platform.sh"
+source "$repo_root/tools/build/build-platform.sh"
 
 base_image=${CF_BASE_IMAGE:-$(python3 "$reader" "$manifest" build_base_image)}
 ubuntu_base=${CF_UBUNTU_BASE:-$(python3 "$reader" "$manifest" ubuntu_base_image)}

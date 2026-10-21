@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-BUILD = ROOT / "build/seafile_14.0"
+BUILD = ROOT / "build/cloudfile_14.0"
 SCRIPT = ROOT / "build/cloudfile_14.0/cloudfile-build.sh"
 sys.path.insert(0, str(BUILD))
 from package_provenance import (RECORD_NAME, REQUIRED_FILES, capture_sources,
@@ -126,11 +126,14 @@ class ReceiptCacheTests(unittest.TestCase):
         # C/Go test executables at their process boundary, without compiling.
         runner_dir = self.root / "recipe/build/cloudfile_14.0"
         runner_dir.mkdir(parents=True)
-        (runner_dir.parent / "seafile_14.0").symlink_to(BUILD, target_is_directory=True)
-        docs = self.root / "recipe/docs/features"
+        # The runner resolves the receipt writer next to itself; upstream's
+        # build/seafile_14.0 no longer carries any CloudFile code.
+        for tool in ("build_receipt.py", "read-manifest.py", "source_manifest.py"):
+            shutil.copyfile(BUILD / tool, runner_dir / tool)
+        docs = self.root / "recipe/tests/cases"
         docs.mkdir(parents=True)
         (docs / "automatic-local-storage-cases.json").symlink_to(
-            ROOT / "docs/features/automatic-local-storage-cases.json")
+            ROOT / "tests" / "cases" / "automatic-local-storage-cases.json")
         runner = runner_dir / "run-storage-tests.sh"
         shutil.copyfile(SCRIPT.parent / runner.name, runner)
         server = self.sources / "seafile-server"

@@ -660,7 +660,9 @@ stage_compose() {
     fi
     rm -rf "$STAGE_DIR"
     mkdir -p "$STAGE_DIR"
-    cp "$repo/deploy/compose/docker-compose.yml" "$repo/deploy/compose/Caddyfile" "$STAGE_DIR/"
+    cp "$repo/deploy/compose/docker-compose.yml" \
+       "$repo/deploy/compose/docker-compose.auto-library-storage.yml" \
+       "$repo/deploy/compose/Caddyfile" "$STAGE_DIR/"
     {
         sed -e "s|^SEAFILE_SERVER_HOSTNAME=.*|SEAFILE_SERVER_HOSTNAME=127.0.0.1|" \
             -e "s|^SEAFILE_SERVER_PROTOCOL=.*|SEAFILE_SERVER_PROTOCOL=https|" \
@@ -695,9 +697,27 @@ stage_compose() {
             ok "${line%%=*} 已配置"
         done < <("cap_${CAP_NAME}_env")
     fi
+
+    # bind mount 的源目录必须存在，compose 不会替我们创建；缺一个整个栈就起不来。
+    # 2026-10-22 把 compose 移到 deploy/compose 后这里少建 data/*，首启直接报
+    # "bind source path does not exist: .../data/libraries"。目录清单从解析后的
+    # 配置里取，避免手工维护一份会漂移的列表；命名卷和绝对路径的宿主目录不动。
+    local mount
+    while IFS= read -r mount; do
+        [[ -n $mount ]] || continue
+        case $mount in
+            "$STAGE_DIR"/*) mkdir -p "$mount" ;;
+            ./*)            mkdir -p "$STAGE_DIR/${mount#./}" ;;
+        esac
+    done < <(compose config 2>/dev/null \
+             | awk '/^[[:space:]]*source: /{print $2}' | sort -u)
 }
 
-compose() { docker compose -p "$PROJECT" --project-directory "$STAGE_DIR" "$@"; }
+# .env.example 默认 CF_LIBRARY_STORAGE=auto，它要求 /shared/seafile/library-storage
+# 由 overlay 提供；只带基础 compose 会让新装启动直接卡在“storage root 不存在”。
+compose() { docker compose -f "$STAGE_DIR/docker-compose.yml" \
+    -f "$STAGE_DIR/docker-compose.auto-library-storage.yml" \
+    -p "$PROJECT" --project-directory "$STAGE_DIR" "$@"; }
 
 up() {
     need_docker

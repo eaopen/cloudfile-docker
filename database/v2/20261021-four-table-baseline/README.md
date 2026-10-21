@@ -1,3 +1,5 @@
+> 此包是 2026-10-21 DEV 四表转换的历史一次性资料，不是当前 V2 的产品初始化或运行验收。当前安装必须使用 Server 最新 4+1 DDL（含 cf_audit_event）。归档库为 cloudfile_legacy_archive。
+
 # 四表开发基线 SQL 包
 
 适用：Server `06efc4dea43c5200eea5dd2341f581536ad0838c` 的四表 DDL、Hub `fc9e89c53636432e2a6da824a8758d1b0a374316` 的对应 V2 读写合同。Docker 启动只读校验的配套提交随本包交付。配套修复将原生锁屏障切换至 V2 Guard，Hub 根路由退出旧 Resource/Intent 控制面；SQL 包通过不表示这些已退役功能重新可用。

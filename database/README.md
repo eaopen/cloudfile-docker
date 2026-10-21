@@ -1,6 +1,6 @@
 # CloudFile 开发期数据库交付
 
-2026-10-21 决策：CloudFile 仍处于开发阶段，数据库结构升级和数据迁移使用**独立、人工执行的 SQL**。DEV 验证与 PROD 发布使用同一份固定 SQL 包；成熟版本之间才允许另行设计、审核自动升级机制。开发分支、构建成功或标签变化都不自动取得迁移资格。
+2026-10-21 决策：CloudFile 仍处于开发阶段，数据库结构升级和数据迁移使用**独立、人工执行的 SQL**。DEV 验证与 PROD 发布使用同一份固定 SQL 包；成熟版本之间才允许另行设计、审核自动升级机制。开发分支、构建成功或标签变化都不自动取得迁移资格。此前未正式发布版本不建立产品内升级迁移支持。
 
 ## 当前产品 4+1 表
 
@@ -18,7 +18,7 @@
 
 ## SQL 包与执行规则
 
-当前包：[20261021-four-table-baseline](v2/20261021-four-table-baseline/README.md)。每个包说明源结构、目标结构、适用的 Server/Hub/Docker 提交、数据转换限制、执行顺序、验收与故障处理，并固定 SQL SHA256。
+历史 DEV 四表转换材料：[20261021-four-table-baseline](v2/20261021-four-table-baseline/README.md)，**不是当前 V2 新安装或 4+1 运行校验入口**。当前新安装使用 Server 的 cloudfile-v2.sql / cloudfile-v2-edit.sql / cloudfile-v2-audit.sql。历史包说明源结构、目标结构、适用的 Server/Hub/Docker 提交、数据转换限制、执行顺序、验收与故障处理，并固定 SQL SHA256。
 
 - 新安装执行独立建表 SQL；已有实例按精确源结构选择升级 SQL。发现缺表、未知结构或非空 Guard 时停止并审查，不自动猜测映射。
 - **空卷首次启动会按镜像内随 Server 发行的 reviewed DDL 建表一次**（`/opt/seafile/seafile-server-*/sql/mysql/cloudfile-v2.sql`、`cloudfile-v2-audit.sql`，启用 Checkout 时再加 `cloudfile-v2-edit.sql`），成功后删除 `/shared/seafile/.cloudfile-schema-init-pending` 意图文件；失败保留该文件，下次启动重试。

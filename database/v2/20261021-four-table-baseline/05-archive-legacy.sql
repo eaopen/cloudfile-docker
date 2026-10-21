@@ -6,7 +6,7 @@
 SELECT TABLE_NAME,TABLE_TYPE,ENGINE
  FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()
  AND LOWER(LEFT(TABLE_NAME,2))='cf'
- AND TABLE_NAME NOT IN ('cf_library_storage','cf_dir_acl','cf_sso_group_map','cf_edit_guard')
+ AND TABLE_NAME NOT IN ('cf_library_storage','cf_dir_acl','cf_sso_group_map','cf_edit_guard','cf_audit_event')
  ORDER BY TABLE_NAME;
 SELECT CONCAT('RENAME TABLE `',REPLACE(TABLE_SCHEMA,'`','``'),'`.`',REPLACE(TABLE_NAME,'`','``'),
  '` TO `',REPLACE(@cf_upgrade_archive_database,'`','``'),'`.`',REPLACE(TABLE_NAME,'`','``'),'`;')
@@ -14,5 +14,5 @@ SELECT CONCAT('RENAME TABLE `',REPLACE(TABLE_SCHEMA,'`','``'),'`.`',REPLACE(TABL
  FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE'
  AND @cf_upgrade_archive_database IS NOT NULL AND @cf_upgrade_archive_database<>DATABASE()
  AND LOWER(LEFT(TABLE_NAME,2))='cf'
- AND TABLE_NAME NOT IN ('cf_library_storage','cf_dir_acl','cf_sso_group_map','cf_edit_guard')
+ AND TABLE_NAME NOT IN ('cf_library_storage','cf_dir_acl','cf_sso_group_map','cf_edit_guard','cf_audit_event')
  ORDER BY TABLE_NAME;

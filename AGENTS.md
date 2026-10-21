@@ -52,3 +52,8 @@ V2 内置 ACL、CE 原生 Tag 和已安装 Guard 的 Checkout 不应重新受旧
 - 正常查看/编辑不创建服务端 Session；独占编辑只使用 `cf_edit_guard` 与 Agent2 本地 Journal。
 - **不得为修复缺表错误恢复 `cf_edit_session` / `cf_resource` / `cf_commit_intent` 或旧 `local-edit/v1/sessions` 路由。** 历史表归档、DEV 一次性清理由产品外工具负责。
 - GitHub `dev` 代码修复不等于 DEV 容器已升级；发布须确认 Server/Hub/Docker 三仓固定源码 SHA 和实际镜像，并定向验收本地查看、普通编辑、独占编辑。
+
+## 当前镜像只携带 V2 初始化及运行入口
+
+- 启动调用 `cloudfile_schema.py`，只创建/校验 4+1 表；历史 `cloudfile.sql`、SchemaRunner 和旧 SQL Workers 不属于产品镜像。禁止为旧代码恢复 `cf_schema_migration` 或其他旧表。
+- 旧 DEV 修复工具保留在历史材料供一次性人工处理，不由构建、启动、升级、工作进程自动调用。禁止用测试历史脚本的成功状态声称当前 DEV 镜像已经升级。

@@ -976,59 +976,6 @@ def write_seafile_env():
     os.chmod(path, 0o600)
 
 
-def apply_cloudfile_schema():
-    """Create legacy integration tables in seafile-db if they are missing.
-
-    Current cf_dir_acl/cf_dir_admin belong exclusively to the Hub
-    versioned schema runner. Use cloudfile-directory-schema.py for their
-    explicit offline upgrade; IF NOT EXISTS cannot synchronize old layouts.
-
-    Done here rather than in the fresh-install SQL or a versioned upgrade
-    script because all three entry points have to work: a new deployment, a
-    version upgrade, and an existing Seafile CE installation adopting
-    CloudFile. Only the last of those runs no setup or upgrade step at all, and
-    a capability whose tables are missing fails closed and locks everyone out.
-
-    The baseline ships no schema at all, so the file is simply absent and this
-    logs and returns; capabilities bring their own cloudfile.sql.
-
-    Every statement is IF NOT EXISTS, so running it on every start is cheap and
-    safe.
-    """
-    schema = join(installdir, 'sql', 'mysql', 'cloudfile.sql')
-    if not exists(schema):
-        logwarning('CloudFile schema %s not found; skipping' % schema)
-        return
-
-    import pymysql
-
-    with open(schema) as fp:
-        # Strip comments before splitting: a ';' inside one would otherwise
-        # cut a statement in half.
-        body = '\n'.join(line for line in fp.read().splitlines()
-                         if not line.strip().startswith('--'))
-
-    statements = [s.strip() for s in body.split(';') if s.strip()]
-    if not statements:
-        return
-
-    conn = pymysql.connect(
-        host=get_conf('SEAFILE_MYSQL_DB_HOST', 'db'),
-        port=int(get_conf('SEAFILE_MYSQL_DB_PORT', '3306')),
-        user=get_conf('SEAFILE_MYSQL_DB_USER', 'seafile'),
-        password=get_conf('SEAFILE_MYSQL_DB_PASSWORD', ''),
-        database=get_conf('SEAFILE_MYSQL_DB_SEAFILE_DB_NAME', 'seafile_db'),
-        charset='utf8mb4',
-    )
-    try:
-        with conn.cursor() as cursor:
-            for statement in statements:
-                cursor.execute(statement)
-        conn.commit()
-    finally:
-        conn.close()
-
-
 def apply_metadata_schema_compatibility():
     """Repair the upstream 14.0 metadata schema.
 
@@ -1192,65 +1139,6 @@ def apply_starred_obj_id_schema_compatibility():
         conn.close()
 
 
-def apply_audit_schema():
-    """Create CloudFile's append-only audit sidecar when audit is enabled.
-
-    seafevents' Activity table only holds file/directory commit-diff events.
-    Repo tags are mutated exclusively through Seahub's API, so P2-08 records
-    those tag changes -- with their before/after values -- in a CloudFile-owned
-    ``cf_audit_event`` table. It lives in seafile-db (next to the other cf_*
-    tables, which is what cloudfile_ext.db_router points the model at) and is
-    created here so all three entry points are covered: a fresh install, a
-    version upgrade, and an existing CE deployment adopting CloudFile.
-
-    Gated on CF_ENABLE_AUDIT because the Django model is only imported when
-    that switch is on; the statement is IF NOT EXISTS, so running it on every
-    start is cheap and safe.
-    """
-    if not cf_enabled('CF_ENABLE_AUDIT'):
-        return
-
-    import pymysql
-
-    conn = pymysql.connect(
-        host=get_conf('SEAFILE_MYSQL_DB_HOST', 'db'),
-        port=int(get_conf('SEAFILE_MYSQL_DB_PORT', '3306')),
-        user=get_conf('SEAFILE_MYSQL_DB_USER', 'seafile'),
-        password=get_conf('SEAFILE_MYSQL_DB_PASSWORD', ''),
-        database=get_conf('SEAFILE_MYSQL_DB_SEAFILE_DB_NAME', 'seafile_db'),
-        charset='utf8mb4',
-    )
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS cf_audit_event (
-                  id BIGINT NOT NULL PRIMARY KEY AUTO_INCREMENT,
-                  repo_id VARCHAR(36) NOT NULL,
-                  object_type VARCHAR(32) NOT NULL,
-                  object_id VARCHAR(64) NOT NULL,
-                  operation VARCHAR(32) NOT NULL,
-                  operator VARCHAR(255) NOT NULL,
-                  source VARCHAR(16) NOT NULL,
-                  `before` TEXT,
-                  `after` TEXT,
-                  source_path VARCHAR(1000),
-                  target_path VARCHAR(1000),
-                  result VARCHAR(16) NOT NULL,
-                  failure_reason TEXT,
-                  occurred_at DATETIME NOT NULL,
-                  KEY cf_audit_event_time (occurred_at),
-                  KEY cf_audit_event_repo (repo_id),
-                  KEY cf_audit_event_operator (operator),
-                  KEY cf_audit_event_operation (operation),
-                  KEY cf_audit_event_source (source),
-                  KEY cf_audit_event_result (result)
-                ) ENGINE=INNODB
-            """)
-        conn.commit()
-    finally:
-        conn.close()
-
-
 def _set_ini_value(lines, start, end, key, value):
     """Set `key = value` within lines[start:end], appending if absent.
 
@@ -1371,62 +1259,6 @@ def write_cloudfile_config():
     # releases. Restarting/config generation must not mutate a database or
     # bring back retired fields after the four-table V2 conversion.
     # Historical helpers remain for source traceability, not startup execution.
-
-
-def apply_sso_hierarchy_schema_compatibility():
-    """Add the hierarchy columns to cf_sso_group_map in seafile-db.
-
-    The hierarchical directory contract (eap-cloudfile decision 2026-08-27
-    §3) stores ``subject_type`` ('dept'/'group') and ``parent_external_id``
-    on the mapping table. ``apply_cloudfile_schema`` only runs CREATE TABLE
-    IF NOT EXISTS, so a deployment whose cf_sso_group_map predates this
-    upgrade never receives the columns -- and the Hub's
-    ``SSOGroupMap.objects.add`` would then fail on every create. Same
-    probe-then-ALTER shape as the other compatibility shims here: checks
-    information_schema first, safe on every restart, no-ops on fresh
-    installs (the CREATE TABLE already carries them).
-
-    Both columns are NULL by default: pre-upgrade rows read as plain groups,
-    which is exactly what they were, so switches-off behaviour is unchanged.
-    """
-    import pymysql
-
-    conn = pymysql.connect(
-        host=get_conf('SEAFILE_MYSQL_DB_HOST', 'db'),
-        port=int(get_conf('SEAFILE_MYSQL_DB_PORT', '3306')),
-        user=get_conf('SEAFILE_MYSQL_DB_USER', 'seafile'),
-        password=get_conf('SEAFILE_MYSQL_DB_PASSWORD', ''),
-        database=get_conf('SEAFILE_MYSQL_DB_SEAFILE_DB_NAME', 'seafile_db'),
-        charset='utf8mb4',
-    )
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                'SELECT 1 FROM information_schema.TABLES '
-                'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
-                ('cf_sso_group_map',))
-            if not cursor.fetchone():
-                # apply_cloudfile_schema creates it right before this call and
-                # carries the columns; missing here means the schema file was
-                # absent entirely, which that function already warned about.
-                return
-
-            cursor.execute(
-                'SELECT 1 FROM information_schema.COLUMNS '
-                'WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s '
-                'AND COLUMN_NAME = %s',
-                ('cf_sso_group_map', 'subject_type'))
-            if not cursor.fetchone():
-                cursor.execute(
-                    'ALTER TABLE `cf_sso_group_map` '
-                    'ADD COLUMN `subject_type` VARCHAR(16) NULL')
-                cursor.execute(
-                    'ALTER TABLE `cf_sso_group_map` '
-                    'ADD COLUMN `parent_external_id` VARCHAR(255) NULL')
-                loginfo('Added cf_sso_group_map hierarchy columns')
-        conn.commit()
-    finally:
-        conn.close()
 
 
 def init_seafile_server():

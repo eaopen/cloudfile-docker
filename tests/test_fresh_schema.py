@@ -47,7 +47,7 @@ class DevelopmentSchemaTest(unittest.TestCase):
         cursor = ReadOnlyCursor()
         connection = Mock(); connection.cursor.return_value = cursor
         SCHEMA.verify_v2_schema(connection)
-        self.assertEqual(len(cursor.calls), 10)
+        self.assertEqual(len(cursor.calls), 16)
         connection.commit.assert_not_called()
         connection.rollback.assert_not_called()
 
@@ -57,19 +57,19 @@ class DevelopmentSchemaTest(unittest.TestCase):
             with self.assertRaises(ValueError): SCHEMA.verify_v2_schema(connection, checkout_enabled=True)
             connection.commit.assert_not_called()
 
-    def test_disabled_checkout_ignores_guard_layout_and_index(self):
+    def test_all_five_tables_are_required_even_when_checkout_is_off(self):
         for defect in ('old_guard', 'missing_index'):
-            cursor = ReadOnlyCursor(defect)
-            connection = Mock(); connection.cursor.return_value = cursor
-            SCHEMA.verify_v2_schema(connection)
-            self.assertEqual(len(cursor.calls), 10)
+            connection = Mock()
+            connection.cursor.return_value = ReadOnlyCursor(defect)
+            with self.assertRaises(ValueError):
+                SCHEMA.verify_v2_schema(connection)
 
     def test_connection_failure_is_sanitized_and_requires_sql(self):
         driver = ModuleType('pymysql'); driver.connect = Mock(side_effect=RuntimeError('private-fixture-value'))
         env = dict(SEAFILE_MYSQL_DB_HOST='db', SEAFILE_MYSQL_DB_PASSWORD='fixture')
         with patch.dict(sys.modules, {'pymysql': driver}):
             with self.assertRaises(RuntimeError) as error: SCHEMA.verify_development_schema(environment=env)
-        self.assertIn('SQL', str(error.exception)); self.assertNotIn('private-fixture-value', str(error.exception))
+        self.assertIn('five-table', str(error.exception)); self.assertNotIn('private-fixture-value', str(error.exception))
 
     def test_startup_initializes_fresh_volume_without_legacy_runner(self):
         bootstrap = ast.parse((ROOT/'scripts/scripts_14.0/bootstrap.py').read_text())
@@ -116,7 +116,7 @@ class FreshInstallTest(unittest.TestCase):
         sql = installdir / 'sql' / 'mysql'
         sql.mkdir(parents=True, exist_ok=True)
         (sql / 'cloudfile-v2.sql').write_text('-- reviewed base DDL')
-        (sql / 'cloudfile-v2-edit.sql').write_text('-- reviewed optional Guard DDL')
+        (sql / 'cloudfile-v2-edit.sql').write_text('-- reviewed Guard DDL')
         (sql / 'cloudfile-v2-audit.sql').write_text('-- reviewed operation audit DDL')
         (installdir / 'seahub').mkdir(exist_ok=True)
         return installdir
@@ -159,11 +159,11 @@ class FreshInstallTest(unittest.TestCase):
         self.assertTrue(result)
         self.assertFalse(marker.exists())
         self.assertEqual(len(FreshInstallTest.FakeFreshSchema.calls), 1)
-        self.assertIsNone(FreshInstallTest.FakeFreshSchema.calls[0].edit_ddl)
+        self.assertIsNotNone(FreshInstallTest.FakeFreshSchema.calls[0].edit_ddl)
         self.assertIsNotNone(FreshInstallTest.FakeFreshSchema.calls[0].audit_ddl)
         connection.close.assert_called_once()
 
-    def test_enabled_checkout_plan_installs_the_optional_guard(self):
+    def test_checkout_toggle_does_not_change_five_table_install(self):
         with tempfile.TemporaryDirectory() as root:
             shared = Path(root) / 'shared'
             shared.mkdir()
@@ -181,14 +181,13 @@ class FreshInstallTest(unittest.TestCase):
             with self.assertRaises(RuntimeError) as error:
                 self._init(root, marker, 'false')
             self.assertTrue(marker.exists())
-            # A configuration flip during the failed attempt must not add the
-            # optional Guard table: retry keeps the recorded plan.
+            # Changing a runtime feature switch never changes the fresh five-table schema.
             FreshInstallTest.FakeFreshSchema.fail = False
             result, _ = self._init(root, marker, 'true')
             self.assertTrue(result)
         self.assertIn('inspect', str(error.exception))
         self.assertFalse(marker.exists())
-        self.assertIsNone(FreshInstallTest.FakeFreshSchema.calls[-1].edit_ddl)
+        self.assertIsNotNone(FreshInstallTest.FakeFreshSchema.calls[-1].edit_ddl)
 
     def test_marker_copied_from_another_volume_is_refused(self):
         with tempfile.TemporaryDirectory() as root:

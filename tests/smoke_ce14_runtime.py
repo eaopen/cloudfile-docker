@@ -231,94 +231,12 @@ def run(image, native_regression=False, extensions_regression=False, identity_ru
             checks.append(stage)
         if native_regression or extensions_regression:
             raise RuntimeError("Retired CloudFile extension regression cannot run on V2; use the current Hub/Server ACL contracts.")
-        if identity_runtime and identity_scenario in {'transfer', 'web', 'search', 'annotations'}:
-        raise RuntimeError("Retired legacy identity fixture; use current V2 dedicated integration tests.")
-    if identity_runtime:
-            stage = 'identity_runtime'
-            start('identity-redis', 'identity-redis', 'redis:7-alpine', {}, ['/data:rw,size=64m'])
-            search_key = ''
-            if identity_scenario == 'search':
-                search_key = secrets.token_hex(32)
-                start('meilisearch', 'meilisearch', 'getmeili/meilisearch:v1.53.2',
-                    {'MEILI_MASTER_KEY': search_key, 'MEILI_ENV': 'production', 'MEILI_NO_ANALYTICS': 'true'},
-                    ['/meili_data:rw,size=256m'])
-            if identity_scenario in {'search', 'audit'} and development_worker_overlay:
-                hub = Path(__file__).resolve().parents[2] / 'cloudfile-hub'
-                docker('cp', str(hub / 'cloudfile_extensions') + '/.',
-                    app + ':/opt/seafile/seafile-server-latest/seahub/cloudfile_extensions/')
-            fixture = Path(__file__).with_name('probe_identity_runtime.py')
-            docker('cp', str(fixture), app + ':/tmp/probe_identity_runtime.py')
-            worker_path = '/scripts/cloudfile-jit-worker.py'
-            worker_sha = None
-            if identity_scenario == 'provisioning':
-                fixture = Path(__file__).with_name('identity_provisioning_runtime.py')
-                docker('cp', str(fixture), app + ':/tmp/identity_provisioning_runtime.py')
-                worker = Path(__file__).resolve().parents[1] / 'scripts/scripts_14.0/cloudfile-jit-worker.py'
-                worker_sha = hashlib.sha256(worker.read_bytes()).hexdigest()
-                if development_worker_overlay:
-                    worker_path = '/tmp/cloudfile-jit-worker.py'
-                    docker('cp', str(worker), app + ':' + worker_path)
-                actual_sha = docker('exec', app, 'python3', '-c',
-                    'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())', worker_path)
-                if actual_sha != worker_sha:
-                    raise RuntimeError('JIT worker image is stale; rebuild the application image')
-            elif identity_scenario == 'annotations':
-                hub = Path(__file__).resolve().parents[2] / 'cloudfile-hub'
-                destination = app + ':/opt/seafile/seafile-server-latest/seahub/'
-                docker('cp', str(hub / 'cloudfile_extensions') + '/.', destination + 'cloudfile_extensions/')
-                docker('cp', str(Path(__file__).with_name('annotations_http_runtime.py')),
-                    app + ':/tmp/annotations_http_runtime.py')
-            elif identity_scenario in {'transfer', 'web'}:
-                fixture = Path(__file__).with_name('delegated_transfer_runtime.py')
-                docker('cp', str(fixture), app + ':/tmp/delegated_transfer_runtime.py')
-            elif identity_scenario == 'search':
-                if development_worker_overlay:
-                    # Exercise compatibility permission reads only in the
-                    # disposable container; this is never a dev deployment.
-                    hub = Path(__file__).resolve().parents[2] / 'cloudfile-hub'
-                    docker('cp', str(hub / 'cloudfile_ext/search') + '/.',
-                        app + ':/opt/seafile/seafile-server-latest/seahub/cloudfile_ext/search/')
-                worker = Path(__file__).resolve().parents[1] / 'scripts/scripts_14.0/cloudfile-search-worker.py'
-                docker('cp', str(worker), app + ':/scripts/cloudfile-search-worker.py')
-                docker('cp', str(Path(__file__).with_name('search_runtime.py')), app + ':/tmp/search_runtime.py')
-            elif identity_scenario == 'audit':
-                fixture = Path(__file__).with_name('audit_export_runtime.py')
-                docker('cp', str(fixture), app + ':/tmp/audit_export_runtime.py')
-                worker = Path(__file__).resolve().parents[1] / 'scripts/scripts_14.0/cloudfile-audit-worker.py'
-                worker_path = '/scripts/cloudfile-audit-worker.py'
-                if development_worker_overlay:
-                    # The audit script bootstraps its adjacent JIT script.
-                    # Overlay only inside this disposable container.
-                    docker('cp', str(worker), app + ':' + worker_path)
-                expected = hashlib.sha256(worker.read_bytes()).hexdigest()
-                actual = docker('exec', app, 'python3', '-c',
-                    'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())',
-                    worker_path)
-                if actual != expected:
-                    raise RuntimeError('Audit worker image is stale; rebuild the application image')
-            elif identity_scenario == 'logout':
-                fixture = Path(__file__).with_name('identity_logout_runtime.py')
-                docker('cp', str(fixture), app + ':/tmp/identity_logout_runtime.py')
-            elif identity_scenario == 'backchannel':
-                fixture = Path(__file__).with_name('identity_backchannel_runtime.py')
-                docker('cp', str(fixture), app + ':/tmp/identity_backchannel_runtime.py')
-                for name in ('cloudfile-logout-worker.py', 'cloudfile-jit-worker.py'):
-                    source = Path(__file__).resolve().parents[1] / 'scripts/scripts_14.0' / name
-                    expected = hashlib.sha256(source.read_bytes()).hexdigest()
-                    actual = docker('exec', app, 'python3', '-c',
-                        'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())', '/scripts/' + name)
-                    if actual != expected:
-                        raise RuntimeError('Logout worker image is stale; rebuild the application image')
-            identity = json.loads(docker('exec', '-e', 'CF_DISPOSABLE_IDENTITY_PROBE=true',
-                '-e', 'CF_IDENTITY_SCENARIO=' + identity_scenario,
-                '-e', 'CF_SEARCH_FIXTURE_KEY=' + search_key,
-                '-e', 'CF_JIT_WORKER_SCRIPT=' + worker_path,
-                '-e', 'CF_AUDIT_WORKER_SCRIPT=' + worker_path,
-                app, 'python3', '/tmp/probe_identity_runtime.py', timeout=90))
-            if worker_sha:
-                identity.update(worker_sha256=worker_sha,
-                    worker_mode='development-script-overlay' if development_worker_overlay else 'packaged-image-script')
-            checks.append(stage)
+        if identity_runtime:
+            # The pre-V2 identity fixtures import the retired CloudFile
+            # extension tree and use tables outside the five-table contract.
+            # Refuse this obsolete option; current V2 HTTP/ACL tests are the
+            # supported acceptance route.
+            raise RuntimeError("Retired identity-runtime fixture is not a V2 acceptance test")
         return {'result': 'passed', 'scope': 'CE14 local admin/native file baseline; optional identity fixture separately scoped',
                 'image_id': metadata['Id'], 'package_sha256': digest,
                 'source_seahub': labels.get('com.cloudfile.source.seahub'),

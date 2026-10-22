@@ -6,20 +6,8 @@ name: CloudFile quick source checks
 on:
   push:
     branches: [dev]
-    paths-ignore:
-      - '**/*.md'
-      - '**/*.markdown'
-      - 'README*'
-      - 'AGENTS.md'
-      - 'docs/**'
   pull_request:
     branches: [dev]
-    paths-ignore:
-      - '**/*.md'
-      - '**/*.markdown'
-      - 'README*'
-      - 'AGENTS.md'
-      - 'docs/**'
   workflow_dispatch:
 
 permissions:
@@ -55,6 +43,9 @@ jobs:
           while IFS= read -r path; do
             [[ ! -f "$path" ]] || bash -n "$path"
           done < <(git diff --name-only HEAD^ HEAD -- '*.sh')
+
+      - name: Enforce current V2 ACL documentation contract
+        run: python3 tests/test_v2_authorization_contract.py
 
       - name: Test source selection rules without building images
         run: |

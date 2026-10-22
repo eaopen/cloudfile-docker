@@ -6,7 +6,8 @@ import unittest
 from pathlib import Path
 
 
-BUILD_DIR = Path(__file__).resolve().parents[1] / "build" / "seafile_14.0"
+BUILD_DIR = Path(__file__).resolve().parents[1] / "build" / "cloudfile_14.0"
+UPSTREAM_DIR = BUILD_DIR.with_name("seafile_14.0")
 SCRIPT = BUILD_DIR / "source_manifest.py"
 SPEC = importlib.util.spec_from_file_location("source_manifest", SCRIPT)
 SOURCE_MANIFEST = importlib.util.module_from_spec(SPEC)
@@ -19,11 +20,18 @@ OVERRIDE_SPEC.loader.exec_module(SOURCE_OVERRIDE)
 
 
 class SourceManifestTest(unittest.TestCase):
-    def test_build_script_fails_closed_and_supports_pinned_local_sources(self):
-        script = (BUILD_DIR / "seafile-build.sh").read_text(encoding="utf-8")
+    def test_upstream_build_tree_carries_no_cloudfile_code(self):
+        # The CE tree is upstream's, byte for byte. CloudFile's build lives in
+        # build/cloudfile_14.0; anything else showing up here means a fork of
+        # upstream's builder crept back in and will conflict on the next sync.
+        names = sorted(path.name for path in UPSTREAM_DIR.iterdir()
+                       if path.is_file() and path.suffix in (".py", ".sh"))
+        self.assertEqual(names, ["seafile-build.py", "seafile-build.sh"])
+
+    def test_build_script_fails_closed(self):
+        script = (BUILD_DIR / "cloudfile-build.sh").read_text(encoding="utf-8")
 
         self.assertIn("set -euo pipefail", script)
-        self.assertIn('cloudfile_14.0/cloudfile-build.sh', script)
 
     def test_local_image_builder_is_fail_closed_and_labels_source_pins(self):
         script = (BUILD_DIR / "build-local-image.sh").read_text(encoding="utf-8")

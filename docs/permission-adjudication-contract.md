@@ -1,158 +1,54 @@
-# 权限终判契约（冻结）
+# CloudFile V2 权限终判契约（当前 dev）
 
-> **用途**：把"谁有权判、判到什么范围、哪条链不能当终判"一次写清，避免后续开发
-> 再实现出第二条授权链。
-> **状态**：契约已冻结（2026-10-15）。第 6 节的实现项尚未完成。
-> **权威规格**：[acl-semantics.md](acl-semantics.md)（求解语义）、
-> [roles-semantics.md](roles-semantics.md)（角色换算）、
-> [directory-access-v09.md](directory-access-v09.md)（v0.9 目录资格）、
-> [EXTENSION-POINTS.md](EXTENSION-POINTS.md)（扩展点边界）。
+> 当前有效文档。旧版“托管库/非托管库”、通过目录 ACL 记录是否存在来决定库类别、`cf_managed_library` 登记或 opt-in Guard 均已废弃。历史记录在 Git 历史，不是当前产品契约。
 
----
+## 1. 唯一权威与边界
 
-## 1. 唯一权威：v0.9 scoped 终判
+默认复用 Seafile CE 原生能力，只在已确认的目录 ACL 与共享目录需求上补足执行接缝。新增表、权限引擎、共享机制或配置开关等设计须先确认，不以修复缺陷为由扩大架构。
 
-内容权限的终判只有一处实现：
+CloudFile 不存在托管库这一概念。每个库均保留 Seafile CE 原生 RepoOwner/SharedRepo/RepoGroup 的库资格，以及同一 `cf_dir_acl` 存储的目录 ACL 和共享目录资格。目录规则是路径级事实，不能使整个库进入另一权限模式。
 
-| 入口 | 用途 |
-|---|---|
-| `cf_policy_check_read()` | 文件/目录读 |
-| `cf_policy_check_write()` | 文件/目录写 |
-| `cf_policy_check_create()` | 新建（父目录写 + 新对象策略） |
-| `cf_acl_evaluate_scoped()` | 纯策略内核，被上面三个调用 |
+- 库级资格由 CE 原生权限和可信身份计算，正常情况下 `r/rw`；目录规则默认继承，可在有效作用域内缩权或扩权。
+- Hub 的 `cloudfile_ext/v2/acl_runtime.py:Authority.effective()` 结合 `acl_policy.py` 负责 user / org / role、目录祖先、共享根的统一判定。Etech 的组织父子层级本身不自动扩大成员身份。
+- 只有没有 CE 库资格的用户取得明确的正向 `share_mode=true` 目录规则时，才可从对应共享目录根进入；不得因此遍历库根、父目录和兄弟目录。
+- `invisible` 表示不可访问且不展示。不存在可持久化的 `none` 目录规则。管理身份与内容 `rw` 分离。
+- C/Go 负责不可绕过的真实字节、对象、CAS/Branch Commit 终判；调用者身份来自可信会话/票据，不能信任 Commit 作者或客户端提供的主体。
 
-它们在**同一次事务**内建立原生主体、barrier、库资格与目标存在性，再求解。契约见
-`cloudfile-server/server/cloudfile-policy.h`。
+## 2. 同一授权结论用于所有可执行操作
 
-### 1.1 取值语义：可取更高者，不是"只能收紧"
+| 操作 | 判定依据 | 处理原则 |
+| --- | --- | --- |
+| 目录列举、搜索、元数据 | `Authority.effective(repo,path,kind)` | 逐项过滤、目录页不泄露被拒绝的子项 |
+| 已认证文件读、下载、Range | Hub 当前路径授权 + Server 文件内容终判 | 其他目录 ACL 不影响目标文件 |
+| 文件上传/覆盖/新建 | 当前用户、实际目标路径及父目录、最终提交差异 | 无完整身份/路径证明不放行 |
+| 目录共享 | `cf_dir_acl.share_mode` + 当前主体 | 共享根以下使用同一规则，库根不因此开放 |
+| 公开文件/目录链接 | 先验证独立分享凭据，再验证实际路径/子树的目录策略 | 链接本身不生成新的库成员资格 |
+| 原生整库同步或对象级令牌 | 没有路径粒度的协议能力 | 无法证明覆盖范围全可访问时拒绝该操作，不得将此转化为“托管库状态” |
+| 库创建、删除及管理 | 原生 CE 管理权限与外部管理控制面 | 目录中出现 ACL 不构成整库管理禁止条件 |
 
-终判结果取自 CE 库级权限与目录规则/共享中**更强者**。目录规则可以把库级 `r` 在具体
-路径**提升**为 `rw`——v2 的"只能收紧"上限已于 2026-08-28 撤销
-（[acl-semantics.md](acl-semantics.md)「决策 2026-08-28」）。
+## 3. 失败语义与并发
 
-**`cf_ext_check_permission()` 不是终判，也不能改造为终判。** 两点：
+- 明确权限拒绝返回 403；授权来源/SQL/内部 HTTP 不可用应在支持的入口返回 503；**禁止授权异常时回退到原生宽权限**。
+- Commit 最终事务必须重验可信操作者和实际变更路径，保留 Branch CAS、Checkout Guard 和必要的锁，不能仅依靠上传开始时的检查。
+- 撤权不要求实时生效：允许既有权限缓存存活至配置的 TTL，到期后的新裁决必须重新读取授权来源；来源不可用时不得继续沿用已过期的允许结果。保留既有缓存和失效机制，不增加实时撤权通道。
+- 任何共享撤权或成员变动必须通过统一生效权限进入搜索、列表、票据、代理、本地编辑等路径。既有下载票据不能被视为永久内容授权。
 
-1. `native_perm` 为 NULL 时它**根本不调用 provider**，原样返回 NULL
-   （`common/cf-ext.c:90-91`）；链上任一 provider 返回 NULL 即终止，后续无法放宽
-   （`:106-107`）。所以它**结构上无法**为 CE 未授权的用户创造资格。
-2. "只能收紧"对它只是文档约定——`cf-ext.c` 不校验返回值 ≤ 传入值。该约定对 v0.9
-   不再成立，不要再用它论证收敛性。
+## 4. 禁止恢复的旧设计
 
-它保留为**收紧型兼容入口**（旧 RPC / WebDAV / 同步边界），语义是"在 CE 已授予的范围内
-再收紧"，**不承担** v0.9 的授权职责。
+当前 `dev` 的 Agent、文档、代码或测试不得再以 `cf_dir_acl` 任意记录存在为理由，声明“托管库”或拒绝整个库的普通访问。禁止重建 `cf_managed_library` / `cf_managed_library_share` / `cf_library_share_revision` 表、`managed_library_guard` / `allow_legacy_managed_reads` 开关、`checkLegacyLibrary()` / `cf_policy_check_legacy_library()` 等判断。
 
-### 1.2 「无整库权限 + 目录资格」的唯一通路
+特定协议没有用户/路径上下文时可以拒绝 **该操作**，但必须以缺少权限证明而非“库被托管”解释，不能据此拒绝已充分授权的普通目录访问。历史测试的“库有一行 ACL ⇒ 拒绝库级所有入口”断言必须删除，不得作为正确性目标。
 
-`cf_policy_check_read()` 以 `ce_permission=0` 表示**合法非成员**，scoped core 依据适用的
-目录 ACL/共享授予资格（`server/cloudfile-policy.h:48-56`）。这是 `share_mode` 语义的落点，
-也是旧 Hook 无法表达的形态。**给旧 Hook 补列、补 SQL 永远得不到这个效果。**
+## 5. 验收
 
----
+正常库根与兄弟目录访问；库 `r` 的局部扩权与库 `rw` 的局部缩权；个人/组织/角色冲突；无库权限共享根；缓存过期后的撤权与搜索、下载、上传；原生整库协议的范围证明；ACL 不可用；最终提交并发。源码合入、定向测试、真实 DEV 验收必须分开报告。
 
-## 2. 受管库边界：不静默降级
+## 6. 旧授权清理边界
 
-`cf_managed_library` 是 **opt-in 且单调**的边界（`server/cloudfile-policy.h:7-15`）：
+已批准清理七类旧机制：C 独立 ACL 计算；Python PolicyHost/PolicyCore；目录管理员侧表；旧 ACL/share 写入账本；浏览器/Smart Link 双重裁决；委托、资源票据和 epoch 强刷链；旧授权 URL 别名及其专用契约。只保留当前 CE/V2 所需适配器和身份校验，不新增兼容授权入口。
 
-| 库状态 | 行为 |
-|---|---|
-| 未受管（`guard` 关闭） | 沿用 Seafile 原生访问，行为与普通 CE 库一致 |
-| 已受管 | 策略/库资格/结构故障**一律拒绝**；schema 缺失或漂移同样拒绝 |
-| 已安装扩展但未显式 opt-in | 边界**仍然生效**——注册表缺失不能重开一个已安装的部署 |
-
-**非受管库继续使用普通 CE 行为；受管库在新版策略不可用时拒绝访问，不静默退回更宽的
-原生权限。** 这是安全底线，不是可调项。
-
----
-
-## 3. 权限取值格冻结：暂不扩枚举
-
-内容链固定为 `invisible < none < r < rw`（[roles-semantics.md](roles-semantics.md) §2）。
-
-Seafile PRO 的 `preview` / `cloud-edit` / `custom-*` **不入链**，只能被
-`invisible`/`none` 一票否决，不参与求解。**不为了对齐 PRO 提前引入权限格**；出现真实
-业务需求时再单独设计操作能力（download / preview / edit），并同步 C、Hub 与用例集三处。
-
----
-
-## 4. 与 Seafile 原生能力的关系
-
-**保留 Virtual Repo / 原生文件夹共享，两条路并行，互不替代。**
-
-| 模式 | 适用场景 |
-|---|---|
-| 原生文件夹共享 / Virtual Repo | 标准 Seafile 客户端、同步、普通文件协作 |
-| CloudFile 原位目录资格（`share_mode`） | 企业业务知识库、目录直达、按组织身份裁决的 API |
-
-原生机制**已在运行时保留并有实现覆盖**：`VirtualRepo` 表（[permission-tables.md](permission-tables.md)）、
-虚拟库移动/合并（[fileop-lifecycle.md](fileop-lifecycle.md)）、虚拟库 origin 路由
-（[features/automatic-local-storage.md](features/automatic-local-storage.md)）。
-**不要移除或绕过它。**
-
-### 4.1 同步边界：不承诺立即支持
-
-原位目录资格的**当前边界是 Web / API**。原因是协议约束，不是工期：
-
-- `cf_find_restricted_path` 服务同步与打包下载，只表达"子树可达/不可达"，表达不了
-  "某身份在某目录有资格"。
-- `invisible` 目录在传统同步客户端上的支持与 SeaDrive 不同，不能对未修改的客户端
-  承诺等价行为。
-
-未来要支持原生同步，须**单独验证** Virtual Repo 路径、客户端协议与受管库终判，
-而不是简单放开旧同步入口。未验证前，同步侧保持现有拒绝语义（fail closed）。
-
----
-
-## 5. 长期定位与上游成本
-
-CloudFile 的定位是 **基于 Seafile CE 的企业文件与目录授权增强系统**，
-不是 Seafile PRO 的开源替代版。继续复用 CE 的存储、版本、同步与客户端能力。
-
-**最大长期技术债是上游改动量**：截至同步到 `d9ed57e`（2026-09-22），已有
-**42 个已跟踪上游文件被修改、51 个文件新增**（`cloudfile-server/AGENTS.md`）。
-坚持既有原则：
-
-- 上游代码只保留必要接缝，新能力放 `cf-*` / `cf_*` / 独立 Python 模块。
-- **不新增平行的权限算法**（本文件第 1 节）。
-- 每次上游同步先处理补丁冲突，不做全面重构。
-
-**不把直接切换 PRO 作为目标。** CE→PRO 的官方迁移只覆盖官方支持的数据与部署，不保证
-CloudFile 扩展继续生效；PRO 许可限制创建衍生作品，长期应视 PRO 为可选存储后端或参考
-实现。当前**不为可能的 PRO 预建第二套 Server 适配器**。
-
----
-
-## 5.1 「不可用」不是权限结论（2026-10-15）
-
-`cf_ext_check_permission` 的旧入口只有两个输出：权限字符串或 NULL。受管库走旧入口是
-**故意拒绝**，而策略运行时读不到权威数据（`cf_managed_library` schema 缺失/漂移、SQL/事务失败）
-也是拒绝——两者同一个 NULL，客户端因此把存储故障显示成「当前用户无权限」。
-
-现在的契约：
-
-| 层 | 行为 |
-|---|---|
-| provider（`cf_acl_apply`） | 拒绝时若原因是读不到权威数据，置 `gboolean *unavailable`；故意拒绝不置 |
-| `cf_policy_check_legacy_access_reason()` | 把「受管库边界」与「schema/SQL 不可用」分开报告；旧的无 out-param 版本保持原语义 |
-| `cf_ext_check_permission(..., unavailable)` | 入口清零并透传；仅当返回 NULL 且置位时由调用方转成明确错误 |
-| `seafile_check_permission_by_path` | NULL + unavailable → `g_set_error(SEAF_ERR_GENERAL)`，让 Hub 拿到 SearpcError 而不是空权限 |
-| Hub `check_folder_permission` | 仍然 fail closed 返回 None，只在请求上打标记 |
-| `cloudfile_extensions.permission_middleware` | 带标记请求的 403 改写为 `503 {"code":"POLICY_UNAVAILABLE"}` |
-
-这不是放宽权限：两条路径都仍然拒绝，改的只是对外可区分的错误。旧入口的 4 参数调用方、
-`cf_policy_check_legacy_access()` 的既有调用方和普通 CE 路径行为不变（登记表未注册任何
-provider 时 `cf_ext_check_permission` 仍是 `g_strdup(@native_perm)` 的透传）。
-
----
-
-## 6. 待实现（进入 P0）
-
-| # | 项 | 完成标准 |
-|---|---|---|
-| 1 | 退役 v0.8 读取器（Hub `cloudfile_ext/acl/` 求解加载段；C `cf_acl_apply` 的存储加载段） | 运行时不再查询已删除的 `subject` 列；`cf_find_restricted_path` 等 RPC 契约不变 |
-| 2 | 旧 RPC / WebDAV / Hub / 管理授权 / 目录列举接入 v0.9 终判 | 各入口结论一致；**不得只移除旧 Hook**——那会让链回落到原生权限而放宽 |
-| 3 | 搬迁 v0.9 缺失的两项旧能力 | `acl-path-migration`（目录改名/移动后规则迁移，须在受控事务内同步 `revision`/生命周期）、`acl_rule_source`（规则源插件） |
-| 4 | 开关真值表与测试 | `CF_ENABLE_DIR_ACL` × `CLOUDFILE_AUTHORIZATION_ENABLED` 组合行为有明确预期，不再由两套读取器各自决定 |
-
-**验收要求**：新增场景测试须在同一部署配置下覆盖"v0.9 库 + 旧入口"的组合，尤其是
-无库权限但有目录共享、`none`/`invisible` 撤权、目录改名后规则保留、
-关闭旧读取器后**不能**回退到更宽的原生权限。
+- 旧 C/Go `/cloudfile/read` 及旧 ticket/publish RPC 注销，调用这些接口不再获得服务；不把旧凭据转译为新授权。原生 scoped download token 与现行 V2 编辑凭据保留。
+- 原生 Branch 锁、CAS、Guard 仍保留。C 无用户/路径证明的整库提交仍须通过操作范围门禁；有范围的 V2 编辑由现有 Go 路径处理。
+- Docker 不再生成旧 PolicyHost 设置或安装其共享库。显式启用已退役配置会报错；只清除生成器拥有的旧 gunicorn 区块，保留操作员配置。上线前应移除已退役环境变量。
+- 删除依赖退役表、RPC 或票据的专用旧夹具；当前 V2 用例继续作为验证依据。历史验收记录不计入当前交付。
+- 三仓需配套集成；此前 `partial`/503 语义要求 Hub 至少包含 `86a763cea`，本次还要求 Hub、Server、Docker 使用同批清理版本。构建发布时记录完整 SHA，不以历史绿色 CI 代替新版本验收。

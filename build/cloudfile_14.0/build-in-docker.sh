@@ -28,7 +28,7 @@ fi
 version=$1
 here=$(cd "$(dirname "$0")" && pwd)
 repo_root=$(cd "$here/../.." && pwd)
-receipt_tool="$repo_root/build/seafile_14.0/build_receipt.py"
+receipt_tool="$repo_root/build/cloudfile_14.0/build_receipt.py"
 receipt=${CF_BUILD_RECEIPT:-$here/build-receipt.json}
 if [[ -z ${CF_BUILD_RECEIPT:-} ]]; then
     resolve_args=(--manifest "$repo_root/release.yaml" --version "$version" --output "$receipt")
@@ -41,7 +41,7 @@ if [[ -z ${CF_BUILD_RECEIPT:-} ]]; then
 fi
 python3 "$receipt_tool" verify "$receipt" --recipe "$repo_root" --version "$version" >/dev/null
 receipt=$(cd "$(dirname "$receipt")" && pwd)/$(basename "$receipt")
-source "$repo_root/tools/build-platform.sh"
+source "$repo_root/tools/build/build-platform.sh"
 base_image=${CF_BASE_IMAGE:-$(python3 "$here/read-manifest.py" \
     "$repo_root/release.yaml" build_base_image)}
 
@@ -119,10 +119,31 @@ for v in CF_SERVER_REF CF_HUB_REF CF_SERVER_URL CF_HUB_URL \
          CF_SEAFOBJ_REF CF_SEAFDAV_REF CF_SEAFEVENTS_REF \
          CF_LIBSEARPC_REF CF_LIBEVHTP_REF CF_FORCE_REBUILD \
          CF_FORCE_FRONTEND_REBUILD CF_FORCE_DIST_REBUILD CF_BUILD_JOBS \
-         CF_BUILD_TARGET NODE_OPTIONS PIP_INDEX_URL npm_config_registry \
+         CF_BUILD_TARGET PIP_INDEX_URL npm_config_registry \
          npm_config_fetch_retries GOPROXY CF_NODE_VERSION CF_NODE_MIRROR; do
     [[ -n ${!v:-} ]] && env_args+=(-e "$v=${!v}")
 done
+
+# NODE_OPTIONS 是宿主机工具链最容易被注入的地方：APM 探针、nvm/npm 包装、
+# 编辑器调试器都会塞一个 --require/--import 的绝对路径。原样转发进容器后，
+# 容器内 Node 在启动阶段就 MODULE_NOT_FOUND，报错里的文件名与 CloudFile 毫无
+# 关系，看起来像构建坏了。只转发真正影响构建的堆/栈选项，其余明确丢弃并提示。
+if [[ -n ${NODE_OPTIONS:-} ]]; then
+    kept_node_options=()
+    read -r -a host_node_options <<< "$NODE_OPTIONS"
+    for option in "${host_node_options[@]}"; do
+        case $option in
+            --max-old-space-size=*|--max-semi-space-size=*|--stack-size=*)
+                kept_node_options+=("$option") ;;
+        esac
+    done
+    if [[ ${#kept_node_options[@]} -gt 0 ]]; then
+        env_args+=(-e "NODE_OPTIONS=${kept_node_options[*]}")
+    fi
+    if [[ ${#kept_node_options[@]} -ne ${#host_node_options[@]} ]]; then
+        echo "note: 宿主机 NODE_OPTIONS 含平台相关 preload，已不转发（容器内无该路径）" >&2
+    fi
+fi
 
 # 本地源码目录：把它挂进容器，否则容器里只有 cloudfile-docker。
 #

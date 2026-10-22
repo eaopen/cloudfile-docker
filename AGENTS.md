@@ -22,9 +22,39 @@ CloudFile Server 负责 C/Go 底层文件、权限与存储；Hub 负责 Web/API
 
 **版本与构建事实必须分开：**
 - `dev` 表示当前 CloudFile V2 **代码开发线**，不等于正在部署的镜像，也不等于已运行通过的组合。
-- `docs/history/storage-build-20261020/v2/source-set.json` 是其中一次固定 CE14/V2 源码快照；内部 `overlay_commit` 可能早于最新 `dev`，不能仅凭文件名推断为当前 HEAD。
-- 根目录 `release.yaml` 与 `build/cloudfile_14.0/` 是当前唯一构建实现；三仓分支在开工时经远端解析一次，生成 `build-receipt.json`，后续仅按收据里的 SHA 构建和验证。旧白名单组装已归档到 `docs/history/storage-build-20261020/`，不作构建入口。
+- 旧构建链的源码快照（`source-set.json`）不在本仓保留；其中 `overlay_commit` 可能早于最新 `dev`，不能仅凭文件名推断为当前 HEAD。
+- 根目录 `release.yaml` 与 `build/cloudfile_14.0/` 是当前唯一构建实现；三仓分支在开工时经远端解析一次，生成 `build-receipt.json`，后续仅按收据里的 SHA 构建和验证。旧白名单组装已移出本仓，不作构建入口。
 - 真正构建/交付时，须明确 Server、Hub、Docker 的具体 Commit SHA、上游 CE 源码基线与镜像 Digest；历史 V2-clean CI 成功不代表最新 `dev` 已联验。
+
+## 目录分工：上游原样，CloudFile 平行叠加
+
+本仓与上游 `haiwen/seafile-docker` 并行维护，规则与 CE / Pro 那对目录一致：**上游目录保持原样，CloudFile 只放在自己的同名目录里。** 这样同步上游时不会出现 delete/modify 冲突，也能一眼看出哪部分是我们的。
+
+| 层 | 上游（原样，不要改） | CloudFile（唯一新增点） |
+| --- | --- | --- |
+| 构建 | `build/seafile_14.0/`（`seafile-build.{sh,py}`） | `build/cloudfile_14.0/`（收据、组装、来源校验、`cloudfile-build.sh`） |
+| 镜像 | `image/seafile_14.0/`、`image/pro_seafile_*/` | `image/cloudfile_14.0/`（`Dockerfile.base` + `Dockerfile`） |
+| 启动脚本 | `scripts/scripts_14.0/` | `scripts/scripts_cf14.0/`（`cloudfile.py`、`cloudfile_schema.py`、`cloudfile_bootstrap.py`、`library_storage.py`） |
+| 服务配置 | `services/nginx.conf` 等 | 同文件内的 `# CloudFile:` 段（改动登记在 `docs/upstream-patches/`） |
+
+1. `build/seafile_14.0/` 只允许上游那两个文件；新增实现一律进 `build/cloudfile_14.0/`。`tests/test_source_manifest.py` 有断言守着这条。
+2. `scripts/scripts_14.0/bootstrap.py` 与上游逐字节一致；CloudFile 的配置生成全部在 `scripts/scripts_cf14.0/cloudfile_bootstrap.py`。保留在 `start.py` 里的只有标了 `CloudFile hook` 的三段：新增导入、`note_fresh_install()`、配置与建表调用。
+3. 镜像把两个 scripts 目录摊平到 `/scripts`，所以 `cloudfile_*` 按同级模块被 `start.py` import；改 import 前先确认两棵树都会被 COPY 进镜像。
+4. 需要改上游文件时先问"能不能放进 cloudfile 目录"；确实不能（例如 nginx 的 `location` 只能写在 server 块里）才改，并登记到 `docs/upstream-patches/cloudfile-docker.txt`。
+5. nginx 兼容路径：`/cfile/` 重写到 `/seafile/`，`/cfhttp` 与 `/seafhttp` 同源（都去前缀转发到 8082）。两个别名都在 `services/seafile.nginx.conf` 的 `# CloudFile:` 段里，新增别名时保持同一形状。
+
+## tools / tests 的固定分区
+
+| 目录 | 放什么 | 不放什么 |
+| --- | --- | --- |
+| `tools/gates/` | 门禁：本地 preflight、三仓契约检查、开关清单一致性、提交前静态检查 | 构建、运维、迁移脚本 |
+| `tools/build/` | 构建与发布辅助：平台规范化、发行包校验、历史维护发布 | 日常门禁 |
+| `tools/ops/` | 运维：SSO 目录健康报表、存储类配置、自动本地存储作业 | 测试 |
+| `tools/migrate/` | 迁移与导入：离线快照恢复、单向导入、工作树准备 | 常规构建 |
+| `tests/e2e/smoke.py` | **默认** E2E：起得来 + 主路径通 | 能力矩阵 |
+| `tests/e2e/full/` | 能力矩阵与扩展点基线，**参考用**，不进默认门禁 | 冒烟 |
+
+新增脚本先选目录再写，不要往 `tools/` 根上堆。
 
 ## Agent 镜像构建与发布操作规程（执行前必读）
 
@@ -41,9 +71,9 @@ CloudFile Server 负责 C/Go 底层文件、权限与存储；Hub 负责 Web/API
 | CI 三仓完整联验 | 手动运行 `.github/workflows/prod.yml`（`CloudFile receipt build`） | `workflow_dispatch`；当前是完整编译 + 隔离挂载测试，不是自动发布流水线 |
 | 推送 Registry、更新 Compose / DEV / PROD | 必须另有明确发布任务及目标镜像 / Registry / 环境 | **构建成功不等于已推送或已部署**；此仓当前 workflow 不自动 push / deploy |
 
-- `build/seafile_14.0/build-in-docker.sh` 与 `build/seafile_14.0/build-local-image.sh` 仅为转发到 `cloudfile_14.0` 的兼容包装，勿据此选择旧版构建方案。`docs/history/` 下脚本一律不可作为当前构建入口；`image/seafile_14.0/docker-build-push.sh`、`image/pro_seafile_*` 等上游/历史 push 入口不用于 CloudFile V2。
-- **`tools/release-dev162.sh` 当前显式只允许 `maintenance/v0.9/*` 历史维护分支，不支持 V2 `dev` 发布。** 即使旧 `docs/deployment.md` 仍有使用示例，也不得借此脚本发布当前 V2；不要删除脚本的保护条件来绕过限制。
-- `docs/docker-build.md` 中的 `CLOUDFILE_RUNTIME_BASE` / `cloudfile/runtime-base:*` 属于与当前入口不一致的说明；当前镜像链以 `release.yaml` 的 `build_base_image`（目前 `cloudfile-build-base:ce14-v2`）和 `CF_BASE_IMAGE` 为准。不要为了适配过时说明增加第二套 Runtime Base。
+- `build/cloudfile_14.0/build-in-docker.sh` 是唯一构建入口，`build/cloudfile_14.0/build-local-image.sh` 转发到 `image/cloudfile_14.0/docker-build.sh`。上游 `build/seafile_14.0/` 已还原为上游原样，不承担 CloudFile 构建。历史归档脚本一律不可作为当前构建入口；`image/seafile_14.0/docker-build-push.sh`、`image/pro_seafile_*` 等上游/历史 push 入口不用于 CloudFile V2。
+- **`tools/build/release-dev162.sh` 当前显式只允许 `maintenance/v0.9/*` 历史维护分支，不支持 V2 `dev` 发布。** 即使旧部署文档仍有使用示例，也不得借此脚本发布当前 V2；不要删除脚本的保护条件来绕过限制。
+- 历史上的 `CLOUDFILE_RUNTIME_BASE` / `cloudfile/runtime-base:*` 说明与当前入口不一致；当前镜像链以 `release.yaml` 的 `build_base_image`（目前 `cloudfile-build-base:ce14-v2`）和 `CF_BASE_IMAGE` 为准。不要增加第二套 Runtime Base。
 
 ### 已有依赖层和缓存如何复用（默认必须复用）
 
@@ -69,11 +99,11 @@ VERSION=14.0.8-storage-test
 CF_BUILD_JOBS=2 bash build/cloudfile_14.0/build-in-docker.sh "$VERSION"
 
 # 2. 验证构建产物，使用当前脚本离线组装镜像
-bash tools/verify-release-artifact.sh "build/cloudfile_14.0/seafile-server-$VERSION"
+bash tools/build/verify-release-artifact.sh "build/cloudfile_14.0/seafile-server-$VERSION"
 bash image/cloudfile_14.0/docker-build.sh "$VERSION"
 
 # 3. 核对来源收据、架构和镜像 ID，再报告结果
-python3 build/seafile_14.0/build_receipt.py verify \
+python3 build/cloudfile_14.0/build_receipt.py verify \
   build/cloudfile_14.0/build-receipt.json --recipe . --version "$VERSION"
 docker image inspect "cloudfile/cloudfile:$VERSION" \
   --format '{{.Id}} {{.Architecture}}'
@@ -90,11 +120,11 @@ docker image inspect "cloudfile/cloudfile:$VERSION" \
 - 报告必须区分：①代码 SHA 已合入；②构建收据/受影响测试通过；③本地镜像 ID；④Registry digest（如果确实推送）；⑤环境镜像和运行验收（如果确实部署）。绝不把 CI 绿色、缓存命中或本地 `docker image inspect` 写成已经部署。
 - 若报缺基础镜像、架构错、receipt 不一致、测试失败或发行包不完整：**停在出错阶段**，报告现有缓存/镜像状态与具体错误，修复根因后仅重跑受影响阶段；不删除历史数据、不全量 prune、不切旧入口、不绕过 patch/测试/来源检查。
 
-更多技术细节以当前 [构建收据和集成验证](docs/storage-build.md)、[构建入口](build/cloudfile_14.0/build-in-docker.sh)、[镜像入口](image/cloudfile_14.0/docker-build.sh)、[当前 CI](.github/workflows/prod.yml) 为准。
+更多技术细节以构建入口 `build/cloudfile_14.0/build-in-docker.sh`、镜像入口 `image/cloudfile_14.0/docker-build.sh`、当前 CI `.github/workflows/prod.yml` 与 `CLOUDFILE.md` 为准。
 
 ## 不扩大改动范围
 
-优先复用 Seafile CE14 的原生行为与官方依赖，不因同步上游或小修引入平行框架；原生补丁及不可绕过的安全逻辑须记录在 [docs/upstream-patches/](docs/upstream-patches/)。
+优先复用 Seafile CE14 的原生行为与官方依赖，不因同步上游或小修引入平行框架；原生补丁及不可绕过的安全逻辑须记录在 `docs/upstream-patches/`。
 
 V2 内置 ACL、CE 原生 Tag 和已安装 Guard 的 Checkout 不应重新受旧版 Feature Flag 控制；可选 Meilisearch、SSO、Office 等外部组件通过真正的连接与依赖判断。不要恢复旧 `v2_acl_enabled` 或把 CloudFile 设计成“所有开关关闭就等于原生 CE”。
 
@@ -126,5 +156,13 @@ V2 内置 ACL、CE 原生 Tag 和已安装 Guard 的 Checkout 不应重新受旧
 
 ## 轻量跨仓运行表检查
 
-- `tools/check-sql-contracts.py` 当前只检查 4+1 DDL 与 Server/Hub/Docker/可选 Agent2 **可运行** SQL 依赖，不再生成/更新旧 001–042 checksum 台账；DEV 数据直接舍弃重建，不提供历史数据修复工具。
-- `tools/run-checks.sh` 不再将历史 001–042 数据转换、旧四表 SQL 包作为日常产品测试。禁止每次小改动启动全量编译。
+- `tools/gates/check-sql-contracts.py` 当前只检查 4+1 DDL 与 Server/Hub/Docker/可选 Agent2 **可运行** SQL 依赖，不再生成/更新旧 001–042 checksum 台账；DEV 数据直接舍弃重建，不提供历史数据修复工具。
+- `tools/gates/run-checks.sh` 不再将历史 001–042 数据转换、旧四表 SQL 包作为日常产品测试。禁止每次小改动启动全量编译。
+
+## 现行 V2 权限契约：禁止“托管库”复活（2026-10-21）
+
+- `dev` **不存在托管库/非托管库两种类别**。任何 `cf_dir_acl` 行只代表其目标路径和主体的显式规则，不能被用于判定整库被托管、整库访问关闭、旧入口一律拒绝或重新进入单独的库级安全模式。
+- 唯一权限链：Seafile CE 原生库资格 + Hub `Authority.effective()` 对当前身份和实际路径的 ACL/共享目录结果 + C/Go 真实文件与最终 Commit 终判。无整库资格但有 `share_mode=true` 的用户只从共享目录根进入，不得开放库根、父级或兄弟目录。
+- **坚决禁止**恢复 `cf_managed_library`、`cf_managed_library_share`、`cf_library_share_revision`、`checkLegacyLibrary`、`cf_policy_check_legacy_library`、`managed_library_guard`、`allow_legacy_managed_reads`，也禁止恢复用于断言“库有任意 ACL 行就应全库拒绝”的测试。
+- 没有可信当前用户/路径的整库同步或无范围票据，允许因该**操作缺乏授权证明**而拒绝；这不是库分类。任何有路径证明的 Web/API/Agent/下载/上传必须按实际目标裁决，不能用无关目录的 ACL 拒绝整个库。策略异常不回退宽权限。
+- 当前文档与测试应以 V2 权限终判契约及五张扩展表为准；历史文档只用于追溯，不得作为实施依据。跨仓变更必须维护防复活的源码扫描和正反权限用例。

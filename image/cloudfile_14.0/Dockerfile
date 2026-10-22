@@ -7,7 +7,13 @@ ENV SEAFILE_SERVER=seafile-server SEAFILE_VERSION=$server_version
 # application image performs no network-dependent package installation.
 
 # Scripts
+#
+# Two trees, same layout as upstream's CE/Pro pair: scripts_14.0 is upstream's
+# own (byte-identical, only start.py carries a marked CloudFile hook) and
+# scripts_cf14.0 holds everything CloudFile adds. Copied into the same /scripts
+# directory because start.py imports cloudfile* as plain siblings.
 COPY scripts/scripts_14.0 /scripts
+COPY scripts/scripts_cf14.0 /scripts
 COPY services /services
 
 RUN mkdir -p /etc/ldap/ && echo "TLS_REQCERT     allow" >> /etc/ldap/ldap.conf && \
@@ -22,7 +28,7 @@ RUN mkdir -p /etc/ldap/ && echo "TLS_REQCERT     allow" >> /etc/ldap/ldap.conf &
     mv /services/nginx.conf /etc/nginx/nginx.conf && \
     mv /services/nginx.sh /etc/service/nginx/run && \
     chmod +x /etc/service/nginx/run && \
-    mv /services/seafile.nginx.conf /etc/nginx/sites-enabled/seafile.nginx.conf
+    mv /services/cloudfile.nginx.conf /etc/nginx/sites-enabled/cloudfile.nginx.conf
 ENV MARIADB_TLS_DISABLE_PEER_VERIFICATION=1
 
 # CloudFile

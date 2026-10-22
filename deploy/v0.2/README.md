@@ -1,5 +1,7 @@
 # v0.2 部署入口配置要求
 
+> **归档的 v0.2 部署手册**。不属于当前 V2 `dev` 的部署、安全或权限规则；历史托管库登记、旧表和旧功能开关均不得恢复。当前依据：`docs/permission-adjudication-contract.md`、`docs/permission-tables.md` 与根 `AGENTS.md`。
+
 本文件仅提出部署配置要求。当前只验证功能，不验证部署环境；代理、证书、TLS 部署、
 网络隔离、白名单逐路径覆盖及侧车健康均不作为当前 v0.2 功能验收门禁。
 现有 profile 是可参考的配置示例，可由项目已有反向代理实现，不要求增加独立侧车。
@@ -11,7 +13,7 @@
 管理及 CF02-07 离线导入只从维护私网进行，不向业务用户公开维护入口。
 
 部署前在当前后端完成已有 OIDC/policy/worker 配置，固定回调 HTTPS 域名并启用
-受管库标记与 ACL。服务内部 Nginx/Gunicorn/native 保持既有本地代理信任链；
+当前 V2 路径 ACL（历史部署不同）。服务内部 Nginx/Gunicorn/native 保持既有本地代理信任链；
 不要把 Gunicorn forwarded_allow_ips 或 native trusted_tls_proxies 设为任意来源。
 本入口终止 TLS 并覆盖来源/协议头，后端只能从可信私网访问。
 

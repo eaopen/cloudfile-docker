@@ -2,7 +2,8 @@
 #
 # Build a CloudFile server distribution.
 #
-# Derived from build/seafile_14.0/seafile-build.sh with two changes:
+# Derived from upstream build/seafile_14.0/seafile-build.sh, which is kept
+# byte-identical to seafile-docker. Two changes:
 #
 #  1. seafile-server and seahub come from the CloudFile forks.
 #  2. Every component is pinned by ref read from release.yaml instead of by a
@@ -56,7 +57,7 @@ function manifest_get_optional() {
     python3 "${current_dir}/read-manifest.py" "$manifest" "$1" 2>/dev/null || true
 }
 
-receipt_tool="$repo_root/build/seafile_14.0/build_receipt.py"
+receipt_tool="$repo_root/build/cloudfile_14.0/build_receipt.py"
 receipt=${CF_BUILD_RECEIPT:-$current_dir/build-receipt.json}
 if [[ -z ${CF_BUILD_RECEIPT:-} ]]; then
     args=(--manifest "$manifest" --version "$version" --output "$receipt")
@@ -69,9 +70,9 @@ if [[ -z ${CF_BUILD_RECEIPT:-} ]]; then
 fi
 export CF_BUILD_RECEIPT="$receipt"
 python3 "$receipt_tool" verify "$receipt" --version "$version" >/dev/null
-locked_manifest="$repo_root/build/seafile_14.0/release.json"
+locked_manifest="$repo_root/build/cloudfile_14.0/release.json"
 python3 "$receipt_tool" lock "$receipt" "$locked_manifest"
-lock_reader="$repo_root/build/seafile_14.0/source_manifest.py"
+lock_reader="$repo_root/build/cloudfile_14.0/source_manifest.py"
 cloudfile_server_url=${CF_SERVER_URL:-$(python3 "$lock_reader" "$receipt" url seafile-server)}
 cloudfile_hub_url=${CF_HUB_URL:-$(python3 "$lock_reader" "$receipt" url seahub)}
 cloudfile_server_ref=$(python3 "$lock_reader" "$receipt" ref seafile-server)
@@ -431,7 +432,7 @@ function fetch() {
     python3 - "$receipt" "$code_path" "$current_dir/captured-sources.json" "$repo_root" <<'PY_CAPTURE'
 import json, sys
 from pathlib import Path
-sys.path.insert(0, str(Path(sys.argv[4]) / 'build/seafile_14.0'))
+sys.path.insert(0, str(Path(sys.argv[4]) / 'build/cloudfile_14.0'))
 from package_provenance import capture_sources
 Path(sys.argv[3]).write_text(json.dumps(capture_sources(sys.argv[1], sys.argv[2])))
 PY_CAPTURE
@@ -483,7 +484,7 @@ function write_build_info() {
     # earlier recipe commit. Rewriting build-info invalidates that record;
     # the image builder must verify and stamp the current bytes again.
     if [[ -e "${package_dir}/cloudfile-build.json" || -L "${package_dir}/cloudfile-build.json" ]]; then
-        python3 "$repo_root/build/seafile_14.0/package_provenance.py" "$package_dir" "$receipt" >/dev/null
+        python3 "$repo_root/build/cloudfile_14.0/package_provenance.py" "$package_dir" "$receipt" >/dev/null
     fi
     rm -f "${package_dir}/cloudfile-build.json"
     {
@@ -498,7 +499,7 @@ function write_build_info() {
     python3 - "$package_dir" "$receipt" "$current_dir/captured-sources.json" "$repo_root" <<'PY_STAMP'
 import json, sys
 from pathlib import Path
-sys.path.insert(0, str(Path(sys.argv[4]) / 'build/seafile_14.0'))
+sys.path.insert(0, str(Path(sys.argv[4]) / 'build/cloudfile_14.0'))
 from package_provenance import write_provenance
 write_provenance(sys.argv[1], json.loads(Path(sys.argv[3]).read_text()), sys.argv[2])
 PY_STAMP

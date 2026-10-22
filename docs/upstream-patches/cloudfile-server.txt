@@ -1,7 +1,7 @@
 # cloudfile-server 允许修改的上游文件。
 #
 # 这份清单是 fork 维护成本的度量：新增文件几乎零成本，改上游文件则每次同步
-# 都要再付一次。tools/check-upstream-patches.sh 会强制它不被悄悄变长。
+# 都要再付一次。tools/gates/check-upstream-patches.sh 会强制它不被悄悄变长。
 #
 # 往这里加一行之前先问：能不能改成新增文件？加行时必须同步更新
 # BRANCHING.md 的说明，并在 PR 里写清为什么没有别的办法。
@@ -64,5 +64,16 @@ common/user-mgr.h
 fileserver/fileserver.go
 server/gc/seafile-session.c
 
-# 2026-10-21：cf-lock.c/h 与 cloudfile-policy.c 是独立 CloudFile 文件。
+# 2026-10-21：cf-lock.c/h 保留当前 Guard；cloudfile-policy.c 旧独立引擎与死函数已删除。
 # C 普通写入/锁屏障使用 V2 单 Guard，Checkout 关闭不查询锁；不改原生调用点。
+
+# 2026-10-21 权限收敛修复：common/branch-mgr.c：最终 ACL 检查移至原生 Branch 锁与旧 head 校验之后；fileserver/fileop.go：拒绝未绑定父目录的 block upload token，保留 CE 目录规范化行为。
+
+# 2026-10-21 七类权限清理：注销旧票据/PolicyHost/独立 ACL 引擎；现行 Authority、CE 入口、V2 编辑与 Guard/CAS 保留。
+common/branch-mgr.h
+server/web-accesstoken-mgr.c
+server/web-accesstoken-mgr.h
+
+# 2026-10-21 复检修复：common/branch-mgr.c：add/del/update 三个 MySQL 分支写入口先锁 Branch(master)，再执行现有最终 ACL 校验，与 ACLStore 写入锁顺序一致；允许原生新建库尚无 master。
+
+# 2026-10-21 VirtualRepo 兼容：common/cf-v2-acl.c 公开链接复用 CE origin/path 映射；原生转存不再仅因虚拟库类型拒绝。缺少范围证明的受 ACL 限制操作仍保留现有边界。server/Makefile.am 删除已退役头文件引用。

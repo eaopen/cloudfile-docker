@@ -6,7 +6,7 @@ import subprocess
 import sys
 import unittest
 
-BUILD = Path(__file__).resolve().parents[1] / 'build/seafile_14.0'
+BUILD = Path(__file__).resolve().parents[1] / 'build/cloudfile_14.0'
 sys.path.insert(0, str(BUILD))
 from assemble_application import assemble
 from package_provenance import preserved_digest, verify_package

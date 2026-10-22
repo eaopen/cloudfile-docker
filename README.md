@@ -8,15 +8,17 @@ CloudFile Docker 负责三仓源码组装、镜像构建、部署配置、跨仓
 
 ## 日常开发
 
-只使用简单规则：`dev` 为主线，新功能 `feat/<功能>`，问题修复 `fix/<问题>`，文档 `docs/<主题>`，旧版本归 `archive/<历史名称>`。**不需要增加 `v2/`、日期或任务编号作为强制前缀。** 跨仓任务可同名，但只在涉及修改的仓库建立分支。详见 [BRANCHING.md](BRANCHING.md) 和 [docs/BRANCHES.md](docs/BRANCHES.md)。
+只使用简单规则：`dev` 为主线，新功能 `feat/<功能>`，问题修复 `fix/<问题>`，文档 `docs/<主题>`，旧版本归 `archive/<历史名称>`。**不需要增加 `v2/`、日期或任务编号作为强制前缀。** 跨仓任务可同名，但只在涉及修改的仓库建立分支。详见 [BRANCHING.md](BRANCHING.md)。
 
 **V2 当前源码 ≠ 已验证的源码组合 ≠ 已打包镜像 ≠ 已部署环境。** 跨仓联验和交付时须记录 Server、Hub、Docker 的固定 SHA 及镜像 Digest。
 
 ## V2 构建与旧版入口的区别
 
-- [当前完整构建与收据](docs/storage-build.md)：从三仓 `dev` 解析固定 SHA 后构建，旧白名单组装仅在历史目录保留。
-- 根目录 [`release.yaml`](release.yaml) 和 `build/cloudfile_14.0/` 保留较早版本的发布和 CE14 扩展构建方式；**不要未经核实就直接将它们用于当前 V2 `dev` 构建或部署**。
-- [历史技术文档](docs/history/README.md) 仅用于追溯旧版行为。实际 V2 的授权、Tag、Checkout 等内置能力以当前 V2 代码/契约为准，不恢复旧 `CF_ENABLE_*` 参数。
+- 当前完整构建与收据：从三仓 `dev` 解析固定 SHA 后构建，入口见 `build/cloudfile_14.0/build-in-docker.sh` 与根目录 `release.yaml`。
+- 目录按"上游原样 + CloudFile 平行目录"组织：`build/seafile_14.0`、`image/seafile_14.0`、`scripts/scripts_14.0` 保持上游原样，CloudFile 的实现分别在 `build/cloudfile_14.0`、`image/cloudfile_14.0`、`scripts/scripts_cf14.0`。规则见 [AGENTS.md](AGENTS.md) 的「目录分工」。
+- 旧版行为仅作追溯，相关文稿不在本仓保留。实际 V2 的授权、Tag、Checkout 等内置能力以当前 V2 代码/契约为准，不恢复旧 `CF_ENABLE_*` 参数。
+
+**测试分两层**：默认 `./tools/gates/verify-local.sh e2e` 只跑冒烟；全量能力矩阵在 `tests/e2e/full/`，用 `e2e-full` 按需触发，属参考而非默认门禁。
 
 **不因每次小改动重新编译。** 文档修改无需测试和构建；代码只针对受影响模块做必要检查。需要镜像或三仓真实运行验收时，在明确的集成或发布任务中选定固定 SHA，再按实际入口操作；不要把旧 CI 的成功误称为最新 V2 已验收。
 
@@ -28,6 +30,6 @@ CloudFile Docker 负责三仓源码组装、镜像构建、部署配置、跨仓
 | [cloudfile-hub](https://github.com/eaopen/cloudfile-hub) | Web/API、SSO、目录/文件访问、可选增强能力 |
 | [cloudfile-docker](https://github.com/eaopen/cloudfile-docker) | 构建、运行、部署与跨仓版本组合 |
 
-更多资料：[开发约束](AGENTS.md) · [部署文档](docs/deployment.md) · [完整构建](docs/storage-build.md) · [上游改动清单](docs/upstream-patches/)。
+更多资料：[开发约束](AGENTS.md) · [分支规则](BRANCHING.md) · [部署入口](deploy/compose/README.md) · [文档入口](docs/README.md) · [上游改动清单](docs/upstream-patches/)。
 
 本仓保留原上游 Seafile 组件的许可证及各自授权；请核对 [LICENSE.txt](LICENSE.txt) 和具体组件的许可证。

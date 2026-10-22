@@ -69,6 +69,12 @@ def run(image, native_regression=False, extensions_regression=False, identity_ru
         cf_import_runtime=False):
     if not __debug__:
         raise RuntimeError('Acceptance requires Python assertions enabled')
+    if identity_runtime:
+        raise RuntimeError('Retired identity-runtime fixture is not a V2 acceptance test')
+    if native_regression or extensions_regression:
+        raise RuntimeError(
+            'Retired CloudFile extension regression cannot run on V2; '
+            'use cloudfile-server/tests/test_cf_v2_acl_native.py with matched C/Go binaries and Hub source')
     prefix = 'cf02-smoke-' + secrets.token_hex(6)
     network = prefix + '-net'
     containers = []
@@ -158,24 +164,8 @@ def run(image, native_regression=False, extensions_regression=False, identity_ru
         for key in ('auth.oidc', 'search.resources', 'file.lock'):
             assert not caps[key]['enabled']
         checks.append(stage)
-        stage = 'schema'
-        schema_code = '''
-import os, sys, pymysql
-package = '/opt/seafile/seafile-server-latest'
-sys.path.insert(0, package + '/seahub')
-from cloudfile_extensions.schema.runner import SchemaRunner
-db = pymysql.connect(host='db', user=os.environ['SEAFILE_MYSQL_DB_USER'],
-    password=os.environ['SEAFILE_MYSQL_DB_PASSWORD'], database='seafile_db',
-    autocommit=True, charset='utf8mb4')
-try:
-    runner = SchemaRunner(db)
-    runner.apply()
-    runner.require_current()
-finally:
-    db.close()
-'''
-        docker('exec', app, 'python3', '-c', schema_code, timeout=90)
-        checks.append(stage)
+        # The V2 schema is installed/checked by cloudfile_schema.py as five
+        # tables. Do not re-run the deleted 001–042 legacy SchemaRunner.
         stage = 'local_login'
         response = request('/api2/auth-token/', 'POST', urlencode({
             'username': 'admin@smoke.invalid', 'password': password}).encode(),
@@ -192,19 +182,7 @@ finally:
         base = '/api2/repos/' + repo
         checks.append(stage)
         if annotations_runtime:
-            stage = 'annotations_native_probe'
-            # Reuse locked CE14 assets, overlay only the new Python adapter.
-            hub = Path(__file__).resolve().parents[2] / 'cloudfile-hub'
-            destination = app + ':/opt/seafile/seafile-server-latest/seahub/cloudfile_extensions/resources/native.py'
-            docker('cp', str(hub / 'cloudfile_extensions/resources/native.py'), destination)
-            docker('cp', str(Path(__file__).with_name('resource_annotations_runtime.py')),
-                app + ':/tmp/resource_annotations_runtime.py')
-            probe = json.loads(docker('exec', app, 'python3', '/tmp/resource_annotations_runtime.py', repo, timeout=30))
-            if probe.get('result') != 'passed':
-                print(json.dumps(probe))
-                raise RuntimeError('annotations_probe_failed')
-            return dict(result='passed', scope='targeted native annotations development overlay',
-                image_id=metadata['Id'], checks=checks + [stage], annotations=probe)
+            raise RuntimeError("Retired annotations overlay has no V2 fixture.")
         if migration_runtime:
             stage = 'migration_runtime'
             from migration_runtime import exercise
@@ -253,250 +231,8 @@ finally:
             status = request(base + '/file/?p=/probe.txt')['status']
             if status not in (401, 403):
                 raise RuntimeError('anonymous_file_status=' + str(status))
-            status = request('/seafhttp/cloudfile/read')['status']
-            if status != 401:
-                raise RuntimeError('secure_read_status=' + str(status))
             checks.append(stage)
-        if native_regression or extensions_regression:
-            stage = 'native_actor_regression'
-            code = '''
-import io, json, os, unittest
-package = '/opt/seafile/seafile-server-latest'
-os.chdir(package + '/seahub')
-import sys
-sys.path[:0] = [package + '/seahub', package + '/seahub/thirdpart',
-               package + '/seafile/lib/python3/site-packages', package + '/pro/python']
-os.environ.update(DJANGO_SETTINGS_MODULE='seahub.settings', SEAHUB_DIR=package + '/seahub',
-    SEAFES_DIR=package + '/pro/python',
-    SEAFILE_DATA_DIR='/shared/seafile/seafile-data',
-    SEAFILE_CENTRAL_CONF_DIR='/shared/seafile/conf',
-    SEAFILE_RPC_PIPE_PATH=package + '/runtime')
-import django
-django.setup()
-suite = unittest.defaultTestLoader.loadTestsFromName(
-    'cloudfile_extensions.tests.test_download_actor')
-result = unittest.TextTestRunner(stream=io.StringIO()).run(suite)
-if not result.wasSuccessful() or result.skipped or result.testsRun != 1:
-    raise SystemExit(1)
-print(json.dumps({'tests': result.testsRun, 'skipped': len(result.skipped)}))
-'''
-            code = ('import json, traceback\ntry:\n' + textwrap.indent(code, '    ') +
-                    '\nexcept Exception as error:\n'
-                    '    print(json.dumps({"error_type": type(error).__name__, '
-                    '"frames": [(item.filename.rsplit("/", 2)[-2:], item.name, item.lineno) for item in traceback.extract_tb(error.__traceback__)]}))\n')
-            native = json.loads(docker('exec', app, 'python3', '-c', code, timeout=60))
-            if 'error_type' in native:
-                raise RuntimeError('native_import=' + json.dumps(native))
-            checks.append(stage)
-        if extensions_regression:
-            stage = 'extensions_regression'
-            version = labels.get('com.cloudfile.seafile.version', '')
-            if not re.fullmatch(r'\d+\.\d+\.\d+', version):
-                raise RuntimeError('Invalid CE version label')
-            fixture_dir = '/opt/seafile/seafile-server-latest/eap-cloudfile/contracts'
-            docker('exec', app, 'mkdir', '-p', fixture_dir)
-            contracts = Path(__file__).resolve().parents[2] / 'eap-cloudfile/contracts'
-            for name in ('acceptance-vectors.json', 'schema-examples.json'):
-                docker('cp', str(contracts / name), app + ':' + fixture_dir + '/' + name)
-            # The editing regression reads production C SQL literals from paths
-            # relative to the installed package root, so the sibling server
-            # checkout has to sit next to the packaged extensions in the container.
-            server = Path(__file__).resolve().parents[2] / 'cloudfile-server'
-            if not server.is_dir():
-                raise RuntimeError('cloudfile-server checkout is required at ' + str(server))
-            docker('cp', str(server), app + ':/opt/seafile/seafile-server-latest/cloudfile-server')
-            # The existing SQL tests create/drop random schemas as root. Give
-            # them their own server, never the initialized application's DB.
-            start('test-db', 'test-db', 'mysql:8', {'MYSQL_ALLOW_EMPTY_PASSWORD': 'yes'},
-                  ['/var/lib/mysql:rw,size=1g'])
-            start('test-redis', 'test-redis', 'redis:7-alpine', {}, ['/data:rw,size=64m'])
-            # Part of the suite is pytest-style and the runtime image ships no
-            # pytest, so the gate brings its own runner. The acceptance network is
-            # internal, so the index is only reachable while the app is attached to
-            # the default bridge; the suite itself runs back on the internal net.
-            pip_index = os.environ.get('CF_GATE_PIP_INDEX_URL', 'https://pypi.tuna.tsinghua.edu.cn/simple')
-            docker('network', 'connect', 'bridge', app)
-            try:
-                docker('exec', app, 'pip3', 'install', '-q', '--disable-pip-version-check',
-                       '-i', pip_index, 'pytest')
-            finally:
-                docker('network', 'disconnect', 'bridge', app)
-            code = r'''
-import contextlib, importlib.util, io, json, os, re, sys, time
-from pathlib import Path
-import xml.etree.ElementTree as ET
-import pytest
-package = '/opt/seafile/seafile-server-latest'
-os.chdir(package + '/seahub')
-sys.path[:0] = [package + '/seahub', package + '/seahub/thirdpart',
-               package + '/seafile/lib/python3/site-packages', package + '/pro/python']
-os.environ.update(SEAHUB_DIR=package + '/seahub', SEAFES_DIR=package + '/pro/python',
-    PYTHONPATH=':'.join(sys.path[:4]),
-    SEAFILE_DATA_DIR='/shared/seafile/seafile-data',
-    SEAFILE_CENTRAL_CONF_DIR='/shared/seafile/conf',
-    CF_TEST_DB_HOST='test-db', CF_TEST_DB_PORT='3306',
-    CF_TEST_REDIS_HOST='test-redis', CF_TEST_REDIS_PORT='6379',
-    CF_TEST_ACL_LIBRARY=package + '/seafile/lib/libcloudfile_acl.so.1')
-import pymysql
-deadline = time.monotonic() + 120
-while True:
-    try:
-        connection = pymysql.connect(host='test-db', user='root', password='', port=3306)
-        connection.close()
-        break
-    except pymysql.MySQLError:
-        if time.monotonic() > deadline:
-            raise SystemExit(1)
-        time.sleep(2)
-# This actor needs actual native Django apps; it already ran in its own
-# configured process. HTTP unit fixtures intentionally use minimal settings.
-actor_id = 'cloudfile_extensions.tests.test_download_actor.DownloadActorTests.test_native_type_and_session_identity_required_before_reload'
-# pytest node ids are '::'-separated and relative to the rootdir, so the dotted
-# unittest id never matches --deselect; derive the node id pytest will use.
-module_name, class_name, method_name = actor_id.rsplit('.', 2)
-actor_origin = Path(importlib.util.find_spec(module_name).origin).resolve()
-actor_node = '{}::{}::{}'.format(actor_origin.relative_to(Path.cwd()).as_posix(),
-                                 class_name, method_name)
-junit_path = '/tmp/cf-extensions-junit.xml'
-# pytest-django would impose its own settings/DB handling; the unittest path had
-# none. Collection errors must fail the gate, but they must not stop the suite.
-# Unit fixtures deliberately keep capturing off, so route all runner chatter away
-# from stdout: only the JSON report below may be printed there.
-with contextlib.redirect_stdout(io.StringIO()):
-    pytest.main(['cloudfile_extensions/tests', '--rootdir=' + os.getcwd(), '-p', 'no:django',
-        '--continue-on-collection-errors', '--deselect', actor_node,
-        '--junitxml=' + junit_path])
-cases = [case for suite in ET.parse(junit_path).getroot() for case in suite
-         if case.tag == 'testcase']
-def test_id(case):
-    classname = case.get('classname') or ''
-    name = case.get('name') or ''
-    return classname + '.' + name if classname else name
-def frames(text):
-    matches = re.findall(r'^\s*(?:E\s+)?([^\s:][^\s]*\.py):([0-9]+): (.+)$', text, re.M)
-    if not matches:
-        matches = re.findall(r'File "([^"]+)", line ([0-9]+), in (.+)', text)
-    return [(path.rsplit('/', 1)[-1], int(line), name) for path, line, name in matches[-3:]]
-def failure_shape(items):
-    shape = {}
-    for case, entry in items:
-        text = entry.text or ''
-        lines = [line.rstrip() for line in text.splitlines() if line.strip()]
-        last = lines[-1].strip() if lines else ''
-        summary = (entry.get('message') or '').strip()
-        if not summary or summary == 'collection failure':
-            summary = re.sub(r'^E\s+', '', last)
-        shape[test_id(case)] = {'type': summary.split(':', 1)[0].strip(),
-            'reason': last[:240] if 'Model class ' in last else '',
-            'frames': frames(text)}
-    return shape
-failed = [(case, case.find('failure')) for case in cases if case.find('failure') is not None]
-errored = [(case, case.find('error')) for case in cases if case.find('error') is not None]
-report = {'tests': len(cases), 'native_tests_separate': 1,
-          'skipped': sum(1 for case in cases if case.find('skipped') is not None),
-          'failures': [test_id(case) for case, _ in failed],
-          'errors': [test_id(case) for case, _ in errored],
-          'diagnostics': {**failure_shape(failed), **failure_shape(errored)}}
-# A wrong --deselect or an empty collection shrinks the suite without any
-# failure; both have to fail the gate instead of passing silently.
-if any(test_id(case) == actor_id for case in cases):
-    report['errors'].append('gate.extensions_regression.actor_not_deselected:' + actor_id)
-if not cases:
-    report['errors'].append('gate.extensions_regression.no_tests_collected')
-print(json.dumps(report))
-'''
-            regression = json.loads(docker('exec', app, 'python3', '-c', code, timeout=600))
-            if regression['failures'] or regression['errors'] or regression['skipped']:
-                # Test IDs are safe; do not expose exception bodies or tokens.
-                raise RuntimeError('regression_tests=' + json.dumps(regression))
-            checks.append(stage)
-        if identity_runtime:
-            stage = 'identity_runtime'
-            start('identity-redis', 'identity-redis', 'redis:7-alpine', {}, ['/data:rw,size=64m'])
-            search_key = ''
-            if identity_scenario == 'search':
-                search_key = secrets.token_hex(32)
-                start('meilisearch', 'meilisearch', 'getmeili/meilisearch:v1.53.2',
-                    {'MEILI_MASTER_KEY': search_key, 'MEILI_ENV': 'production', 'MEILI_NO_ANALYTICS': 'true'},
-                    ['/meili_data:rw,size=256m'])
-            if identity_scenario in {'search', 'audit'} and development_worker_overlay:
-                hub = Path(__file__).resolve().parents[2] / 'cloudfile-hub'
-                docker('cp', str(hub / 'cloudfile_extensions') + '/.',
-                    app + ':/opt/seafile/seafile-server-latest/seahub/cloudfile_extensions/')
-            fixture = Path(__file__).with_name('probe_identity_runtime.py')
-            docker('cp', str(fixture), app + ':/tmp/probe_identity_runtime.py')
-            worker_path = '/scripts/cloudfile-jit-worker.py'
-            worker_sha = None
-            if identity_scenario == 'provisioning':
-                fixture = Path(__file__).with_name('identity_provisioning_runtime.py')
-                docker('cp', str(fixture), app + ':/tmp/identity_provisioning_runtime.py')
-                worker = Path(__file__).resolve().parents[1] / 'scripts/scripts_14.0/cloudfile-jit-worker.py'
-                worker_sha = hashlib.sha256(worker.read_bytes()).hexdigest()
-                if development_worker_overlay:
-                    worker_path = '/tmp/cloudfile-jit-worker.py'
-                    docker('cp', str(worker), app + ':' + worker_path)
-                actual_sha = docker('exec', app, 'python3', '-c',
-                    'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())', worker_path)
-                if actual_sha != worker_sha:
-                    raise RuntimeError('JIT worker image is stale; rebuild the application image')
-            elif identity_scenario == 'annotations':
-                hub = Path(__file__).resolve().parents[2] / 'cloudfile-hub'
-                destination = app + ':/opt/seafile/seafile-server-latest/seahub/'
-                docker('cp', str(hub / 'cloudfile_extensions') + '/.', destination + 'cloudfile_extensions/')
-                docker('cp', str(Path(__file__).with_name('annotations_http_runtime.py')),
-                    app + ':/tmp/annotations_http_runtime.py')
-            elif identity_scenario in {'transfer', 'web'}:
-                fixture = Path(__file__).with_name('delegated_transfer_runtime.py')
-                docker('cp', str(fixture), app + ':/tmp/delegated_transfer_runtime.py')
-            elif identity_scenario == 'search':
-                if development_worker_overlay:
-                    # Exercise compatibility permission reads only in the
-                    # disposable container; this is never a dev deployment.
-                    hub = Path(__file__).resolve().parents[2] / 'cloudfile-hub'
-                    docker('cp', str(hub / 'cloudfile_ext/search') + '/.',
-                        app + ':/opt/seafile/seafile-server-latest/seahub/cloudfile_ext/search/')
-                worker = Path(__file__).resolve().parents[1] / 'scripts/scripts_14.0/cloudfile-search-worker.py'
-                docker('cp', str(worker), app + ':/scripts/cloudfile-search-worker.py')
-                docker('cp', str(Path(__file__).with_name('search_runtime.py')), app + ':/tmp/search_runtime.py')
-            elif identity_scenario == 'audit':
-                fixture = Path(__file__).with_name('audit_export_runtime.py')
-                docker('cp', str(fixture), app + ':/tmp/audit_export_runtime.py')
-                worker = Path(__file__).resolve().parents[1] / 'scripts/scripts_14.0/cloudfile-audit-worker.py'
-                worker_path = '/scripts/cloudfile-audit-worker.py'
-                if development_worker_overlay:
-                    # The audit script bootstraps its adjacent JIT script.
-                    # Overlay only inside this disposable container.
-                    docker('cp', str(worker), app + ':' + worker_path)
-                expected = hashlib.sha256(worker.read_bytes()).hexdigest()
-                actual = docker('exec', app, 'python3', '-c',
-                    'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())',
-                    worker_path)
-                if actual != expected:
-                    raise RuntimeError('Audit worker image is stale; rebuild the application image')
-            elif identity_scenario == 'logout':
-                fixture = Path(__file__).with_name('identity_logout_runtime.py')
-                docker('cp', str(fixture), app + ':/tmp/identity_logout_runtime.py')
-            elif identity_scenario == 'backchannel':
-                fixture = Path(__file__).with_name('identity_backchannel_runtime.py')
-                docker('cp', str(fixture), app + ':/tmp/identity_backchannel_runtime.py')
-                for name in ('cloudfile-logout-worker.py', 'cloudfile-jit-worker.py'):
-                    source = Path(__file__).resolve().parents[1] / 'scripts/scripts_14.0' / name
-                    expected = hashlib.sha256(source.read_bytes()).hexdigest()
-                    actual = docker('exec', app, 'python3', '-c',
-                        'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())', '/scripts/' + name)
-                    if actual != expected:
-                        raise RuntimeError('Logout worker image is stale; rebuild the application image')
-            identity = json.loads(docker('exec', '-e', 'CF_DISPOSABLE_IDENTITY_PROBE=true',
-                '-e', 'CF_IDENTITY_SCENARIO=' + identity_scenario,
-                '-e', 'CF_SEARCH_FIXTURE_KEY=' + search_key,
-                '-e', 'CF_JIT_WORKER_SCRIPT=' + worker_path,
-                '-e', 'CF_AUDIT_WORKER_SCRIPT=' + worker_path,
-                app, 'python3', '/tmp/probe_identity_runtime.py', timeout=90))
-            if worker_sha:
-                identity.update(worker_sha256=worker_sha,
-                    worker_mode='development-script-overlay' if development_worker_overlay else 'packaged-image-script')
-            checks.append(stage)
-        return {'result': 'passed', 'scope': 'CE14 local admin/native file baseline; optional identity fixture separately scoped',
+        return {'result': 'passed', 'scope': 'CE14 local admin/native file baseline; directory ACL acceptance is separate',
                 'image_id': metadata['Id'], 'package_sha256': digest,
                 'source_seahub': labels.get('com.cloudfile.source.seahub'),
                 'source_server': labels.get('com.cloudfile.source.seafile-server'),
@@ -523,11 +259,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image', required=True)
     parser.add_argument('--native-regression', action='store_true',
-                        help='Also run the native actor import regression under real Seahub configuration')
+                        help='Retired option; use current Server V2 native ACL acceptance')
     parser.add_argument('--extensions-regression', action='store_true',
-                        help='Run extensions with a separate disposable SQL/Redis fixture')
+                        help='Retired option; use current Server V2 native ACL acceptance')
     parser.add_argument('--identity-runtime', action='store_true',
-                        help='Probe real TLS fixture OIDC/directory with actual CE accounts and SQL')
+                        help='Retired option; unavailable on V2')
     parser.add_argument('--identity-scenario', choices=['prebound', 'provisioning', 'logout', 'backchannel', 'transfer', 'web', 'annotations', 'audit', 'search'], default='prebound')
     parser.add_argument('--development-worker-overlay', action='store_true',
                         help='JIT development only: use host worker script; not packaged release evidence')

@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / 'build/seafile_14.0/image_platform.py'
+SCRIPT = Path(__file__).resolve().parents[1] / 'build/cloudfile_14.0/image_platform.py'
 SPEC = importlib.util.spec_from_file_location('image_platform', SCRIPT)
 IMAGE_PLATFORM = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(IMAGE_PLATFORM)

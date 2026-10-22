@@ -11,7 +11,8 @@
 .github/
 
 # Build outputs and source caches. The image Dockerfiles only COPY
-# scripts/scripts_14.0, services/ and base_scripts/; these directories are
+# scripts/scripts_14.0, scripts/scripts_cf14.0, services/ and base_scripts/;
+# these directories are
 # multi-GB (git clones, C/Go/npm caches, prior distributions) and have no
 # business being shipped as build context.
 build/

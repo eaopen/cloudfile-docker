@@ -6,52 +6,33 @@ from types import ModuleType
 from unittest.mock import Mock, patch
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "scripts_14.0" / "cloudfile.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "scripts_cf14.0" / "cloudfile.py"
 SPEC = importlib.util.spec_from_file_location("cloudfile_settings", SCRIPT)
 CLOUDFILE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CLOUDFILE)
 
 
 class CloudFileSettingsTest(unittest.TestCase):
-    def test_backchannel_flag_requires_enabled_oidc_and_defaults_off(self):
-        namespace = {}
-        exec(CLOUDFILE.render_settings({}), namespace)
-        self.assertIs(namespace['CLOUDFILE_OIDC_BACKCHANNEL_ENABLED'], False)
-        with self.assertRaisesRegex(ValueError, 'backchannel'):
-            CLOUDFILE.render_settings({'CLOUDFILE_OIDC_BACKCHANNEL_ENABLED': 'true'})
+    def test_retired_policy_configuration_is_rejected_without_echoing_values(self):
+        for key in CLOUDFILE.RETIRED_POLICY_SETTINGS:
+            with self.subTest(key=key):
+                with self.assertRaises(ValueError) as error:
+                    CLOUDFILE.render_settings({key: 'secret-example'})
+                self.assertIn(key, str(error.exception))
+                self.assertNotIn('secret-example', str(error.exception))
+        rendered = CLOUDFILE.render_settings({})
+        self.assertNotIn('cloudfile_extensions.authorization.gunicorn', rendered)
+        self.assertNotIn('CLOUDFILE_POLICY_CONFIG =', rendered)
 
-    def test_policy_worker_hooks_preserve_compose_and_remove_only_owned_block(self):
-        environment = {"CLOUDFILE_POLICY_WORKER_HOOKS": "true"}
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "gunicorn.conf.py"
-            original = "bind = '127.0.0.1:8000'\ndef post_worker_init(worker):\n    worker.append('original-init')\ndef worker_exit(server, worker):\n    worker.append('original-exit')\n"
-            path.write_text(original, encoding="utf-8")
-            self.assertTrue(CLOUDFILE.write_policy_worker_hooks(path, environment))
-            rendered = path.read_text(encoding="utf-8")
-            self.assertFalse(CLOUDFILE.write_policy_worker_hooks(path, environment))
-            self.assertEqual(path.read_text(encoding="utf-8"), rendered)
-            fixture = ModuleType("cloudfile_extensions.authorization.gunicorn")
-            fixture.post_worker_init = lambda worker: worker.append("cf-init")
-            fixture.worker_exit = lambda server, worker: worker.append("cf-exit")
-            with patch.dict("sys.modules", {fixture.__name__: fixture}):
-                namespace = {}
-                exec(compile(rendered, str(path), "exec"), namespace)
-                events = []
-                namespace["post_worker_init"](events)
-                namespace["worker_exit"](None, events)
-                self.assertEqual(events, ["original-init", "cf-init", "original-exit", "cf-exit"])
-            self.assertTrue(CLOUDFILE.write_policy_worker_hooks(path, {}))
-            self.assertEqual(path.read_text(encoding="utf-8"), original)
-            self.assertFalse(CLOUDFILE.write_policy_worker_hooks(path, {}))
+
 
     def test_v2_removes_only_legacy_worker_hooks_without_starting_policy_host(self):
         # A stale policy config/hook must not load a historical SchemaRunner.
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "gunicorn.conf.py"
             original = "def post_worker_init(worker):\n    worker.append('native')\n"
-            path.write_text(original)
+            path.write_text(original + "# BEGIN CLOUDFILE POLICY WORKER HOOKS\nraise AssertionError('retired')\n# END CLOUDFILE POLICY WORKER HOOKS\n")
             env = {"CLOUDFILE_POLICY_WORKER_HOOKS": "true"}
-            CLOUDFILE.write_policy_worker_hooks(path, env)
             CLOUDFILE.write_policy_worker_hooks(path, env, v2=True)
             self.assertEqual(path.read_text(), original)
             namespace = {}; exec(path.read_text(), namespace)
@@ -59,29 +40,7 @@ class CloudFileSettingsTest(unittest.TestCase):
             self.assertEqual(events, ['native'])
             self.assertEqual(env, {"CLOUDFILE_POLICY_WORKER_HOOKS": "true"})
 
-    def test_v2_refuses_retired_routes_before_mutating_hooks(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "gunicorn.conf.py"
-            path.write_text("# operator config\n")
-            for key in ('CLOUDFILE_EDITING_ENABLED', 'CLOUDFILE_AUTHORIZATION_ENABLED',
-                        'CLOUDFILE_OIDC_ENABLED', 'CLOUDFILE_RESOURCE_SEARCH_ENABLED'):
-                with self.assertRaisesRegex(ValueError, key):
-                    CLOUDFILE.write_policy_worker_hooks(path, {key: 'true'}, v2=True)
-                self.assertEqual(path.read_text(), "# operator config\n")
 
-    def test_policy_exit_cleanup_runs_after_existing_hook_failure(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "gunicorn.conf.py"
-            path.write_text("def worker_exit(server, worker):\n    raise RuntimeError('fixture')\n", encoding="utf-8")
-            CLOUDFILE.write_policy_worker_hooks(path, {"CLOUDFILE_POLICY_WORKER_HOOKS": "true"})
-            fixture = ModuleType("cloudfile_extensions.authorization.gunicorn")
-            fixture.worker_exit = Mock()
-            with patch.dict("sys.modules", {fixture.__name__: fixture}):
-                namespace = {}
-                exec(compile(path.read_text(encoding="utf-8"), str(path), "exec"), namespace)
-                with self.assertRaises(RuntimeError):
-                    namespace["worker_exit"]("server", "worker")
-                fixture.worker_exit.assert_called_once_with("server", "worker")
 
     def test_policy_hook_malformed_markers_preserve_original_file(self):
         for original in ("# BEGIN CLOUDFILE POLICY WORKER HOOKS\n",
@@ -129,14 +88,6 @@ class CloudFileSettingsTest(unittest.TestCase):
             self.assertIn("before = True", rendered)
             self.assertIn("after = True", rendered)
 
-    def test_retired_administrator_policy_defaults_off_without_loading_its_schema(self):
-        values = {}
-        exec(CLOUDFILE.render_settings({}), values)
-        self.assertIs(values['CLOUDFILE_ADMIN_POLICY_ENABLED'], False)
-        self.assertIs(values['CLOUDFILE_OIDC_ENABLED'], False)
-        self.assertIsNone(values['CLOUDFILE_POLICY_CONFIG'])
-        with self.assertRaisesRegex(ValueError, 'administrator policy'):
-            CLOUDFILE.render_settings({'CLOUDFILE_ADMIN_POLICY_ENABLED':'true', 'CLOUDFILE_AUTHORIZATION_ENABLED':'true'})
 
     def test_native_block_follows_legacy_defaults_and_preserves_both_apps(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -261,135 +212,13 @@ class CloudFileSettingsTest(unittest.TestCase):
             self.assertEqual(namespace["CLOUDFILE_WEBDAV_SERVICE_ENABLED"], expected)
             self.assertEqual(namespace["CLOUDFILE_CAPABILITIES"]["protocol.webdav"]["enabled"], expected)
 
-    def test_local_edit_requires_complete_native_runtime_and_renders_adapters(self):
-        for value in (None, "false"):
-            environment = {} if value is None else {"CLOUDFILE_LOCAL_EDIT_ENABLED": value}
-            namespace = {}; exec(CLOUDFILE.render_settings(environment), namespace)
-            self.assertFalse(namespace["CLOUDFILE_LOCAL_EDIT_ENABLED"])
-            self.assertIsNone(namespace["CLOUDFILE_LOCAL_EDIT_INSTANCE"])
-            self.assertFalse(namespace["CLOUDFILE_AGENT2_OPTIMISTIC_UPLOAD_ENABLED"])
-        with self.assertRaisesRegex(ValueError, "local edit requires"):
-            CLOUDFILE.render_settings({"CLOUDFILE_LOCAL_EDIT_ENABLED": "true"})
-        environment = OIDCSettingsTest.environment()
-        environment.update(CLOUDFILE_LOCAL_EDIT_ENABLED="true", CLOUDFILE_LOCAL_EDIT_INSTANCE="https://files.example",
-            CLOUDFILE_RESOURCE_SECRET="s" * 32, CLOUDFILE_AGENT2_OPTIMISTIC_UPLOAD_ENABLED="true")
-        namespace = {}; exec(CLOUDFILE.render_settings(environment), namespace)
-        self.assertFalse(namespace["CLOUDFILE_EDITING_ENABLED"])
-        self.assertTrue(namespace["CLOUDFILE_LOCAL_EDIT_ENABLED"])
-        self.assertTrue(namespace["CLOUDFILE_AGENT2_OPTIMISTIC_UPLOAD_ENABLED"])
-        self.assertEqual(namespace["CLOUDFILE_RESOURCE_SECRET"], b"s" * 32)
-        self.assertTrue(callable(namespace["CLOUDFILE_RESOURCE_LIFECYCLE_READER"]))
-        self.assertTrue(callable(namespace["CLOUDFILE_LOCAL_EDIT_VERSION_READER"]))
-        for key in ("CLOUDFILE_OIDC_ENABLED", "CLOUDFILE_POLICY_CONFIG_JSON", "CLOUDFILE_POLICY_WORKER_HOOKS", "CLOUDFILE_RESOURCE_SECRET"):
-            with self.subTest(key=key), self.assertRaises(ValueError):
-                CLOUDFILE.render_settings({k:v for k,v in environment.items() if k != key})
-        for origin in ("https://other.example", "https://files.example/seafile", "https://user:secret@files.example", "https://files.example:invalid", "https://files.example:", "https://files.example/#fragment"):
-            with self.subTest(origin=origin), self.assertRaises(ValueError):
-                CLOUDFILE.render_settings({**environment, "CLOUDFILE_LOCAL_EDIT_INSTANCE": origin})
-        for gate in ("CLOUDFILE_AGENT2_OPTIMISTIC_UPLOAD_ENABLED", "CLOUDFILE_AGENT2_EXCLUSIVE_ENABLED"):
-            with self.assertRaises(ValueError): CLOUDFILE.render_settings({gate:"true"})
-        with self.assertRaises(ValueError): CLOUDFILE.render_settings({**environment,"CLOUDFILE_AGENT2_EXCLUSIVE_ENABLED":"true"})
-        import json
-        oidc = json.loads(environment["CLOUDFILE_OIDC_CONFIG_JSON"])
-        for field in ("issuer", "authorization_url", "token_url", "userinfo_url", "jwks_url", "redirect_uri"):
-            oidc[field] = oidc[field].replace("https://", "http://")
-        rendered = CLOUDFILE.render_settings({**environment,"CLOUDFILE_LOCAL_EDIT_INSTANCE":"http://files.example", "CLOUDFILE_OIDC_CONFIG_JSON":json.dumps(oidc)})
-        self.assertIn("CLOUDFILE_LOCAL_EDIT_INSTANCE = 'http://files.example'",rendered)
 
-    def test_editing_requires_stable_resource_secret_and_native_oidc(self):
-        namespace = {}
-        exec(CLOUDFILE.render_settings({}), namespace)
-        self.assertIs(namespace["CLOUDFILE_EDITING_ENABLED"], False)
-        self.assertIsNone(namespace["CLOUDFILE_RESOURCE_LIFECYCLE_READER"])
-        with self.assertRaisesRegex(ValueError, "editing requires"):
-            CLOUDFILE.render_settings({"CLOUDFILE_EDITING_ENABLED": "true"})
-        environment = OIDCSettingsTest.environment()
-        environment["CLOUDFILE_EDITING_ENABLED"] = "true"
-        with self.assertRaisesRegex(ValueError, "resource secret"):
-            CLOUDFILE.render_settings(environment)
-        environment["CLOUDFILE_RESOURCE_SECRET"] = "s" * 32
-        with self.assertRaisesRegex(ValueError, "file-lock barrier"):
-            CLOUDFILE.render_settings(environment)
-        environment["CF_ENABLE_FILE_LOCK"] = "true"
-        rendered = CLOUDFILE.render_settings(environment)
-        self.assertIn("CLOUDFILE_EDITING_ENABLED = True", rendered)
-        self.assertIn("return NativeResourceReader(seafile_api)(cursor, reference)", rendered)
 
-    def test_authorization_routes_require_explicit_deployment_flag(self):
-        policy = '{"database":{},"redis":{}}'
-        for value, expected in ((None, False), ("true", True), ("false", False)):
-            environment = {} if value is None else {
-                "CLOUDFILE_AUTHORIZATION_ENABLED": value,
-                "CLOUDFILE_POLICY_CONFIG_JSON": policy,
-                "CLOUDFILE_POLICY_WORKER_HOOKS": "true",
-            }
-            namespace = {}
-            exec(CLOUDFILE.render_settings(environment), namespace)
-            self.assertEqual(namespace["CLOUDFILE_AUTHORIZATION_ENABLED"], expected)
-            self.assertEqual(callable(namespace["CLOUDFILE_RESOURCE_LIFECYCLE_READER"]), expected)
-            self.assertFalse(namespace["CLOUDFILE_EDITING_ENABLED"])
 
-    def test_transfer_routes_require_explicit_deployment_flag(self):
-        policy = '{"database":{},"redis":{}}'
-        for value, expected in ((None, False), ("true", True), ("false", False)):
-            environment = {} if value is None else {
-                "CLOUDFILE_TRANSFER_ENABLED": value,
-                "ENABLE_GO_FILESERVER": "true",
-                "CLOUDFILE_POLICY_CONFIG_JSON": policy,
-                "CLOUDFILE_POLICY_WORKER_HOOKS": "true",
-            }
-            namespace = {}
-            exec(CLOUDFILE.render_settings(environment), namespace)
-            self.assertEqual(namespace["CLOUDFILE_TRANSFER_ENABLED"], expected)
 
-    def test_login_and_directory_preserve_resource_key_without_editing(self):
-        # A lifecycle reader without its key cannot initialize PolicyHost;
-        # these independently enabled features must not depend on editing.
-        for feature in ("CLOUDFILE_OIDC_ENABLED", "CLOUDFILE_AUTHORIZATION_ENABLED",
-                        "CLOUDFILE_TRANSFER_ENABLED"):
-            environment = OIDCSettingsTest.environment()
-            environment.update({feature: "true", "CLOUDFILE_RESOURCE_SECRET": "r" * 32,
-                                "ENABLE_GO_FILESERVER": "true"})
-            if feature != "CLOUDFILE_OIDC_ENABLED":
-                environment["CLOUDFILE_OIDC_ENABLED"] = "false"
-            namespace = {}
-            exec(CLOUDFILE.render_settings(environment), namespace)
-            with self.subTest(feature=feature):
-                self.assertFalse(namespace["CLOUDFILE_EDITING_ENABLED"])
-                self.assertEqual(namespace["CLOUDFILE_RESOURCE_SECRET"], b"r" * 32)
-                self.assertTrue(callable(namespace["CLOUDFILE_RESOURCE_LIFECYCLE_READER"]))
 
-    def test_enabled_transfer_rejects_missing_policy_worker(self):
-        with self.assertRaisesRegex(ValueError, "authorization or transfer"):
-            CLOUDFILE.render_settings({"CLOUDFILE_TRANSFER_ENABLED": "true"})
 
-    def test_enabled_transfer_rejects_native_c_fileserver(self):
-        environment = {
-            "CLOUDFILE_TRANSFER_ENABLED": "true",
-            "CLOUDFILE_POLICY_CONFIG_JSON": '{"database":{},"redis":{}}',
-            "CLOUDFILE_POLICY_WORKER_HOOKS": "true",
-        }
-        for value in (None, "false"):
-            with self.subTest(value=value):
-                if value is not None:
-                    environment["ENABLE_GO_FILESERVER"] = value
-                with self.assertRaisesRegex(ValueError, "ENABLE_GO_FILESERVER=true"):
-                    CLOUDFILE.render_settings(environment)
 
-    def test_enabled_authorization_rejects_incomplete_or_ambiguous_policy_config(self):
-        with self.assertRaisesRegex(ValueError, "policy config and worker hooks"):
-            CLOUDFILE.render_settings({"CLOUDFILE_AUTHORIZATION_ENABLED": "true"})
-        with self.assertRaisesRegex(ValueError, "policy config and worker hooks"):
-            CLOUDFILE.render_settings({
-                "CLOUDFILE_AUTHORIZATION_ENABLED": "true",
-                "CLOUDFILE_POLICY_CONFIG_JSON": "{}",
-            })
-        with self.assertRaisesRegex(ValueError, "duplicate"):
-            CLOUDFILE.render_settings({
-                "CLOUDFILE_POLICY_CONFIG_JSON": '{"database":{},"database":{}}',
-            })
-        with self.assertRaisesRegex(ValueError, "strict JSON"):
-            CLOUDFILE.render_settings({"CLOUDFILE_POLICY_CONFIG_JSON": '{"port":NaN}'})
 
     def test_deployment_cannot_claim_reserved_domain(self):
         for domain in CLOUDFILE.RESERVED_DOMAINS:
@@ -398,55 +227,8 @@ class CloudFileSettingsTest(unittest.TestCase):
 
 
 class OIDCSettingsTest(unittest.TestCase):
-    def test_audit_export_defaults_off_and_requires_query_and_private_root(self):
-        namespace = {}
-        exec(CLOUDFILE.render_settings({}), namespace)
-        self.assertIs(namespace['CLOUDFILE_AUDIT_EXPORT_ENABLED'], False)
-        self.assertIsNone(namespace['CLOUDFILE_AUDIT_RESULT_ROOT'])
-        environment = self.environment()
-        environment.update(CLOUDFILE_AUTHORIZATION_ENABLED='true',
-            CLOUDFILE_AUDIT_QUERY_ENABLED='true', CLOUDFILE_AUDIT_EXPORT_ENABLED='true',
-            CLOUDFILE_AUDIT_CURSOR_SECRET='x' * 32,
-            CLOUDFILE_AUDIT_RESULT_ROOT='/private/audit')
-        exec(CLOUDFILE.render_settings(environment), namespace)
-        self.assertIs(namespace['CLOUDFILE_AUDIT_EXPORT_ENABLED'], True)
-        self.assertEqual(namespace['CLOUDFILE_AUDIT_RESULT_ROOT'], '/private/audit')
-        for root in ('', 'relative', '/invalid\x00'):
-            with self.assertRaises(ValueError):
-                CLOUDFILE.render_settings({**environment, 'CLOUDFILE_AUDIT_RESULT_ROOT': root})
-        with self.assertRaises(ValueError):
-            CLOUDFILE.render_settings({**environment, 'CLOUDFILE_AUDIT_QUERY_ENABLED': 'false'})
 
-    @staticmethod
-    def environment():
-        import json
-        return {"CLOUDFILE_OIDC_ENABLED": "true", "CLOUDFILE_POLICY_WORKER_HOOKS": "true",
-            "CLOUDFILE_POLICY_CONFIG_JSON": '{"provider":"fixture"}',
-            "CLOUDFILE_OIDC_CONFIG_JSON": json.dumps(dict(
-                issuer="https://idp.example/application/o/cloudfile/", client_id="cloudfile",
-                client_secret="fixture-client-secret",
-                redirect_uri="https://files.example/api/v2.1/cloudfile/extensions/identity/v1/callback/",
-                authorization_url="https://idp.example/authorize/", token_url="https://idp.example/token/",
-                userinfo_url="https://idp.example/userinfo/", jwks_url="https://idp.example/jwks/"))}
 
-    def test_audit_query_requires_explicit_prerequisites_and_fixed_secret(self):
-        environment = self.environment()
-        environment.update(CLOUDFILE_AUTHORIZATION_ENABLED="true",
-            CLOUDFILE_AUDIT_QUERY_ENABLED="true",
-            CLOUDFILE_AUDIT_CURSOR_SECRET="fixed-audit-secret-" + "x" * 32)
-        namespace = {}
-        exec(CLOUDFILE.render_settings(environment), namespace)
-        self.assertTrue(namespace["CLOUDFILE_AUDIT_QUERY_ENABLED"])
-        self.assertEqual(namespace["CLOUDFILE_AUDIT_CURSOR_SECRET"],
-                         environment["CLOUDFILE_AUDIT_CURSOR_SECRET"].encode("utf-8"))
-        for key in ("CLOUDFILE_AUTHORIZATION_ENABLED", "CLOUDFILE_AUDIT_CURSOR_SECRET"):
-            invalid = dict(environment)
-            del invalid[key]
-            with self.subTest(key=key), self.assertRaises(ValueError):
-                CLOUDFILE.render_settings(invalid)
-        invalid = dict(environment, CLOUDFILE_AUDIT_CURSOR_SECRET="short")
-        with self.assertRaises(ValueError):
-            CLOUDFILE.render_settings(invalid)
 
     def test_managed_group_settings_follow_runtime_environment(self):
         namespace = {}
@@ -457,76 +239,11 @@ class OIDCSettingsTest(unittest.TestCase):
         self.assertEqual(namespace["CF_SSO_GROUP_OWNER"], "owner@example.com")
         self.assertEqual(namespace["CF_SSO_MAX_REMOVAL_RATIO"], "0.25")
 
-    def test_explicit_oidc_renders_primitives_without_claiming_capability(self):
-        namespace = {}
-        exec(CLOUDFILE.render_settings(self.environment()), namespace)
-        self.assertTrue(namespace["CLOUDFILE_OIDC_ENABLED"])
-        self.assertFalse(namespace["CLOUDFILE_OIDC_JIT_ENABLED"])
-        self.assertEqual(namespace["CLOUDFILE_OIDC_CONFIG"]["client_id"], "cloudfile")
-        self.assertFalse(namespace["CLOUDFILE_CAPABILITIES"]["auth.oidc"]["enabled"])
-        self.assertIs(namespace["ENABLE_OAUTH"], False)
-        self.assertEqual(namespace["LOGIN_URL"], "/api/v2.1/cloudfile/extensions/identity/v1/begin/")
-        self.assertFalse(namespace["CLOUDFILE_LOCAL_EDIT_ENABLED"])
 
-    def test_missing_runtime_or_worker_hooks_rejected(self):
-        for key in ("CLOUDFILE_POLICY_CONFIG_JSON", "CLOUDFILE_OIDC_CONFIG_JSON",
-                    "CLOUDFILE_POLICY_WORKER_HOOKS"):
-            environment = self.environment()
-            del environment[key]
-            with self.subTest(key=key), self.assertRaises(ValueError):
-                CLOUDFILE.render_settings(environment)
 
-    def test_legacy_oauth_coexists_with_native_oidc(self):
-        # Directory sharing and read tickets require the native OIDC host while
-        # existing deployments keep the Authentik OAuth preset, so the bootstrap
-        # must render both instead of rejecting the combination.
-        environment = self.environment()
-        environment.update(CLOUDFILE_AUTHENTIK_ENABLED="true",
-            CLOUDFILE_AUTHENTIK_URL="https://idp.example",
-            CLOUDFILE_AUTHENTIK_CLIENT_ID="fixture", CLOUDFILE_AUTHENTIK_CLIENT_SECRET="fixture",
-            CLOUDFILE_AUTHENTIK_REDIRECT_URL="https://files.example/oauth/callback/")
-        namespace = {}
-        exec(CLOUDFILE.render_settings(environment), namespace)
-        self.assertTrue(namespace["CLOUDFILE_OIDC_ENABLED"])
-        self.assertTrue(namespace["ENABLE_OAUTH"])
-        self.assertEqual(namespace["OAUTH_PROVIDER"], "authentik-oauth")
-        self.assertIsNotNone(namespace["CLOUDFILE_POLICY_CONFIG"])
 
-    def test_jit_without_oidc_host_is_rejected(self):
-        with self.assertRaises(ValueError):
-            CLOUDFILE.render_settings({"CLOUDFILE_OIDC_JIT_ENABLED": "true"})
 
-    def test_explicit_http_and_https_oidc_issuers_remain_supported(self):
-        # dev intentionally supports internal HTTP issuers; redaction tests must
-        # reject invalid schemes without silently reversing that contract.
-        import json
-        for scheme in ("http", "https"):
-            environment = self.environment()
-            value = json.loads(environment["CLOUDFILE_OIDC_CONFIG_JSON"])
-            value["issuer"] = scheme + "://idp.example"
-            environment["CLOUDFILE_OIDC_CONFIG_JSON"] = json.dumps(value)
-            namespace = {}
-            exec(CLOUDFILE.render_settings(environment), namespace)
-            self.assertEqual(namespace["CLOUDFILE_OIDC_CONFIG"]["issuer"], value["issuer"])
 
-    def test_oidc_json_and_endpoint_errors_are_redacted(self):
-        import json
-        for raw in ('{"client_secret":"fixture-client-secret","client_secret":"duplicate"}',
-                    '{"secret":NaN}', '[]'):
-            environment = self.environment()
-            environment["CLOUDFILE_OIDC_CONFIG_JSON"] = raw
-            with self.subTest(raw=raw), self.assertRaises(ValueError) as error:
-                CLOUDFILE.render_settings(environment)
-            self.assertNotIn("fixture-client-secret", str(error.exception))
-        for uri in ("ftp://idp.example", "https://user:fixture-client-secret@idp.example",
-                    "https://idp.example/#fragment", "https://idp.example:invalid", "https://idp.example/\n"):
-            environment = self.environment()
-            value = json.loads(environment["CLOUDFILE_OIDC_CONFIG_JSON"])
-            value["issuer"] = uri
-            environment["CLOUDFILE_OIDC_CONFIG_JSON"] = json.dumps(value)
-            with self.subTest(uri=uri), self.assertRaises(ValueError) as error:
-                CLOUDFILE.render_settings(environment)
-            self.assertNotIn("fixture-client-secret", str(error.exception))
 
     def test_identity_domain_cannot_be_replaced_by_project_urlconf(self):
         with self.assertRaises(ValueError):

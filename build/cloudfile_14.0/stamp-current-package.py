@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "build/seafile_14.0"))
+sys.path.insert(0, str(ROOT / "build/cloudfile_14.0"))
 from build_receipt import load_receipt, verify_recipe
 from package_provenance import verify_package
 

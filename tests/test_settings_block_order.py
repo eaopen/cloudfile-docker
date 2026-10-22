@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 
-SOURCE = Path(__file__).resolve().parents[1] / 'scripts/scripts_14.0/bootstrap.py'
+SOURCE = Path(__file__).resolve().parents[1] / 'scripts/scripts_cf14.0/cloudfile_bootstrap.py'
 TREE = ast.parse(SOURCE.read_text())
 FUNCTION = next(n for n in TREE.body if isinstance(n, ast.FunctionDef) and n.name == '_replace_block')
 NAMESPACE = {'exists': os.path.exists}

@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location('development_schema', ROOT / 'scripts/scripts_14.0/cloudfile_schema.py')
+SPEC = importlib.util.spec_from_file_location('development_schema', ROOT / 'scripts/scripts_cf14.0/cloudfile_schema.py')
 SCHEMA = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(SCHEMA)
 
@@ -72,7 +72,7 @@ class DevelopmentSchemaTest(unittest.TestCase):
         self.assertIn('five-table', str(error.exception)); self.assertNotIn('private-fixture-value', str(error.exception))
 
     def test_startup_initializes_fresh_volume_without_legacy_runner(self):
-        bootstrap = ast.parse((ROOT/'scripts/scripts_14.0/bootstrap.py').read_text())
+        bootstrap = ast.parse((ROOT/'scripts/scripts_cf14.0/cloudfile_bootstrap.py').read_text())
         function = next(n for n in bootstrap.body if isinstance(n, ast.FunctionDef) and n.name == 'write_cloudfile_config')
         names = {n.func.id for n in ast.walk(function) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
         self.assertFalse(any(name.startswith('apply_') for name in names))
@@ -86,7 +86,7 @@ class DevelopmentSchemaTest(unittest.TestCase):
         self.assertTrue(any(k.arg == 'v2' and isinstance(k.value, ast.Constant)
                             and k.value.value is True for k in hook.keywords))
         # Fresh initialization is allowed; legacy migration is not.
-        schema = (ROOT/'scripts/scripts_14.0/cloudfile_schema.py').read_text()
+        schema = (ROOT/'scripts/scripts_cf14.0/cloudfile_schema.py').read_text()
         self.assertNotIn('SchemaRunner', schema)
         self.assertNotIn('cloudfile.sql', schema)
         self.assertNotIn('ALTER TABLE', schema.upper())

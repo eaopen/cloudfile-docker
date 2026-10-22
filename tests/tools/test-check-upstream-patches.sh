@@ -4,7 +4,7 @@ set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
 docker_repo=$(cd "$here/../.." && pwd)
-checker=$docker_repo/tools/check-upstream-patches.sh
+checker=$docker_repo/tools/gates/check-upstream-patches.sh
 fixture=$(mktemp -d)
 trap 'rm -rf "$fixture"' EXIT
 

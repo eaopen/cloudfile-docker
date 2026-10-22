@@ -63,19 +63,25 @@ class StorageDefaultTests(unittest.TestCase):
             self.assertEqual("", environment["CF_LIBRARY_STORAGE"])
 
     @unittest.skipUnless(shutil.which("docker"), "Docker Compose CLI not installed")
-    def test_policy_flags_reach_both_processes(self):
-        # .env values used to be silently dropped by Compose before bootstrap.
-        for value in ("false", "true"):
-            result = subprocess.run(
-                ["docker", "compose", "--env-file", ".env.example", "config", "--format", "json"],
-                cwd=ROOT, capture_output=True, text=True, timeout=30, check=True,
-                env={**os.environ, "CLOUDFILE_AUTHORIZATION_ENABLED": value,
-                     "CLOUDFILE_TRANSFER_ENABLED": value})
-            data = json.loads(result.stdout)
-            for name in ("cloudfile", "cf-worker"):
-                environment = data["services"][name]["environment"]
-                for key in ("CLOUDFILE_AUTHORIZATION_ENABLED", "CLOUDFILE_TRANSFER_ENABLED"):
-                    self.assertEqual(value, str(environment[key]).lower())
+    def test_retired_policy_flags_never_reach_processes(self):
+        # 2690dcc 起七类旧授权机制退出，Compose 不再向应用和 worker 注入这些变量。
+        # 显式写进 .env 也不得复活：否则"配置了但被静默丢弃"和"配置真的生效"两种
+        # 状态会再次混淆，运维无法从环境判断当前权限链走哪条。
+        retired = (
+            "CLOUDFILE_AUTHORIZATION_ENABLED",
+            "CLOUDFILE_TRANSFER_ENABLED",
+            "CLOUDFILE_POLICY_CONFIG_JSON",
+            "CLOUDFILE_POLICY_WORKER_HOOKS",
+        )
+        result = subprocess.run(
+            ["docker", "compose", "--env-file", ".env.example", "config", "--format", "json"],
+            cwd=ROOT, capture_output=True, text=True, timeout=30, check=True,
+            env={**os.environ, **{key: "true" for key in retired}})
+        data = json.loads(result.stdout)
+        for name in ("cloudfile", "cf-worker"):
+            environment = data["services"][name]["environment"]
+            for key in retired:
+                self.assertNotIn(key, environment)
 
 
 if __name__ == "__main__":

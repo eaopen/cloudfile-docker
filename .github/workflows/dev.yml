@@ -51,3 +51,10 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -p test_build_receipt.py -q
           python3 -m unittest discover -s tests -p test_current_build_policy.py -q
+
+      - name: Test legacy CE recovery gate when changed (no backup)
+        shell: bash
+        run: |
+          if git diff --name-only HEAD^ HEAD -- tools/migrate/cf_recovery.py tests/test_cf_recovery.py | grep -q .; then
+            python3 -m unittest discover -s tests -p test_cf_recovery.py -q
+          fi

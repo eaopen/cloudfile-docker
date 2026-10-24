@@ -91,14 +91,14 @@ class RecoveryTests(unittest.TestCase):
     def test_bulk_backup_rejects_persisted_s3_storage_class(self):
         conf = self.compose / "data/seafile/seafile/conf/seafile.conf"
         conf.parent.mkdir(parents=True)
-        conf.write_text("[storage]\\nenable_storage_classes=true\\n")
+        conf.write_text("[storage]\nenable_storage_classes=true\n")
         with mock.patch.object(cf_recovery, "stopped") as guard:
             with self.assertRaisesRegex(cf_recovery.RecoveryError, "storage classes"):
                 cf_recovery.backup(self.args())
         guard.assert_not_called()
 
     def test_bulk_backup_rejects_s3_environment(self):
-        (self.compose / ".env").write_text("CF_ENABLE_S3_STORAGE=true\\n")
+        (self.compose / ".env").write_text("CF_ENABLE_S3_STORAGE=true\n")
         with mock.patch.object(cf_recovery, "stopped") as guard:
             with self.assertRaisesRegex(cf_recovery.RecoveryError, "S3/multiple"):
                 cf_recovery.backup(self.args())

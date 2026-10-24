@@ -1,5 +1,8 @@
 """Offline safety checks. Synthetic bytes are NOT full Seafile restore acceptance."""
 import argparse
+import json
+import os
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -104,16 +107,43 @@ class RecoveryTests(unittest.TestCase):
                 cf_recovery.backup(self.args())
         guard.assert_not_called()
 
+    def resolved_mounts(self, *, db_source=None):
+        source = self.compose / "data"
+        def bind(where, inside):
+            return {"type": "bind", "source": str(where), "target": inside}
+        return json.dumps({"services": {
+            "db": {"volumes": [bind(db_source or source / "db", "/var/lib/mysql")]},
+            "cloudfile": {"volumes": [bind(source / "seafile", "/shared")]},
+            "cf-worker": {"volumes": [bind(source / "seafile", "/shared")]},
+        }})
+
     def test_running_or_unverifiable_compose_refused(self):
+        for status, message in ((0, "active-container-id\n"), (1, "")):
+            with self.subTest(status=status), mock.patch.object(cf_recovery.subprocess, "run") as runner:
+                def response(command, **kwargs):
+                    if "config" in command:
+                        return subprocess.CompletedProcess(command, 0, self.resolved_mounts(), "")
+                    return subprocess.CompletedProcess(command, status, message, "")
+                runner.side_effect = response
+                with self.assertRaisesRegex(cf_recovery.RecoveryError, "running"):
+                    cf_recovery.stopped(self.compose)
+
+    def test_effective_compose_mount_mismatch_refused(self):
         with mock.patch.object(cf_recovery.subprocess, "run") as runner:
-            runner.return_value.returncode = 0
-            runner.return_value.stdout = "active-container-id\n"
-            with self.assertRaisesRegex(cf_recovery.RecoveryError, "running"):
+            def response(command, **kwargs):
+                if "config" in command:
+                    return subprocess.CompletedProcess(command, 0, self.resolved_mounts(
+                        db_source=self.root / "untracked-db"), "")
+                return subprocess.CompletedProcess(command, 0, "", "")
+            runner.side_effect = response
+            with self.assertRaisesRegex(cf_recovery.RecoveryError, "effective Compose mount"):
                 cf_recovery.stopped(self.compose)
-            runner.return_value.stdout = ""
-            runner.return_value.returncode = 1
-            with self.assertRaisesRegex(cf_recovery.RecoveryError, "running"):
-                cf_recovery.stopped(self.compose)
+            self.assertEqual(1, runner.call_count)
+
+    def test_explicit_compose_override_is_not_silently_ignored(self):
+        with mock.patch.dict(os.environ, {"COMPOSE_FILE": "docker-compose.yml:other.yml"}):
+            with self.assertRaisesRegex(cf_recovery.RecoveryError, "custom COMPOSE_FILE"):
+                cf_recovery.reject_unsupported_bulk_backup(self.compose, True)
 
     def test_source_destination_overlap_refused(self):
         with self.assertRaisesRegex(cf_recovery.RecoveryError, "overlap"):

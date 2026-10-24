@@ -46,8 +46,6 @@ def stopped(compose):
             if len(mounts) != 1 or mounts[0].get("type") != "bind" or (
                     Path(mounts[0]["source"]).resolve() != (compose / source).resolve()):
                 raise RecoveryError("effective Compose mount differs from legacy backup scope")
-        if "rustfs" in services or "minio" in services:
-            raise RecoveryError("S3 services are not supported by the legacy local backup")
         p = subprocess.run(
             ["docker", "compose", "-f", "docker-compose.yml", "ps", "--status",
              "running", "--quiet"], cwd=compose, text=True, capture_output=True, timeout=30)

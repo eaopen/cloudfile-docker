@@ -198,9 +198,9 @@ def write_cloudfile_settings():
     body += _settings_block_sso()
     # Low-frequency native admin sync is separate from the old SSO worker.
     # It must remain off in Standalone CE and must never start an HTTP poll.
-    body += 'CF_PROVIDER_ADMIN_STARTUP_SYNC_ENABLED = %r\\n' % (
+    body += 'CF_PROVIDER_ADMIN_STARTUP_SYNC_ENABLED = %r\n' % (
         get_conf('CF_PROVIDER_ADMIN_STARTUP_SYNC_ENABLED', 'false').lower() == 'true')
-    body += 'CF_PROVIDER_ADMIN_SOURCE = %r\\n' % get_conf('CF_PROVIDER_ADMIN_SOURCE', '')
+    body += 'CF_PROVIDER_ADMIN_SOURCE = %r\n' % get_conf('CF_PROVIDER_ADMIN_SOURCE', '')
     body += _settings_block_search()
     body += _settings_block_v04_preview_embed()
     body += _settings_block_external_sources()

@@ -154,6 +154,24 @@ path.mkdir()
         self.assertEqual(3, first["file_count"])
         self.assertEqual(first["tree_sha256"], second["tree_sha256"])
 
+    def test_native_export_partial_failure_never_publishes(self):
+        # Seafile CE export_file()/create_file() log some per-file errors
+        # without propagating an error exit status. The wrapper must refuse.
+        self.layout(self.managed, key="managed-a")
+        self.fsck.write_text(self.fsck.read_text() +
+                             "\\nprint('Failed to export file /missing/block')\\n")
+        output = self.export_parent / "must-not-publish"
+        cmd = [sys.executable, str(SCRIPT), "export", "--repo-id", REPO,
+               "--seafile-data", str(self.native),
+               "--library-root", str(self.managed),
+               "--seaf-fsck", str(self.fsck),
+               "--output-dir", str(output)]
+        run = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertNotEqual(0, run.returncode)
+        self.assertIn("incomplete export", run.stderr)
+        self.assertFalse(output.exists())
+        self.assertTrue((self.managed / "managed-a/storage/commits" / REPO).is_dir())
+
     def test_inspect_does_not_export_or_copy_all_libraries(self):
         self.layout(self.native)
         run = subprocess.run([sys.executable, str(SCRIPT), "inspect",

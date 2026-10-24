@@ -27,12 +27,32 @@ class RecoveryError(Exception):
 def stopped(compose):
     if not (compose / "docker-compose.yml").is_file():
         raise RecoveryError("compose file is missing")
+    # Validate the effective Compose mounts, not a guess from .env.
+    # This legacy copier only understands two local bind sources.
     try:
+        resolved = subprocess.run(
+            ["docker", "compose", "-f", "docker-compose.yml", "config", "--format", "json"],
+            cwd=compose, text=True, capture_output=True, timeout=30)
+        if resolved.returncode:
+            raise RecoveryError("cannot resolve effective Compose mounts")
+        services = json.loads(resolved.stdout)["services"]
+        for service, target, source in (
+            ("db", "/var/lib/mysql", "data/db"),
+            ("cloudfile", "/shared", "data/seafile"),
+            ("cf-worker", "/shared", "data/seafile"),
+        ):
+            mounts = [entry for entry in services[service]["volumes"]
+                      if entry.get("target") == target]
+            if len(mounts) != 1 or mounts[0].get("type") != "bind" or (
+                    Path(mounts[0]["source"]).resolve() != (compose / source).resolve()):
+                raise RecoveryError("effective Compose mount differs from legacy backup scope")
+        if "rustfs" in services or "minio" in services:
+            raise RecoveryError("S3 services are not supported by the legacy local backup")
         p = subprocess.run(
             ["docker", "compose", "-f", "docker-compose.yml", "ps", "--status",
              "running", "--quiet"], cwd=compose, text=True, capture_output=True, timeout=30)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise RecoveryError("cannot verify that all CloudFile services are stopped") from exc
+    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError) as exc:
+        raise RecoveryError("cannot verify effective mounts or stopped services") from exc
     if p.returncode != 0 or p.stdout.strip():
         raise RecoveryError("CloudFile services may be running; stop ALL writers and retry")
 
@@ -112,6 +132,11 @@ def reject_unsupported_bulk_backup(compose, legacy_ce_only):
     if not legacy_ce_only:
         raise RecoveryError("whole-instance backup requires --legacy-ce-only; "
                             "use seafile-library-offline.py for a selected repo_id")
+    # -f docker-compose.yml below intentionally supports only the baseline.
+    # Refuse custom project overlays rather than quietly copy the wrong paths.
+    requested_compose = os.environ.get("COMPOSE_FILE", "")
+    if requested_compose and requested_compose not in ("docker-compose.yml", "./docker-compose.yml"):
+        raise RecoveryError("custom COMPOSE_FILE cannot use legacy backup")
     managed = compose / "data/libraries"
     if managed.is_symlink() or (managed.is_dir() and any(managed.iterdir())):
         raise RecoveryError("V2 per-library objects are outside the legacy backup scope")
@@ -126,6 +151,8 @@ def reject_unsupported_bulk_backup(compose, legacy_ce_only):
         for entry in environment.read_text(encoding="utf-8").splitlines():
             name, separator, value = entry.strip().partition("=")
             value = value.strip().strip("'\"")
+            if separator and name.strip() == "COMPOSE_FILE" and value not in ("", "docker-compose.yml", "./docker-compose.yml"):
+                raise RecoveryError("custom COMPOSE_FILE cannot use legacy backup")
             if separator and name.strip() == "CF_LIBRARY_STORAGE" and value == "auto":
                 raise RecoveryError("persisted V2 auto-local mode is not a legacy CE installation")
             if separator and ((name.strip() == "SEAF_SERVER_STORAGE_TYPE" and value == "multiple") or

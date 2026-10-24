@@ -1,10 +1,12 @@
 """Standalone offline Seafile library tests: no DB, Docker or CloudFile service."""
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "ops" / "seafile-library-offline.py"
 spec = importlib.util.spec_from_file_location("offline", SCRIPT)
@@ -123,6 +125,34 @@ path.mkdir()
         self.assertEqual(1, summary["file_count"])
         self.assertEqual(len(b"Hello Seafile!"), summary["total_bytes"])
         self.assertEqual(64, len(summary["tree_sha256"]))
+
+    def test_verify_export_hash_is_directory_order_independent(self):
+        # A file-tree digest must be canonical: os.walk descends in readdir
+        # order, which differs between identical exports on other filesystems.
+        root = self.top / "hash-exports"
+        library = root / (REPO[:8] + "_library")
+        for name in ("zz-dir", "aa-dir", "mm-dir"):
+            (library / name).mkdir(parents=True)
+            (library / name / "file.txt").write_text(name)
+        args = type("A", (), dict(repo_id=REPO, output_dir=str(root), hash=True))
+
+        def fake_walk(order):
+            def walk(top, **kwargs):
+                base = Path(top)
+                directories = list(order)
+                yield str(base), directories, []
+                # Mirrors os.walk: the caller's in-place sort of ``directories``
+                # decides the child order.
+                for name in directories:
+                    yield str(base / name), [], ["file.txt"]
+            return walk
+
+        with mock.patch.object(os, "walk", fake_walk(("zz-dir", "aa-dir", "mm-dir"))):
+            first = offline.verify_export(args)
+        with mock.patch.object(os, "walk", fake_walk(("aa-dir", "zz-dir", "mm-dir"))):
+            second = offline.verify_export(args)
+        self.assertEqual(3, first["file_count"])
+        self.assertEqual(first["tree_sha256"], second["tree_sha256"])
 
     def test_inspect_does_not_export_or_copy_all_libraries(self):
         self.layout(self.native)

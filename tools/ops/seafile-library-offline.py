@@ -209,6 +209,10 @@ def verify_export(args):
     total = 0
     digest = hashlib.sha256() if args.hash else None
     for here, directories, names in os.walk(base, followlinks=False):
+        # Canonical order: os.walk descends in readdir order, so a tree digest
+        # would differ between identical exports on another filesystem/copy
+        # unless directory order is pinned before recursing.
+        directories.sort()
         for name in directories:
             if not physical_dir(Path(here) / name):
                 raise LibraryError("export contains symlink or unsupported directory")

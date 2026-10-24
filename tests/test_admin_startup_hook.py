@@ -42,8 +42,23 @@ class StartupSyncHookTests(unittest.TestCase):
             runner=Mock(side_effect=subprocess.TimeoutExpired('sync', 30))),
             'FAILED')
 
+    def test_zero_exit_without_applied_receipt_is_failure_not_false_success(self):
+        for stdout in ('', 'CF_ADMIN_SYNC SKIPPED (not configured)',
+                       'unrelated successful output'):
+            with self.subTest(stdout=stdout):
+                self.assertEqual(admin_sync.run_provider_admin_sync(
+                    '/seahub.sh', '/seahub/manage.py', enabled=True,
+                    runner=Mock(return_value=SimpleNamespace(
+                        returncode=0, stdout=stdout))), 'FAILED')
+
+    def test_etech_default_admin_compatibility_remains_opt_in(self):
+        root = Path(__file__).resolve().parents[1]
+        env = (root / 'deploy/compose/.env.etech-sso.example').read_text()
+        self.assertIn('CF_PROVIDER_ADMIN_EXPECTED_ACCOUNT=admin', env)
+        self.assertIn('CF_PROVIDER_ADMIN_STARTUP_SYNC_ENABLED=false', env)
+
     def test_nonroot_command_is_one_safely_quoted_shell_command(self):
-        spawn = Mock(return_value=SimpleNamespace(returncode=0, stdout='ok'))
+        spawn = Mock(return_value=SimpleNamespace(returncode=0, stdout='CF_ADMIN_SYNC APPLIED added=1 removed=0 unchanged=0'))
         self.assertEqual(admin_sync.run_provider_admin_sync(
             '/seahub.sh', '/seahub/manage.py', enabled=True,
             non_root=True, runner=spawn), 'APPLIED')

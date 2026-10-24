@@ -66,6 +66,14 @@ class RecoveryTests(unittest.TestCase):
                 cf_recovery.backup(self.args())
         self.assertFalse(self.snapshot.exists())
 
+    def test_persisted_nondefault_auto_root_refuses_backup(self):
+        conf = self.compose / "data/seafile/seafile/conf/seafile.conf"
+        conf.parent.mkdir(parents=True)
+        conf.write_text("[cloudfile_v2]\\nauto_local_root=/outside/libraries\\n")
+        with mock.patch.object(cf_recovery, "stopped"):
+            with self.assertRaisesRegex(cf_recovery.RecoveryError, "nondefault V2"):
+                cf_recovery.backup(self.args())
+
     def test_missing_auto_managed_root_refuses_backup(self):
         import shutil
         shutil.rmtree(self.compose / "data/libraries")

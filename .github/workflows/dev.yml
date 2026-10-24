@@ -51,33 +51,3 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -p test_build_receipt.py -q
           python3 -m unittest discover -s tests -p test_current_build_policy.py -q
-
-  # One-off, isolated acceptance of the existing Server/Hub storage PR SHAs.
-  # This branch is not a production recipe and must not be merged into dev.
-  storage-native-backend-proof:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'test/storage-native-runtime-20261024'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 70
-    env:
-      CF_SERVER_REF: feat/storage-stable-repo-key-20261024
-      CF_HUB_REF: fix/storage-repo-key-api-20261024
-      CF_DOCKER_REF: test/storage-native-runtime-20261024
-      CF_BUILD_TARGET: backend
-      CF_BUILD_JOBS: '2'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-      - name: Prepare existing CE14 build base (no deployment)
-        run: bash image/cloudfile_14.0/base-build.sh
-      - name: Compile matched native C/Go Server and Hub backend using official receipt
-        run: bash build/cloudfile_14.0/build-in-docker.sh 14.0.8-storage-proof
-      - name: Assert current exact Server and Hub sources were used
-        run: |
-          set -euo pipefail
-          test -x build/cloudfile_14.0/cloudfile-backend/fileserver/fileserver
-          test -f build/cloudfile_14.0/cloudfile-backend/build-info.txt
-          cat build/cloudfile_14.0/cloudfile-backend/build-info.txt
-          python3 build/cloudfile_14.0/build_receipt.py verify build/cloudfile_14.0/build-receipt.json --recipe .
-          find build/cloudfile_14.0/cloudfile-backend/seafile-server -type f \
-            \( -name 'seaf-fsck' -o -name 'seafserv-gc' -o -name 'seaf-server' \) -print

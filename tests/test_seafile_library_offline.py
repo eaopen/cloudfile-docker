@@ -60,6 +60,26 @@ path.mkdir()
         self.assertEqual("auto-local", self.locate()["backend"])
         self.assertEqual("project-a", self.locate()["repo_key"])
 
+    def test_explicit_missing_managed_mount_never_falls_back(self):
+        self.layout(self.native)
+        missing = self.top / "missing-mount"
+        with self.assertRaisesRegex(offline.LibraryError, "storage root is not accessible"):
+            offline.find_library(REPO, str(self.native), str(missing))
+        # A CE-only operator can omit the managed root instead of asking the
+        # tool to guess whether an explicitly named mount is missing.
+        self.assertEqual("seafile-native",
+                         offline.find_library(REPO, str(self.native), None)["backend"])
+
+    def test_cli_inspect_native_ce_without_managed_root(self):
+        import json
+        self.layout(self.native)
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPT), "inspect", "--repo-id", REPO,
+             "--seafile-data", str(self.native)],
+            capture_output=True, text=True)
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertEqual("seafile-native", json.loads(proc.stdout)["backend"])
+
     def test_ambiguous_and_missing_repo_rejected(self):
         with self.assertRaisesRegex(offline.LibraryError, "not found"):
             self.locate()

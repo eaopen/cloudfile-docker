@@ -855,7 +855,7 @@ def write_cloudfile_seafile_conf():
     conf_path = join(topdir, 'conf', 'seafile.conf')
     fresh = fresh_install()
     if auto_storage_enabled(conf_path, os.environ, fresh=fresh):
-        configure_auto_storage(conf_path, ''.join(lines), installdir)
+        configure_auto_storage(conf_path, ''.join(lines), installdir, fresh=fresh)
         return
 
     # Keep the S3 configuration in the same restart-safe generated block as

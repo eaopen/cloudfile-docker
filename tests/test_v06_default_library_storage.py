@@ -44,7 +44,11 @@ class StorageDefaultTests(unittest.TestCase):
             mounts = [v for v in process["volumes"] if v["target"] == parent]
             self.assertEqual(1, len(mounts), "one parent mount per process")
             self.assertEqual("rw", mounts[0].get("mode", "rw"))
-            self.assertFalse(mounts[0]["bind"]["create_host_path"])
+            # Compose JSON may omit explicit false from the normalized form.
+            # The deployment overlay must still declare it for safe mounts.
+            self.assertFalse(mounts[0].get("bind", {}).get("create_host_path", False))
+        self.assertEqual(2, (ROOT / "docker-compose.auto-library-storage.yml")
+                         .read_text().count("create_host_path: false"))
         self.assertEqual(False, str(server["environment"]["CF_ENABLE_CHECKOUT"]).lower() == "true")
 
 

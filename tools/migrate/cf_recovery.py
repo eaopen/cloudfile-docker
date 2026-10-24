@@ -117,14 +117,20 @@ def reject_unsupported_bulk_backup(compose, legacy_ce_only):
         raise RecoveryError("V2 per-library objects are outside the legacy backup scope")
     if os.environ.get("CF_LIBRARY_STORAGE") == "auto":
         raise RecoveryError("CF_LIBRARY_STORAGE=auto is not a legacy CE installation")
+    if os.environ.get("SEAF_SERVER_STORAGE_TYPE") == "multiple" or os.environ.get("CF_ENABLE_S3_STORAGE", "").lower() == "true":
+        raise RecoveryError("S3/multiple storage cannot use legacy local-only backup")
     environment = compose / ".env"
     if environment.is_symlink():
         raise RecoveryError("compose .env must not be a symbolic link")
     if environment.is_file():
         for entry in environment.read_text(encoding="utf-8").splitlines():
             name, separator, value = entry.strip().partition("=")
-            if separator and name.strip() == "CF_LIBRARY_STORAGE" and value.strip().strip("'\"") == "auto":
+            value = value.strip().strip("'\"")
+            if separator and name.strip() == "CF_LIBRARY_STORAGE" and value == "auto":
                 raise RecoveryError("persisted V2 auto-local mode is not a legacy CE installation")
+            if separator and ((name.strip() == "SEAF_SERVER_STORAGE_TYPE" and value == "multiple") or
+                              (name.strip() == "CF_ENABLE_S3_STORAGE" and value.lower() == "true")):
+                raise RecoveryError("persisted S3/multiple storage is not a legacy CE backup")
     # Known CE14 Compose config locations. Unrecognized external data roots
     # are outside the contract of this explicitly acknowledged legacy tool.
     for relative in ("data/seafile/seafile/conf/seafile.conf",
@@ -133,9 +139,17 @@ def reject_unsupported_bulk_backup(compose, legacy_ce_only):
         if conf.is_file():
             from configparser import ConfigParser
             cfg = ConfigParser(interpolation=None)
-            cfg.read(conf)
-            if cfg.has_option("cloudfile_v2", "auto_local_root"):
-                raise RecoveryError("V2 per-library root is not in the legacy backup scope")
+            try:
+                cfg.read(conf)
+                if cfg.has_option("cloudfile_v2", "auto_local_root"):
+                    raise RecoveryError("V2 per-library root is not in the legacy backup scope")
+                if cfg.getboolean("storage", "enable_storage_classes", fallback=False):
+                    raise RecoveryError("storage classes are not supported by legacy local-only backup")
+                for section in ("commit_object_backend", "fs_object_backend", "block_backend"):
+                    if cfg.get(section, "name", fallback="") in ("s3", "multiple"):
+                        raise RecoveryError("S3/multiple backend is not a legacy local-only backup")
+            except ValueError as exc:
+                raise RecoveryError("invalid Seafile storage config: " + str(exc)) from exc
 
 
 def backup(args):

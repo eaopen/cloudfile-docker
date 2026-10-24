@@ -29,7 +29,7 @@ python3 tools/ops/seafile-library-offline.py inspect \
   --library-root /shared/seafile/library-storage
 ```
 
-只枚举一级目录并核对 Commit/FS/Block 根，不调用服务、不读数据库、不导出任何字节，不更改文件。它**不是**对象哈希完整性检查：完整修复/检查应按照 Seafile 原生工具的约束另行执行。
+只枚举一级目录并核对 Commit/FS/Block 根，不调用服务、不读数据库、不导出任何字节，不更改文件。**只有旧版 CE 原生库时，可以省略 `--library-root`；一旦显式提供该参数，目录不存在或挂载丢失必须报错，不得静默回退到旧库目录。** 它不是对象哈希完整性检查：完整修复/检查应按照 Seafile 原生工具的约束另行执行。
 
 ## 2. 显式导出单个库（耗时、耗磁盘空间）
 

@@ -159,7 +159,7 @@ path.mkdir()
         # without propagating an error exit status. The wrapper must refuse.
         self.layout(self.managed, key="managed-a")
         self.fsck.write_text(self.fsck.read_text() +
-                             "\\nprint('Failed to export file /missing/block')\\n")
+                             "\nprint('Failed to export file /missing/block')\n")
         output = self.export_parent / "must-not-publish"
         cmd = [sys.executable, str(SCRIPT), "export", "--repo-id", REPO,
                "--seafile-data", str(self.native),

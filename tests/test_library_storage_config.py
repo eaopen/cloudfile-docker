@@ -190,7 +190,7 @@ class LibraryStorageConfigTests(unittest.TestCase):
 
     def test_fresh_uuid_v2_install_skips_native_inventory(self):
         with patch.object(storage.subprocess, 'run') as run:
-            storage.configure_auto_storage(self.conf, '[cloudfile]\\nexample = true\\n',
+            storage.configure_auto_storage(self.conf, '[cloudfile]\nexample = true\n',
                                            self.installdir, self.env, fresh=True)
         run.assert_not_called()
         config = ConfigParser(interpolation=None)
@@ -202,7 +202,7 @@ class LibraryStorageConfigTests(unittest.TestCase):
         self.configure()  # explicit first transition from an existing CE config
         calls_before = len(self.calls)
         with patch.object(storage.subprocess, 'run') as run:
-            storage.configure_auto_storage(self.conf, '[cloudfile]\\nexample = true\\n',
+            storage.configure_auto_storage(self.conf, '[cloudfile]\nexample = true\n',
                                            self.installdir, self.env)
         run.assert_not_called()
         self.assertEqual(calls_before, len(self.calls))

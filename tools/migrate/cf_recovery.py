@@ -137,7 +137,7 @@ def reject_unsupported_bulk_backup(compose, legacy_ce_only):
                      "data/seafile/conf/seafile.conf"):
         conf = compose / relative
         if conf.is_file():
-            from configparser import ConfigParser
+            from configparser import ConfigParser, Error as ConfigError
             cfg = ConfigParser(interpolation=None)
             try:
                 cfg.read(conf)
@@ -148,7 +148,7 @@ def reject_unsupported_bulk_backup(compose, legacy_ce_only):
                 for section in ("commit_object_backend", "fs_object_backend", "block_backend"):
                     if cfg.get(section, "name", fallback="") in ("s3", "multiple"):
                         raise RecoveryError("S3/multiple backend is not a legacy local-only backup")
-            except ValueError as exc:
+            except (ValueError, ConfigError) as exc:
                 raise RecoveryError("invalid Seafile storage config: " + str(exc)) from exc
 
 

@@ -16,10 +16,7 @@ import tempfile
 from datetime import datetime, timezone
 
 KINDS = ("data/db", "data/seafile")
-# CloudFile V2 auto-local uses this separate bind mount; without it a
-# seemingly valid database snapshot may lose every new library's bytes.
-OPTIONAL = ("data/minio", "data/libraries")
-MANAGED = "data/libraries"
+OPTIONAL = ("data/minio",)
 BLOCK = 1024 * 1024
 
 
@@ -83,10 +80,6 @@ def check_manifest(snapshot):
     for name in KINDS:
         if not any(key.startswith(name + "/") for key in actual):
             raise RecoveryError("required volume has no files: " + name)
-    if manifest.get("managed_local") is True:
-        managed = snapshot / MANAGED
-        if managed.is_symlink() or not managed.is_dir():
-            raise RecoveryError("managed local directory is missing from snapshot")
     return manifest
 
 
@@ -109,48 +102,48 @@ def disjoint(source, destination):
         raise RecoveryError("destination must not exist")
 
 
-def validate_managed_root(compose):
-    """Only the default in-tree bind mount can be captured by this tool.
+def reject_unsupported_bulk_backup(compose, legacy_ce_only):
+    """This legacy full-instance copier never backs up V2 per-library objects.
 
-    External/renamed roots need a separate, explicitly coordinated snapshot.
-    Refuse to call this a complete offline backup for such installations.
+    Running this on auto-local could produce a misleading 'successful' archive.
+    Always require an explicit legacy-only acknowledgement; no implicit scan or
+    copy of all libraries is permitted.
     """
-    env_file = compose / ".env"
-    values = {}
-    if env_file.is_symlink():
+    if not legacy_ce_only:
+        raise RecoveryError("whole-instance backup requires --legacy-ce-only; "
+                            "use seafile-library-offline.py for a selected repo_id")
+    managed = compose / "data/libraries"
+    if managed.is_symlink() or (managed.is_dir() and any(managed.iterdir())):
+        raise RecoveryError("V2 per-library objects are outside the legacy backup scope")
+    if os.environ.get("CF_LIBRARY_STORAGE") == "auto":
+        raise RecoveryError("CF_LIBRARY_STORAGE=auto is not a legacy CE installation")
+    environment = compose / ".env"
+    if environment.is_symlink():
         raise RecoveryError("compose .env must not be a symbolic link")
-    if env_file.is_file():
-        for line in env_file.read_text(encoding="utf-8").splitlines():
-            name, separator, value = line.partition("=")
-            if separator and name.strip() in ("CF_LIBRARY_STORAGE", "CF_LIBRARY_STORAGE_HOST_DIR"):
-                values[name.strip()] = value.strip().strip("'\\\"")
-    configured = values.get("CF_LIBRARY_STORAGE_HOST_DIR", "./data/libraries")
-    if configured not in ("./data/libraries", "data/libraries"):
-        raise RecoveryError("external CF_LIBRARY_STORAGE_HOST_DIR is unsupported by this snapshot tool")
-    # The mounted path is stable; an explicit or persisted auto-local selection
-    # must not be snapshotted if its managed directory is absent.
-    active = values.get("CF_LIBRARY_STORAGE") == "auto"
-    current_conf = compose / "data/seafile/seafile/conf/seafile.conf"
-    if current_conf.is_file():
-        from configparser import ConfigParser
-        cfg = ConfigParser(interpolation=None)
-        cfg.read(current_conf)
-        if cfg.has_option("cloudfile_v2", "auto_local_root"):
-            if cfg.get("cloudfile_v2", "auto_local_root") != "/shared/seafile/library-storage":
-                raise RecoveryError("nondefault V2 auto_local_root cannot be snapshotted here")
-            active = True
-    managed = compose / MANAGED
-    if active and (managed.is_symlink() or not managed.is_dir()):
-        raise RecoveryError("auto-local managed library root is missing or unsafe")
-    return managed.is_dir() and not managed.is_symlink()
+    if environment.is_file():
+        for entry in environment.read_text(encoding="utf-8").splitlines():
+            name, separator, value = entry.strip().partition("=")
+            if separator and name.strip() == "CF_LIBRARY_STORAGE" and value.strip().strip("'\"") == "auto":
+                raise RecoveryError("persisted V2 auto-local mode is not a legacy CE installation")
+    # Known CE14 Compose config locations. Unrecognized external data roots
+    # are outside the contract of this explicitly acknowledged legacy tool.
+    for relative in ("data/seafile/seafile/conf/seafile.conf",
+                     "data/seafile/conf/seafile.conf"):
+        conf = compose / relative
+        if conf.is_file():
+            from configparser import ConfigParser
+            cfg = ConfigParser(interpolation=None)
+            cfg.read(conf)
+            if cfg.has_option("cloudfile_v2", "auto_local_root"):
+                raise RecoveryError("V2 per-library root is not in the legacy backup scope")
 
 
 def backup(args):
     compose = Path(args.compose_root).resolve(strict=True)
     dest = Path(args.output).absolute()
     disjoint(compose, dest)
+    reject_unsupported_bulk_backup(compose, getattr(args, 'legacy_ce_only', False))
     stopped(compose)
-    has_managed = validate_managed_root(compose)
     dest.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".cf-snapshot-", dir=dest.parent) as tmp:
         stage = Path(tmp) / "snapshot"
@@ -162,7 +155,6 @@ def backup(args):
         manifest = {"schema": "cloudfile.offline-compose.v1",
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "mode": "stopped-local-compose-volumes",
-                    "managed_local": has_managed,
                     "files": collect_manifest(stage)}
         (stage / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True))
         check_manifest(stage)
@@ -202,6 +194,8 @@ def main(argv=None):
     b.add_argument("--compose-root", required=True)
     b.add_argument("--output", required=True)
     b.add_argument("--ack-writers-stopped", action="store_true", required=True)
+    b.add_argument("--legacy-ce-only", action="store_true", required=True,
+                   help="explicitly acknowledge this is a full-instance legacy CE volume snapshot")
     b.set_defaults(func=backup)
     v = commands.add_parser("verify")
     v.add_argument("--snapshot", required=True)

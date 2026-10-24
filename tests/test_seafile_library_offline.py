@@ -53,6 +53,74 @@ path.mkdir()
     def locate(self):
         return offline.find_library(REPO, str(self.native), str(self.managed))
 
+    def add_fsck_output(self, *lines):
+        """Append print() lines to the fake fsck so they land on stdout."""
+        self.fsck.write_text(self.fsck.read_text() + "".join(
+            "\nprint(%r)\n" % line for line in lines))
+
+    def export_cmd(self, output, fsck=None):
+        return [sys.executable, str(SCRIPT), "export", "--repo-id", REPO,
+                "--seafile-data", str(self.native),
+                "--library-root", str(self.managed),
+                "--seaf-fsck", str(fsck or self.fsck),
+                "--output-dir", str(output)]
+
+    def bundle_fsck(self):
+        """Fake seaf-fsck installed as <bundle>/seafile/bin/seaf-fsck.
+
+        The script records the LD_LIBRARY_PATH it was started with, which is
+        how the shipped seaf-fsck.sh passes the bundled libraries.
+        """
+        bundle = self.top / "seafile"
+        (bundle / "bin").mkdir(parents=True)
+        (bundle / "lib").mkdir()
+        (bundle / "lib64").mkdir()
+        fake = bundle / "bin" / "fake-fsck"
+        fake.write_text("""#!/usr/bin/env python3
+import os
+from pathlib import Path
+import sys
+args = sys.argv[1:]
+get = lambda k: args[args.index(k) + 1]
+repo = args[-1]
+assert (Path(get('-d')) / 'storage/commits' / repo).is_dir()
+path = Path(get('--export')) / (repo[:8] + '_test_owner')
+path.mkdir()
+(path / 'file.txt').write_text('Hello Seafile!')
+Path(__file__).with_name('ld_library_path.txt').write_text(
+    os.environ.get('LD_LIBRARY_PATH', ''))
+""")
+        fake.chmod(0o700)
+        return fake, bundle / "bin" / "ld_library_path.txt"
+
+    def test_seaf_fsck_bundle_libraries_are_prepended(self):
+        # seaf-fsck.sh exports SEAFILE_LD_LIBRARY_PATH; the direct call must
+        # provide the same sibling libraries or some builds fail to load.
+        self.layout(self.managed, key="managed-a")
+        fake, record = self.bundle_fsck()
+        output = self.export_parent / "bundle-libraries"
+        run = subprocess.run(
+            self.export_cmd(output, fsck=fake), capture_output=True, text=True,
+            env={**os.environ, "LD_LIBRARY_PATH": "/inherited"})
+        self.assertEqual(0, run.returncode, run.stderr)
+        bundle = fake.parent.parent
+        expected = os.pathsep.join(
+            [str(bundle / "lib"), str(bundle / "lib64"), "/inherited"])
+        self.assertEqual(expected, record.read_text())
+        self.assertTrue((output / (REPO[:8] + "_test_owner") / "file.txt").exists())
+
+    def test_seaf_fsck_without_bundle_libraries_keeps_env(self):
+        self.layout(self.managed, key="managed-a")
+        fake, record = self.bundle_fsck()
+        (fake.parent.parent / "lib").rmdir()
+        (fake.parent.parent / "lib64").rmdir()
+        output = self.export_parent / "no-bundle-libraries"
+        run = subprocess.run(
+            self.export_cmd(output, fsck=fake), capture_output=True, text=True,
+            env={**os.environ, "LD_LIBRARY_PATH": "/only"})
+        self.assertEqual(0, run.returncode, run.stderr)
+        self.assertEqual("/only", record.read_text())
+
     def test_native_and_managed_layout_without_cloudfile_database(self):
         self.layout(self.native)
         self.assertEqual("seafile-native", self.locate()["backend"])
@@ -171,6 +239,67 @@ path.mkdir()
         self.assertIn("incomplete export", run.stderr)
         self.assertFalse(output.exists())
         self.assertTrue((self.managed / "managed-a/storage/commits" / REPO).is_dir())
+
+    def test_native_export_native_warning_never_publishes(self):
+        # Real CE14 output for an unreadable FS dir object: a single WARNING,
+        # then "Finish exporting", exit status 0 and a silently partial tree.
+        self.layout(self.managed, key="managed-a")
+        self.add_fsck_output(
+            "[2026-10-24 11:14:03] [WARNING] ../../common/fs-mgr.c(1895): "
+            "[fs mgr] Failed to read dir "
+            "f4b3106f4deb9c74fab57bcb8864c9fac3237411.")
+        output = self.export_parent / "warning-must-not-publish"
+        run = subprocess.run(self.export_cmd(output), capture_output=True, text=True)
+        self.assertNotEqual(0, run.returncode)
+        self.assertIn("incomplete export", run.stderr)
+        self.assertIn("Failed to read dir", run.stderr)  # matched line is surfaced
+        self.assertFalse(output.exists())
+
+    def test_native_export_missing_dir_object_never_publishes(self):
+        # Real CE14 output when the root FS dir object is gone: an INFO
+        # "is missing." line and an empty library dir that would otherwise
+        # pass the exactly-one-export check with exit status 0.
+        self.layout(self.managed, key="managed-a")
+        self.add_fsck_output(
+            "[2026-10-24 11:14:08] [INFO] fsck.c(55): Dir "
+            "e4bdf4e07d7a8652dd1dba8747f22c938d96936c is missing.")
+        output = self.export_parent / "missing-dir-must-not-publish"
+        run = subprocess.run(self.export_cmd(output), capture_output=True, text=True)
+        self.assertNotEqual(0, run.returncode)
+        self.assertIn("incomplete export", run.stderr)
+        self.assertFalse(output.exists())
+
+    def test_native_export_open_file_failure_never_publishes(self):
+        # create_file()'s g_open() failure (e.g. ENOSPC, EACCES on the
+        # destination) is a WARNING only; that file is skipped, exit stays 0.
+        self.layout(self.managed, key="managed-a")
+        self.add_fsck_output(
+            "[2026-10-24 11:14:03] [WARNING] fsck.c(1117): Open file "
+            "/mnt/recovery/out/file.txt failed: No space left on device.")
+        output = self.export_parent / "no-space-must-not-publish"
+        run = subprocess.run(self.export_cmd(output), capture_output=True, text=True)
+        self.assertNotEqual(0, run.returncode)
+        self.assertIn("incomplete export", run.stderr)
+        self.assertFalse(output.exists())
+
+    def test_native_export_benign_progress_log_still_publishes(self):
+        # A normal export logs INFO progress only; detection must not reject it.
+        self.layout(self.managed, key="managed-a")
+        self.add_fsck_output(
+            "[2026-10-24 11:13:58] [INFO] fsck.c(1208): Scanning available "
+            "commits for repo " + REPO + "...",
+            "[2026-10-24 11:13:58] [INFO] fsck.c(1247): Find available commit "
+            "1d4999db(created at 2023-11-14 22:13:20), will export files from it.",
+            "[2026-10-24 11:13:58] [INFO] fsck.c(1283): Start to export files "
+            "for repo f2af601c(review-repo).",
+            "[2026-10-24 11:13:58] [INFO] fsck.c(1151): Export file "
+            "/out/f2af601c_test_owner/file.txt.",
+            "[2026-10-24 11:13:58] [INFO] fsck.c(1301): Finish exporting files "
+            "for repo f2af601c.")
+        output = self.export_parent / "benign-log-publishes"
+        run = subprocess.run(self.export_cmd(output), capture_output=True, text=True)
+        self.assertEqual(0, run.returncode, run.stderr)
+        self.assertTrue((output / (REPO[:8] + "_test_owner") / "file.txt").exists())
 
     def test_inspect_does_not_export_or_copy_all_libraries(self):
         self.layout(self.native)

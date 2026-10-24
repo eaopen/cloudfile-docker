@@ -164,28 +164,54 @@ def export_library(args):
         # Stock Seafile CE filesystem routing, without cloudfile_v2 or a DB.
         command = [str(fsck), "-c", str(conf), "-d", str(data), "-F", str(conf),
                    "--export", str(out), item["repo_id"]]
+        # The shipped seaf-fsck.sh exports SEAFILE_LD_LIBRARY_PATH before
+        # calling the binary. A direct call must do the same: some builds
+        # (e.g. 14.0.8 images) link libevent/libsearpc from seafile/lib{,64}
+        # and fail to load without it. Prepend the sibling libraries of the
+        # given binary; keep any inherited value and leave env untouched when
+        # that layout does not exist (system loader paths still apply).
+        environment = dict(os.environ)
+        bundle = fsck.parent.parent
+        library_dirs = [path for path in (bundle / "lib", bundle / "lib64")
+                        if path.is_dir()]
+        if library_dirs:
+            prefix = os.pathsep.join(str(path) for path in library_dirs)
+            inherited = environment.get("LD_LIBRARY_PATH")
+            environment["LD_LIBRARY_PATH"] = (
+                prefix + (os.pathsep + inherited if inherited else ""))
         # Native export may print thousands of file messages; do not keep all
         # of them in RAM just to report the last error if it fails.
         with tempfile.TemporaryFile(dir=sandbox) as output_log:
-            result = subprocess.run(command, cwd=sandbox, stdout=output_log,
-                                    stderr=subprocess.STDOUT)
+            result = subprocess.run(command, cwd=sandbox, env=environment,
+                                    stdout=output_log, stderr=subprocess.STDOUT)
             if result.returncode != 0:
                 output_log.seek(0, os.SEEK_END)
                 length = output_log.tell()
                 output_log.seek(max(0, length - 2048))
                 tail = output_log.read().decode("utf-8", "replace")
                 raise LibraryError("seaf-fsck export failed: " + tail[-1500:])
-            # CE's export_file()/create_file() can log a per-file write error
-            # yet return 0 after exporting the other files. Never publish
-            # such a partial result as success. Scan the explicit export log
-            # incrementally, not into memory, and keep the native reader.
+            # CE's export_file()/create_file() are void: they can log a
+            # per-file failure, skip a whole subtree when an FS dir object is
+            # unreadable, or fail to create a destination file, yet still print
+            # "Finish exporting files" and exit 0. Never publish such a partial
+            # result. Fail closed unless the native log holds only normal
+            # progress: a WARNING/ERROR record or a known failure signature
+            # means the tree cannot be claimed complete. Banner lines are
+            # matched regardless of locale (CE log records are English) and
+            # the scan is incremental so a huge export log is never held in RAM.
             output_log.seek(0)
+            reasons = []
             for line in output_log:
-                if (b"Failed to export file " in line or
+                if (b"[WARNING]" in line or b"[ERROR]" in line or
+                        b"Failed to export file " in line or
                         b"Failed to mkdir " in line or
-                        b"Failed to open block " in line):
-                    raise LibraryError("seaf-fsck reported an incomplete export; "
-                                       "no destination was published")
+                        b" is missing." in line):
+                    if len(reasons) < 8:
+                        reasons.append(line[:400].decode("utf-8", "replace").rstrip())
+            if reasons:
+                raise LibraryError(
+                    "seaf-fsck reported an incomplete export; no destination "
+                    "was published: " + " | ".join(reasons))
         children = list(out.iterdir())
         if len(children) != 1 or not physical_dir(children[0]) or \
                 not children[0].name.startswith(item["repo_id"][:8] + "_"):

@@ -1,0 +1,316 @@
+"""Standalone offline Seafile library tests: no DB, Docker or CloudFile service."""
+import importlib.util
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "ops" / "seafile-library-offline.py"
+spec = importlib.util.spec_from_file_location("offline", SCRIPT)
+offline = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(offline)
+
+REPO = "f2af601c-8f44-4eb1-ac10-0402783d142d"
+
+
+class OfflineLibraryTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.top = Path(self.tmp.name)
+        self.native = self.top / "seafile-data"
+        self.managed = self.top / "libraries"
+        self.native.mkdir()
+        self.managed.mkdir()
+        self.export_parent = self.top / "exports"
+        self.export_parent.mkdir()
+        self.fsck = self.top / "fake-fsck"
+        self.fsck.write_text("""#!/usr/bin/env python3
+from pathlib import Path
+import sys
+args = sys.argv[1:]
+get = lambda k: args[args.index(k) + 1]
+repo = args[-1]
+data = Path(get('-d'))
+assert (data / 'storage/commits' / repo).is_dir()
+assert 'cloudfile_v2' not in (Path(get('-F')) / 'seafile.conf').read_text()
+path = Path(get('--export')) / (repo[:8] + '_test_owner')
+path.mkdir()
+(path / 'file.txt').write_text('Hello Seafile!')
+""")
+        self.fsck.chmod(0o700)
+
+    def layout(self, root, *, key=None):
+        base = root / key if key else root
+        for kind in offline.KINDS:
+            (base / "storage" / kind / REPO).mkdir(parents=True)
+        (base / "storage/commits" / REPO / "ab").mkdir()
+        (base / "storage/commits" / REPO / "ab" / "cd").write_bytes(b"commit")
+
+    def locate(self):
+        return offline.find_library(REPO, str(self.native), str(self.managed))
+
+    def add_fsck_output(self, *lines):
+        """Append print() lines to the fake fsck so they land on stdout."""
+        self.fsck.write_text(self.fsck.read_text() + "".join(
+            "\nprint(%r)\n" % line for line in lines))
+
+    def export_cmd(self, output, fsck=None):
+        return [sys.executable, str(SCRIPT), "export", "--repo-id", REPO,
+                "--seafile-data", str(self.native),
+                "--library-root", str(self.managed),
+                "--seaf-fsck", str(fsck or self.fsck),
+                "--output-dir", str(output)]
+
+    def bundle_fsck(self):
+        """Fake seaf-fsck installed as <bundle>/seafile/bin/seaf-fsck.
+
+        The script records the LD_LIBRARY_PATH it was started with, which is
+        how the shipped seaf-fsck.sh passes the bundled libraries.
+        """
+        bundle = self.top / "seafile"
+        (bundle / "bin").mkdir(parents=True)
+        (bundle / "lib").mkdir()
+        (bundle / "lib64").mkdir()
+        fake = bundle / "bin" / "fake-fsck"
+        fake.write_text("""#!/usr/bin/env python3
+import os
+from pathlib import Path
+import sys
+args = sys.argv[1:]
+get = lambda k: args[args.index(k) + 1]
+repo = args[-1]
+assert (Path(get('-d')) / 'storage/commits' / repo).is_dir()
+path = Path(get('--export')) / (repo[:8] + '_test_owner')
+path.mkdir()
+(path / 'file.txt').write_text('Hello Seafile!')
+Path(__file__).with_name('ld_library_path.txt').write_text(
+    os.environ.get('LD_LIBRARY_PATH', ''))
+""")
+        fake.chmod(0o700)
+        return fake, bundle / "bin" / "ld_library_path.txt"
+
+    def test_seaf_fsck_bundle_libraries_are_prepended(self):
+        # seaf-fsck.sh exports SEAFILE_LD_LIBRARY_PATH; the direct call must
+        # provide the same sibling libraries or some builds fail to load.
+        self.layout(self.managed, key="managed-a")
+        fake, record = self.bundle_fsck()
+        output = self.export_parent / "bundle-libraries"
+        run = subprocess.run(
+            self.export_cmd(output, fsck=fake), capture_output=True, text=True,
+            env={**os.environ, "LD_LIBRARY_PATH": "/inherited"})
+        self.assertEqual(0, run.returncode, run.stderr)
+        bundle = fake.parent.parent
+        expected = os.pathsep.join(
+            [str(bundle / "lib"), str(bundle / "lib64"), "/inherited"])
+        self.assertEqual(expected, record.read_text())
+        self.assertTrue((output / (REPO[:8] + "_test_owner") / "file.txt").exists())
+
+    def test_seaf_fsck_without_bundle_libraries_keeps_env(self):
+        self.layout(self.managed, key="managed-a")
+        fake, record = self.bundle_fsck()
+        (fake.parent.parent / "lib").rmdir()
+        (fake.parent.parent / "lib64").rmdir()
+        output = self.export_parent / "no-bundle-libraries"
+        run = subprocess.run(
+            self.export_cmd(output, fsck=fake), capture_output=True, text=True,
+            env={**os.environ, "LD_LIBRARY_PATH": "/only"})
+        self.assertEqual(0, run.returncode, run.stderr)
+        self.assertEqual("/only", record.read_text())
+
+    def test_native_and_managed_layout_without_cloudfile_database(self):
+        self.layout(self.native)
+        self.assertEqual("seafile-native", self.locate()["backend"])
+        import shutil
+        shutil.rmtree(self.native / "storage")
+        self.layout(self.managed, key="project-a")
+        self.assertEqual("auto-local", self.locate()["backend"])
+        self.assertEqual("project-a", self.locate()["repo_key"])
+
+    def test_explicit_missing_managed_mount_never_falls_back(self):
+        self.layout(self.native)
+        missing = self.top / "missing-mount"
+        with self.assertRaisesRegex(offline.LibraryError, "storage root is not accessible"):
+            offline.find_library(REPO, str(self.native), str(missing))
+        # A CE-only operator can omit the managed root instead of asking the
+        # tool to guess whether an explicitly named mount is missing.
+        self.assertEqual("seafile-native",
+                         offline.find_library(REPO, str(self.native), None)["backend"])
+
+    def test_cli_inspect_native_ce_without_managed_root(self):
+        import json
+        self.layout(self.native)
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPT), "inspect", "--repo-id", REPO,
+             "--seafile-data", str(self.native)],
+            capture_output=True, text=True)
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        self.assertEqual("seafile-native", json.loads(proc.stdout)["backend"])
+
+    def test_ambiguous_and_missing_repo_rejected(self):
+        with self.assertRaisesRegex(offline.LibraryError, "not found"):
+            self.locate()
+        self.layout(self.managed, key="project-a")
+        self.layout(self.native)
+        with self.assertRaisesRegex(offline.LibraryError, "ambiguous"):
+            self.locate()
+        with self.assertRaisesRegex(offline.LibraryError, "complete UUID"):
+            offline.find_library("not-a-repo", str(self.native), str(self.managed))
+
+    def test_symlinks_never_rename_the_object_source(self):
+        target = self.top / "elsewhere"
+        (target / "storage/commits" / REPO).mkdir(parents=True)
+        (self.managed / "project-a").symlink_to(target)
+        with self.assertRaisesRegex(offline.LibraryError, "not found"):
+            self.locate()
+        (self.managed / "project-a").unlink()
+        alt = self.top / "managed-link"
+        alt.symlink_to(self.managed)
+        with self.assertRaisesRegex(offline.LibraryError, "parent must not be a symbolic"):
+            offline.find_library(REPO, str(self.native), str(alt))
+
+    def test_explicit_single_repo_export_and_verify(self):
+        self.layout(self.managed, key="custom-project")
+        output = self.export_parent / "repo-one"
+        cmd = ["export", "--repo-id", REPO, "--seafile-data", str(self.native),
+               "--library-root", str(self.managed), "--seaf-fsck", str(self.fsck),
+               "--output-dir", str(output)]
+        run = subprocess.run([sys.executable, str(SCRIPT)] + cmd,
+                             capture_output=True, text=True)
+        self.assertEqual(0, run.returncode, run.stderr)
+        self.assertTrue((output / (REPO[:8] + "_test_owner") / "file.txt").exists())
+        self.assertFalse((self.managed / "custom-project/tmpfiles").exists())
+        self.assertEqual(b"commit", (self.managed / "custom-project/storage/commits" / REPO / "ab/cd").read_bytes())
+        with self.assertRaisesRegex(offline.LibraryError, "exists"):
+            offline.export_library(type("A", (), dict(
+                repo_id=REPO, seafile_data=str(self.native),
+                library_root=str(self.managed), seaf_fsck=str(self.fsck),
+                output_dir=str(output))))
+        summary = offline.verify_export(type("A", (), dict(repo_id=REPO, output_dir=str(output), hash=True)))
+        self.assertEqual(1, summary["file_count"])
+        self.assertEqual(len(b"Hello Seafile!"), summary["total_bytes"])
+        self.assertEqual(64, len(summary["tree_sha256"]))
+
+    def test_verify_export_hash_is_directory_order_independent(self):
+        # A file-tree digest must be canonical: os.walk descends in readdir
+        # order, which differs between identical exports on other filesystems.
+        root = self.top / "hash-exports"
+        library = root / (REPO[:8] + "_library")
+        for name in ("zz-dir", "aa-dir", "mm-dir"):
+            (library / name).mkdir(parents=True)
+            (library / name / "file.txt").write_text(name)
+        args = type("A", (), dict(repo_id=REPO, output_dir=str(root), hash=True))
+
+        def fake_walk(order):
+            def walk(top, **kwargs):
+                base = Path(top)
+                directories = list(order)
+                yield str(base), directories, []
+                # Mirrors os.walk: the caller's in-place sort of ``directories``
+                # decides the child order.
+                for name in directories:
+                    yield str(base / name), [], ["file.txt"]
+            return walk
+
+        with mock.patch.object(os, "walk", fake_walk(("zz-dir", "aa-dir", "mm-dir"))):
+            first = offline.verify_export(args)
+        with mock.patch.object(os, "walk", fake_walk(("aa-dir", "zz-dir", "mm-dir"))):
+            second = offline.verify_export(args)
+        self.assertEqual(3, first["file_count"])
+        self.assertEqual(first["tree_sha256"], second["tree_sha256"])
+
+    def test_native_export_partial_failure_never_publishes(self):
+        # Seafile CE export_file()/create_file() log some per-file errors
+        # without propagating an error exit status. The wrapper must refuse.
+        self.layout(self.managed, key="managed-a")
+        self.fsck.write_text(self.fsck.read_text() +
+                             "\nprint('Failed to export file /missing/block')\n")
+        output = self.export_parent / "must-not-publish"
+        cmd = [sys.executable, str(SCRIPT), "export", "--repo-id", REPO,
+               "--seafile-data", str(self.native),
+               "--library-root", str(self.managed),
+               "--seaf-fsck", str(self.fsck),
+               "--output-dir", str(output)]
+        run = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertNotEqual(0, run.returncode)
+        self.assertIn("incomplete export", run.stderr)
+        self.assertFalse(output.exists())
+        self.assertTrue((self.managed / "managed-a/storage/commits" / REPO).is_dir())
+
+    def test_native_export_native_warning_never_publishes(self):
+        # Real CE14 output for an unreadable FS dir object: a single WARNING,
+        # then "Finish exporting", exit status 0 and a silently partial tree.
+        self.layout(self.managed, key="managed-a")
+        self.add_fsck_output(
+            "[2026-10-24 11:14:03] [WARNING] ../../common/fs-mgr.c(1895): "
+            "[fs mgr] Failed to read dir "
+            "f4b3106f4deb9c74fab57bcb8864c9fac3237411.")
+        output = self.export_parent / "warning-must-not-publish"
+        run = subprocess.run(self.export_cmd(output), capture_output=True, text=True)
+        self.assertNotEqual(0, run.returncode)
+        self.assertIn("incomplete export", run.stderr)
+        self.assertIn("Failed to read dir", run.stderr)  # matched line is surfaced
+        self.assertFalse(output.exists())
+
+    def test_native_export_missing_dir_object_never_publishes(self):
+        # Real CE14 output when the root FS dir object is gone: an INFO
+        # "is missing." line and an empty library dir that would otherwise
+        # pass the exactly-one-export check with exit status 0.
+        self.layout(self.managed, key="managed-a")
+        self.add_fsck_output(
+            "[2026-10-24 11:14:08] [INFO] fsck.c(55): Dir "
+            "e4bdf4e07d7a8652dd1dba8747f22c938d96936c is missing.")
+        output = self.export_parent / "missing-dir-must-not-publish"
+        run = subprocess.run(self.export_cmd(output), capture_output=True, text=True)
+        self.assertNotEqual(0, run.returncode)
+        self.assertIn("incomplete export", run.stderr)
+        self.assertFalse(output.exists())
+
+    def test_native_export_open_file_failure_never_publishes(self):
+        # create_file()'s g_open() failure (e.g. ENOSPC, EACCES on the
+        # destination) is a WARNING only; that file is skipped, exit stays 0.
+        self.layout(self.managed, key="managed-a")
+        self.add_fsck_output(
+            "[2026-10-24 11:14:03] [WARNING] fsck.c(1117): Open file "
+            "/mnt/recovery/out/file.txt failed: No space left on device.")
+        output = self.export_parent / "no-space-must-not-publish"
+        run = subprocess.run(self.export_cmd(output), capture_output=True, text=True)
+        self.assertNotEqual(0, run.returncode)
+        self.assertIn("incomplete export", run.stderr)
+        self.assertFalse(output.exists())
+
+    def test_native_export_benign_progress_log_still_publishes(self):
+        # A normal export logs INFO progress only; detection must not reject it.
+        self.layout(self.managed, key="managed-a")
+        self.add_fsck_output(
+            "[2026-10-24 11:13:58] [INFO] fsck.c(1208): Scanning available "
+            "commits for repo " + REPO + "...",
+            "[2026-10-24 11:13:58] [INFO] fsck.c(1247): Find available commit "
+            "1d4999db(created at 2023-11-14 22:13:20), will export files from it.",
+            "[2026-10-24 11:13:58] [INFO] fsck.c(1283): Start to export files "
+            "for repo f2af601c(review-repo).",
+            "[2026-10-24 11:13:58] [INFO] fsck.c(1151): Export file "
+            "/out/f2af601c_test_owner/file.txt.",
+            "[2026-10-24 11:13:58] [INFO] fsck.c(1301): Finish exporting files "
+            "for repo f2af601c.")
+        output = self.export_parent / "benign-log-publishes"
+        run = subprocess.run(self.export_cmd(output), capture_output=True, text=True)
+        self.assertEqual(0, run.returncode, run.stderr)
+        self.assertTrue((output / (REPO[:8] + "_test_owner") / "file.txt").exists())
+
+    def test_inspect_does_not_export_or_copy_all_libraries(self):
+        self.layout(self.native)
+        run = subprocess.run([sys.executable, str(SCRIPT), "inspect",
+                              "--seafile-data", str(self.native),
+                              "--library-root", str(self.managed)], capture_output=True)
+        self.assertNotEqual(0, run.returncode)  # exact UUID is mandatory
+        self.assertEqual([], list(self.export_parent.iterdir()))
+        self.assertEqual("seafile-native", self.locate()["backend"])
+        self.assertEqual([], list(self.export_parent.iterdir()))
+
+
+if __name__ == "__main__":
+    unittest.main()

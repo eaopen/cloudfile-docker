@@ -58,3 +58,51 @@ jobs:
           if git diff --name-only HEAD^ HEAD -- tools/migrate/cf_recovery.py tests/test_cf_recovery.py | grep -q .; then
             python3 -m unittest discover -s tests -p test_cf_recovery.py -q
           fi
+
+  # Target PR #36 only: actual Compose parser and mount guards, NO volume copy.
+  storage-pr36-compose:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'fix/storage-backup-managed-library-root-20261024'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify effective legacy bind paths with installed Docker Compose
+        working-directory: deploy/compose
+        env:
+          INIT_SEAFILE_MYSQL_ROOT_PASSWORD: fixture-only
+          SEAFILE_MYSQL_DB_PASSWORD: fixture-only
+          SEAFILE_SERVER_HOSTNAME: fixture.example.invalid
+          INIT_SEAFILE_ADMIN_EMAIL: fixture@example.invalid
+          INIT_SEAFILE_ADMIN_PASSWORD: fixture-only
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from tempfile import TemporaryDirectory
+          import shutil
+          import sys
+          root = Path.cwd()
+          sys.path.insert(0, str(root.parents[1] / "tools" / "migrate"))
+          import cf_recovery
+          with TemporaryDirectory() as tmp:
+              source = root / "docker-compose.yml"
+              compose = Path(tmp)
+              original = source.read_text()
+              (compose / "docker-compose.yml").write_text(original)
+              (compose / "data" / "db").mkdir(parents=True)
+              (compose / "data" / "seafile").mkdir(parents=True)
+              (compose / "Caddyfile").write_text("")
+              cf_recovery.stopped(compose)
+              print("Valid legacy Compose mount resolution and no active services: PASS")
+              broken = original.replace("./data/db:/var/lib/mysql", "./untracked-db:/var/lib/mysql", 1)
+              if broken == original:
+                  raise AssertionError("expected native CE db volume layout changed")
+              (compose / "docker-compose.yml").write_text(broken)
+              try:
+                  cf_recovery.stopped(compose)
+              except cf_recovery.RecoveryError as exc:
+                  if "effective Compose mount" not in str(exc):
+                      raise
+                  print("Mismatched effective database bind rejected: PASS")
+              else:
+                  raise AssertionError("unrecognized effective Compose bind was accepted")
+          PY

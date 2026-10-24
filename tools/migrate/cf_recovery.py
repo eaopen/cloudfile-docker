@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -122,6 +123,34 @@ def disjoint(source, destination):
         raise RecoveryError("destination must not exist")
 
 
+def dotenv_entry(line):
+    """Return (name, value) the way Docker Compose reads one ``.env`` line.
+
+    Compose accepts an optional ``export `` prefix, single- or double-quoted
+    values and trailing ``#`` comments. This legacy gate is a safety check, so
+    it must not be bypassed by formatting that Compose still honours.
+    """
+    text = line.strip()
+    if text.startswith("export ") or text.startswith("export\t"):
+        text = text[len("export"):].lstrip()
+    name, separator, value = text.partition("=")
+    if not separator:
+        return None, None
+    value = value.strip()
+    if not value:
+        return name.strip(), ""
+    quote = value[0]
+    if quote in ("'", '"'):
+        end = value.find(quote, 1)
+        return name.strip(), (value[1:end] if end != -1 else value[1:])
+    # Unquoted values end at whitespace followed by '#'; '#' without preceding
+    # whitespace stays part of the value (same rule as Compose's dotenv parser).
+    comment = re.search(r"\s#", value)
+    if comment:
+        value = value[:comment.start()].rstrip()
+    return name.strip(), value
+
+
 def reject_unsupported_bulk_backup(compose, legacy_ce_only):
     """This legacy full-instance copier never backs up V2 per-library objects.
 
@@ -149,14 +178,15 @@ def reject_unsupported_bulk_backup(compose, legacy_ce_only):
         raise RecoveryError("compose .env must not be a symbolic link")
     if environment.is_file():
         for entry in environment.read_text(encoding="utf-8").splitlines():
-            name, separator, value = entry.strip().partition("=")
-            value = value.strip().strip("'\"")
-            if separator and name.strip() == "COMPOSE_FILE" and value not in ("", "docker-compose.yml", "./docker-compose.yml"):
+            name, value = dotenv_entry(entry)
+            if name is None:
+                continue
+            if name == "COMPOSE_FILE" and value not in ("", "docker-compose.yml", "./docker-compose.yml"):
                 raise RecoveryError("custom COMPOSE_FILE cannot use legacy backup")
-            if separator and name.strip() == "CF_LIBRARY_STORAGE" and value == "auto":
+            if name == "CF_LIBRARY_STORAGE" and value == "auto":
                 raise RecoveryError("persisted V2 auto-local mode is not a legacy CE installation")
-            if separator and ((name.strip() == "SEAF_SERVER_STORAGE_TYPE" and value == "multiple") or
-                              (name.strip() == "CF_ENABLE_S3_STORAGE" and value.lower() == "true")):
+            if ((name == "SEAF_SERVER_STORAGE_TYPE" and value == "multiple") or
+                    (name == "CF_ENABLE_S3_STORAGE" and value.lower() == "true")):
                 raise RecoveryError("persisted S3/multiple storage is not a legacy CE backup")
     # Known CE14 Compose config locations. Unrecognized external data roots
     # are outside the contract of this explicitly acknowledged legacy tool.

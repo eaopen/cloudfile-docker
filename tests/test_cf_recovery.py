@@ -107,6 +107,37 @@ class RecoveryTests(unittest.TestCase):
                 cf_recovery.backup(self.args())
         guard.assert_not_called()
 
+    def test_dotenv_detection_matches_compose_formats(self):
+        # Docker Compose honours `export`, quoted values and trailing comments.
+        # This fail-closed gate must read the same value those forms resolve to.
+        entries = (
+            ("export CF_LIBRARY_STORAGE=auto\n", "auto-local"),
+            ('CF_LIBRARY_STORAGE="auto" # migrated\n', "auto-local"),
+            ("CF_LIBRARY_STORAGE=auto   # trailing note\n", "auto-local"),
+            ("CF_ENABLE_S3_STORAGE=true # note\n", "S3/multiple"),
+            ("export COMPOSE_FILE=docker-compose.yml:docker-compose.auto-library-storage.yml\n",
+             "COMPOSE_FILE"),
+        )
+        for entry, message in entries:
+            with self.subTest(entry=entry):
+                (self.compose / ".env").write_text("PRIVATE_KEY=hidden\n" + entry)
+                with mock.patch.object(cf_recovery, "stopped") as guard:
+                    with self.assertRaisesRegex(cf_recovery.RecoveryError, message):
+                        cf_recovery.backup(self.args())
+                guard.assert_not_called()
+                self.assertFalse(self.snapshot.exists())
+
+    def test_legacy_dotenv_values_still_accepted(self):
+        (self.compose / ".env").write_text(
+            "PRIVATE_KEY=hidden\n"
+            "COMPOSE_FILE=docker-compose.yml\n"
+            "CF_ENABLE_S3_STORAGE=false # off\n"
+            "SEAF_SERVER_STORAGE_TYPE=\n"
+            "CF_LIBRARY_STORAGE=\n")
+        with mock.patch.object(cf_recovery, "stopped"):
+            cf_recovery.backup(self.args())
+        self.assertTrue(self.snapshot.exists())
+
     def resolved_mounts(self, *, db_source=None):
         source = self.compose / "data"
         def bind(where, inside):

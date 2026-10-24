@@ -1,50 +1,6 @@
-diff --git a/seafobj/objstore_factory.py b/seafobj/objstore_factory.py
-index c7f4219..f960e44 100644
---- a/seafobj/objstore_factory.py
-+++ b/seafobj/objstore_factory.py
-@@ -4,7 +4,7 @@ import binascii
- import logging
- import json
-
--from sqlalchemy import select
-+from sqlalchemy import select, text
-
- from seafobj.exceptions import InvalidConfigError
- from seafobj.backends.filesystem import SeafObjStoreFS
-@@ -638,7 +638,16 @@ class SeafObjStoreFactory(object):
-         except KeyError:
-             raise RuntimeError('unknown obj_type ' + obj_type)
-
-+        # Construct the lazy mapping before managers capture this dictionary;
-+        # patching it at Django AppConfig.ready() would be too late for seafobj.
-+        from seafobj.auto_local import AutoLocalStores, auto_template
-+        parent = auto_template(self.seafile_cfg.multi_backend_cfg)
-+        if parent is not None:
-+            self.obj_stores[obj_type] = AutoLocalStores(parent, obj_type, self.seafile_cfg.crypto)
-+
-         for bend in self.seafile_cfg.multi_backend_cfg:
-+            if bend.get('is_auto') is True:
-+                continue
-             storage_id = bend['storage_id']
-
-             crypto = self.seafile_cfg.crypto
-@@ -715,8 +724,12 @@ def get_repo_storage_id(repo_id):
-         RepoStorageId = Base.classes.RepoStorageId
-         storage_id = None
-         session = scoped_session(objstore_factory.session)
--        r = session.scalars(select(RepoStorageId).where(RepoStorageId.repo_id == repo_id).limit(1)).first()
--        storage_id = r.storage_id if r else None
-+        # Virtual libraries share origin objects; match the native C/Go query
-+        # rather than silently sending a virtual UUID to the legacy backend.
-+        storage_id = session.scalar(text(
-+            'SELECT storage_id FROM RepoStorageId WHERE repo_id = COALESCE('
-+            '(SELECT origin_repo FROM VirtualRepo WHERE repo_id = :repo), :repo) LIMIT 1'),
-+            {'repo': repo_id})
-         repo_storage_id[repo_id] = storage_id
-         session.remove()
-         return storage_id
 diff --git a/seafobj/auto_local.py b/seafobj/auto_local.py
 new file mode 100644
+index 0000000..f5d9233
 --- /dev/null
 +++ b/seafobj/auto_local.py
 @@ -0,0 +1,54 @@
@@ -102,3 +58,96 @@ new file mode 100644
 +        if item.get(kind) != {'backend': 'fs', 'dir': root}:
 +            raise ValueError('Automatic local template requires one filesystem root')
 +    return root
+diff --git a/seafobj/db.py b/seafobj/db.py
+index d64d743..377ae73 100644
+--- a/seafobj/db.py
++++ b/seafobj/db.py
+@@ -33,7 +33,12 @@ def load_db_url_from_env():
+ def create_engine_from_conf(config):
+     need_connection_pool_fix = True
+
+-    if config.has_section('database'):
++    # CloudFile containers pass complete MySQL facts in the environment and
++    # keep only connection_charset in seafile.conf. Prefer the environment URL
++    # before parsing a [database] section that may legitimately be partial.
++    db_url = load_db_url_from_env()
++
++    if db_url is None and config.has_section('database'):
+         backend = config.get('database', 'type')
+
+         if backend == 'mysql':
+diff --git a/seafobj/objstore_factory.py b/seafobj/objstore_factory.py
+index c7f4219..c8de5f7 100644
+--- a/seafobj/objstore_factory.py
++++ b/seafobj/objstore_factory.py
+@@ -4,7 +4,7 @@ import binascii
+ import logging
+ import json
+
+-from sqlalchemy import select
++from sqlalchemy import select, text
+
+ from seafobj.exceptions import InvalidConfigError
+ from seafobj.backends.filesystem import SeafObjStoreFS
+@@ -440,6 +440,29 @@ class SeafileConfig(object):
+         # Get storage backend from seafile.conf
+         cfg_file_parser = self.cfg_file_parser
+
++        # CloudFile V2 automatic local root: every routed library keeps its own
++        # key directory while original CE libraries keep the native tree.
++        # Reuse the reviewed multiple-backend machinery with one synthetic auto
++        # template and a native default, so every object manager resolves the
++        # physical location through RepoStorageId exactly like C and Go do.
++        auto_root = ''
++        if cfg_file_parser.has_option('cloudfile_v2', 'auto_local_root'):
++            auto_root = (cfg_file_parser.get('cloudfile_v2', 'auto_local_root') or '').strip()
++        if auto_root:
++            def _fs_backend(root):
++                return {'backend': 'fs', 'dir': root}
++            native_root = os.path.dirname(self.get_seafile_storage_dir())
++            self.storage_type = 'multiple'
++            self.multi_backend_cfg = [
++                {'storage_id': 'auto-local', 'is_auto': True, 'is_default': False,
++                 'commits': _fs_backend(auto_root), 'fs': _fs_backend(auto_root),
++                 'blocks': _fs_backend(auto_root)},
++                {'storage_id': 'native', 'is_default': True,
++                 'commits': _fs_backend(native_root), 'fs': _fs_backend(native_root),
++                 'blocks': _fs_backend(native_root)},
++            ]
++            return
++
+         enable_storage_classes = False
+         if self.storage_type == 'multiple':
+             enable_storage_classes = True
+@@ -638,7 +661,16 @@ class SeafObjStoreFactory(object):
+         except KeyError:
+             raise RuntimeError('unknown obj_type ' + obj_type)
+
++        # Construct the lazy mapping before managers capture this dictionary;
++        # patching it at Django AppConfig.ready() would be too late for seafobj.
++        from seafobj.auto_local import AutoLocalStores, auto_template
++        parent = auto_template(self.seafile_cfg.multi_backend_cfg)
++        if parent is not None:
++            self.obj_stores[obj_type] = AutoLocalStores(parent, obj_type, self.seafile_cfg.crypto)
++
+         for bend in self.seafile_cfg.multi_backend_cfg:
++            if bend.get('is_auto') is True:
++                continue
+             storage_id = bend['storage_id']
+
+             crypto = self.seafile_cfg.crypto
+@@ -715,8 +747,12 @@ def get_repo_storage_id(repo_id):
+         RepoStorageId = Base.classes.RepoStorageId
+         storage_id = None
+         session = scoped_session(objstore_factory.session)
+-        r = session.scalars(select(RepoStorageId).where(RepoStorageId.repo_id == repo_id).limit(1)).first()
+-        storage_id = r.storage_id if r else None
++        # Virtual libraries share origin objects; match the native C/Go query
++        # rather than silently sending a virtual UUID to the legacy backend.
++        storage_id = session.scalar(text(
++            'SELECT storage_id FROM RepoStorageId WHERE repo_id = COALESCE('
++            '(SELECT origin_repo FROM VirtualRepo WHERE repo_id = :repo), :repo) LIMIT 1'),
++            {'repo': repo_id})
+         repo_storage_id[repo_id] = storage_id
+         session.remove()
+         return storage_id

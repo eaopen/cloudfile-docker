@@ -103,7 +103,9 @@ def check_manifest(snapshot):
 
 def copy_allowed(source, destination):
     destination.mkdir(mode=0o700)
-    for name in KINDS + OPTIONAL:
+    # A newly created legacy local-only snapshot never copies old S3 blobs.
+    # OPTIONAL is retained only for restoring historical snapshots verbatim.
+    for name in KINDS:
         src = source / name
         if name in KINDS and not src.is_dir():
             raise RecoveryError("required compose volume missing: " + name)

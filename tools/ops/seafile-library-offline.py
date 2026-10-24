@@ -175,6 +175,17 @@ def export_library(args):
                 output_log.seek(max(0, length - 2048))
                 tail = output_log.read().decode("utf-8", "replace")
                 raise LibraryError("seaf-fsck export failed: " + tail[-1500:])
+            # CE's export_file()/create_file() can log a per-file write error
+            # yet return 0 after exporting the other files. Never publish
+            # such a partial result as success. Scan the explicit export log
+            # incrementally, not into memory, and keep the native reader.
+            output_log.seek(0)
+            for line in output_log:
+                if (b"Failed to export file " in line or
+                        b"Failed to mkdir " in line or
+                        b"Failed to open block " in line):
+                    raise LibraryError("seaf-fsck reported an incomplete export; "
+                                       "no destination was published")
         children = list(out.iterdir())
         if len(children) != 1 or not physical_dir(children[0]) or \
                 not children[0].name.startswith(item["repo_id"][:8] + "_"):

@@ -196,6 +196,21 @@ def write_cloudfile_settings():
     )
 
     body += _settings_block_sso()
+    # EAP may use the existing OAuth/SSO bridge with the legacy full
+    # group-synchronizer disabled. When the new one-shot administrator sync is
+    # explicitly enabled, still expose its trusted Directory connection.
+    if (not cf_enabled('CF_ENABLE_SSO') and
+            get_conf('CF_PROVIDER_ADMIN_STARTUP_SYNC_ENABLED', 'false').lower() == 'true'):
+        body += 'CF_DIRECTORY_URL = %r\n' % get_conf('CF_SERVICE_SSO_DIRECTORY_URL', '')
+        body += 'CF_DIRECTORY_KEY_ID = %r\n' % get_conf('CF_SERVICE_SSO_DIRECTORY_KEY_ID', '')
+        body += 'CF_DIRECTORY_SECRET = %r\n' % get_conf('CF_SERVICE_SSO_DIRECTORY_SECRET', '')
+    # Low-frequency native admin sync is separate from the old SSO worker.
+    # It must remain off in Standalone CE and must never start an HTTP poll.
+    body += 'CF_PROVIDER_ADMIN_STARTUP_SYNC_ENABLED = %r\n' % (
+        get_conf('CF_PROVIDER_ADMIN_STARTUP_SYNC_ENABLED', 'false').lower() == 'true')
+    body += 'CF_PROVIDER_ADMIN_SOURCE = %r\n' % get_conf('CF_PROVIDER_ADMIN_SOURCE', '')
+    body += 'CF_PROVIDER_ADMIN_MANAGED_ACCOUNTS = %r\n' % get_conf('CF_PROVIDER_ADMIN_MANAGED_ACCOUNTS', '')
+    body += 'CF_PROVIDER_ADMIN_EXPECTED_ACCOUNT = %r\n' % get_conf('CF_PROVIDER_ADMIN_EXPECTED_ACCOUNT', '')
     body += _settings_block_search()
     body += _settings_block_v04_preview_embed()
     body += _settings_block_external_sources()

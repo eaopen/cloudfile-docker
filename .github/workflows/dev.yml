@@ -44,6 +44,9 @@ jobs:
             [[ ! -f "$path" ]] || bash -n "$path"
           done < <(git diff --name-only HEAD^ HEAD -- '*.sh')
 
+      - name: Validate one-shot startup admin hook (pure Python)
+        run: python3 -m unittest discover -s tests -p test_admin_startup_hook.py -q
+
       - name: Enforce current V2 ACL documentation contract
         run: python3 tests/test_v2_authorization_contract.py
 

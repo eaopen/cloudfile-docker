@@ -188,6 +188,25 @@ class LibraryStorageConfigTests(unittest.TestCase):
         self.assertTrue(storage.auto_storage_enabled(self.conf, {}))
         self.assertEqual([], list(self.conf.parent.glob('.storage-*')))
 
+    def test_fresh_uuid_v2_install_skips_native_inventory(self):
+        with patch.object(storage.subprocess, 'run') as run:
+            storage.configure_auto_storage(self.conf, '[cloudfile]\\nexample = true\\n',
+                                           self.installdir, self.env, fresh=True)
+        run.assert_not_called()
+        config = ConfigParser(interpolation=None)
+        config.read(self.conf)
+        self.assertEqual(str(self.root), config['cloudfile_v2']['auto_local_root'])
+        self.assertEqual('false', config['storage']['enable_storage_classes'])
+
+    def test_existing_v2_restart_never_rewrites_route_registry(self):
+        self.configure()  # explicit first transition from an existing CE config
+        calls_before = len(self.calls)
+        with patch.object(storage.subprocess, 'run') as run:
+            storage.configure_auto_storage(self.conf, '[cloudfile]\\nexample = true\\n',
+                                           self.installdir, self.env)
+        run.assert_not_called()
+        self.assertEqual(calls_before, len(self.calls))
+
     def test_native_layout_symlinks_are_resolved_but_managed_root_is_not(self):
         shared = self.top / 'shared-seafile'
         shared.mkdir()

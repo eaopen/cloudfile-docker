@@ -16,7 +16,10 @@ import tempfile
 from datetime import datetime, timezone
 
 KINDS = ("data/db", "data/seafile")
-OPTIONAL = ("data/minio",)
+# CloudFile V2 auto-local uses this separate bind mount; without it a
+# seemingly valid database snapshot may lose every new library's bytes.
+OPTIONAL = ("data/minio", "data/libraries")
+MANAGED = "data/libraries"
 BLOCK = 1024 * 1024
 
 
@@ -80,6 +83,10 @@ def check_manifest(snapshot):
     for name in KINDS:
         if not any(key.startswith(name + "/") for key in actual):
             raise RecoveryError("required volume has no files: " + name)
+    if manifest.get("managed_local") is True:
+        managed = snapshot / MANAGED
+        if managed.is_symlink() or not managed.is_dir():
+            raise RecoveryError("managed local directory is missing from snapshot")
     return manifest
 
 
@@ -102,11 +109,45 @@ def disjoint(source, destination):
         raise RecoveryError("destination must not exist")
 
 
+def validate_managed_root(compose):
+    """Only the default in-tree bind mount can be captured by this tool.
+
+    External/renamed roots need a separate, explicitly coordinated snapshot.
+    Refuse to call this a complete offline backup for such installations.
+    """
+    env_file = compose / ".env"
+    values = {}
+    if env_file.is_symlink():
+        raise RecoveryError("compose .env must not be a symbolic link")
+    if env_file.is_file():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            name, separator, value = line.partition("=")
+            if separator and name.strip() in ("CF_LIBRARY_STORAGE", "CF_LIBRARY_STORAGE_HOST_DIR"):
+                values[name.strip()] = value.strip().strip("'\\\"")
+    configured = values.get("CF_LIBRARY_STORAGE_HOST_DIR", "./data/libraries")
+    if configured not in ("./data/libraries", "data/libraries"):
+        raise RecoveryError("external CF_LIBRARY_STORAGE_HOST_DIR is unsupported by this snapshot tool")
+    # The mounted path is stable; an explicit or persisted auto-local selection
+    # must not be snapshotted if its managed directory is absent.
+    active = values.get("CF_LIBRARY_STORAGE") == "auto"
+    current_conf = compose / "data/seafile/seafile/conf/seafile.conf"
+    if current_conf.is_file():
+        from configparser import ConfigParser
+        cfg = ConfigParser(interpolation=None)
+        cfg.read(current_conf)
+        active = active or cfg.has_option("cloudfile_v2", "auto_local_root")
+    managed = compose / MANAGED
+    if active and (managed.is_symlink() or not managed.is_dir()):
+        raise RecoveryError("auto-local managed library root is missing or unsafe")
+    return managed.is_dir() and not managed.is_symlink()
+
+
 def backup(args):
     compose = Path(args.compose_root).resolve(strict=True)
     dest = Path(args.output).absolute()
     disjoint(compose, dest)
     stopped(compose)
+    has_managed = validate_managed_root(compose)
     dest.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".cf-snapshot-", dir=dest.parent) as tmp:
         stage = Path(tmp) / "snapshot"
@@ -118,6 +159,7 @@ def backup(args):
         manifest = {"schema": "cloudfile.offline-compose.v1",
                     "created_at": datetime.now(timezone.utc).isoformat(),
                     "mode": "stopped-local-compose-volumes",
+                    "managed_local": has_managed,
                     "files": collect_manifest(stage)}
         (stage / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True))
         check_manifest(stage)

@@ -110,7 +110,7 @@ def _render_auto(original, generated_body):
     return ''.join(out).rstrip() + '\n\n' + BEGIN + '\n' + body + END + '\n'
 
 
-def configure_auto_storage(conf, generated_body, installdir, environment=None):
+def configure_auto_storage(conf, generated_body, installdir, environment=None, *, fresh=False):
     """Preflight old routing, register supported libraries, then replace config.
 
     Neither a failed preflight nor a failed apply changes seafile.conf. Apply
@@ -129,6 +129,20 @@ def configure_auto_storage(conf, generated_body, installdir, environment=None):
     final = _render_auto(original, generated_body)
     check = ConfigParser(interpolation=None)
     check.read_string(final)
+
+    # A fresh installation has no old repositories to register. Existing V2
+    # already has persistent native RepoStorageId routes; do not rescan and
+    # rewrite every library on each restart. Preflight is only for an explicit
+    # transition from an existing non-V2 Seafile installation.
+    if fresh or current_root == LIBRARY_ROOT:
+        if current_root == LIBRARY_ROOT and (
+                current.getboolean('storage', 'enable_storage_classes', fallback=False) or
+                any(current.get(section, 'name', fallback='filesystem') != 'filesystem'
+                    for section in ('commit_object_backend', 'fs_object_backend', 'block_backend'))):
+            raise ValueError('Existing V2 storage configuration is incompatible')
+        _atomic_write(conf, final)
+        return
+
     if not current.has_section('cloudfile_v2'):
         current.add_section('cloudfile_v2')
     current.set('cloudfile_v2', 'auto_local_root', LIBRARY_ROOT)

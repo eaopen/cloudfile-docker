@@ -16,20 +16,19 @@ class RecoveryTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.compose = self.root / "compose"
-        for name in ("data/db", "data/seafile", "data/minio", "data/libraries/repo-a/storage/blocks"):
+        for name in ("data/db", "data/seafile", "data/minio"):
             (self.compose / name).mkdir(parents=True)
         (self.compose / "docker-compose.yml").write_text("services: {}")
         (self.compose / "data/db/sql.ibd").write_bytes(b"db-data")
         (self.compose / "data/seafile/blocks").write_bytes(b"block-v1")
         (self.compose / "data/minio/object").write_bytes(b"blob")
-        (self.compose / "data/libraries/repo-a/storage/blocks/part").write_bytes(b"managed-library-block")
-        (self.compose / ".env").write_text(
-            "PRIVATE_KEY=hidden\nCF_LIBRARY_STORAGE=auto\nCF_LIBRARY_STORAGE_HOST_DIR=./data/libraries\n")
+        (self.compose / ".env").write_text("PRIVATE_KEY=hidden\n")
         self.snapshot = self.root / "backup"
         self.restore = self.root / "restore"
 
     def args(self):
-        return argparse.Namespace(compose_root=str(self.compose), output=str(self.snapshot))
+        return argparse.Namespace(compose_root=str(self.compose), output=str(self.snapshot),
+                                  legacy_ce_only=True)
 
     def test_backup_verify_restore_and_hash_protection(self):
         with mock.patch.object(cf_recovery, "stopped") as guard:
@@ -41,9 +40,6 @@ class RecoveryTests(unittest.TestCase):
                                                destination=str(self.restore)))
         self.assertEqual(b"db-data", (self.restore / "data/db/sql.ibd").read_bytes())
         self.assertEqual(b"block-v1", (self.restore / "data/seafile/blocks").read_bytes())
-        self.assertTrue(report["managed_local"])
-        self.assertEqual(b"managed-library-block",
-                         (self.restore / "data/libraries/repo-a/storage/blocks/part").read_bytes())
         self.assertTrue((self.restore / ".env").is_file())
         with self.assertRaises(cf_recovery.RecoveryError):
             cf_recovery.restore(argparse.Namespace(snapshot=str(self.snapshot),
@@ -58,36 +54,39 @@ class RecoveryTests(unittest.TestCase):
             with self.assertRaisesRegex(cf_recovery.RecoveryError, "symbolic"):
                 cf_recovery.backup(self.args())
 
-    def test_nondefault_managed_root_refuses_incomplete_backup(self):
-        (self.compose / ".env").write_text(
-            "CF_LIBRARY_STORAGE=auto\nCF_LIBRARY_STORAGE_HOST_DIR=/outside/libraries\n")
-        with mock.patch.object(cf_recovery, "stopped"):
-            with self.assertRaisesRegex(cf_recovery.RecoveryError, "external CF_LIBRARY_STORAGE_HOST_DIR"):
-                cf_recovery.backup(self.args())
+    def test_bulk_backup_requires_explicit_legacy_ce_scope(self):
+        args = self.args()
+        args.legacy_ce_only = False
+        with mock.patch.object(cf_recovery, "stopped") as guard:
+            with self.assertRaisesRegex(cf_recovery.RecoveryError, "--legacy-ce-only"):
+                cf_recovery.backup(args)
+        guard.assert_not_called()
         self.assertFalse(self.snapshot.exists())
 
-    def test_persisted_nondefault_auto_root_refuses_backup(self):
+    def test_bulk_backup_rejects_auto_local_mode(self):
+        (self.compose / ".env").write_text(
+            "PRIVATE_KEY=hidden\nCF_LIBRARY_STORAGE=auto\n")
+        with mock.patch.object(cf_recovery, "stopped") as guard:
+            with self.assertRaisesRegex(cf_recovery.RecoveryError, "auto-local"):
+                cf_recovery.backup(self.args())
+        guard.assert_not_called()
+
+    def test_bulk_backup_rejects_managed_library_objects(self):
+        directory = self.compose / "data/libraries/custom-key/storage/commits"
+        directory.mkdir(parents=True)
+        with mock.patch.object(cf_recovery, "stopped") as guard:
+            with self.assertRaisesRegex(cf_recovery.RecoveryError, "per-library objects"):
+                cf_recovery.backup(self.args())
+        guard.assert_not_called()
+
+    def test_bulk_backup_rejects_persisted_v2_storage_config(self):
         conf = self.compose / "data/seafile/seafile/conf/seafile.conf"
         conf.parent.mkdir(parents=True)
-        conf.write_text("[cloudfile_v2]\nauto_local_root=/outside/libraries\n")
-        with mock.patch.object(cf_recovery, "stopped"):
-            with self.assertRaisesRegex(cf_recovery.RecoveryError, "nondefault V2"):
+        conf.write_text("[cloudfile_v2]\nauto_local_root=/shared/seafile/library-storage\n")
+        with mock.patch.object(cf_recovery, "stopped") as guard:
+            with self.assertRaisesRegex(cf_recovery.RecoveryError, "per-library root"):
                 cf_recovery.backup(self.args())
-
-    def test_missing_auto_managed_root_refuses_backup(self):
-        import shutil
-        shutil.rmtree(self.compose / "data/libraries")
-        with mock.patch.object(cf_recovery, "stopped"):
-            with self.assertRaisesRegex(cf_recovery.RecoveryError, "managed library root"):
-                cf_recovery.backup(self.args())
-
-    def test_legacy_ce_can_snapshot_without_auto_root(self):
-        import shutil
-        shutil.rmtree(self.compose / "data/libraries")
-        (self.compose / ".env").write_text("PRIVATE_KEY=hidden\n")
-        with mock.patch.object(cf_recovery, "stopped"):
-            cf_recovery.backup(self.args())
-        self.assertFalse(cf_recovery.check_manifest(self.snapshot)["managed_local"])
+        guard.assert_not_called()
 
     def test_running_or_unverifiable_compose_refused(self):
         with mock.patch.object(cf_recovery.subprocess, "run") as runner:

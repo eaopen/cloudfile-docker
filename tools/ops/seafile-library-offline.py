@@ -37,13 +37,11 @@ def repository_id(raw):
     return raw
 
 
-def real_dir(path, *, optional=False):
-    """Keep managed children strictly physical, but allow native CE root aliases."""
+def real_dir(path):
+    """Require mounted roots; never treat an explicitly supplied missing mount as absent."""
     path = Path(path)
     if not path.is_absolute():
         raise LibraryError("storage roots must be absolute")
-    if optional and not path.exists() and not path.is_symlink():
-        return None
     try:
         root = path.resolve(strict=True)
     except (OSError, RuntimeError) as exc:
@@ -93,8 +91,8 @@ def candidate(root, repo_id, backend, key=None):
 def find_library(repo_id, native_root, managed_root):
     repo_id = repository_id(repo_id)
     native = real_dir(native_root)
-    managed = real_dir(managed_root, optional=True)
-    if managed and Path(managed_root).is_symlink():
+    managed = real_dir(managed_root) if managed_root is not None else None
+    if managed is not None and Path(managed_root).is_symlink():
         raise LibraryError("managed parent must not be a symbolic link")
     found = []
     item = candidate(native, repo_id, "seafile-native")
@@ -138,7 +136,8 @@ def export_library(args):
     fsck = Path(args.seaf_fsck)
     if not fsck.is_absolute() or not fsck.is_file() or not os.access(fsck, os.X_OK):
         raise LibraryError("--seaf-fsck must name an executable Seafile fsck binary")
-    target = output_directory(args.output_dir, (args.seafile_data, args.library_root))
+    roots = (args.seafile_data,) + ((args.library_root,) if args.library_root else ())
+    target = output_directory(args.output_dir, roots)
     # Temp staging lives on the destination volume, not in /tmp and not in the
     # object store. Failed export is deleted; no target is published on error.
     with tempfile.TemporaryDirectory(prefix=".seafile-export-", dir=target.parent) as temporary:
@@ -165,10 +164,17 @@ def export_library(args):
         # Stock Seafile CE filesystem routing, without cloudfile_v2 or a DB.
         command = [str(fsck), "-c", str(conf), "-d", str(data), "-F", str(conf),
                    "--export", str(out), item["repo_id"]]
-        result = subprocess.run(command, cwd=sandbox, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, text=True, errors="replace")
-        if result.returncode != 0:
-            raise LibraryError("seaf-fsck export failed: " + result.stdout[-1500:])
+        # Native export may print thousands of file messages; do not keep all
+        # of them in RAM just to report the last error if it fails.
+        with tempfile.TemporaryFile(dir=sandbox) as output_log:
+            result = subprocess.run(command, cwd=sandbox, stdout=output_log,
+                                    stderr=subprocess.STDOUT)
+            if result.returncode != 0:
+                output_log.seek(0, os.SEEK_END)
+                length = output_log.tell()
+                output_log.seek(max(0, length - 2048))
+                tail = output_log.read().decode("utf-8", "replace")
+                raise LibraryError("seaf-fsck export failed: " + tail[-1500:])
         children = list(out.iterdir())
         if len(children) != 1 or not physical_dir(children[0]) or \
                 not children[0].name.startswith(item["repo_id"][:8] + "_"):
@@ -233,7 +239,7 @@ def main(argv=None):
         cli.add_argument("--repo-id", required=True, help="one exact Seafile UUID; never all libraries")
         if op != "verify-export":
             cli.add_argument("--seafile-data", required=True, help="absolute path to native seafile-data")
-            cli.add_argument("--library-root", required=True, help="absolute managed parent directory")
+            cli.add_argument("--library-root", help="existing absolute managed root; omit for native CE only")
         if op == "export":
             cli.add_argument("--seaf-fsck", required=True, help="absolute path to native seaf-fsck executable")
             cli.add_argument("--output-dir", required=True, help="unused absolute destination directory")

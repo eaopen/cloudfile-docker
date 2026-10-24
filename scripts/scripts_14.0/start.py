@@ -27,6 +27,7 @@ from cloudfile_bootstrap import note_fresh_install, write_cloudfile_config
 from cloudfile import write_settings as write_cloudfile_settings
 from cloudfile import write_policy_worker_hooks
 from cloudfile_schema import prepare_fresh_schema, initialize_fresh_schema, verify_development_schema
+from cloudfile_admin_startup import run_provider_admin_sync
 
 
 shared_seafiledir = '/shared/seafile'
@@ -111,6 +112,12 @@ def main():
     finally:
         if exists(password_file):
             os.unlink(password_file)
+
+    # One low-frequency sync at service start, never in Gunicorn workers or
+    # every HTTP request. The Provider can be offline; warn and keep CE running.
+    run_provider_admin_sync(get_script('seahub.sh'),
+                            join(installdir, 'seahub', 'manage.py'),
+                            non_root=non_root)
 
     print('seafile server is running now.')
     try:

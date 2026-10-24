@@ -65,7 +65,7 @@ index d64d743..377ae73 100644
 @@ -33,7 +33,12 @@ def load_db_url_from_env():
  def create_engine_from_conf(config):
      need_connection_pool_fix = True
- 
+
 -    if config.has_section('database'):
 +    # CloudFile containers pass complete MySQL facts in the environment and
 +    # keep only connection_charset in seafile.conf. Prefer the environment URL
@@ -74,7 +74,7 @@ index d64d743..377ae73 100644
 +
 +    if db_url is None and config.has_section('database'):
          backend = config.get('database', 'type')
- 
+
          if backend == 'mysql':
 diff --git a/seafobj/objstore_factory.py b/seafobj/objstore_factory.py
 index c7f4219..c8de5f7 100644
@@ -83,16 +83,16 @@ index c7f4219..c8de5f7 100644
 @@ -4,7 +4,7 @@ import binascii
  import logging
  import json
- 
+
 -from sqlalchemy import select
 +from sqlalchemy import select, text
- 
+
  from seafobj.exceptions import InvalidConfigError
  from seafobj.backends.filesystem import SeafObjStoreFS
 @@ -440,6 +440,29 @@ class SeafileConfig(object):
          # Get storage backend from seafile.conf
          cfg_file_parser = self.cfg_file_parser
- 
+
 +        # CloudFile V2 automatic local root: every routed library keeps its own
 +        # key directory while original CE libraries keep the native tree.
 +        # Reuse the reviewed multiple-backend machinery with one synthetic auto
@@ -122,7 +122,7 @@ index c7f4219..c8de5f7 100644
 @@ -638,7 +661,16 @@ class SeafObjStoreFactory(object):
          except KeyError:
              raise RuntimeError('unknown obj_type ' + obj_type)
- 
+
 +        # Construct the lazy mapping before managers capture this dictionary;
 +        # patching it at Django AppConfig.ready() would be too late for seafobj.
 +        from seafobj.auto_local import AutoLocalStores, auto_template
@@ -134,7 +134,7 @@ index c7f4219..c8de5f7 100644
 +            if bend.get('is_auto') is True:
 +                continue
              storage_id = bend['storage_id']
- 
+
              crypto = self.seafile_cfg.crypto
 @@ -715,8 +747,12 @@ def get_repo_storage_id(repo_id):
          RepoStorageId = Base.classes.RepoStorageId

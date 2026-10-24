@@ -209,6 +209,7 @@ def write_cloudfile_settings():
     body += 'CF_PROVIDER_ADMIN_STARTUP_SYNC_ENABLED = %r\n' % (
         get_conf('CF_PROVIDER_ADMIN_STARTUP_SYNC_ENABLED', 'false').lower() == 'true')
     body += 'CF_PROVIDER_ADMIN_SOURCE = %r\n' % get_conf('CF_PROVIDER_ADMIN_SOURCE', '')
+    body += 'CF_PROVIDER_ADMIN_MANAGED_ACCOUNTS = %r\n' % get_conf('CF_PROVIDER_ADMIN_MANAGED_ACCOUNTS', '')
     body += _settings_block_search()
     body += _settings_block_v04_preview_embed()
     body += _settings_block_external_sources()

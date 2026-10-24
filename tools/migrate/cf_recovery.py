@@ -135,7 +135,10 @@ def validate_managed_root(compose):
         from configparser import ConfigParser
         cfg = ConfigParser(interpolation=None)
         cfg.read(current_conf)
-        active = active or cfg.has_option("cloudfile_v2", "auto_local_root")
+        if cfg.has_option("cloudfile_v2", "auto_local_root"):
+            if cfg.get("cloudfile_v2", "auto_local_root") != "/shared/seafile/library-storage":
+                raise RecoveryError("nondefault V2 auto_local_root cannot be snapshotted here")
+            active = True
     managed = compose / MANAGED
     if active and (managed.is_symlink() or not managed.is_dir()):
         raise RecoveryError("auto-local managed library root is missing or unsafe")

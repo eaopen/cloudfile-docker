@@ -233,6 +233,9 @@ class LibraryStorageConfigTests(unittest.TestCase):
     def test_schema_missing_and_state_drift_allow_explicit_apply(self):
         for status in ('SCHEMA_MISSING', 'STATE_DRIFT'):
             with self.subTest(status=status):
+                # Every case models a distinct explicit CE transition.
+                # A completed V2 restart intentionally skips reconcile.
+                self.conf.write_text(self.original)
                 modes = []
                 def cli(command, **kwargs):
                     modes.append(command[-1])

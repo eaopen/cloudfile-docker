@@ -37,3 +37,33 @@ docker compose logs -f cloudfile
 镜像与发行包由 `build/cloudfile_14.0/build-in-docker.sh` + `image/cloudfile_14.0/docker-build.sh`
 生成，来源 SHA 由根目录 `release.yaml` 解析后写入 `build-receipt.json`。
 入口说明见根目录 `README.md`、`CLOUDFILE.md`、`AGENTS.md`。
+
+
+## 库级 Checkout（OFF / OPTIONAL）
+
+普通文件库默认 **OFF**，只使用 Seafile 原生版本与权限能力，不进入 Guard SQL；
+专业库可显式设为 **OPTIONAL**，允许用户对单个文件主动 Checkout、Commit、
+Checkin。本产品**不提供 REQUIRED**（强制全部签出）模式。
+
+`CF_ENABLE_CHECKOUT=false` 是全局总开关（默认）；开启总开关后，
+仍然**只**对 `CF_CHECKOUT_REPOS` 中列出的 **Repo UUID** 启用 OPTIONAL：
+
+```env
+CF_ENABLE_CHECKOUT=true
+CF_CHECKOUT_REPOS=11111111-1111-4111-8111-111111111111
+```
+
+`CF_CHECKOUT_REPOS` 为空则所有库保持 OFF。每个 UUID 必须是标准小写形式，
+多库用逗号隔开。配置启动时校验并同步生成 Hub 与原生 `seafile.conf`
+（Go/C 使用 `checkout_repo_ids`）；变更需协调重启对应服务。
+无新表、库级运行时数据库查询、文件类型自动切换或动态策略后台。
+
+**运维变更纪律：** 将 OPTIONAL 库移出列表或关闭总开关之前，先停止新签出，
+完成/取消该库所有活动 Checkout、处理 Agent 本地待确认任务，并确认不存在
+未过期的 Guard 租约。不能通过关闭能力绕过尚未完成的独占编辑。
+原先全局启用 Checkout 的部署升级时，必须先将仍有活动锁的库
+纳入白名单，并在统一重启前完成核对。
+
+仅 OPTIONAL 库依赖 Guard 表；Guard 失效时对应库拒绝不安全写入，
+但未启用的库继续普通文件操作。与 Hub PR #50、
+Agent2 #10 / #1 联动验收后再向 PROD 发布。

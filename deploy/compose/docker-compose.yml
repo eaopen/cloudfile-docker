@@ -213,6 +213,7 @@ services:
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:-}
       CF_LOCK_BACKEND: ${CF_LOCK_BACKEND:-cloudfile}
       CF_ENABLE_CHECKOUT: ${CF_ENABLE_CHECKOUT:-false}
+      CF_CHECKOUT_REPOS: ${CF_CHECKOUT_REPOS:-}
       # Keep explicit policy/transfer settings effective on both app and worker.
       # Native administrator policy is initialized automatically from existing SQL settings.
       CF_ENABLE_LOCAL_APP: ${CF_ENABLE_LOCAL_APP:-false}
@@ -483,6 +484,7 @@ services:
       CF_ENABLE_CONVERT_EXPORT: ${CF_ENABLE_CONVERT_EXPORT:-false}
       CF_LOCK_BACKEND: ${CF_LOCK_BACKEND:-cloudfile}
       CF_ENABLE_CHECKOUT: ${CF_ENABLE_CHECKOUT:-false}
+      CF_CHECKOUT_REPOS: ${CF_CHECKOUT_REPOS:-}
       # Keep explicit policy/transfer settings effective on both app and worker.
       # Native administrator policy is initialized automatically from existing SQL settings.
       CF_ENABLE_LOCAL_APP: ${CF_ENABLE_LOCAL_APP:-false}

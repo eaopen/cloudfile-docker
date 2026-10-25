@@ -294,8 +294,8 @@ services:
       CF_SSO_OAUTH_INSECURE: ${CF_SSO_OAUTH_INSECURE:-false}
       CF_PROVIDER_SSO_DIRECTORY: ${CF_PROVIDER_SSO_DIRECTORY:-}
       CF_SSO_GROUP_OWNER: ${CF_SSO_GROUP_OWNER:-}
-      # Retired full SSO poll interval, retained as compatibility-only env.
-      # V2 org/role catalog uses CF_DIRECTORY_SYNC_INTERVAL_SECONDS instead.
+      # Legacy full SSO interval is retained for configuration compatibility;
+      # V2 does not schedule any Directory synchronization.
       CF_SSO_SYNC_INTERVAL: ${CF_SSO_SYNC_INTERVAL:-600}
       CF_SSO_MAX_REMOVAL_RATIO: ${CF_SSO_MAX_REMOVAL_RATIO:-0.5}
       CF_SSO_DIRECTORY_STATIC: ${CF_SSO_DIRECTORY_STATIC:-}

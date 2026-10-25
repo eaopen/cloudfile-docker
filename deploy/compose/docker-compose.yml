@@ -298,6 +298,7 @@ services:
       CF_PROVIDER_SSO_DIRECTORY: ${CF_PROVIDER_SSO_DIRECTORY:-}
       CF_SSO_GROUP_OWNER: ${CF_SSO_GROUP_OWNER:-}
       CF_SSO_SYNC_INTERVAL: ${CF_SSO_SYNC_INTERVAL:-600}
+      CF_DIRECTORY_SYNC_INTERVAL_SECONDS: ${CF_DIRECTORY_SYNC_INTERVAL_SECONDS:-600}
       CF_SSO_MAX_REMOVAL_RATIO: ${CF_SSO_MAX_REMOVAL_RATIO:-0.5}
       CF_SSO_DIRECTORY_STATIC: ${CF_SSO_DIRECTORY_STATIC:-}
       CF_SERVICE_SSO_DIRECTORY_URL: ${CF_SERVICE_SSO_DIRECTORY_URL:-}
@@ -395,24 +396,13 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Background worker. Two mutually exclusive jobs, chosen by configuration:
-  #
-  #   CF_PROVIDER_SEARCH=meilisearch -> the V2 Meilisearch indexer
-  #     (`python3 -m cloudfile_ext.v2.search.worker`, checkpoint
-  #     /shared/search-v2-checkpoint.json). Meilisearch answers queries but never
-  #     indexes CloudFile's derived documents itself, so this process is what
-  #     keeps the index current: it loops every 60s, confirms each index task,
-  #     and a failed batch keeps its checkpoint for retry.
-  #
-  #   otherwise -> `manage.py cf_worker`, which loops over the registry's
-  #     periodic tasks and exits 0 when none is registered. The V2 runtime
-  #     registers none today -- SSO directory sync is the push trigger
-  #     POST /api/v2.1/admin/cloudfile/directory/entities/sync/ -- so this branch
-  #     is a clean idle exit.
-  #
-  # Safe to keep in the default stack: it waits for cloudfile to be healthy, and
-  # restarts on failure only, so a clean idle exit stays exited instead of
-  # looping.
+  # Background worker. The existing cf_worker handles periodic tasks (now
+  # including a 10-minute enterprise org/role catalog sync). The optional
+  # Meilisearch indexer can run alongside it in this SAME container when
+  # enterprise Directory is enabled: no separate scheduler service/table.
+  # Failures in either long-running process restart the worker container.
+  # If neither indexing nor periodic tasks are configured, the clean idle
+  # cf_worker exit stays exited (restart: on-failure).
   cf-worker:
     image: ${CLOUDFILE_IMAGE:-cloudfile/cloudfile:14.0.0-cf.0}
     container_name: cloudfile-worker
@@ -422,12 +412,19 @@ services:
       - >
         /scripts/create_data_links.sh &&
         if [ "$${CF_PROVIDER_SEARCH:-}" = "meilisearch" ]; then
-        export DJANGO_SETTINGS_MODULE=seahub.settings &&
-        exec /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub.sh python-env
-        python3 -m cloudfile_ext.v2.search.worker --checkpoint /shared/search-v2-checkpoint.json;
+          export DJANGO_SETTINGS_MODULE=seahub.settings;
+          if [ -n "$${CF_SERVICE_SSO_DIRECTORY_URL:-}" ]; then
+            /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub.sh python-env python3 /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub/manage.py cf_worker &
+            periodic_pid=$$!;
+            /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub.sh python-env python3 -m cloudfile_ext.v2.search.worker --checkpoint /shared/search-v2-checkpoint.json &
+            search_pid=$$!;
+            trap 'kill "$${periodic_pid}" "$${search_pid}" 2>/dev/null || true' EXIT TERM INT;
+            wait -n "$${periodic_pid}" "$${search_pid}";
+            exit 1;
+          fi;
+          exec /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub.sh python-env python3 -m cloudfile_ext.v2.search.worker --checkpoint /shared/search-v2-checkpoint.json;
         fi;
-        exec /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub.sh python-env
-        python3 /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub/manage.py cf_worker
+        exec /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub.sh python-env python3 /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub/manage.py cf_worker
     volumes:
       - ./data/seafile:/shared
     environment:
@@ -521,6 +518,7 @@ services:
       CF_PROVIDER_SSO_DIRECTORY: ${CF_PROVIDER_SSO_DIRECTORY:-}
       CF_SSO_GROUP_OWNER: ${CF_SSO_GROUP_OWNER:-}
       CF_SSO_SYNC_INTERVAL: ${CF_SSO_SYNC_INTERVAL:-600}
+      CF_DIRECTORY_SYNC_INTERVAL_SECONDS: ${CF_DIRECTORY_SYNC_INTERVAL_SECONDS:-600}
       CF_SSO_MAX_REMOVAL_RATIO: ${CF_SSO_MAX_REMOVAL_RATIO:-0.5}
       CF_SSO_DIRECTORY_STATIC: ${CF_SSO_DIRECTORY_STATIC:-}
       CF_SERVICE_SSO_DIRECTORY_URL: ${CF_SERVICE_SSO_DIRECTORY_URL:-}

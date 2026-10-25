@@ -1,7 +1,7 @@
 """The cf-worker service must not restart forever after a clean idle exit.
 
 `manage.py cf_worker` exits 0 when no capability registered a periodic task, and
-the V2 runtime registers none today. With `restart: unless-stopped` that clean
+the standalone V2 runtime registers none without a Directory. With `restart: unless-stopped` that clean
 exit becomes an endless restart loop (observed ExitCode=0, RestartCount 455+ on
 minio157), so the policy must be `on-failure`.
 
@@ -69,6 +69,13 @@ class WorkerLifecycleTests(unittest.TestCase):
         self.assertIn("meilisearch", command)
         self.assertIn("cloudfile_ext.v2.search.worker", command)
         self.assertIn("/shared/search-v2-checkpoint.json", command)
+
+    def test_meili_mode_keeps_directory_catalog_scheduling(self):
+        command = "\\n".join(self.block)
+        self.assertIn('CF_SERVICE_SSO_DIRECTORY_URL', command)
+        self.assertIn('periodic_pid=$!', command)
+        self.assertIn('wait -n "${periodic_pid}" "${search_pid}"', command)
+        self.assertIn('CF_DIRECTORY_SYNC_INTERVAL_SECONDS: ${CF_DIRECTORY_SYNC_INTERVAL_SECONDS:-600}', command)
 
     def test_worker_stays_in_the_default_stack(self):
         self.assertEqual([], service_values(self.block, "profiles"))

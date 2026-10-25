@@ -1,3 +1,9 @@
+## 存储维护默认操作（2026-10-24）
+
+**只读、单库、Seafile 原生优先。** 存储识别请先使用 [Seafile 单库离线工具](tools/ops/README-seafile-library-offline.md) 的 `inspect --repo-id`；逻辑文件导出只在明确指定 `repo_id`、新的目标目录和原生 `seaf-fsck` 时执行；校验已导出文件使用显式 `verify-export`，是否全文件哈希由 `--hash` 再确认。默认构建、安装、容器启动、CI 和 Agent 操作都不得触发批量备份、文件导出或原生对象根复制。
+
+`cf_recovery.py` 属于**另外的旧 CE 全实例离线灾备**，不是 CloudFile V2 正常单库工作流；不得调用它为 V2 自动备份，检测到 V2 数据时应失败拒绝，不能返回不完整快照的成功结果。遇到 S3/加密库、重复 UUID、多存储冲突，停下核查，不能猜目录或盲目重试。
+
 # AGENTS.md — cloudfile-docker
 
 > **当前版本规则**：`cloudfile-docker/dev` 就是 CloudFile **V2 当前开发主线**，以 Seafile CE14 为基础。与 `cloudfile-server/dev`、`cloudfile-hub/dev` 统一，不存在另一条“当前 V0.x dev”。本规则适用于 AI 开发 Agent 和维护者。

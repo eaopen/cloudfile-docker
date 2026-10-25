@@ -55,6 +55,14 @@ jobs:
           python3 -m unittest discover -s tests -p test_build_receipt.py -q
           python3 -m unittest discover -s tests -p test_current_build_policy.py -q
 
+      - name: Test per-library offline CLI when changed (no services / no backup)
+        shell: bash
+        run: |
+          if git diff --name-only HEAD^ HEAD -- \
+            tools/ops/seafile-library-offline.py tests/test_seafile_library_offline.py | grep -q .; then
+            python3 -m unittest discover -s tests -p test_seafile_library_offline.py -q
+          fi
+
       - name: Test legacy CE recovery gate when changed (no backup)
         shell: bash
         run: |

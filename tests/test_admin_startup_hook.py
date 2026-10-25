@@ -51,11 +51,16 @@ class StartupSyncHookTests(unittest.TestCase):
                     runner=Mock(return_value=SimpleNamespace(
                         returncode=0, stdout=stdout))), 'FAILED')
 
-    def test_etech_default_admin_compatibility_remains_opt_in(self):
+    def test_enterprise_default_admin_compatibility_remains_opt_in(self):
         root = Path(__file__).resolve().parents[1]
-        env = (root / 'deploy/compose/.env.etech-sso.example').read_text()
-        self.assertIn('CF_PROVIDER_ADMIN_EXPECTED_ACCOUNT=admin', env)
+        env = (root / 'deploy/compose/.env.enterprise-sso.example').read_text()
         self.assertIn('CF_PROVIDER_ADMIN_STARTUP_SYNC_ENABLED=false', env)
+        # The example must not hardcode a customer administrator account: the
+        # expected-account assertion is an operator opt-in in their own config.
+        self.assertIn('CF_PROVIDER_ADMIN_EXPECTED_ACCOUNT=', env)
+        self.assertNotIn('CF_PROVIDER_ADMIN_EXPECTED_ACCOUNT=admin', env)
+        self.assertIn('CF_ACL_PROVIDER=external', env)
+        self.assertIn('CF_DIRECTORY_AUDIENCE=cloudfile-directory', env)
 
     def test_nonroot_command_is_one_safely_quoted_shell_command(self):
         spawn = Mock(return_value=SimpleNamespace(returncode=0, stdout='CF_ADMIN_SYNC APPLIED added=1 removed=0 unchanged=0'))

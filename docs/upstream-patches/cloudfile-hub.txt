@@ -1,5 +1,5 @@
 # OAuth UID 修复（2026-10-20）：保留上游回调入口；仅明确的业务 UID 映射走严格绑定。
-# Etech Directory 配置缺失正确映射或 UserInfo 缺 UID 时拒绝，不进入 CE 兼容建号；
+# 企业 Directory 配置缺失正确映射或 UserInfo 缺 UID 时拒绝，不进入 CE 兼容建号；
 # 适配器位于独立 V2 包，避免精简源码产物导入未携带的旧扩展包。
 # cloudfile-hub 允许修改的上游文件。
 #

@@ -115,14 +115,14 @@ port=8082
                                       issuer='https://idp.example.test/', create_account=create_account)
             username = identity.bind(subject='oidc-subject', uid='uid-runtime', login_name='E001')
             assert identity.bind(subject='oidc-subject', uid='uid-runtime', login_name='E999') == username
-            catalog = GroupCatalog(connection, account_schema=names['account'], provider='etech',
+            catalog = GroupCatalog(connection, account_schema=names['account'], provider='external',
                 create_group=lambda name: ccnet_api.create_group(name, owner))
             group = catalog.ensure('role', 'role', 'r1', 'Runtime role')
             subject = dict(userId='uid-runtime', status='active', attributes={'login_name': 'E999'},
                 organizations=[], organization_ancestors=[], roles=[dict(namespace='role', external_id='r1')],
                 etag='runtime', generated_at=datetime.now(timezone.utc).isoformat())
             client = redis.Redis(host=os.environ['REDIS_HOST'])
-            projector = Memberships(connection, client, identity, account_schema=names['account'], provider='etech', fetch=lambda uid: subject)
+            projector = Memberships(connection, client, identity, account_schema=names['account'], provider='external', fetch=lambda uid: subject)
             cache_key = projector._key('uid-runtime', username)
             projector.ensure('uid-runtime', username)
             automatic = os.environ.get('CF_V2_AUTO_STORAGE') == '1'
@@ -205,7 +205,7 @@ port=8082
                     'subject_type,provider,namespace,external_id,'
                     'permission,inherit,share_mode,revision) '
                     'VALUES (%s,UNHEX(SHA2(%s,256)),%s,'
-                    "'user','etech','','uid-runtime','r',1,0,%s)",
+                    "'user','external','','uid-runtime','r',1,0,%s)",
                     (repo, '/project', '/project', str(uuid4())))
             try:
                 assert requests.get(url, timeout=30).status_code == 403, (

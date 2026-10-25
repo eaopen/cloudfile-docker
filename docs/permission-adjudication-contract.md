@@ -9,7 +9,7 @@
 CloudFile 不存在托管库这一概念。每个库均保留 Seafile CE 原生 RepoOwner/SharedRepo/RepoGroup 的库资格，以及同一 `cf_dir_acl` 存储的目录 ACL 和共享目录资格。目录规则是路径级事实，不能使整个库进入另一权限模式。
 
 - 库级资格由 CE 原生权限和可信身份计算，正常情况下 `r/rw`；目录规则默认继承，可在有效作用域内缩权或扩权。
-- Hub 的 `cloudfile_ext/v2/acl_runtime.py:Authority.effective()` 结合 `acl_policy.py` 负责 user / org / role、目录祖先、共享根的统一判定。Etech 的组织父子层级本身不自动扩大成员身份。
+- Hub 的 `cloudfile_ext/v2/acl_runtime.py:Authority.effective()` 结合 `acl_policy.py` 负责 user / org / role、目录祖先、共享根的统一判定。企业 Directory 的组织父子层级本身不自动扩大成员身份。
 - 只有没有 CE 库资格的用户取得明确的正向 `share_mode=true` 目录规则时，才可从对应共享目录根进入；不得因此遍历库根、父目录和兄弟目录。
 - `invisible` 表示不可访问且不展示。不存在可持久化的 `none` 目录规则。管理身份与内容 `rw` 分离。
 - C/Go 负责不可绕过的真实字节、对象、CAS/Branch Commit 终判；调用者身份来自可信会话/票据，不能信任 Commit 作者或客户端提供的主体。

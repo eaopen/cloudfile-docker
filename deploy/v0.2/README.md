@@ -56,4 +56,4 @@ docker compose -f deploy/v0.2/compose.ingress.yml up -d
 历史验证入口（无需继续执行）：`python3 tests/verify.py changed --plan`，
 `python3 tests/ingress_runtime.py --image cloudfile/cloudfile:14.0.8-v0.2-rc-app`。
 探针运行实际只读 Nginx 与校验证书的 HTTPS，使用透明响应夹具核对路由/方法/
-请求体/头/Range。它不冒充新的 CE 身份、文件权限或真实 eTech 联验。
+请求体/头/Range。它不冒充新的 CE 身份、文件权限或真实客户联验。

@@ -347,7 +347,7 @@ def _settings_block_sso():
                             'use trusted Directory identity preparation')
         lines.append('CF_SSO_EAP_PROFILE_IDENTITY = False')
         if login_id_claim == 'login_id':
-            logwarning('For Etech set CF_SSO_OAUTH_LOGIN_ID_CLAIM=userId; '
+            logwarning('For a trusted enterprise deployment set CF_SSO_OAUTH_LOGIN_ID_CLAIM=userId; '
                        'Profile.login_id must contain the business UID')
 
         lines += [
@@ -394,7 +394,7 @@ def _settings_block_sso():
         'CF_SERVICE_SSO_DIRECTORY_SERVICE_ID = %r'
         % get_conf('CF_SERVICE_SSO_DIRECTORY_SERVICE_ID', 'cloudfile'),
         # The V2 ACL authority reads its own connection names
-        # (cloudfile_ext/v2/etech_directory.py: CF_DIRECTORY_URL / KEY_ID /
+        # (cloudfile_ext/v2/external_directory.py: CF_DIRECTORY_URL / KEY_ID /
         # SECRET / GROUP_OWNER). It must resolve the same subjects as the SSO
         # membership sync, so derive them from the values above instead of
         # asking operators to keep a second copy in .env. Without them every
@@ -1270,7 +1270,7 @@ def write_seafevents_search_config():
 def write_seafevents_audit_config():
     """Do not enable Pro-style access/update/permission audit streams.
 
-    V2 Etech operation history reads the CE Activity stream (registered
+    V2 客户 Provider operation history reads the CE Activity stream (registered
     independently) and cf_audit_event for low-frequency tag/Checkout changes.
     FileAudit and PermAudit are unnecessary for this scope and would amplify
     routine downloads and sync traffic. Disable an older generated [Audit]

@@ -222,10 +222,12 @@ def write_cloudfile_settings():
     # Existing generic deployments may pin a persisted ACL/Group namespace.
     # Etech normally needs neither setting: its trusted Directory declares
     # provider=etech. Emit nothing for an unset value so auto-detection works.
-    for name in ('CF_DIRECTORY_PROVIDER', 'CF_ACL_PROVIDER'):
-        value = get_conf(name, '')
-        if value:
-            body += '%s = %r\n' % (name, value)
+    if (cf_enabled('CF_ENABLE_SSO') or
+            get_conf('CF_PROVIDER_ADMIN_STARTUP_SYNC_ENABLED', 'false').lower() == 'true'):
+        for name in ('CF_DIRECTORY_PROVIDER', 'CF_ACL_PROVIDER'):
+            value = get_conf(name, '')
+            if value:
+                body += '%s = %r\n' % (name, value)
     # Directory catalog reconciliation is triggered by the external owner
     # through Hub's administrator endpoint; never schedule a local poll.
     # EAP may use the existing OAuth/SSO bridge with the legacy full

@@ -512,7 +512,8 @@ def check(args):
             db.execute("INSERT INTO plan(path,kind,size,mtime,action) SELECT s.path,s.kind,s.size,s.mtime, "
                        "CASE WHEN i.path IS NULL THEN 'add' WHEN i.kind!=s.kind THEN 'conflict' ELSE 'modify' END "
                        "FROM scan s LEFT JOIN items i ON i.path=s.path "
-                       "WHERE i.path IS NULL OR i.kind!=s.kind OR i.size!=s.size OR i.mtime!=s.mtime")
+                       "WHERE i.path IS NULL OR i.kind!=s.kind OR "
+                       "(s.kind='file' AND (i.size!=s.size OR i.mtime!=s.mtime))")
             db.execute("INSERT INTO plan(path,kind,size,mtime,action) SELECT i.path,i.kind,i.size,i.mtime,'delete_candidate' "
                        "FROM items i LEFT JOIN scan s ON s.path=i.path WHERE s.path IS NULL")
             set_meta(db, "plan_head", head)
@@ -584,6 +585,45 @@ def report(args):
                      "result. A HEAD mismatch must be reviewed, never blindly retried.")
         }
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+
+
+def probe(args):
+    """Online, read-only check before operator retries an interrupted import.
+
+    HEAD equality is necessary but never a substitute for the --exclusive
+    lock, the source check, or apply's per-object checks. Never mutate the
+    job state or guess whether a timed-out upload was actually committed.
+    """
+    with read_job(args.job_dir) as (config, db), requests.Session() as session:
+        status = get_meta(db, "plan_status")
+        expected = (get_meta(db, "plan_head") if status in ("ready", "running")
+                    else get_meta(db, "applied_head"))
+        actual = Target(config, session).head()
+        conflicts = db.execute("SELECT COUNT(*) FROM plan WHERE action='conflict'").fetchone()[0]
+        pending = db.execute(
+            "SELECT COUNT(*) FROM plan WHERE done=0 AND action!='delete_candidate'").fetchone()[0]
+        matched = expected is not None and actual == expected
+        possible = matched and status in ("ready", "running") and conflicts == 0
+        if expected is None:
+            result = "NO_BASELINE"
+        elif not matched:
+            result = "HEAD_MISMATCH"
+        elif conflicts:
+            result = "SOURCE_CONFLICT"
+        elif status in ("ready", "running"):
+            result = "HEAD_MATCHED"
+        else:
+            result = "NO_PENDING_PLAN"
+        print(json.dumps({
+            "schema": "cloudfile.import-probe.v1",
+            "repo": config["repo"], "target": config["target"],
+            "plan_status": status, "expected_head": expected, "actual_head": actual,
+            "pending_operations": pending, "source_conflicts": conflicts,
+            "head_matched": matched, "may_retry_under_exclusive_lock": possible,
+            "result": result,
+            "note": ("If HEAD differs, inspect actual remote file bytes/versions; never "
+                     "auto-mark an uncertain upload complete or retry it blindly.")
+        }, ensure_ascii=False, sort_keys=True))
 
 
 def apply(args):
@@ -663,7 +703,8 @@ def main(argv=None):
     new.add_argument("--filestash-url")
     new.add_argument("--filestash-token-file")
     new.set_defaults(func=create)
-    for name, callback in (("check", check), ("plan", plan), ("apply", apply), ("status", status), ("report", report)):
+    for name, callback in (("check", check), ("plan", plan), ("apply", apply),
+                           ("status", status), ("report", report), ("probe", probe)):
         command = commands.add_parser(name)
         command.add_argument("job_dir")
         if name == "plan":

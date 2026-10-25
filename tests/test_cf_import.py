@@ -126,7 +126,7 @@ class CfImportTests(unittest.TestCase):
             (self.source / "图纸" / "新增.txt").write_text("新文件", encoding="utf-8")
             second = self.call(cf_import.check)
             self.assertEqual(second["actions"]["add"]["entries"], 1)
-            self.assertEqual(second["actions"]["modify"]["entries"], 2)  # file and parent directory
+            self.assertEqual(second["actions"]["modify"]["entries"], 1)  # file only; directory mtime is not an import change
             self.assertEqual(second["actions"]["delete_candidate"]["entries"], 1)
             self.call(cf_import.apply, exclusive=True)
             self.assertEqual(remote.files["/历史资料/项目 A/图纸/数据.bin"], b"new")
@@ -186,6 +186,26 @@ class CfImportTests(unittest.TestCase):
             with self.assertRaisesRegex(cf_import.ImportErrorSafe, "response lost"):
                 self.call(cf_import.apply, exclusive=True)
             remote.upload = original_upload
+            with self.assertRaisesRegex(cf_import.ImportErrorSafe, "repository changed"):
+                self.call(cf_import.apply, exclusive=True)
+
+    def test_online_probe_is_read_only_and_never_autoretries_unknown_commits(self):
+        (self.source / "one.txt").write_bytes(b"one")
+        self.create()
+        remote = FakeTarget()
+        with mock.patch.object(cf_import, "Target", return_value=remote):
+            self.call(cf_import.check)
+            safe = self.call(cf_import.probe)
+            self.assertEqual("HEAD_MATCHED", safe["result"])
+            self.assertTrue(safe["may_retry_under_exclusive_lock"])
+            self.assertTrue(safe["head_matched"])
+            saved = self.call(cf_import.report)
+            remote.advance()  # unknown upload may have committed or another writer ran
+            drift = self.call(cf_import.probe)
+            self.assertEqual("HEAD_MISMATCH", drift["result"])
+            self.assertFalse(drift["may_retry_under_exclusive_lock"])
+            self.assertFalse(drift["head_matched"])
+            self.assertEqual(saved["plan_head"], self.call(cf_import.report)["plan_head"])
             with self.assertRaisesRegex(cf_import.ImportErrorSafe, "repository changed"):
                 self.call(cf_import.apply, exclusive=True)
 

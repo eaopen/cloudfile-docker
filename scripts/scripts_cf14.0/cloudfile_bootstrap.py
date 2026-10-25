@@ -196,6 +196,21 @@ def write_cloudfile_settings():
     )
 
     body += _settings_block_sso()
+    # EAP may use the existing OAuth/SSO bridge with the legacy full
+    # group-synchronizer disabled. When the new one-shot administrator sync is
+    # explicitly enabled, still expose its trusted Directory connection.
+    if (not cf_enabled('CF_ENABLE_SSO') and
+            get_conf('CF_PROVIDER_ADMIN_STARTUP_SYNC_ENABLED', 'false').lower() == 'true'):
+        body += 'CF_DIRECTORY_URL = %r\n' % get_conf('CF_SERVICE_SSO_DIRECTORY_URL', '')
+        body += 'CF_DIRECTORY_KEY_ID = %r\n' % get_conf('CF_SERVICE_SSO_DIRECTORY_KEY_ID', '')
+        body += 'CF_DIRECTORY_SECRET = %r\n' % get_conf('CF_SERVICE_SSO_DIRECTORY_SECRET', '')
+    # Low-frequency native admin sync is separate from the old SSO worker.
+    # It must remain off in Standalone CE and must never start an HTTP poll.
+    body += 'CF_PROVIDER_ADMIN_STARTUP_SYNC_ENABLED = %r\n' % (
+        get_conf('CF_PROVIDER_ADMIN_STARTUP_SYNC_ENABLED', 'false').lower() == 'true')
+    body += 'CF_PROVIDER_ADMIN_SOURCE = %r\n' % get_conf('CF_PROVIDER_ADMIN_SOURCE', '')
+    body += 'CF_PROVIDER_ADMIN_MANAGED_ACCOUNTS = %r\n' % get_conf('CF_PROVIDER_ADMIN_MANAGED_ACCOUNTS', '')
+    body += 'CF_PROVIDER_ADMIN_EXPECTED_ACCOUNT = %r\n' % get_conf('CF_PROVIDER_ADMIN_EXPECTED_ACCOUNT', '')
     body += _settings_block_search()
     body += _settings_block_v04_preview_embed()
     body += _settings_block_external_sources()
@@ -332,7 +347,7 @@ def _settings_block_sso():
                             'use trusted Directory identity preparation')
         lines.append('CF_SSO_EAP_PROFILE_IDENTITY = False')
         if login_id_claim == 'login_id':
-            logwarning('For Etech set CF_SSO_OAUTH_LOGIN_ID_CLAIM=userId; '
+            logwarning('For a trusted enterprise deployment set CF_SSO_OAUTH_LOGIN_ID_CLAIM=userId; '
                        'Profile.login_id must contain the business UID')
 
         lines += [
@@ -379,7 +394,7 @@ def _settings_block_sso():
         'CF_SERVICE_SSO_DIRECTORY_SERVICE_ID = %r'
         % get_conf('CF_SERVICE_SSO_DIRECTORY_SERVICE_ID', 'cloudfile'),
         # The V2 ACL authority reads its own connection names
-        # (cloudfile_ext/v2/etech_directory.py: CF_DIRECTORY_URL / KEY_ID /
+        # (cloudfile_ext/v2/external_directory.py: CF_DIRECTORY_URL / KEY_ID /
         # SECRET / GROUP_OWNER). It must resolve the same subjects as the SSO
         # membership sync, so derive them from the values above instead of
         # asking operators to keep a second copy in .env. Without them every
@@ -855,7 +870,7 @@ def write_cloudfile_seafile_conf():
     conf_path = join(topdir, 'conf', 'seafile.conf')
     fresh = fresh_install()
     if auto_storage_enabled(conf_path, os.environ, fresh=fresh):
-        configure_auto_storage(conf_path, ''.join(lines), installdir)
+        configure_auto_storage(conf_path, ''.join(lines), installdir, fresh=fresh)
         return
 
     # Keep the S3 configuration in the same restart-safe generated block as
@@ -1255,7 +1270,7 @@ def write_seafevents_search_config():
 def write_seafevents_audit_config():
     """Do not enable Pro-style access/update/permission audit streams.
 
-    V2 Etech operation history reads the CE Activity stream (registered
+    V2 客户 Provider operation history reads the CE Activity stream (registered
     independently) and cf_audit_event for low-frequency tag/Checkout changes.
     FileAudit and PermAudit are unnecessary for this scope and would amplify
     routine downloads and sync traffic. Disable an older generated [Audit]

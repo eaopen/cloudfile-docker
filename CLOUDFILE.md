@@ -49,9 +49,9 @@ python3 tests/smoke_ce14_runtime.py --image cloudfile/cloudfile:14.0.8-v0.2-rc-w
 python3 tests/smoke_ce14_runtime.py --image cloudfile/cloudfile:14.0.8-v0.2-rc-work --identity-runtime
 ```
 
-基础验收明确使用 `ENABLE_GO_FILESERVER=true`，覆盖初始化、能力关闭态、本地管理员登录、建库、真实上传/下载字节、Range、显式更新及匿名拒绝。`--native-regression` 在实际 Seahub 配置运行 download actor 回归；`--extensions-regression` 使用另一个独立 SQL/Redis，复用既有扩展测试，报告通过/跳过/失败数量。扩展回归只使用本仓夹具，不依赖外部仓库；原生 actor 自动在单独完整 Django 进程执行，其余 HTTP 单元夹具保留最小 settings，报告分别计数。报告不含密码或令牌。该夹具不证明真实 Authentik/eTech、HTTPS 委托授权、全入口权限、迁移恢复或 RC 完成。
+基础验收明确使用 `ENABLE_GO_FILESERVER=true`，覆盖初始化、能力关闭态、本地管理员登录、建库、真实上传/下载字节、Range、显式更新及匿名拒绝。`--native-regression` 在实际 Seahub 配置运行 download actor 回归；`--extensions-regression` 使用另一个独立 SQL/Redis，复用既有扩展测试，报告通过/跳过/失败数量。扩展回归只使用本仓夹具，不依赖外部仓库；原生 actor 自动在单独完整 Django 进程执行，其余 HTTP 单元夹具保留最小 settings，报告分别计数。报告不含密码或令牌。该夹具不证明真实 Authentik/客户环境、HTTPS 委托授权、全入口权限、迁移恢复或 RC 完成。
 
-`--identity-runtime` 复用当前镜像，不重编译 C/Go 或执行全量扩展回归；真实 TLS 的本机测试 IdP/Directory 与原生 CE RPC/SQL、实际 cf schema、完整 Django Client 链验证管理员受控预绑定、RS256/JWKS/state/nonce/PKCE、冷缓存组织/角色投影且保留非托管组、持久会话/索引、重载及 CSRF 本地退出，以及身份冲突/原生停用/目录停用/目录故障拒绝。Django Client 显式模拟浏览器删除过期 cookie，不放宽服务器守卫。测试账号通过 CE RPC 创建，仅用于已有预绑定路径，不证明 JIT worker、RP/backchannel、真实 Authentik/eTech 或浏览器 TLS 入口已验收。
+`--identity-runtime` 复用当前镜像，不重编译 C/Go 或执行全量扩展回归；真实 TLS 的本机测试 IdP/Directory 与原生 CE RPC/SQL、实际 cf schema、完整 Django Client 链验证管理员受控预绑定、RS256/JWKS/state/nonce/PKCE、冷缓存组织/角色投影且保留非托管组、持久会话/索引、重载及 CSRF 本地退出，以及身份冲突/原生停用/目录停用/目录故障拒绝。Django Client 显式模拟浏览器删除过期 cookie，不放宽服务器守卫。测试账号通过 CE RPC 创建，仅用于已有预绑定路径，不证明 JIT worker、RP/backchannel、真实 Authentik/客户环境 或浏览器 TLS 入口已验收。
 
 验证分层：改配置/缓存先跑 Docker 单测（Linux `python3 -m unittest discover -s tests`，39 项）；仅改身份夹具跑 `--identity-runtime`；C/Go 改动执行相应 native 回归后重建制品；合并阶段或影响跨域边界再执行 `--extensions-regression`。保留通过证据，只因新变化、失败或未解决边界重复全量，避免用完整构建/全量测试调试路径与 fixture。
 
@@ -65,7 +65,7 @@ python3 tests/smoke_ce14_runtime.py --image cloudfile/cloudfile:14.0.8-v0.2-rc-w
 - `CLOUDFILE_WEBDAV_ENABLED`：声明已配置启用 WebDAV，默认 `false`；它不代替 WebDAV 服务本身的启停配置。
 - `CLOUDFILE_AUTHORIZATION_ENABLED`：挂载内建 authorization v1 路由，默认 `false`；必须同时启用 post-fork policy worker，并配置真实目录、主体刷新和委托发行运行时。该开关不自动声明 capability 已交付。
 - `CLOUDFILE_POLICY_CONFIG_JSON`：严格 JSON 的可信 worker 配置；包含数据库、专属 Redis、Directory Adapter、C ACL 库、机器凭证范围、刷新 provider grant 与独立委托签名键。`CLOUDFILE_AUTHORIZATION_ENABLED=true` 时必须同时设置它和 `CLOUDFILE_POLICY_WORKER_HOOKS=true`，重复字段或不完整安全配置拒绝启动。
-- 建库的群组授权使用 `PUT /api/v2.1/cloudfile/libraries/{repo_id}/shares/desired/`，传 `policy_revision` 和完整 `shares:[{external_group_id,permission}]`；先执行 CloudFile schema 035，部门需有 `(etech,dept,directory,<id>)` 映射，角色 `role:<id>` 需有 `(etech,group,role,<id>)` 映射。当前新版没有可用的全量建组同步入口，新环境必须先完成受管群组及映射的受控预置/迁移；缺映射会逐条报错，TEAM/CONTROLLED 建库保持待完成状态，不会按名称猜测群组或撤销人工共享。原生共享与策略账本分属两处持久化，未完成的新增意图以 `PENDING` 记录供重试识别。
+- 建库的群组授权使用 `PUT /api/v2.1/cloudfile/libraries/{repo_id}/shares/desired/`，传 `policy_revision` 和完整 `shares:[{external_group_id,permission}]`；先执行 CloudFile schema 035，部门需有 `(external,dept,directory,<id>)` 映射，角色 `role:<id>` 需有 `(external,group,role,<id>)` 映射。当前新版没有可用的全量建组同步入口，新环境必须先完成受管群组及映射的受控预置/迁移；缺映射会逐条报错，TEAM/CONTROLLED 建库保持待完成状态，不会按名称猜测群组或撤销人工共享。原生共享与策略账本分属两处持久化，未完成的新增意图以 `PENDING` 记录供重试识别。
 - 目录授权总览使用 `GET /api/v2.1/cloudfile/extensions/authorization/v1/library-rules/?repo_id=...&limit=100&after=...`；schema 036 添加 `(repo_id,id)` 索引。每次最多返回 100 条规则，不枚举库内文件；新目录规则增删改使用同域的 `directory-rules/`，由当前 Seafile 会话终判库管理权。
 - `CLOUDFILE_LOCAL_EDIT_ENABLED`：挂载内建 local-edit URL，默认 `false`；只有同时配置 post-fork policy worker、资源生命周期读取器、本地编辑版本读取器和固定 HTTPS 实例 origin 后才可设为 `true`，该开关本身不声明能力已交付。
 - `CLOUDFILE_TRANSFER_ENABLED`：挂载 cookie-free 的 `transfer/v1/delegated-read-tickets/`，默认 `false`；必须同时设置 `ENABLE_GO_FILESERVER=true`、启用 post-fork policy worker，并由完整 `CLOUDFILE_POLICY_CONFIG_JSON` 构造独立委托验签键、共享撤销存储与 native ticket RPC。C 文件服务没有增强下载路由，选择它时拒绝启用委托传输。该开关在 OIDC 同时启用时也挂载受 CSRF 保护的会话读取/手动替换路由，不自动声明 `transfer.web` 已交付。
@@ -80,17 +80,17 @@ authorization/transfer 的 `CLOUDFILE_POLICY_CONFIG_JSON` 最小结构如下；�
 {
   "database": {"host":"db","port":3306,"user":"cloudfile","name":"seafile_db","password":"replace-me"},
   "redis": {"host":"redis","port":6379,"password":"replace-me"},
-  "provider":"etech",
+  "provider":"external",
   "native_schema":"ccnet_db",
   "identity_schema":"seahub_db",
-  "directory_url":"https://etech.example.com/eap/cloudDrive/directory",
+  "directory_url":"https://directory.example.com/eap/cloudDrive/directory",
   "directory_bearer_token":"replace-me",
   "attribute_allowlist":[],
   "core_library":"/opt/seafile/seafile-server-latest/seafile/lib/libcloudfile_acl.so.1",
   "cloud_mode":false,
-  "service_credentials":{"login-v1":{"service_id":"etech-login","issuer":"etech-login","audience":"cloudfile-authorization","secret":"replace-with-machine-secret-32-bytes-min","scopes":["subject.refresh","user.delegation.issue"],"maximum_ttl":120}},
-  "refresh_provider_grants":{"etech-login":["etech"]},
-  "delegation_signing_keys":{"etech-login":{"kid":"delegation-v1","issuer":"cloudfile","audience":"cloudfile-download","secret":"replace-with-distinct-signing-secret-32-bytes-min"}}
+  "service_credentials":{"login-v1":{"service_id":"directory-login","issuer":"directory-login","audience":"cloudfile-authorization","secret":"replace-with-machine-secret-32-bytes-min","scopes":["subject.refresh","user.delegation.issue"],"maximum_ttl":120}},
+  "refresh_provider_grants":{"directory-login":["external"]},
+  "delegation_signing_keys":{"directory-login":{"kid":"delegation-v1","issuer":"cloudfile","audience":"cloudfile-download","secret":"replace-with-distinct-signing-secret-32-bytes-min"}}
 }
 ```
 
@@ -142,7 +142,7 @@ RP logout 需同时配置固定 HTTPS `end_session_url` 与同应用 `post_logou
 python3 tests/verify.py identity-logout
 ```
 
-当前真实 TLS 测试 IdP、数据库 session/index 与完整 Django Client 通过：缺 CSRF 拒绝且保留旧会话；固定 HTTPS form/POST 与 cookie/CSP；当前会话删除而其他会话仍可用；wrong-browser 返回拒绝；迟到的固定 return 只消费一次 state，保留期间新的登录；IdP 实际返回 503 时本地会话不恢复。返回值为 `rp_returned=true, idp_logged_out=null`，仅证明关联回调，不能宣称全局退出。这里没有执行真实浏览器自动提交脚本或实际 Authentik/eTech 联验。
+当前真实 TLS 测试 IdP、数据库 session/index 与完整 Django Client 通过：缺 CSRF 拒绝且保留旧会话；固定 HTTPS form/POST 与 cookie/CSP；当前会话删除而其他会话仍可用；wrong-browser 返回拒绝；迟到的固定 return 只消费一次 state，保留期间新的登录；IdP 实际返回 503 时本地会话不恢复。返回值为 `rp_returned=true, idp_logged_out=null`，仅证明关联回调，不能宣称全局退出。这里没有执行真实浏览器自动提交脚本或实际 Authentik/客户环境 联验。
 
 backchannel 使用独立显式开关，配置及专项验收如下；RP return 的全局退出结论仍保持未知。
 
@@ -160,7 +160,7 @@ python3 tests/verify.py identity-backchannel
 
 请求通过 post-fork login scope 使用独立 SQL/JWKS 连接，不获取员工目录；ACK 200 仅代表签名通知与单调撤销 fence/任务已持久提交。相同通知重复受理返回 200 而不重复排队；ACK 不表示异步物理删除已完成。撤销 fence 立即保护请求、迟到 session save 和旧认证登录；独立 worker 分页删除匹配的 native 数据库 session/index，较晚的真实认证保留，sid 通知不删除其他 sid。JIT 与 logout 入口复用同一已验证的进程/信号/资源清理代码，但各自只注册固定任务、校验各自开关；关闭 backchannel 时 worker 拒绝启动。
 
-当前镜像与真实 TLS/JWKS、SQL/session、完整 Django Client 的专项通过：错 aud/nonce/ID Token purpose/浏览器 cookie/替代认证拒绝；员工目录故障仍受理；ACK 后 fence 立即拒绝旧 sid，请求守卫清理与 worker 实际删除使用不同原生 session 行分别取证；同 sid 的多个原生会话删除、另一 sid 保留；sub 通知后较晚的新登录保留；独立进程完成并退出、关闭开关拒绝 ready。真实 Authentik/eTech 通知配置、实际浏览器/HTTPS ingress 与完整 RC 仍单列验收。
+当前镜像与真实 TLS/JWKS、SQL/session、完整 Django Client 的专项通过：错 aud/nonce/ID Token purpose/浏览器 cookie/替代认证拒绝；员工目录故障仍受理；ACK 后 fence 立即拒绝旧 sid，请求守卫清理与 worker 实际删除使用不同原生 session 行分别取证；同 sid 的多个原生会话删除、另一 sid 保留；sub 通知后较晚的新登录保留；独立进程完成并退出、关闭开关拒绝 ready。真实 Authentik/客户环境 通知配置、实际浏览器/HTTPS ingress 与完整 RC 仍单列验收。
 
 ### 受控 JIT 独立 Worker
 
@@ -180,7 +180,7 @@ OIDC 或 JIT 未明确启用时拒绝启动；使用新进程拥有的 policy/SQ
 
 未知身份的可信 callback 返回 202、浏览器绑定的 pending proof，不创建账号或认证会话。worker 只为当前可信目录 active 的用户原子写入 native identity/profile/OIDC 绑定与审计，再完成受管成员与主体 ready。中途失败保留同一任务/账号；新的可信 OIDC 登录可重新排队，成功后仍须新的 OIDC 流程建立会话，pending 查询成功不提供会话或文件权限。管理员原生停用不会因目录 active 自动解除。
 
-当前实测涵盖镜像内脚本的新进程建号、SQL/RPC 重载及组织/角色、pending proof 跨浏览器拒绝、成功后新登录/重复复用、identity 提交后第二次真实 HTTPS 目录请求 503 与第二次执行恢复、目录停用不建号、空队列退出、空闲 SIGTERM 与显式关闭拒绝。这里只是 TLS 测试 IdP/Directory、真实 CE14/SQL/Redis 与 Django Client 证据，实际 Authentik/eTech/浏览器 TLS、RP/backchannel 另验。
+当前实测涵盖镜像内脚本的新进程建号、SQL/RPC 重载及组织/角色、pending proof 跨浏览器拒绝、成功后新登录/重复复用、identity 提交后第二次真实 HTTPS 目录请求 503 与第二次执行恢复、目录停用不建号、空队列退出、空闲 SIGTERM 与显式关闭拒绝。这里只是 TLS 测试 IdP/Directory、真实 CE14/SQL/Redis 与 Django Client 证据，实际 Authentik/客户环境/浏览器 TLS、RP/backchannel 另验。
 
 ## 旧 Authentik OAuth 配置预设
 
@@ -239,7 +239,7 @@ python3 tests/verify.py full
 
 契约门禁使用已安装 `tools/gates/check-requirements.txt` 的开发 Python；已有环境直接用 `--contract-python /path/to/venv/bin/python`，默认当前解释器。依赖缺失返回失败，不自动修改运行镜像、重新下载依赖或静默跳过。
 
-退出码：0 为所选测试通过且无待执行门禁，1 为失败，2 为所选测试通过但报告中的运行/全量门禁尚待执行。报告记录模块集合、测试数量、跳过/错误、耗时、镜像 ID、源码 HEAD/dirty 与扩展源码摘要；执行期间源码变化拒绝通过。源码挂载只支持 Python 开发；Server dirty 或镜像 Server SHA 不匹配时拒绝组件集成，须先生成匹配 native 制品。`full` 先检查清单、干净 Hub/Server 与镜像来源一致，再执行全新 CE14、全部扩展回归、预绑定/JIT/RP/backchannel 四种独立身份夹具；仍不代表真实 Authentik/eTech/浏览器 TLS 或全部 RC 场景已通过。
+退出码：0 为所选测试通过且无待执行门禁，1 为失败，2 为所选测试通过但报告中的运行/全量门禁尚待执行。报告记录模块集合、测试数量、跳过/错误、耗时、镜像 ID、源码 HEAD/dirty 与扩展源码摘要；执行期间源码变化拒绝通过。源码挂载只支持 Python 开发；Server dirty 或镜像 Server SHA 不匹配时拒绝组件集成，须先生成匹配 native 制品。`full` 先检查清单、干净 Hub/Server 与镜像来源一致，再执行全新 CE14、全部扩展回归、预绑定/JIT/RP/backchannel 四种独立身份夹具；仍不代表真实 Authentik/客户环境/浏览器 TLS 或全部 RC 场景已通过。
 
 JIT worker/对应运行夹具修改自动要求 `identity-provisioning` 门禁。开发新 worker 时可用 `smoke_ce14_runtime.py --identity-runtime --identity-scenario provisioning --development-worker-overlay` 单独覆盖脚本验证；报告明确标为开发覆盖。默认专项/完整验收要求镜像内脚本摘要匹配源码，缺失或陈旧拒绝，先只重装配应用镜像，不重新编译未变化的 native 包。
 
@@ -247,7 +247,7 @@ warm 仅保留本工作区带 ownership label 的 MySQL/Redis，测试仍创建/
 
 当前没有把带账号/组/会话副作用的 CE14 身份夹具直接改成长驻环境；需先补幂等数据重置与 worker 生命周期后再复用。IdP 夹具继续单独标注范围，保持测试行为验证与真实部署 E2E 分开。本轮实测 `identity/runtime.py` 关联 78 项：warm 5.344 秒、fresh core 10.975 秒；显式 identity 388 项 warm 22.606 秒，均零失败/跳过。耗时仅为本机当前镜像/用例，非通用性能承诺。
 
-常用委托文件链定向验收：`python3 tests/verify.py transfer-runtime`。复用隔离 CE14 与 TLS Directory/OIDC 夹具，验证受信机器凭证→当前用户委托→原生单次票据→Go 实际字节/Range/基础审计与消费前撤权拒绝；不等同于外部 eTech/生产代理联验。不重建镜像，不增加长驻 IdP。
+常用委托文件链定向验收：`python3 tests/verify.py transfer-runtime`。复用隔离 CE14 与 TLS Directory/OIDC 夹具，验证受信机器凭证→当前用户委托→原生单次票据→Go 实际字节/Range/基础审计与消费前撤权拒绝；不等同于外部 客户环境/生产代理联验。不重建镜像，不增加长驻 IdP。
 
 增强委托传输还要求部署者在 `seafile.conf` 的 `[cloudfile]` 段配置 native 终判所需的同一身份库、主体缓存和撤销存储。仅生成 Seahub policy JSON 不会配置 Server；缺项将拒绝发票/读取，不会降级放行。修改后重启 Server/fileserver：
 
@@ -262,7 +262,7 @@ delegation_revocation_prefix = cf:service-revocations:
 trusted_tls_proxies = 127.0.0.1/32
 ```
 
-身份库名、Redis 地址/凭据、subject/revocation prefix 必须与实际 `CLOUDFILE_POLICY_CONFIG_JSON` 一致；native 使用 Redis DB 0。`trusted_tls_proxies` 填实际 TLS 终止代理的明确 CIDR；示例仅适用于同容器 loopback 代理，不可改成全网信任。代理覆盖 `X-Forwarded-Proto=https`，不接受客户端自行声明。配置含凭据，按部署秘密管理保护权限。本轮受控 TLS 入口使用此接线，真实 eTech/生产代理仍单独验收。
+身份库名、Redis 地址/凭据、subject/revocation prefix 必须与实际 `CLOUDFILE_POLICY_CONFIG_JSON` 一致；native 使用 Redis DB 0。`trusted_tls_proxies` 填实际 TLS 终止代理的明确 CIDR；示例仅适用于同容器 loopback 代理，不可改成全网信任。代理覆盖 `X-Forwarded-Proto=https`，不接受客户端自行声明。配置含凭据，按部署秘密管理保护权限。本轮受控 TLS 入口使用此接线，真实 客户环境/生产代理仍单独验收。
 
 OIDC 与 transfer 同时启用时挂载 CSRF 保护的 `identity/v1/read-tickets/`、`identity/v1/manual-upload/` 和 `identity/v1/manual-update/`；读取接受既有 exact-file JSON，上传/替换接受 multipart 的 `repo_id/path/head_id/file`（单文件、显式预期 head，当前最大 512 MiB）。只用真实 OIDC 本地会话，不接受服务 Bearer 或客户提交的 userId/epoch/会话证明。手动替换复用现有 C 条件提交，最终检查当前 CE 资格、ACL、主体、会话/退出 fence、head 和已有写保护；未知 RPC 完成结果不返回成功。新文件创建由固定 upload 路由选择，返回 201，检查父目录及目标当前写权限并拒绝覆盖已有文件；替换返回 200。不支持 Agent 或自动回写。
 

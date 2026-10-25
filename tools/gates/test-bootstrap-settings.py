@@ -381,7 +381,7 @@ def test_eap_identity():
                CF_SSO_OAUTH_LOGIN_ID_CLAIM='userId')
     values = evaluate(load('_settings_block_sso', env)())
     check('V2 bridge stays disabled', values['CF_SSO_EAP_PROFILE_IDENTITY'] is False)
-    check('Etech maps business UID', values['OAUTH_ATTRIBUTE_MAP']['userId'] == (False, 'login_id'))
+    check('enterprise Directory maps business UID', values['OAUTH_ATTRIBUTE_MAP']['userId'] == (False, 'login_id'))
     try:
         load('_settings_block_sso', dict(env, CF_SSO_EAP_PROFILE_IDENTITY='true'))()
     except Exception:

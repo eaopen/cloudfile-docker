@@ -145,7 +145,7 @@ class CloudFileSettingsTest(unittest.TestCase):
     def test_authentik_redirect_defaults_to_the_deployment_protocol(self):
         # Same default as bootstrap.get_proto(): an unset SEAFILE_SERVER_PROTOCOL
         # means HTTP. Generating an HTTPS redirect for an HTTP entry is what made
-        # the Hub mark sessionid/csrftoken Secure on Etech's HTTP deployment.
+        # the Hub mark sessionid/csrftoken Secure on 客户 Provider's HTTP deployment.
         # The public entry's scheme is declared by the deployment, so an HTTP
         # redirect does not additionally require CLOUDFILE_AUTHENTIK_ALLOW_INSECURE
         # (that flag stays on the IdP-facing URLs).

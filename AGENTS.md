@@ -159,7 +159,7 @@ V2 内置 ACL、CE 原生 Tag 和已安装 Guard 的 Checkout 不应重新受旧
 ## 数据库唯一规则：当前五表
 
 - V2 仅保留 `cf_library_storage`、`cf_dir_acl`、`cf_sso_group_map`、`cf_edit_guard`、`cf_audit_event`。新装五表一次性创建，已有卷只校验，不自动迁移或修补。
-- DEV 旧数据全部放弃。存储绑定从 Seafile 原生库重新发现，ACL/共享与组织角色从 Etech 重同步，Guard/审计从空表开始；旧 `cf_tag`/Resource/Intent/Session/Outbox 等绝不恢复。
+- DEV 旧数据全部放弃。存储绑定从 Seafile 原生库重新发现，ACL/共享与组织角色从客户 Provider 重同步，Guard/审计从空表开始；旧 `cf_tag`/Resource/Intent/Session/Outbox 等绝不恢复。
 - DEV 如需清表重建，仅允许停写后由人工管理员按当前 DDL 操作，不做产品级迁移/历史追溯/归档库；**绝不删除或改写 Seafile 原生文件版本和存储路由**。
 
 ## Agent2 本地编辑 V2 边界

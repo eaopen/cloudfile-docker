@@ -61,7 +61,8 @@ class StartupSyncHookTests(unittest.TestCase):
         self.assertNotIn('CF_PROVIDER_ADMIN_EXPECTED_ACCOUNT=admin', env)
         self.assertNotIn('\nCF_DIRECTORY_PROVIDER=external', env)
         self.assertIn('# CF_DIRECTORY_PROVIDER=your-existing-provider', env)
-        self.assertIn('CF_DIRECTORY_AUDIENCE=eap-directory', env)
+        self.assertIn('defaults to eap-directory', env)
+        self.assertNotIn('\nCF_DIRECTORY_AUDIENCE=', env)
 
     def test_retired_eap_flag_is_ignored_and_namespace_overrides_are_optional(self):
         root = Path(__file__).resolve().parents[1]

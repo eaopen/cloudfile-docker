@@ -59,8 +59,21 @@ class StartupSyncHookTests(unittest.TestCase):
         # expected-account assertion is an operator opt-in in their own config.
         self.assertIn('CF_PROVIDER_ADMIN_EXPECTED_ACCOUNT=', env)
         self.assertNotIn('CF_PROVIDER_ADMIN_EXPECTED_ACCOUNT=admin', env)
-        self.assertIn('CF_DIRECTORY_PROVIDER=external', env)
+        self.assertNotIn('\nCF_DIRECTORY_PROVIDER=external', env)
+        self.assertIn('# CF_DIRECTORY_PROVIDER=your-existing-provider', env)
         self.assertIn('CF_DIRECTORY_AUDIENCE=eap-directory', env)
+
+    def test_retired_eap_flag_is_ignored_and_namespace_overrides_are_optional(self):
+        root = Path(__file__).resolve().parents[1]
+        generator = (root / 'scripts/scripts_cf14.0/cloudfile_bootstrap.py').read_text()
+        compose = (root / 'deploy/compose/docker-compose.yml').read_text()
+        env = (root / 'deploy/compose/.env.enterprise-sso.example').read_text()
+        self.assertNotIn("if boolean('CF_SSO_EAP_PROFILE_IDENTITY'", generator)
+        self.assertNotIn('CF_SSO_EAP_PROFILE_IDENTITY:', compose)
+        self.assertIn("for name in ('CF_DIRECTORY_PROVIDER', 'CF_ACL_PROVIDER'):", generator)
+        self.assertEqual(compose.count('      CF_DIRECTORY_PROVIDER:'), 2)
+        self.assertEqual(compose.count('      CF_ACL_PROVIDER:'), 2)
+        self.assertNotIn('\nCF_DIRECTORY_PROVIDER=external', env)
 
     def test_nonroot_command_is_one_safely_quoted_shell_command(self):
         spawn = Mock(return_value=SimpleNamespace(returncode=0, stdout='CF_ADMIN_SYNC APPLIED added=1 removed=0 unchanged=0'))

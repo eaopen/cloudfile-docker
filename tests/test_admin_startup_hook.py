@@ -59,7 +59,7 @@ class StartupSyncHookTests(unittest.TestCase):
         # expected-account assertion is an operator opt-in in their own config.
         self.assertIn('CF_PROVIDER_ADMIN_EXPECTED_ACCOUNT=', env)
         self.assertNotIn('CF_PROVIDER_ADMIN_EXPECTED_ACCOUNT=admin', env)
-        self.assertIn('CF_ACL_PROVIDER=external', env)
+        self.assertIn('CF_DIRECTORY_PROVIDER=external', env)
         self.assertIn('CF_DIRECTORY_AUDIENCE=eap-directory', env)
 
     def test_nonroot_command_is_one_safely_quoted_shell_command(self):

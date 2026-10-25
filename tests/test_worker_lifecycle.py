@@ -73,9 +73,23 @@ class WorkerLifecycleTests(unittest.TestCase):
     def test_meili_mode_keeps_directory_catalog_scheduling(self):
         command = "\\n".join(self.block)
         self.assertIn('CF_SERVICE_SSO_DIRECTORY_URL', command)
+        self.assertIn('CF_ENABLE_SSO', command)
         self.assertIn('periodic_pid=$!', command)
         self.assertIn('wait -n "${periodic_pid}" "${search_pid}"', command)
         self.assertIn('CF_DIRECTORY_SYNC_INTERVAL_SECONDS: ${CF_DIRECTORY_SYNC_INTERVAL_SECONDS:-600}', command)
+
+    def test_meili_requires_search_enabled_and_single_mounted_catalog_lock(self):
+        command = "\\n".join(self.block)
+        self.assertIn('CF_ENABLE_SEARCH', command)
+        self.assertIn('CF_PROVIDER_SEARCH', command)
+        self.assertIn('CF_WORKER_LOCK_FILE: /shared/cf-worker.lock', command)
+        self.assertIn('CF_SEARCH_BOOTSTRAP_PAGES_PER_TICK:', command)
+
+    def test_native_search_writes_index_only_for_native_provider(self):
+        bootstrap = (ROOT / 'scripts/scripts_cf14.0/cloudfile_bootstrap.py').read_text()
+        # Do not let two selected search engines index the same commits.
+        self.assertIn("not get_conf('CF_PROVIDER_SEARCH', '').strip()", bootstrap)
+        self.assertIn("'enabled': 'true' if (cf_enabled('CF_ENABLE_SEARCH')", bootstrap)
 
     def test_worker_stays_in_the_default_stack(self):
         self.assertEqual([], service_values(self.block, "profiles"))

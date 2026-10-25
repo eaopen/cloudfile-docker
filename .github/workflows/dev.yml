@@ -47,6 +47,9 @@ jobs:
       - name: Validate one-shot startup admin hook (pure Python)
         run: python3 -m unittest discover -s tests -p test_admin_startup_hook.py -q
 
+      - name: Verify optional search worker and external-only Directory trigger
+        run: python3 -m unittest discover -s tests -p test_worker_lifecycle.py -q
+
       - name: Enforce current V2 ACL documentation contract
         run: python3 tests/test_v2_authorization_contract.py
 

@@ -8,16 +8,12 @@
 #   docker compose --profile ai up -d        + seafile-ai (needs a self-supplied LLM backend)
 #   docker compose --profile full up -d      all application extensions
 #
-# Since 2026-09-22 the extended properties/tags service (cloudfile-metadata)
-# and the background worker (cf-worker) are part of the default stack: the
-# metadata/tag switches default to on.
-# `--profile metadata` and `--profile worker` are accepted but start nothing extra.
-#
-# cf-worker runs one of two jobs: with CF_PROVIDER_SEARCH=meilisearch it is the
-# V2 Meilisearch indexer (Meilisearch itself never indexes CloudFile documents),
-# otherwise it is `manage.py cf_worker`, which exits 0 when no capability
-# registered a periodic task. cf-worker therefore restarts on failure only -- a
-# clean idle exit must stay exited instead of restarting forever.
+# The metadata/tag service (cloudfile-metadata) is in the default stack.
+# There is NO default CloudFile Directory scheduler: enterprise applications
+# (e.g. Etech PowerJob) trigger the existing Hub catalog-sync API themselves.
+# The optional cf-worker service runs only the V2 Meilisearch indexer under
+# search/full profiles when CF_ENABLE_SEARCH=true and provider=meilisearch.
+# The main Seafile server and its native background services stay independent.
 #
 # Copy .env.example to .env first. Defaults changed on 2026-09-22: the
 # capabilities that need no third party are on by default, so this stack is no
@@ -236,6 +232,7 @@ services:
       CF_STORAGE_CLASSES_JSON: ${CF_STORAGE_CLASSES_JSON:-}
       CF_ENABLE_EXTERNAL_SOURCES: ${CF_ENABLE_EXTERNAL_SOURCES:-false}
       CF_EXTERNAL_SOURCES_ROOTS: ${CF_EXTERNAL_SOURCES_ROOTS:-/shared/external}
+      # Retired V1 external-source scan scheduler. V2 has no such registered task.
       CF_EXTERNAL_SCAN_INTERVAL: ${CF_EXTERNAL_SCAN_INTERVAL:-60}
       CF_EXTERNAL_SCAN_MAX_DIRS: ${CF_EXTERNAL_SCAN_MAX_DIRS:-20}
       CF_EXTERNAL_SCAN_MAX_FILES: ${CF_EXTERNAL_SCAN_MAX_FILES:-2000}
@@ -297,8 +294,9 @@ services:
       CF_SSO_OAUTH_INSECURE: ${CF_SSO_OAUTH_INSECURE:-false}
       CF_PROVIDER_SSO_DIRECTORY: ${CF_PROVIDER_SSO_DIRECTORY:-}
       CF_SSO_GROUP_OWNER: ${CF_SSO_GROUP_OWNER:-}
+      # Legacy full SSO interval is retained for configuration compatibility;
+      # V2 does not schedule any Directory synchronization.
       CF_SSO_SYNC_INTERVAL: ${CF_SSO_SYNC_INTERVAL:-600}
-      CF_DIRECTORY_SYNC_INTERVAL_SECONDS: ${CF_DIRECTORY_SYNC_INTERVAL_SECONDS:-600}
       CF_SSO_MAX_REMOVAL_RATIO: ${CF_SSO_MAX_REMOVAL_RATIO:-0.5}
       CF_SSO_DIRECTORY_STATIC: ${CF_SSO_DIRECTORY_STATIC:-}
       CF_SERVICE_SSO_DIRECTORY_URL: ${CF_SERVICE_SSO_DIRECTORY_URL:-}
@@ -396,35 +394,25 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Background worker. The existing cf_worker handles periodic tasks (now
-  # including a 10-minute enterprise org/role catalog sync). The optional
-  # Meilisearch indexer can run alongside it in this SAME container when
-  # enterprise Directory is enabled: no separate scheduler service/table.
-  # Failures in either long-running process restart the worker container.
-  # If neither indexing nor periodic tasks are configured, the clean idle
-  # cf_worker exit stays exited (restart: on-failure).
+  # Optional search indexer. Do not start CloudFile org/person synchronization:
+  # Etech PowerJob (or the owning external application) calls the Hub API.
+  # No second scheduler, no tenant polling and no extra interval parameter.
   cf-worker:
     image: ${CLOUDFILE_IMAGE:-cloudfile/cloudfile:14.0.0-cf.0}
     container_name: cloudfile-worker
+    profiles: ["search", "full"]
     command:
       - /bin/bash
       - -lc
       - >
         /scripts/create_data_links.sh &&
-        if [ "$${CF_PROVIDER_SEARCH:-}" = "meilisearch" ]; then
-          export DJANGO_SETTINGS_MODULE=seahub.settings;
-          if [ -n "$${CF_SERVICE_SSO_DIRECTORY_URL:-}" ]; then
-            /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub.sh python-env python3 /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub/manage.py cf_worker &
-            periodic_pid=$$!;
-            /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub.sh python-env python3 -m cloudfile_ext.v2.search.worker --checkpoint /shared/search-v2-checkpoint.json &
-            search_pid=$$!;
-            trap 'kill "$${periodic_pid}" "$${search_pid}" 2>/dev/null || true' EXIT TERM INT;
-            wait -n "$${periodic_pid}" "$${search_pid}";
-            exit 1;
-          fi;
-          exec /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub.sh python-env python3 -m cloudfile_ext.v2.search.worker --checkpoint /shared/search-v2-checkpoint.json;
+        if [ "$${CF_ENABLE_SEARCH:-false}" != "true" ] ||
+           [ "$${CF_PROVIDER_SEARCH:-}" != "meilisearch" ]; then
+          echo "CloudFile Meilisearch indexer disabled; no background task to start.";
+          exit 0;
         fi;
-        exec /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub.sh python-env python3 /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub/manage.py cf_worker
+        export DJANGO_SETTINGS_MODULE=seahub.settings;
+        exec /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub.sh python-env python3 -m cloudfile_ext.v2.search.worker --checkpoint /shared/search-v2-checkpoint.json
     volumes:
       - ./data/seafile:/shared
     environment:
@@ -442,8 +430,7 @@ services:
       SEAFILE_RPC_PIPE_PATH: /shared/seafile/runtime
       SEAFILE_DATA_DIR: /shared/seafile/seafile-data
       SEAFILE_CENTRAL_CONF_DIR: /shared/seafile/conf
-      # Keep the worker's task registry in sync with the application. New
-      # periodic extension tasks can therefore be enabled with the same .env.
+      # Search shares Seahub settings and native permission reads with the app.
       CF_ENABLE_SSO: ${CF_ENABLE_SSO:-false}
       CF_ENABLE_DIR_ACL: ${CF_ENABLE_DIR_ACL:-true}
       CF_ENABLE_AUDIT: ${CF_ENABLE_AUDIT:-true}
@@ -492,8 +479,7 @@ services:
       CF_EXTERNAL_SCAN_INTERVAL: ${CF_EXTERNAL_SCAN_INTERVAL:-60}
       CF_EXTERNAL_SCAN_MAX_DIRS: ${CF_EXTERNAL_SCAN_MAX_DIRS:-20}
       CF_EXTERNAL_SCAN_MAX_FILES: ${CF_EXTERNAL_SCAN_MAX_FILES:-2000}
-      # 补齐主应用已有、worker 侧此前漏列的三个开关：worker 的周期性任务
-      # 注册表要与应用一致，否则同一个开关在两边语义不同。
+      # Search and file visibility use the same feature switches as Seahub.
       CF_ENABLE_FILEOPS: ${CF_ENABLE_FILEOPS:-true}
       CF_ENABLE_FAVORITES_ID: ${CF_ENABLE_FAVORITES_ID:-true}
       CF_ENABLE_SHARE_RESTRICT: ${CF_ENABLE_SHARE_RESTRICT:-true}
@@ -518,7 +504,6 @@ services:
       CF_PROVIDER_SSO_DIRECTORY: ${CF_PROVIDER_SSO_DIRECTORY:-}
       CF_SSO_GROUP_OWNER: ${CF_SSO_GROUP_OWNER:-}
       CF_SSO_SYNC_INTERVAL: ${CF_SSO_SYNC_INTERVAL:-600}
-      CF_DIRECTORY_SYNC_INTERVAL_SECONDS: ${CF_DIRECTORY_SYNC_INTERVAL_SECONDS:-600}
       CF_SSO_MAX_REMOVAL_RATIO: ${CF_SSO_MAX_REMOVAL_RATIO:-0.5}
       CF_SSO_DIRECTORY_STATIC: ${CF_SSO_DIRECTORY_STATIC:-}
       CF_SERVICE_SSO_DIRECTORY_URL: ${CF_SERVICE_SSO_DIRECTORY_URL:-}

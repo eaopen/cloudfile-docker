@@ -219,6 +219,15 @@ def write_cloudfile_settings():
     )
 
     body += _settings_block_sso()
+    # Existing generic deployments may pin a persisted ACL/Group namespace.
+    # Etech normally needs neither setting: its trusted Directory declares
+    # provider=etech. Emit nothing for an unset value so auto-detection works.
+    if (cf_enabled('CF_ENABLE_SSO') or
+            get_conf('CF_PROVIDER_ADMIN_STARTUP_SYNC_ENABLED', 'false').lower() == 'true'):
+        for name in ('CF_DIRECTORY_PROVIDER', 'CF_ACL_PROVIDER'):
+            value = get_conf(name, '')
+            if value:
+                body += '%s = %r\n' % (name, value)
     # Directory catalog reconciliation is triggered by the external owner
     # through Hub's administrator endpoint; never schedule a local poll.
     # EAP may use the existing OAuth/SSO bridge with the legacy full
@@ -366,11 +375,9 @@ def _settings_block_sso():
         if login_id_claim and login_id_claim not in attribute_map:
             attribute_map[login_id_claim] = (False, 'login_id')
 
-        # V2 provisions through trusted Directory; the retired bridge must stay off.
-        if boolean('CF_SSO_EAP_PROFILE_IDENTITY', 'false'):
-            raise Exception('CF_SSO_EAP_PROFILE_IDENTITY is retired; keep false and '
-                            'use trusted Directory identity preparation')
-        lines.append('CF_SSO_EAP_PROFILE_IDENTITY = False')
+        # CF_SSO_EAP_PROFILE_IDENTITY is a retired input. Ignore any legacy
+        # value; current trusted userId -> login_id binding protects OAuth.
+        # Do not reintroduce a boolean setting for the existing /ssoAuth path.
         if login_id_claim == 'login_id':
             logwarning('For a trusted enterprise deployment set CF_SSO_OAUTH_LOGIN_ID_CLAIM=userId; '
                        'Profile.login_id must contain the business UID')

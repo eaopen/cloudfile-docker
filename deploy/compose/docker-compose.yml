@@ -285,7 +285,6 @@ services:
       CF_SSO_OAUTH_UID_CLAIM: ${CF_SSO_OAUTH_UID_CLAIM:-sub}
       # EAP UID bridge is opt-in; app and worker share the identity contract.
       CF_SSO_OAUTH_LOGIN_ID_CLAIM: ${CF_SSO_OAUTH_LOGIN_ID_CLAIM:-login_id}
-      CF_SSO_EAP_PROFILE_IDENTITY: ${CF_SSO_EAP_PROFILE_IDENTITY:-false}
       CF_SSO_EAP_OIDC_ISSUER: ${CF_SSO_EAP_OIDC_ISSUER:-}
       CF_SSO_EAP_OIDC_JWKS_URL: ${CF_SSO_EAP_OIDC_JWKS_URL:-}
       CF_SSO_OAUTH_EMAIL_CLAIM: ${CF_SSO_OAUTH_EMAIL_CLAIM:-email}
@@ -299,6 +298,9 @@ services:
       CF_SSO_SYNC_INTERVAL: ${CF_SSO_SYNC_INTERVAL:-600}
       CF_SSO_MAX_REMOVAL_RATIO: ${CF_SSO_MAX_REMOVAL_RATIO:-0.5}
       CF_SSO_DIRECTORY_STATIC: ${CF_SSO_DIRECTORY_STATIC:-}
+      # Optional: pin an existing provider; empty enables trusted declaration.
+      CF_DIRECTORY_PROVIDER: ${CF_DIRECTORY_PROVIDER:-}
+      CF_ACL_PROVIDER: ${CF_ACL_PROVIDER:-}
       CF_SERVICE_SSO_DIRECTORY_URL: ${CF_SERVICE_SSO_DIRECTORY_URL:-}
       CF_SERVICE_SSO_DIRECTORY_SECRET: ${CF_SERVICE_SSO_DIRECTORY_SECRET:-}
       # One bounded startup-only enterprise admin sync, no periodic/request polling.
@@ -494,7 +496,6 @@ services:
       CF_SSO_OAUTH_UID_CLAIM: ${CF_SSO_OAUTH_UID_CLAIM:-sub}
       # EAP UID bridge is opt-in; app and worker share the identity contract.
       CF_SSO_OAUTH_LOGIN_ID_CLAIM: ${CF_SSO_OAUTH_LOGIN_ID_CLAIM:-login_id}
-      CF_SSO_EAP_PROFILE_IDENTITY: ${CF_SSO_EAP_PROFILE_IDENTITY:-false}
       CF_SSO_EAP_OIDC_ISSUER: ${CF_SSO_EAP_OIDC_ISSUER:-}
       CF_SSO_EAP_OIDC_JWKS_URL: ${CF_SSO_EAP_OIDC_JWKS_URL:-}
       CF_SSO_OAUTH_EMAIL_CLAIM: ${CF_SSO_OAUTH_EMAIL_CLAIM:-email}
@@ -506,6 +507,9 @@ services:
       CF_SSO_SYNC_INTERVAL: ${CF_SSO_SYNC_INTERVAL:-600}
       CF_SSO_MAX_REMOVAL_RATIO: ${CF_SSO_MAX_REMOVAL_RATIO:-0.5}
       CF_SSO_DIRECTORY_STATIC: ${CF_SSO_DIRECTORY_STATIC:-}
+      # Optional: pin an existing provider; empty enables trusted declaration.
+      CF_DIRECTORY_PROVIDER: ${CF_DIRECTORY_PROVIDER:-}
+      CF_ACL_PROVIDER: ${CF_ACL_PROVIDER:-}
       CF_SERVICE_SSO_DIRECTORY_URL: ${CF_SERVICE_SSO_DIRECTORY_URL:-}
       CF_SERVICE_SSO_DIRECTORY_SECRET: ${CF_SERVICE_SSO_DIRECTORY_SECRET:-}
       # Default to v2 on both app and worker; never auto-downgrade failed auth.

@@ -22,7 +22,7 @@ docker compose logs -f cloudfile
 ## 组件边界
 
 - **复用 Seafile CE**：资料库、同步、WebDAV、分享、预览，以及 CE 已有的 LDAP/SAML/角色/2FA。
-- **CloudFile 新增**：目录 ACL、组织映射、审计、可替换检索、多存储、外部资料源、文件操作生命周期。所有 `CF_ENABLE_*` 默认关闭。
+- **CloudFile 新增**：目录 ACL、组织映射、审计、可替换检索、多存储、外部资料源、文件操作生命周期。功能默认值以当前 `.env.example` 和启动生成器为准；普通库 Checkout 默认 OFF，其他内置能力按实际支持开启。
 - **外部组件**：MariaDB、Redis、Caddy、SeaSearch、Meilisearch、Metadata Server、seafile-ai、OnlyOffice、SeaDoc、MinIO 均为独立容器，许可与升级策略单独评估。
 
 ## 上线前必读

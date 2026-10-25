@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -27,12 +28,30 @@ class RecoveryError(Exception):
 def stopped(compose):
     if not (compose / "docker-compose.yml").is_file():
         raise RecoveryError("compose file is missing")
+    # Validate the effective Compose mounts, not a guess from .env.
+    # This legacy copier only understands two local bind sources.
     try:
+        resolved = subprocess.run(
+            ["docker", "compose", "-f", "docker-compose.yml", "config", "--format", "json"],
+            cwd=compose, text=True, capture_output=True, timeout=30)
+        if resolved.returncode:
+            raise RecoveryError("cannot resolve effective Compose mounts")
+        services = json.loads(resolved.stdout)["services"]
+        for service, target, source in (
+            ("db", "/var/lib/mysql", "data/db"),
+            ("cloudfile", "/shared", "data/seafile"),
+            ("cf-worker", "/shared", "data/seafile"),
+        ):
+            mounts = [entry for entry in services[service]["volumes"]
+                      if entry.get("target") == target]
+            if len(mounts) != 1 or mounts[0].get("type") != "bind" or (
+                    Path(mounts[0]["source"]).resolve() != (compose / source).resolve()):
+                raise RecoveryError("effective Compose mount differs from legacy backup scope")
         p = subprocess.run(
             ["docker", "compose", "-f", "docker-compose.yml", "ps", "--status",
              "running", "--quiet"], cwd=compose, text=True, capture_output=True, timeout=30)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise RecoveryError("cannot verify that all CloudFile services are stopped") from exc
+    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError) as exc:
+        raise RecoveryError("cannot verify effective mounts or stopped services") from exc
     if p.returncode != 0 or p.stdout.strip():
         raise RecoveryError("CloudFile services may be running; stop ALL writers and retry")
 
@@ -85,7 +104,9 @@ def check_manifest(snapshot):
 
 def copy_allowed(source, destination):
     destination.mkdir(mode=0o700)
-    for name in KINDS + OPTIONAL:
+    # A newly created legacy local-only snapshot never copies old S3 blobs.
+    # OPTIONAL is retained only for restoring historical snapshots verbatim.
+    for name in KINDS:
         src = source / name
         if name in KINDS and not src.is_dir():
             raise RecoveryError("required compose volume missing: " + name)
@@ -102,10 +123,97 @@ def disjoint(source, destination):
         raise RecoveryError("destination must not exist")
 
 
+def dotenv_entry(line):
+    """Return (name, value) the way Docker Compose reads one ``.env`` line.
+
+    Compose accepts an optional ``export `` prefix, single- or double-quoted
+    values and trailing ``#`` comments. This legacy gate is a safety check, so
+    it must not be bypassed by formatting that Compose still honours.
+    """
+    text = line.strip()
+    if text.startswith("export ") or text.startswith("export\t"):
+        text = text[len("export"):].lstrip()
+    name, separator, value = text.partition("=")
+    if not separator:
+        return None, None
+    value = value.strip()
+    if not value:
+        return name.strip(), ""
+    quote = value[0]
+    if quote in ("'", '"'):
+        end = value.find(quote, 1)
+        return name.strip(), (value[1:end] if end != -1 else value[1:])
+    # Unquoted values end at whitespace followed by '#'; '#' without preceding
+    # whitespace stays part of the value (same rule as Compose's dotenv parser).
+    comment = re.search(r"\s#", value)
+    if comment:
+        value = value[:comment.start()].rstrip()
+    return name.strip(), value
+
+
+def reject_unsupported_bulk_backup(compose, legacy_ce_only):
+    """This legacy full-instance copier never backs up V2 per-library objects.
+
+    Running this on auto-local could produce a misleading 'successful' archive.
+    Always require an explicit legacy-only acknowledgement; no implicit scan or
+    copy of all libraries is permitted.
+    """
+    if not legacy_ce_only:
+        raise RecoveryError("whole-instance backup requires --legacy-ce-only; "
+                            "use seafile-library-offline.py for a selected repo_id")
+    # -f docker-compose.yml below intentionally supports only the baseline.
+    # Refuse custom project overlays rather than quietly copy the wrong paths.
+    requested_compose = os.environ.get("COMPOSE_FILE", "")
+    if requested_compose and requested_compose not in ("docker-compose.yml", "./docker-compose.yml"):
+        raise RecoveryError("custom COMPOSE_FILE cannot use legacy backup")
+    managed = compose / "data/libraries"
+    if managed.is_symlink() or (managed.is_dir() and any(managed.iterdir())):
+        raise RecoveryError("V2 per-library objects are outside the legacy backup scope")
+    if os.environ.get("CF_LIBRARY_STORAGE") == "auto":
+        raise RecoveryError("CF_LIBRARY_STORAGE=auto is not a legacy CE installation")
+    if os.environ.get("SEAF_SERVER_STORAGE_TYPE") == "multiple" or os.environ.get("CF_ENABLE_S3_STORAGE", "").lower() == "true":
+        raise RecoveryError("S3/multiple storage cannot use legacy local-only backup")
+    environment = compose / ".env"
+    if environment.is_symlink():
+        raise RecoveryError("compose .env must not be a symbolic link")
+    if environment.is_file():
+        for entry in environment.read_text(encoding="utf-8").splitlines():
+            name, value = dotenv_entry(entry)
+            if name is None:
+                continue
+            if name == "COMPOSE_FILE" and value not in ("", "docker-compose.yml", "./docker-compose.yml"):
+                raise RecoveryError("custom COMPOSE_FILE cannot use legacy backup")
+            if name == "CF_LIBRARY_STORAGE" and value == "auto":
+                raise RecoveryError("persisted V2 auto-local mode is not a legacy CE installation")
+            if ((name == "SEAF_SERVER_STORAGE_TYPE" and value == "multiple") or
+                    (name == "CF_ENABLE_S3_STORAGE" and value.lower() == "true")):
+                raise RecoveryError("persisted S3/multiple storage is not a legacy CE backup")
+    # Known CE14 Compose config locations. Unrecognized external data roots
+    # are outside the contract of this explicitly acknowledged legacy tool.
+    for relative in ("data/seafile/seafile/conf/seafile.conf",
+                     "data/seafile/conf/seafile.conf"):
+        conf = compose / relative
+        if conf.is_file():
+            from configparser import ConfigParser, Error as ConfigError
+            cfg = ConfigParser(interpolation=None)
+            try:
+                cfg.read(conf)
+                if cfg.has_option("cloudfile_v2", "auto_local_root"):
+                    raise RecoveryError("V2 per-library root is not in the legacy backup scope")
+                if cfg.getboolean("storage", "enable_storage_classes", fallback=False):
+                    raise RecoveryError("storage classes are not supported by legacy local-only backup")
+                for section in ("commit_object_backend", "fs_object_backend", "block_backend"):
+                    if cfg.get(section, "name", fallback="") in ("s3", "multiple"):
+                        raise RecoveryError("S3/multiple backend is not a legacy local-only backup")
+            except (ValueError, ConfigError) as exc:
+                raise RecoveryError("invalid Seafile storage config: " + str(exc)) from exc
+
+
 def backup(args):
     compose = Path(args.compose_root).resolve(strict=True)
     dest = Path(args.output).absolute()
     disjoint(compose, dest)
+    reject_unsupported_bulk_backup(compose, getattr(args, 'legacy_ce_only', False))
     stopped(compose)
     dest.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".cf-snapshot-", dir=dest.parent) as tmp:
@@ -157,6 +265,8 @@ def main(argv=None):
     b.add_argument("--compose-root", required=True)
     b.add_argument("--output", required=True)
     b.add_argument("--ack-writers-stopped", action="store_true", required=True)
+    b.add_argument("--legacy-ce-only", action="store_true", required=True,
+                   help="explicitly acknowledge this is a full-instance legacy CE volume snapshot")
     b.set_defaults(func=backup)
     v = commands.add_parser("verify")
     v.add_argument("--snapshot", required=True)

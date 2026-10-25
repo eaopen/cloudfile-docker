@@ -1,5 +1,8 @@
 """Offline safety checks. Synthetic bytes are NOT full Seafile restore acceptance."""
 import argparse
+import json
+import os
+import subprocess
 from pathlib import Path
 import sys
 import tempfile
@@ -27,7 +30,8 @@ class RecoveryTests(unittest.TestCase):
         self.restore = self.root / "restore"
 
     def args(self):
-        return argparse.Namespace(compose_root=str(self.compose), output=str(self.snapshot))
+        return argparse.Namespace(compose_root=str(self.compose), output=str(self.snapshot),
+                                  legacy_ce_only=True)
 
     def test_backup_verify_restore_and_hash_protection(self):
         with mock.patch.object(cf_recovery, "stopped") as guard:
@@ -53,16 +57,124 @@ class RecoveryTests(unittest.TestCase):
             with self.assertRaisesRegex(cf_recovery.RecoveryError, "symbolic"):
                 cf_recovery.backup(self.args())
 
+    def test_bulk_backup_requires_explicit_legacy_ce_scope(self):
+        args = self.args()
+        args.legacy_ce_only = False
+        with mock.patch.object(cf_recovery, "stopped") as guard:
+            with self.assertRaisesRegex(cf_recovery.RecoveryError, "--legacy-ce-only"):
+                cf_recovery.backup(args)
+        guard.assert_not_called()
+        self.assertFalse(self.snapshot.exists())
+
+    def test_bulk_backup_rejects_auto_local_mode(self):
+        (self.compose / ".env").write_text(
+            "PRIVATE_KEY=hidden\nCF_LIBRARY_STORAGE=auto\n")
+        with mock.patch.object(cf_recovery, "stopped") as guard:
+            with self.assertRaisesRegex(cf_recovery.RecoveryError, "auto-local"):
+                cf_recovery.backup(self.args())
+        guard.assert_not_called()
+
+    def test_bulk_backup_rejects_managed_library_objects(self):
+        directory = self.compose / "data/libraries/custom-key/storage/commits"
+        directory.mkdir(parents=True)
+        with mock.patch.object(cf_recovery, "stopped") as guard:
+            with self.assertRaisesRegex(cf_recovery.RecoveryError, "per-library objects"):
+                cf_recovery.backup(self.args())
+        guard.assert_not_called()
+
+    def test_bulk_backup_rejects_persisted_v2_storage_config(self):
+        conf = self.compose / "data/seafile/seafile/conf/seafile.conf"
+        conf.parent.mkdir(parents=True)
+        conf.write_text("[cloudfile_v2]\nauto_local_root=/shared/seafile/library-storage\n")
+        with mock.patch.object(cf_recovery, "stopped") as guard:
+            with self.assertRaisesRegex(cf_recovery.RecoveryError, "per-library root"):
+                cf_recovery.backup(self.args())
+        guard.assert_not_called()
+
+    def test_bulk_backup_rejects_persisted_s3_storage_class(self):
+        conf = self.compose / "data/seafile/seafile/conf/seafile.conf"
+        conf.parent.mkdir(parents=True)
+        conf.write_text("[storage]\nenable_storage_classes=true\n")
+        with mock.patch.object(cf_recovery, "stopped") as guard:
+            with self.assertRaisesRegex(cf_recovery.RecoveryError, "storage classes"):
+                cf_recovery.backup(self.args())
+        guard.assert_not_called()
+
+    def test_bulk_backup_rejects_s3_environment(self):
+        (self.compose / ".env").write_text("CF_ENABLE_S3_STORAGE=true\n")
+        with mock.patch.object(cf_recovery, "stopped") as guard:
+            with self.assertRaisesRegex(cf_recovery.RecoveryError, "S3/multiple"):
+                cf_recovery.backup(self.args())
+        guard.assert_not_called()
+
+    def test_dotenv_detection_matches_compose_formats(self):
+        # Docker Compose honours `export`, quoted values and trailing comments.
+        # This fail-closed gate must read the same value those forms resolve to.
+        entries = (
+            ("export CF_LIBRARY_STORAGE=auto\n", "auto-local"),
+            ('CF_LIBRARY_STORAGE="auto" # migrated\n', "auto-local"),
+            ("CF_LIBRARY_STORAGE=auto   # trailing note\n", "auto-local"),
+            ("CF_ENABLE_S3_STORAGE=true # note\n", "S3/multiple"),
+            ("export COMPOSE_FILE=docker-compose.yml:docker-compose.auto-library-storage.yml\n",
+             "COMPOSE_FILE"),
+        )
+        for entry, message in entries:
+            with self.subTest(entry=entry):
+                (self.compose / ".env").write_text("PRIVATE_KEY=hidden\n" + entry)
+                with mock.patch.object(cf_recovery, "stopped") as guard:
+                    with self.assertRaisesRegex(cf_recovery.RecoveryError, message):
+                        cf_recovery.backup(self.args())
+                guard.assert_not_called()
+                self.assertFalse(self.snapshot.exists())
+
+    def test_legacy_dotenv_values_still_accepted(self):
+        (self.compose / ".env").write_text(
+            "PRIVATE_KEY=hidden\n"
+            "COMPOSE_FILE=docker-compose.yml\n"
+            "CF_ENABLE_S3_STORAGE=false # off\n"
+            "SEAF_SERVER_STORAGE_TYPE=\n"
+            "CF_LIBRARY_STORAGE=\n")
+        with mock.patch.object(cf_recovery, "stopped"):
+            cf_recovery.backup(self.args())
+        self.assertTrue(self.snapshot.exists())
+
+    def resolved_mounts(self, *, db_source=None):
+        source = self.compose / "data"
+        def bind(where, inside):
+            return {"type": "bind", "source": str(where), "target": inside}
+        return json.dumps({"services": {
+            "db": {"volumes": [bind(db_source or source / "db", "/var/lib/mysql")]},
+            "cloudfile": {"volumes": [bind(source / "seafile", "/shared")]},
+            "cf-worker": {"volumes": [bind(source / "seafile", "/shared")]},
+        }})
+
     def test_running_or_unverifiable_compose_refused(self):
+        for status, message in ((0, "active-container-id\n"), (1, "")):
+            with self.subTest(status=status), mock.patch.object(cf_recovery.subprocess, "run") as runner:
+                def response(command, **kwargs):
+                    if "config" in command:
+                        return subprocess.CompletedProcess(command, 0, self.resolved_mounts(), "")
+                    return subprocess.CompletedProcess(command, status, message, "")
+                runner.side_effect = response
+                with self.assertRaisesRegex(cf_recovery.RecoveryError, "running"):
+                    cf_recovery.stopped(self.compose)
+
+    def test_effective_compose_mount_mismatch_refused(self):
         with mock.patch.object(cf_recovery.subprocess, "run") as runner:
-            runner.return_value.returncode = 0
-            runner.return_value.stdout = "active-container-id\n"
-            with self.assertRaisesRegex(cf_recovery.RecoveryError, "running"):
+            def response(command, **kwargs):
+                if "config" in command:
+                    return subprocess.CompletedProcess(command, 0, self.resolved_mounts(
+                        db_source=self.root / "untracked-db"), "")
+                return subprocess.CompletedProcess(command, 0, "", "")
+            runner.side_effect = response
+            with self.assertRaisesRegex(cf_recovery.RecoveryError, "effective Compose mount"):
                 cf_recovery.stopped(self.compose)
-            runner.return_value.stdout = ""
-            runner.return_value.returncode = 1
-            with self.assertRaisesRegex(cf_recovery.RecoveryError, "running"):
-                cf_recovery.stopped(self.compose)
+            self.assertEqual(1, runner.call_count)
+
+    def test_explicit_compose_override_is_not_silently_ignored(self):
+        with mock.patch.dict(os.environ, {"COMPOSE_FILE": "docker-compose.yml:other.yml"}):
+            with self.assertRaisesRegex(cf_recovery.RecoveryError, "custom COMPOSE_FILE"):
+                cf_recovery.reject_unsupported_bulk_backup(self.compose, True)
 
     def test_source_destination_overlap_refused(self):
         with self.assertRaisesRegex(cf_recovery.RecoveryError, "overlap"):

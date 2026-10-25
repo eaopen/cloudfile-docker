@@ -219,10 +219,8 @@ def write_cloudfile_settings():
     )
 
     body += _settings_block_sso()
-    # V2 enterprise org/role catalog worker interval; one low-frequency task.
-    # Malformed values fail startup through the Hub's bounded setting gate.
-    body += 'CF_DIRECTORY_SYNC_INTERVAL_SECONDS = %r\n' % int(
-        get_conf('CF_DIRECTORY_SYNC_INTERVAL_SECONDS', '600'))
+    # Directory catalog reconciliation is triggered by the external owner
+    # through Hub's administrator endpoint; never schedule a local poll.
     # EAP may use the existing OAuth/SSO bridge with the legacy full
     # group-synchronizer disabled. When the new one-shot administrator sync is
     # explicitly enabled, still expose its trusted Directory connection.

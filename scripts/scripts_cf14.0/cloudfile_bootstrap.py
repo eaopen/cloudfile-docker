@@ -22,6 +22,7 @@ inherited from bootstrap's module globals.
 import json
 import os
 import shutil
+import uuid
 from os.path import abspath, basename, dirname, exists, isdir, join
 
 # get_proto() is upstream's (SEAFILE_SERVER_PROTOCOL / Letsencrypt aware). It is
@@ -126,6 +127,27 @@ def cf_enabled(name):
     return get_conf(name, default).lower() == 'true'
 
 
+def _checkout_repo_ids():
+    """Canonical UUID allowlist for OPTIONAL Checkout; all other repos are OFF."""
+    raw = get_conf('CF_CHECKOUT_REPOS', '')
+    if len(raw) > 8192:
+        raise ValueError('CF_CHECKOUT_REPOS exceeds 8192 bytes')
+    if not raw.strip():
+        return ()
+    ids = []
+    for item in raw.split(','):
+        value = item.strip()
+        try:
+            if str(uuid.UUID(value)) != value:
+                raise ValueError('noncanonical UUID')
+        except (ValueError, AttributeError):
+            raise ValueError('CF_CHECKOUT_REPOS requires canonical Repo UUIDs')
+        if value in ids:
+            raise ValueError('CF_CHECKOUT_REPOS contains a duplicate Repo UUID')
+        ids.append(value)
+    return tuple(ids)
+
+
 def _replace_block(path, begin, end, body):
     """Rewrite the region between `begin` and `end`, appending it if absent.
 
@@ -170,6 +192,7 @@ def write_cloudfile_settings():
 
     for name in CF_FEATURE_SWITCHES:
         body += '%s = %s\n' % (name, cf_enabled(name))
+    body += 'CF_CHECKOUT_REPOS = %r\n' % (_checkout_repo_ids(),)
 
     # 只写标量，不要碰 DATABASES。
     #
@@ -816,6 +839,7 @@ def _seafile_conf_cloudfile_lines():
         key = name[len('CF_ENABLE_'):].lower() + '_enabled'
         lines.append('%s = %s\n'
                      % (key, 'true' if cf_enabled(name) else 'false'))
+    lines.append('checkout_repo_ids = %s\n' % ','.join(_checkout_repo_ids()))
 
     if cf_enabled('CF_ENABLE_FILE_LOCK'):
         backend = get_conf('CF_LOCK_BACKEND', 'cloudfile').lower()

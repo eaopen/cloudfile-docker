@@ -60,7 +60,7 @@ class StartupSyncHookTests(unittest.TestCase):
         self.assertIn('CF_PROVIDER_ADMIN_EXPECTED_ACCOUNT=', env)
         self.assertNotIn('CF_PROVIDER_ADMIN_EXPECTED_ACCOUNT=admin', env)
         self.assertIn('CF_ACL_PROVIDER=external', env)
-        self.assertIn('CF_DIRECTORY_AUDIENCE=cloudfile-directory', env)
+        self.assertIn('CF_DIRECTORY_AUDIENCE=eap-directory', env)
 
     def test_nonroot_command_is_one_safely_quoted_shell_command(self):
         spawn = Mock(return_value=SimpleNamespace(returncode=0, stdout='CF_ADMIN_SYNC APPLIED added=1 removed=0 unchanged=0'))

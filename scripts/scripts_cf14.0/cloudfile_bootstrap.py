@@ -1236,10 +1236,11 @@ def write_seafevents_search_config():
     the same trap write_cloudfile_settings() exists to avoid; see this file's
     module docstring / AGENTS.md's "配置在每次启动时重写" note.
 
-    CF_ENABLE_SEARCH off (the default) writes `enabled = false`, so a
-    deployment that has not opted in behaves like native CE -- the section can
-    exist in seafevents.conf either way, only its `enabled` value governs
-    HAS_FILE_SEASEARCH (seahub/utils/__init__.py's check_seasearch_enabled()).
+    CF_ENABLE_SEARCH off (the default) writes `enabled = false`. Selecting
+    Meilisearch (or db-tags) also disables this native indexer; native SeaSearch
+    is enabled only with CF_ENABLE_SEARCH=true and an empty CF_PROVIDER_SEARCH.
+    This prevents two index writers from doing the same job when alternate
+    providers are selected.
 
     """
     path = join(topdir, 'conf', 'seafevents.conf')
@@ -1250,7 +1251,10 @@ def write_seafevents_search_config():
         fp_lines = fp.readlines()
 
     values = {
-        'enabled': 'true' if cf_enabled('CF_ENABLE_SEARCH') else 'false',
+        # Meilisearch and db-tags have their own query/index paths.
+        # Do not additionally start the native SeaSearch indexer for them.
+        'enabled': 'true' if (cf_enabled('CF_ENABLE_SEARCH') and
+                             not get_conf('CF_PROVIDER_SEARCH', '').strip()) else 'false',
         'seasearch_url': 'http://seasearch:4080',
         'seasearch_token': get_conf('CF_SEASEARCH_TOKEN', ''),
         # Upstream's own default. Overridable because it directly bounds how

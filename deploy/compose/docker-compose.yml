@@ -13,11 +13,11 @@
 # metadata/tag switches default to on.
 # `--profile metadata` and `--profile worker` are accepted but start nothing extra.
 #
-# cf-worker runs one of two jobs: with CF_PROVIDER_SEARCH=meilisearch it is the
-# V2 Meilisearch indexer (Meilisearch itself never indexes CloudFile documents),
-# otherwise it is `manage.py cf_worker`, which exits 0 when no capability
-# registered a periodic task. cf-worker therefore restarts on failure only -- a
-# clean idle exit must stay exited instead of restarting forever.
+# With CF_ENABLE_SEARCH=true + CF_PROVIDER_SEARCH=meilisearch, cf-worker
+# runs the V2 Meili indexer; alongside it, it runs manage.py cf_worker only
+# when enterprise SSO Directory catalog synchronization is enabled.
+# Otherwise it runs manage.py cf_worker, which exits 0 when no periodic task
+# is registered. A clean idle exit must not restart forever.
 #
 # Copy .env.example to .env first. Defaults changed on 2026-09-22: the
 # capabilities that need no third party are on by default, so this stack is no
@@ -236,6 +236,7 @@ services:
       CF_STORAGE_CLASSES_JSON: ${CF_STORAGE_CLASSES_JSON:-}
       CF_ENABLE_EXTERNAL_SOURCES: ${CF_ENABLE_EXTERNAL_SOURCES:-false}
       CF_EXTERNAL_SOURCES_ROOTS: ${CF_EXTERNAL_SOURCES_ROOTS:-/shared/external}
+      # Retired V1 external-source scan scheduler. V2 has no such registered task.
       CF_EXTERNAL_SCAN_INTERVAL: ${CF_EXTERNAL_SCAN_INTERVAL:-60}
       CF_EXTERNAL_SCAN_MAX_DIRS: ${CF_EXTERNAL_SCAN_MAX_DIRS:-20}
       CF_EXTERNAL_SCAN_MAX_FILES: ${CF_EXTERNAL_SCAN_MAX_FILES:-2000}
@@ -297,6 +298,8 @@ services:
       CF_SSO_OAUTH_INSECURE: ${CF_SSO_OAUTH_INSECURE:-false}
       CF_PROVIDER_SSO_DIRECTORY: ${CF_PROVIDER_SSO_DIRECTORY:-}
       CF_SSO_GROUP_OWNER: ${CF_SSO_GROUP_OWNER:-}
+      # Retired full SSO poll interval, retained as compatibility-only env.
+      # V2 org/role catalog uses CF_DIRECTORY_SYNC_INTERVAL_SECONDS instead.
       CF_SSO_SYNC_INTERVAL: ${CF_SSO_SYNC_INTERVAL:-600}
       CF_DIRECTORY_SYNC_INTERVAL_SECONDS: ${CF_DIRECTORY_SYNC_INTERVAL_SECONDS:-600}
       CF_SSO_MAX_REMOVAL_RATIO: ${CF_SSO_MAX_REMOVAL_RATIO:-0.5}
@@ -397,9 +400,9 @@ services:
     restart: unless-stopped
 
   # Background worker. The existing cf_worker handles periodic tasks (now
-  # including a 10-minute enterprise org/role catalog sync). The optional
-  # Meilisearch indexer can run alongside it in this SAME container when
-  # enterprise Directory is enabled: no separate scheduler service/table.
+  # including a 10-minute enterprise org/role catalog sync when SSO and its
+  # trusted Directory are enabled). The optional Meilisearch indexer can run
+  # alongside it in this SAME container: no scheduler service/table added.
   # Failures in either long-running process restart the worker container.
   # If neither indexing nor periodic tasks are configured, the clean idle
   # cf_worker exit stays exited (restart: on-failure).
@@ -411,9 +414,9 @@ services:
       - -lc
       - >
         /scripts/create_data_links.sh &&
-        if [ "$${CF_PROVIDER_SEARCH:-}" = "meilisearch" ]; then
+        if [ "${CF_ENABLE_SEARCH:-false}" = "true" ] && [ "${CF_PROVIDER_SEARCH:-}" = "meilisearch" ]; then
           export DJANGO_SETTINGS_MODULE=seahub.settings;
-          if [ -n "$${CF_SERVICE_SSO_DIRECTORY_URL:-}" ]; then
+          if [ "${CF_ENABLE_SSO:-false}" = "true" ] && [ -n "${CF_SERVICE_SSO_DIRECTORY_URL:-}" ]; then
             /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub.sh python-env python3 /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub/manage.py cf_worker &
             periodic_pid=$$!;
             /opt/seafile/$${SEAFILE_SERVER}-$${SEAFILE_VERSION}/seahub.sh python-env python3 -m cloudfile_ext.v2.search.worker --checkpoint /shared/search-v2-checkpoint.json &
@@ -440,6 +443,8 @@ services:
       REDIS_PORT: "6379"
       TIME_ZONE: ${TIME_ZONE:-Etc/UTC}
       SEAFILE_RPC_PIPE_PATH: /shared/seafile/runtime
+      CF_WORKER_LOCK_FILE: /shared/cf-worker.lock
+      CF_SEARCH_BOOTSTRAP_PAGES_PER_TICK: ${CF_SEARCH_BOOTSTRAP_PAGES_PER_TICK:-10}
       SEAFILE_DATA_DIR: /shared/seafile/seafile-data
       SEAFILE_CENTRAL_CONF_DIR: /shared/seafile/conf
       # Keep the worker's task registry in sync with the application. New

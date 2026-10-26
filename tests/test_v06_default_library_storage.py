@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import unittest
 
+# Include the optional search worker when asserting its generated configuration.
 ROOT = Path(__file__).resolve().parents[1] / "deploy" / "compose"
 
 
@@ -26,7 +27,7 @@ class StorageDefaultTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("docker"), "Docker Compose CLI not installed")
     def test_merged_new_install_compose_contract(self):
         proc = subprocess.run(
-            ["docker", "compose", "--env-file", ".env.example", "config", "--format", "json"],
+            ["docker", "compose", "--profile", "search", "--env-file", ".env.example", "config", "--format", "json"],
             cwd=ROOT, capture_output=True, text=True, timeout=30, check=False)
         self.assertEqual(0, proc.returncode, proc.stderr[-1000:])
         data = json.loads(proc.stdout)
@@ -55,7 +56,7 @@ class StorageDefaultTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("docker"), "Docker Compose CLI not installed")
     def test_base_compose_exports_native_runtime_paths_without_storage_overlay(self):
         proc = subprocess.run(
-            ["docker", "compose", "--env-file", ".env.example", "-f", "docker-compose.yml", "config", "--format", "json"],
+            ["docker", "compose", "--profile", "search", "--env-file", ".env.example", "-f", "docker-compose.yml", "config", "--format", "json"],
             cwd=ROOT, capture_output=True, text=True, timeout=30, check=True,
             env={**os.environ, "CF_LIBRARY_STORAGE": "", "SEAFILE_DATA_DIR": "/stale-data",
                  "SEAFILE_CENTRAL_CONF_DIR": "/stale-conf"})
@@ -78,7 +79,7 @@ class StorageDefaultTests(unittest.TestCase):
             "CLOUDFILE_POLICY_WORKER_HOOKS",
         )
         result = subprocess.run(
-            ["docker", "compose", "--env-file", ".env.example", "config", "--format", "json"],
+            ["docker", "compose", "--profile", "search", "--env-file", ".env.example", "config", "--format", "json"],
             cwd=ROOT, capture_output=True, text=True, timeout=30, check=True,
             env={**os.environ, **{key: "true" for key in retired}})
         data = json.loads(result.stdout)

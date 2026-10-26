@@ -25,6 +25,7 @@ import os
 import sys
 import tempfile
 import types
+import uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BOOTSTRAP = os.path.join(HERE, '..', '..', 'scripts', 'scripts_cf14.0', 'cloudfile_bootstrap.py')
@@ -84,6 +85,11 @@ def load(func_name, env, extra=None):
         'CF_DEFAULT_ON': _module_constant(tree, 'CF_DEFAULT_ON'),
         'CF_FEATURE_SWITCHES': _module_constant(tree, 'CF_FEATURE_SWITCHES'),
     }
+    # Include the real Checkout parser required by the generated server config.
+    ns['uuid'] = uuid
+    helpers = [item for item in tree.body
+               if isinstance(item, ast.FunctionDef) and item.name == '_checkout_repo_ids']
+    exec(compile(ast.Module(body=helpers, type_ignores=[]), BOOTSTRAP, 'exec'), ns)
     ns.update(extra or {})
     exec(compile(ast.Module(body=[node], type_ignores=[]), BOOTSTRAP, 'exec'), ns)
     return ns[func_name]
@@ -377,17 +383,14 @@ def test_upstream_packages():
 
 
 def test_eap_identity():
-    env = dict(BASE_ENV, CF_SSO_EAP_PROFILE_IDENTITY='false',
-               CF_SSO_OAUTH_LOGIN_ID_CLAIM='userId')
-    values = evaluate(load('_settings_block_sso', env)())
-    check('V2 bridge stays disabled', values['CF_SSO_EAP_PROFILE_IDENTITY'] is False)
-    check('enterprise Directory maps business UID', values['OAUTH_ATTRIBUTE_MAP']['userId'] == (False, 'login_id'))
-    try:
-        load('_settings_block_sso', dict(env, CF_SSO_EAP_PROFILE_IDENTITY='true'))()
-    except Exception:
-        check('Retired bridge rejected', True)
-    else:
-        check('Retired bridge rejected', False)
+    # Retired input is ignored; it must neither re-enable the bridge nor break startup.
+    for legacy in ('false', 'true'):
+        env = dict(BASE_ENV, CF_SSO_EAP_PROFILE_IDENTITY=legacy,
+                   CF_SSO_OAUTH_LOGIN_ID_CLAIM='userId')
+        values = evaluate(load('_settings_block_sso', env)())
+        check('Retired bridge not emitted', 'CF_SSO_EAP_PROFILE_IDENTITY' not in values)
+        check('enterprise Directory maps business UID',
+              values['OAUTH_ATTRIBUTE_MAP']['userId'] == (False, 'login_id'))
 
 
 def test_search():

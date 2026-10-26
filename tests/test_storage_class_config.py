@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import unittest
 
+# Include the optional search worker when asserting its generated configuration.
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("storage_config", ROOT / "tools/ops/storage-class-config.py")
 config = importlib.util.module_from_spec(SPEC)
@@ -81,7 +82,7 @@ class StorageClassConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             override = Path(tmp) / "override.json"
             override.write_text(json.dumps(config.compose_override(classes)))
-            base = ["docker", "compose", "--env-file", ".env.example", "-f", "docker-compose.yml",
+            base = ["docker", "compose", "--profile", "search", "--env-file", ".env.example", "-f", "docker-compose.yml",
                     "-f", "docker-compose.auto-library-storage.yml", "-f", str(override)]
             for profile, present, absent in (("s3", "rustfs", "minio"), ("minio", "minio", "rustfs")):
                 proc = subprocess.run(base + ["--profile", profile, "config", "--format", "json"],

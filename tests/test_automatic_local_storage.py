@@ -10,7 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 # Exercise the exact dependency payload applied by the production build, so a
 # standalone Docker checkout does not need a separate seafobj working tree.
 patch = (ROOT / 'patches/seafobj/automatic-local-storage.patch').read_text()
-part = patch.split('+++ b/seafobj/auto_local.py\n', 1)[1]
+# Stop at the next file; additions there are not part of auto_local.py.
+part = patch.split('+++ b/seafobj/auto_local.py\n', 1)[1].split('diff --git ', 1)[0]
 source = '\n'.join(line[1:] for line in part.splitlines() if line.startswith('+'))
 policy = types.ModuleType('cf_auto_local_policy')
 exec(compile(source, 'auto_local.py', 'exec'), policy.__dict__)

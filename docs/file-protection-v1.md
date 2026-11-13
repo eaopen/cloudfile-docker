@@ -28,12 +28,12 @@ python3 tools/migrate/file-protection-v1.py --installdir /path/to/seafile-server
 
 ## 配套构建
 
-沿用 `release.yaml` 默认 dev，不永久将产品源码指向功能分支。发布联验时对 Server/Hub 选择 `dev`，Docker 选择本轮已推送的验收分支，由已有入口一次解析为固定 SHA 收据：
+沿用 `release.yaml` 默认 dev，不永久将产品源码指向功能分支。本轮修复尚未合并，联验时对 Server/Hub 选择 `fix/virtual-file-protection`，Docker 选择已推送的验收分支，由已有入口一次解析为固定 SHA 收据：
 
 ```sh
-CF_SERVER_REF=dev CF_HUB_REF=dev \
+CF_SERVER_REF=fix/virtual-file-protection CF_HUB_REF=fix/virtual-file-protection \
 CF_DOCKER_REF=fix/file-protection-acceptance CF_BUILD_JOBS=2 \
-bash build/cloudfile_14.0/build-in-docker.sh 14.0.8-protection-v1-test
+bash build/cloudfile_14.0/build-in-docker.sh 14.0.8-virtual-protection-fix
 ```
 
 工作树须已提交、推送且干净；复用既有基础镜像和缓存。构建结果不等于部署验收。
@@ -87,14 +87,14 @@ bash tests/e2e/full/run-file-protection.sh 14.0.8-protection-acceptance
 - 真实 HTTP 更新与 Hub 定版分别抢先，重复三轮，共六次；观察实际 MariaDB Branch 记录锁等待。定版先完成则更新拒绝；更新先完成则定版返回 `FILE_VERSION_CHANGED`，不会记录过时版本。
 - MariaDB general log 证明普通库 HTTP 上传无 Protection SQL。1,000 个真实原生文件逐个定版后，20 次更新采样的普通库 P95 为 8.3 ms、保护库为 13.4 ms；500 文件一次提交约 225 ms。默认工程回归预算为保护库 P95 ≤ max(普通库 P95 × 3, 普通库 P95 + 100 ms)、批量提交 ≤ 10 秒。这不是生产 SLA；可用 `CF_PROTECTION_PERF_ROWS=10000` 扩大规模。
 
-**发布阻断：虚拟库写入未继承源库保护。** 在保护源库 `/acceptance/original` 后，对对应虚拟库 `/original` 发起真实 `update-api` 返回 200，虚拟库 Branch 和文件 ID 已改变，而响应后采样时源库 Branch/文件保持原值（不将此即时采样当作异步合并最终安全的证明）。矩阵对此明确失败，不跳过、不放宽断言。正式发布前必须修复原生虚拟库写入边界并重新联验；AMD64 构建成功也不能解除此阻断。Etech/Windows Agent2、DEV/PROD 验收仍另行完成。
+**历史发布阻断：虚拟库写入未继承源库保护。** 在保护源库 `/acceptance/original` 后，对对应虚拟库 `/original` 发起真实 `update-api` 返回 200，虚拟库 Branch 和文件 ID 已改变，而响应后采样时源库 Branch/文件保持原值（不将此即时采样当作异步合并最终安全的证明）。矩阵对此明确失败，不跳过、不放宽断言。正式发布前必须修复原生虚拟库写入边界并重新联验；AMD64 构建成功也不能解除此阻断。Etech/Windows Agent2、DEV/PROD 验收仍另行完成。
 
 补充规模验证：相同 ARM64 运行组合、测试代码 `547f89d` 在 10,000 个真实受保护文件下，普通小库更新 P95 12.0 ms、保护库 P95 46.6 ms，500 文件批量提交 472.8 ms，均通过前述工程预算。两个目录规模不同，差值包含原生大目录处理成本，不能归因于保护 SQL 本身；普通库零 Protection SQL 另有数据库日志证据。该轮仍因虚拟库写入返回 200 而整体失败。
 
 AMD64 首轮流程 `43405168313` 已完成 C/Go/Web 编译，但暴露已有夹具问题：只读源码目录下的 Go TestMain 写入失败，容器原子写出的收据权限为 0600 导致镜像阶段读取及证据上传失败。`547f89d` 将挂载测试编译为测试二进制，在独立临时目录执行，并将非敏感来源收据设为 0644；保留源码只读挂载。修复后的 ARM64/AMD64 backend、repository、shard 挂载测试与证据上传通过。一次性 MariaDB 匿名卷随所属测试容器一并清理，不清理其他卷。
 
 
-## AMD64 最终验收记录
+## AMD64 修复前验收记录（历史失败）
 
 [第三轮完整流程 43408619032](https://github.com/eaopen/cloudfile-docker/actions/runs/43408619032) 固定 Server `5fef361a9a237d52908dafffef378cff1cb2faa9`、Hub `3ec2ecf869f7761ec89d2087c45c6c156c7a3519`、Docker `263a1466a632aa498852b05a89171ab59e74d7b4`。后续本文记录提交不改变这次构建输入。
 
@@ -106,3 +106,23 @@ AMD64 首轮流程 `43405168313` 已完成 C/Go/Web 编译，但暴露已有夹�
 Runner 内构建标签 `cloudfile/cloudfile:14.0.8-protection-amd64-20261113-r3`，本地 image config ID `sha256:8f3089295505359f8cea48458425c02731395d08c7dd5460d050033bfd7d70ee`。它不是 Registry manifest digest；镜像未推送，runner 镜像不是可直接部署的持久交付件。
 
 [完整验收证据](https://github.com/eaopen/cloudfile-docker/actions/runs/43408619032/artifacts/14029740165) 包含三仓收据、九组通过结果、虚拟库失败前后文件/Branch、性能结果和 C/Go 日志。下一步先修复 Server 虚拟库到源库路径的保护判断及原子并发边界，再使用新的固定三仓 SHA 重跑；此前不进行正式发布或 DEV/PROD 部署。
+
+
+## 虚拟库保护修复候选（2026-11-13）
+
+Server [#52](https://github.com/eaopen/cloudfile-server/pull/52)、Hub [#102](https://github.com/eaopen/cloudfile-hub/pull/102) 与 Docker [#55](https://github.com/eaopen/cloudfile-docker/pull/55) 提供本轮修复及验收，尚未合并、发布或部署。历史失败记录保留，不能将旧 dev 或旧镜像视为已修复。
+
+C/Go 最终提交屏障使用原生 VirtualRepo 映射，把变更路径映射到源库，在源库 Branch 行锁下重新检查映射和保护版本；删除、覆盖及父目录操作均拒绝。副本仍可编辑，原生回同步仅在保留受保护 File ID 时允许。Hub 定版时检查相关虚拟视图的不可变提交；已有虚拟写入尚未同步到源库时返回 `409 VIRTUAL_REPO_SYNC_PENDING`，避免定版过时原件。无新增数据表、缓存层或 Checkout 租约变化。
+
+本轮固定 Server `2df0ba1a9645da519177000fb573d1d504388adb`、Hub `1a7415b674dea5cb16cba32777ea045762a1ebf4`。ARM64 发行包构建配方为 Docker `bd20724`，后续验收代码固定为 `4cba65f2ea9c325c7a40a9061c13604335bc8563`。完整 C/Go/Web 构建通过；Go 保护/Guard 定向测试、C cf-lock 夹具、Hub 六项保护单测及两个源码快速检查通过。
+
+ARM64 最终矩阵通过 16 项基础原生场景和 11 组扩展验收，包含真实 Go HTTP、C RPC、同步 Commit/HEAD、WebDAV、虚拟库父目录操作、历史恢复及可编辑副本。六个源库和十二个虚拟库并发场景均观察实际 Branch 锁等待，覆盖定版与写入的两种顺序。虚拟库拒绝写入后，源库与虚拟库的 Branch/File ID 均保持不变。
+
+10,000 个真实受保护文件下，普通库更新 P95 13.7 ms、保护库 P95 47.0 ms，500 文件批量提交 447.1 ms，均满足既有隔离工程预算。普通库零 Protection SQL 由 MariaDB general log 独立验证；采样前等待上一轮原生虚拟库合并完成，避免把其后台 SQL 误归因于普通库上传。此数据不代表业务 SLA。
+
+
+[AMD64 修复后完整流程 43414000985](https://github.com/eaopen/cloudfile-docker/actions/runs/43414000985) 已全部通过，收据固定上述 Server/Hub SHA 和 Docker `4cba65f2ea9c325c7a40a9061c13604335bc8563`。C/Go/Web 编译、发行包校验、镜像组装、local_storage、objstore、三项 bind-mount 检查及同一文件保护矩阵均成功，`tests.file_protection.status=passed`。AMD64 默认 1,000 文件规模：普通库 P95 8.6 ms、保护库 P95 15.3 ms，500 文件提交 663.5 ms。万文件规模的数值来自前述 ARM64 独立运行，不混作 AMD64 数据。
+
+Runner 本地标签 `cloudfile/cloudfile:14.0.8-virtual-protection-fix-amd64`，image config ID 为 `sha256:40ecb363898605940ceb0fdcc6ca8dce66f885af351c59fe6c7da82860beb74f`；Registry digest 为空，未发布镜像。收据及 JSON/日志已上传为该流程的 `full-build-evidence`，来源锁与挂载证据另行上传。后续纯文档提交不改变本次已验证构建组合。
+
+结论：本轮固定修复组合已消除已复现的虚拟写入绕过和定版竞争问题，具备合并审查及后续 AMD64 发布准备依据。通用原生上传拒绝仍沿用现有 HTTP 500 错误映射，验收同时检查不可变 Branch/File ID，未将错误码本身视为安全证明。Etech/SSO、实际 Windows Agent2 与 DEV/PROD 业务验收仍未完成；不得将候选 PR、CI 镜像或隔离测试写成已上线。

@@ -1,5 +1,5 @@
 """Disposable native protection probe. Identity is a test adapter, not SSO acceptance."""
-import json, os, re, subprocess, sys, tempfile, time
+import json, os, re, shutil, subprocess, sys, tempfile, time
 from pathlib import Path
 from uuid import uuid4
 
@@ -18,7 +18,11 @@ def phase():
         old_head=api.get_repo(repo).head_cmmt_id
         local.write_bytes(b'finalized original content')
         assert api.put_file(repo,str(local),'/design','original.prt',OWNER,None)
-        statefile.write_text(json.dumps({'repo':repo,'file':api.get_file_id_by_path(repo,'/design/original.prt'),'head':api.get_repo(repo).head_cmmt_id,'old_head':old_head}))
+        state={'repo':repo,'file':api.get_file_id_by_path(repo,'/design/original.prt'),'head':api.get_repo(repo).head_cmmt_id,'old_head':old_head}
+        if os.environ.get('CF_TEST_PROTECTION_EXTENDED') == '1':
+            from file_protection_matrix import prepare
+            prepare(api, state, ROOT)
+        statefile.write_text(json.dumps(state))
         return
     state=json.loads(statefile.read_text()); repo=state['repo']; checks=[]
     import django
@@ -101,6 +105,9 @@ def phase():
         checks.append('Same optimistic ticket publishes successfully after unprotect')
         assert api.put_file(repo,str(local),'/design','original.prt',OWNER,None)
         checks.append('Hub unprotect restores native write')
+        if os.environ.get('CF_TEST_PROTECTION_EXTENDED') == '1':
+            from file_protection_matrix import run as matrix_run
+            matrix_run(api, state, ROOT, p, admin)
     print(json.dumps({'passed':checks,'identity':'test native-local principal/admin; not Etech/SSO'},indent=2))
 
 def run():
@@ -174,6 +181,10 @@ def run():
     finally:
         if go_process is not None and go_process.poll() is None:go_process.terminate();go_process.wait(timeout=10)
         if process is not None and process.poll() is None:process.terminate();process.wait(timeout=10)
+        if os.environ.get('CF_PROTECTION_REPORT'):
+            evidence=Path(os.environ['CF_PROTECTION_REPORT']).parent
+            for name in ('native.log', 'go.log', 'stderr', 'go.stderr'):
+                if (ROOT/name).exists(): shutil.copy2(ROOT/name, evidence/name)
         with admin.cursor() as c:
             for name in schemas.values():c.execute('DROP DATABASE IF EXISTS '+name)
         admin.close()

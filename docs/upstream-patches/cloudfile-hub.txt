@@ -134,3 +134,5 @@ seahub/share/views.py
 seahub/api2/endpoints/upload_links.py
 seahub/api2/endpoints/repo_share_links.py
 seahub/api2/endpoints/repo_upload_links.py
+# 指定人员/邮箱授权管理同样绑定 token 创建者及原生对象路径；关闭态禁止新增授权。
+seahub/api2/endpoints/share_link_auth.py

@@ -127,11 +127,11 @@ def cf_enabled(name):
     return get_conf(name, default).lower() == 'true'
 
 
-def _checkout_repo_ids():
+def _repo_ids(setting):
     """Canonical UUID allowlist for OPTIONAL Checkout; all other repos are OFF."""
-    raw = get_conf('CF_CHECKOUT_REPOS', '')
+    raw = get_conf(setting, '')
     if len(raw) > 8192:
-        raise ValueError('CF_CHECKOUT_REPOS exceeds 8192 bytes')
+        raise ValueError(setting + ' exceeds 8192 bytes')
     if not raw.strip():
         return ()
     ids = []
@@ -141,11 +141,19 @@ def _checkout_repo_ids():
             if str(uuid.UUID(value)) != value:
                 raise ValueError('noncanonical UUID')
         except (ValueError, AttributeError):
-            raise ValueError('CF_CHECKOUT_REPOS requires canonical Repo UUIDs')
+            raise ValueError(setting + ' requires canonical Repo UUIDs')
         if value in ids:
-            raise ValueError('CF_CHECKOUT_REPOS contains a duplicate Repo UUID')
+            raise ValueError(setting + ' contains a duplicate Repo UUID')
         ids.append(value)
     return tuple(ids)
+
+
+def _checkout_repo_ids():
+    return _repo_ids('CF_CHECKOUT_REPOS')
+
+
+def _protection_repo_ids():
+    return _repo_ids('CF_PROTECTION_REPOS')
 
 
 def _replace_block(path, begin, end, body):
@@ -849,6 +857,7 @@ def _seafile_conf_cloudfile_lines():
         lines.append('%s = %s\n'
                      % (key, 'true' if cf_enabled(name) else 'false'))
     lines.append('checkout_repo_ids = %s\n' % ','.join(_checkout_repo_ids()))
+    lines.append('protection_repo_ids = %s\n' % ','.join(_protection_repo_ids()))
 
     if cf_enabled('CF_ENABLE_FILE_LOCK'):
         backend = get_conf('CF_LOCK_BACKEND', 'cloudfile').lower()

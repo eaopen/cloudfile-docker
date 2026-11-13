@@ -88,7 +88,7 @@ def load(func_name, env, extra=None):
     # Include the real Checkout parser required by the generated server config.
     ns['uuid'] = uuid
     helpers = [item for item in tree.body
-               if isinstance(item, ast.FunctionDef) and item.name == '_checkout_repo_ids']
+               if isinstance(item, ast.FunctionDef) and item.name in ('_repo_ids', '_checkout_repo_ids', '_protection_repo_ids')]
     exec(compile(ast.Module(body=helpers, type_ignores=[]), BOOTSTRAP, 'exec'), ns)
     ns.update(extra or {})
     exec(compile(ast.Module(body=[node], type_ignores=[]), BOOTSTRAP, 'exec'), ns)

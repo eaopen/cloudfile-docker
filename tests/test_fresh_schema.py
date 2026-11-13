@@ -35,7 +35,7 @@ class ReadOnlyCursor:
             if self.defect == 'text_hash' and table == 'cf_dir_acl':
                 self.rows = tuple((name, 'char', 64) if name == 'path_hash' else (name, kind, length) for name, kind, length in self.rows)
         else:
-            self.rows = tuple((name, unique, i+1, column, None)
+            self.rows = tuple((name, unique, i+1, column, 191 if table == 'cf_file_protection' and name == 'cf_file_protection_prefix' and column == 'path' else None)
                 for name, (unique, columns) in SCHEMA.INDEXES[table].items() for i, column in enumerate(columns))
             if self.defect == 'missing_index' and table == 'cf_edit_guard':
                 self.rows = tuple(row for row in self.rows if row[0] != 'cf_edit_guard_active')
@@ -47,7 +47,7 @@ class DevelopmentSchemaTest(unittest.TestCase):
         cursor = ReadOnlyCursor()
         connection = Mock(); connection.cursor.return_value = cursor
         SCHEMA.verify_v2_schema(connection)
-        self.assertEqual(len(cursor.calls), 16)
+        self.assertEqual(len(cursor.calls), 19)
         connection.commit.assert_not_called()
         connection.rollback.assert_not_called()
 
@@ -57,7 +57,7 @@ class DevelopmentSchemaTest(unittest.TestCase):
             with self.assertRaises(ValueError): SCHEMA.verify_v2_schema(connection, checkout_enabled=True)
             connection.commit.assert_not_called()
 
-    def test_all_five_tables_are_required_even_when_checkout_is_off(self):
+    def test_all_six_tables_are_required_even_when_checkout_is_off(self):
         for defect in ('old_guard', 'missing_index'):
             connection = Mock()
             connection.cursor.return_value = ReadOnlyCursor(defect)
@@ -69,7 +69,7 @@ class DevelopmentSchemaTest(unittest.TestCase):
         env = dict(SEAFILE_MYSQL_DB_HOST='db', SEAFILE_MYSQL_DB_PASSWORD='fixture')
         with patch.dict(sys.modules, {'pymysql': driver}):
             with self.assertRaises(RuntimeError) as error: SCHEMA.verify_development_schema(environment=env)
-        self.assertIn('five-table', str(error.exception)); self.assertNotIn('private-fixture-value', str(error.exception))
+        self.assertIn('six-table', str(error.exception)); self.assertNotIn('private-fixture-value', str(error.exception))
 
     def test_startup_initializes_fresh_volume_without_legacy_runner(self):
         bootstrap = ast.parse((ROOT/'scripts/scripts_cf14.0/cloudfile_bootstrap.py').read_text())
@@ -99,7 +99,8 @@ class FreshInstallTest(unittest.TestCase):
         calls = []
         fail = False
 
-        def __init__(self, connection, ddl, *, edit_ddl=None, audit_ddl=None):
+        def __init__(self, connection, ddl, *, edit_ddl=None, audit_ddl=None, protection_ddl=None):
+            self.protection_ddl = protection_ddl
             self.ddl, self.edit_ddl, self.audit_ddl = ddl, edit_ddl, audit_ddl
             FreshInstallTest.FakeFreshSchema.calls.append(self)
 
@@ -116,6 +117,7 @@ class FreshInstallTest(unittest.TestCase):
         sql = installdir / 'sql' / 'mysql'
         sql.mkdir(parents=True, exist_ok=True)
         (sql / 'cloudfile-v2.sql').write_text('-- reviewed base DDL')
+        (sql / 'cloudfile-v2-protection.sql').write_text('-- reviewed protection DDL')
         (sql / 'cloudfile-v2-edit.sql').write_text('-- reviewed Guard DDL')
         (sql / 'cloudfile-v2-audit.sql').write_text('-- reviewed operation audit DDL')
         (installdir / 'seahub').mkdir(exist_ok=True)
@@ -163,7 +165,7 @@ class FreshInstallTest(unittest.TestCase):
         self.assertIsNotNone(FreshInstallTest.FakeFreshSchema.calls[0].audit_ddl)
         connection.close.assert_called_once()
 
-    def test_checkout_toggle_does_not_change_five_table_install(self):
+    def test_checkout_toggle_does_not_change_six_table_install(self):
         with tempfile.TemporaryDirectory() as root:
             shared = Path(root) / 'shared'
             shared.mkdir()
@@ -181,7 +183,7 @@ class FreshInstallTest(unittest.TestCase):
             with self.assertRaises(RuntimeError) as error:
                 self._init(root, marker, 'false')
             self.assertTrue(marker.exists())
-            # Changing a runtime feature switch never changes the fresh five-table schema.
+            # Changing a runtime feature switch never changes the fresh six-table schema.
             FreshInstallTest.FakeFreshSchema.fail = False
             result, _ = self._init(root, marker, 'true')
             self.assertTrue(result)

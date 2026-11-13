@@ -77,3 +77,5 @@ server/web-accesstoken-mgr.h
 # 2026-10-21 复检修复：common/branch-mgr.c：add/del/update 三个 MySQL 分支写入口先锁 Branch(master)，再执行现有最终 ACL 校验，与 ACLStore 写入锁顺序一致；允许原生新建库尚无 master。
 
 # 2026-10-21 VirtualRepo 兼容：common/cf-v2-acl.c 公开链接复用 CE origin/path 映射；原生转存不再仅因虚拟库类型拒绝。缺少范围证明的受 ACL 限制操作仍保留现有边界。server/Makefile.am 删除已退役头文件引用。
+
+# 2026-11-13 文件保护 V1：server/repo-mgr.c 对配置保护范围内资料库拒绝整库删除，避免绕过 Branch 提交屏障。fileserver/option/option.go 加载独立保护范围；最终文件写入复用 cf-v2-edit-fence。

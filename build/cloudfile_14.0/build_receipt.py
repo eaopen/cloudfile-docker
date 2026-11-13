@@ -25,6 +25,8 @@ def atomic_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix="." + path.name, dir=path.parent)
     try:
+        # Public provenance must remain readable by the host artifact uploader.
+        os.fchmod(fd, 0o644)
         with os.fdopen(fd, "w") as stream:
             json.dump(value, stream, indent=2, sort_keys=True)
             stream.write("\n")

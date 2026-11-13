@@ -30,6 +30,7 @@ def prepare(api, state, root):
         local.write_bytes(b'original protocol fixture')
         assert api.post_file(repo, str(local), '/acceptance', 'original', OWNER) == 0
     state['virtual'] = api.create_virtual_repo(state['repo'], '/acceptance', 'protection virtual', '', OWNER)
+    state['virtual_initial_head'] = api.get_repo(state['virtual']).head_cmmt_id
 
 
 def connection(autocommit=True):
@@ -103,32 +104,33 @@ class Matrix:
         self.webdav()
         assert self.change(False).status_code == 200
 
+    def sync_attempt(self, repo, target_root):
+        token = self.api.generate_repo_token(repo, OWNER)
+        headers = {'Seafile-Repo-Token': token}
+        old = self.head(repo)
+        response = requests.get(f'{HTTP}/repo/{repo}/commit/{old}', headers=headers, timeout=15)
+        assert response.status_code == 200, response.text
+        commit = response.json()
+        commit.update(root_id=target_root, parent_id=old, second_parent_id=None,
+                      description='isolated sync protection ' + uuid4().hex, ctime=int(time.time()))
+        raw = (commit['root_id'] + commit['creator'] + commit.get('creator_name', '') + commit['description']).encode()
+        commit['commit_id'] = hashlib.sha1(raw + struct.pack('>Q', commit['ctime'])).hexdigest()
+        response = requests.put(f"{HTTP}/repo/{repo}/commit/{commit['commit_id']}", headers=headers, json=commit, timeout=15)
+        assert response.status_code == 200, response.text
+        return requests.put(f'{HTTP}/repo/{repo}/commit/HEAD', params={'head': commit['commit_id']}, headers=headers, timeout=30)
+
     def sync(self):
-        def attempt(repo, target_root):
-            token = self.api.generate_repo_token(repo, OWNER)
-            headers = {'Seafile-Repo-Token': token}
-            old = self.head(repo)
-            response = requests.get(f'{HTTP}/repo/{repo}/commit/{old}', headers=headers, timeout=15)
-            assert response.status_code == 200, response.text
-            commit = response.json()
-            commit.update(root_id=target_root, parent_id=old, second_parent_id=None,
-                          description='isolated sync protection ' + uuid4().hex, ctime=int(time.time()))
-            raw = (commit['root_id'] + commit['creator'] + commit.get('creator_name', '') + commit['description']).encode()
-            commit['commit_id'] = hashlib.sha1(raw + struct.pack('>Q', commit['ctime'])).hexdigest()
-            response = requests.put(f"{HTTP}/repo/{repo}/commit/{commit['commit_id']}", headers=headers, json=commit, timeout=15)
-            assert response.status_code == 200, response.text
-            return requests.put(f'{HTTP}/repo/{repo}/commit/HEAD', params={'head': commit['commit_id']}, headers=headers, timeout=30)
         before = self.head(), self.file()
         # A previously valid tree with no protected path exists in this repo's history.
         old = self.api.get_commit(self.repo, 1, self.state['old_head'])
-        response = attempt(self.repo, old.root_id)
+        response = self.sync_attempt(self.repo, old.root_id)
         assert response.status_code >= 400, response.text
         self.assert_unchanged(before)
         plain = self.state['plain']
         oldhead = self.head(plain)
         oldroot = self.api.get_commit(plain, 1, oldhead).root_id
         assert self.upload(plain, '/acceptance/sync-control', b'new').status_code == 200
-        response = attempt(plain, oldroot)
+        response = self.sync_attempt(plain, oldroot)
         assert response.status_code == 200, (response.status_code, response.text)
         assert not self.file('/acceptance/sync-control', plain)
         self.mark('real sync object PUT + HEAD publication: protected denied, ordinary succeeds')
@@ -155,14 +157,28 @@ class Matrix:
     def wait_virtual(self):
         virtual = self.state['virtual']
         deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            if self.api.get_dir_id_by_path(virtual, '/') == self.api.get_dir_id_by_path(self.repo, '/acceptance'):
-                return
-            time.sleep(.05)
-        raise AssertionError('virtual view did not converge')
+        db = connection()
+        try:
+            while time.monotonic() < deadline:
+                with db.cursor() as c:
+                    c.execute('SELECT base_commit FROM VirtualRepo WHERE repo_id=%s', [virtual])
+                    base = c.fetchone()[0]
+                origin_root = self.api.get_dir_id_by_path(self.repo, '/acceptance')
+                if (self.api.get_dir_id_by_path(virtual, '/') == origin_root and
+                    self.api.get_dir_id_by_commit_and_path(self.repo, base, '/acceptance') == origin_root):
+                    return
+                time.sleep(.05)
+        finally:
+            db.close()
+        raise AssertionError('virtual view and merge base did not converge')
 
     def virtual(self):
         virtual = self.state['virtual']
+        local = self.root / 'virtual-input'
+        local.write_bytes(b'virtual C overwrite')
+        assert self.api.post_dir(self.repo, '/acceptance', 'nested', OWNER) == 0
+        assert self.api.post_file(self.repo, str(local), '/acceptance/nested', 'child', OWNER) == 0
+        assert self.change(True, '/acceptance/nested/child').status_code == 200
         self.wait_virtual()
         before = self.head(), self.file()
         virtual_before = self.head(virtual), self.file('/original', virtual)
@@ -179,6 +195,8 @@ class Matrix:
             ('overwrite', lambda: self.api.put_file(virtual, str(local), '/', 'original', OWNER, None)),
             ('delete', lambda: self.api.del_file(virtual, '/', json.dumps(['original']), OWNER)),
             ('rename', lambda: self.api.rename_file(virtual, '/', 'original', 'renamed', OWNER)),
+            ('parent delete', lambda: self.api.del_file(virtual, '/', json.dumps(['nested']), OWNER)),
+            ('parent rename', lambda: self.api.rename_file(virtual, '/', 'nested', 'renamed-dir', OWNER)),
         ):
             failed = False
             try:
@@ -189,16 +207,23 @@ class Matrix:
             assert failed, name + ' returned success'
             self.assert_unchanged(before)
             assert (self.head(virtual), self.file('/original', virtual)) == virtual_before
+        old_root = self.api.get_commit(virtual, 1, self.state['virtual_initial_head']).root_id
+        response = self.sync_attempt(virtual, old_root)
+        assert response.status_code >= 400, response.text
+        self.assert_unchanged(before)
+        assert (self.head(virtual), self.file('/original', virtual)) == virtual_before
         self.api.copy_file(virtual, '/', json.dumps(['original']), virtual, '/', json.dumps(['virtual-copy']), OWNER, 0, synchronous=1)
+        assert self.api.put_file(virtual, str(local), '/', 'virtual-copy', OWNER, None)
         assert self.upload(virtual, '/virtual-copy', b'editable virtual copy', True).status_code == 200
         self.wait_virtual()
         assert self.file('/acceptance/virtual-copy') != before[1]
         assert self.file() == before[1]
-        self.mark('virtual Go/C overwrite/delete/rename denied; copied file remains editable and merges')
+        self.mark('virtual Go/C/sync and parent mutations denied; copied file editable and merges')
         self.virtual_races()
 
     def virtual_races(self):
-        from django.db import connections
+        from django.db import connections, connection as django_connection, transaction
+        from types import SimpleNamespace
         virtual = self.state['virtual']
         observer = connection()
         def protect(body):
@@ -207,19 +232,44 @@ class Matrix:
             finally:
                 connections.close_all()
         try:
-            for i in range(3):
+            for i in range(6):
+                def write(repo, path, content, update=True):
+                    if i < 3:
+                        return self.upload(repo, path, content, update)
+                    local = self.root / ('virtual-race-' + uuid4().hex)
+                    local.write_bytes(content)
+                    parent, name = path.rsplit('/', 1)
+                    try:
+                        result = self.api.put_file(repo, str(local), parent or '/', name, OWNER, None)
+                        return SimpleNamespace(status_code=200 if result else 500, text=str(result))
+                    except Exception as error:
+                        return SimpleNamespace(status_code=403, text=str(error))
+                    finally:
+                        local.unlink()
                 path = f'/virtual-race-{i}'
                 origin_path = '/acceptance' + path
                 assert self.upload(virtual, path, b'initial').status_code == 200
                 self.wait_virtual()
                 body = {'repo_id': self.repo, 'path': origin_path, 'expected_file_id': self.file(origin_path)}
+                virtual_before = self.head(virtual), self.file(path, virtual)
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    with transaction.atomic():
+                        with django_connection.cursor() as c:
+                            c.execute("SELECT commit_id FROM Branch WHERE repo_id=%s AND name='master' FOR UPDATE", [self.repo]); c.fetchone()
+                        assert self.p._state_change(self.admin, body, True).status_code == 200
+                        pending = pool.submit(write, virtual, path, b'protection commits first', True)
+                        self.wait_branch(observer, 1, [pending])
+                    assert pending.result(timeout=30).status_code >= 400
+                assert (self.head(virtual), self.file(path, virtual)) == virtual_before
+                assert self.file(origin_path) == body['expected_file_id']
+                assert self.change(False, origin_path).status_code == 200
                 blocker = connection(False)
                 try:
                     with blocker.cursor() as c:
                         c.execute("SELECT commit_id FROM Branch WHERE repo_id=%s AND name='master' FOR UPDATE", [self.repo]); c.fetchone()
                     with ThreadPoolExecutor(max_workers=2) as pool:
                         try:
-                            upload = pool.submit(self.upload, virtual, path, b'virtual upload wins', True)
+                            upload = pool.submit(write, virtual, path, b'virtual upload wins', True)
                             self.wait_branch(observer, 1, [upload])
                             guarded = pool.submit(protect, body)
                             self.wait_branch(observer, 2, [upload, guarded])
@@ -238,7 +288,7 @@ class Matrix:
                     assert self.change(False, origin_path).status_code == 200
                 finally:
                     blocker.rollback(); blocker.close()
-            self.mark('three virtual upload/protect races reject stale origin protection; protected virtual writes fail')
+            self.mark('twelve virtual Go/C publish-protect races: both orders, pending origin versions refused')
         finally:
             observer.close()
 
@@ -363,6 +413,7 @@ class Matrix:
             observer.close()
 
     def performance(self):
+        self.wait_virtual()
         plain = self.state['plain']
         # Capture only a native ordinary-library write, with no Hub protection query.
         db = connection()
@@ -376,7 +427,11 @@ class Matrix:
             with db.cursor() as c:
                 c.execute('SET GLOBAL general_log=OFF')
                 c.execute("SELECT COUNT(*) FROM mysql.general_log WHERE event_time>=%s AND command_type IN ('Query','Prepare','Execute') AND argument LIKE '%%cf_file_protection%%'", [since])
-                assert c.fetchone()[0] == 0, 'ordinary library issued protection SQL'
+                count = c.fetchone()[0]
+                if count:
+                    c.execute("SELECT argument FROM mysql.general_log WHERE event_time>=%s AND argument LIKE '%%cf_file_protection%%' LIMIT 20", [since])
+                    self.metrics['unexpected_protection_sql'] = [row[0] for row in c.fetchall()]
+                assert count == 0, 'ordinary library issued protection SQL'
             self.mark('ordinary HTTP upload issues zero Protection SQL (MariaDB general log)')
             rows = int(os.environ.get('CF_PROTECTION_PERF_ROWS', '1000'))
             assert 100 <= rows <= 10000

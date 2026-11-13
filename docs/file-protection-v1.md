@@ -87,8 +87,22 @@ bash tests/e2e/full/run-file-protection.sh 14.0.8-protection-acceptance
 - 真实 HTTP 更新与 Hub 定版分别抢先，重复三轮，共六次；观察实际 MariaDB Branch 记录锁等待。定版先完成则更新拒绝；更新先完成则定版返回 `FILE_VERSION_CHANGED`，不会记录过时版本。
 - MariaDB general log 证明普通库 HTTP 上传无 Protection SQL。1,000 个真实原生文件逐个定版后，20 次更新采样的普通库 P95 为 8.3 ms、保护库为 13.4 ms；500 文件一次提交约 225 ms。默认工程回归预算为保护库 P95 ≤ max(普通库 P95 × 3, 普通库 P95 + 100 ms)、批量提交 ≤ 10 秒。这不是生产 SLA；可用 `CF_PROTECTION_PERF_ROWS=10000` 扩大规模。
 
-**发布阻断：虚拟库写入未继承源库保护。** 在保护源库 `/acceptance/original` 后，对对应虚拟库 `/original` 发起真实 `update-api` 返回 200，虚拟库 Branch 和文件 ID 已改变，而源库 Branch/文件保持原值。矩阵对此明确失败，不跳过、不放宽断言。正式发布前必须修复原生虚拟库写入边界并重新联验；AMD64 构建成功也不能解除此阻断。Etech/Windows Agent2、DEV/PROD 验收仍另行完成。
+**发布阻断：虚拟库写入未继承源库保护。** 在保护源库 `/acceptance/original` 后，对对应虚拟库 `/original` 发起真实 `update-api` 返回 200，虚拟库 Branch 和文件 ID 已改变，而响应后采样时源库 Branch/文件保持原值（不将此即时采样当作异步合并最终安全的证明）。矩阵对此明确失败，不跳过、不放宽断言。正式发布前必须修复原生虚拟库写入边界并重新联验；AMD64 构建成功也不能解除此阻断。Etech/Windows Agent2、DEV/PROD 验收仍另行完成。
 
 补充规模验证：相同 ARM64 运行组合、测试代码 `547f89d` 在 10,000 个真实受保护文件下，普通小库更新 P95 12.0 ms、保护库 P95 46.6 ms，500 文件批量提交 472.8 ms，均通过前述工程预算。两个目录规模不同，差值包含原生大目录处理成本，不能归因于保护 SQL 本身；普通库零 Protection SQL 另有数据库日志证据。该轮仍因虚拟库写入返回 200 而整体失败。
 
 AMD64 首轮流程 `43405168313` 已完成 C/Go/Web 编译，但暴露已有夹具问题：只读源码目录下的 Go TestMain 写入失败，容器原子写出的收据权限为 0600 导致镜像阶段读取及证据上传失败。`547f89d` 将挂载测试编译为测试二进制，在独立临时目录执行，并将非敏感来源收据设为 0644；保留源码只读挂载。修复后的 ARM64/AMD64 backend、repository、shard 挂载测试与证据上传通过。一次性 MariaDB 匿名卷随所属测试容器一并清理，不清理其他卷。
+
+
+## AMD64 最终验收记录
+
+[第三轮完整流程 43408619032](https://github.com/eaopen/cloudfile-docker/actions/runs/43408619032) 固定 Server `5fef361a9a237d52908dafffef378cff1cb2faa9`、Hub `3ec2ecf869f7761ec89d2087c45c6c156c7a3519`、Docker `263a1466a632aa498852b05a89171ab59e74d7b4`。后续本文记录提交不改变这次构建输入。
+
+- Ubuntu 24.04 原生 AMD64 完整 C/Go/Web 编译、发行包校验、镜像组装、local_storage、objstore 与三项 bind-mount 检查通过。构建结束将 `test-results` 归还宿主用户，协议测试和证据上传均实际执行成功。
+- 九组新增非虚拟库验收通过，包括 Web 上传/更新、混合批量原子性、同步 Commit/HEAD、跨库复制与移动拒绝、WebDAV、六轮双向真实上传竞争、普通库零 Protection SQL 和性能预算。
+- AMD64 的 1,000 个受保护文件基准：普通小库更新 P95 9.3 ms，保护库 P95 15.4 ms，500 文件提交 509.2 ms；仍仅为隔离工程预算。
+- **整体验收失败**：虚拟库更新返回 200，虚拟 Branch 与文件 ID 改变。与 ARM64 结果一致，收据 `tests.file_protection.status` 为 `failed`，未豁免失败用例。
+
+Runner 内构建标签 `cloudfile/cloudfile:14.0.8-protection-amd64-20261113-r3`，本地 image config ID `sha256:8f3089295505359f8cea48458425c02731395d08c7dd5460d050033bfd7d70ee`。它不是 Registry manifest digest；镜像未推送，runner 镜像不是可直接部署的持久交付件。
+
+[完整验收证据](https://github.com/eaopen/cloudfile-docker/actions/runs/43408619032/artifacts/14029740165) 包含三仓收据、九组通过结果、虚拟库失败前后文件/Branch、性能结果和 C/Go 日志。下一步先修复 Server 虚拟库到源库路径的保护判断及原子并发边界，再使用新的固定三仓 SHA 重跑；此前不进行正式发布或 DEV/PROD 部署。

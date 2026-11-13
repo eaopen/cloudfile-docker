@@ -195,6 +195,8 @@ class Matrix:
             ('overwrite', lambda: self.api.put_file(virtual, str(local), '/', 'original', OWNER, None)),
             ('delete', lambda: self.api.del_file(virtual, '/', json.dumps(['original']), OWNER)),
             ('rename', lambda: self.api.rename_file(virtual, '/', 'original', 'renamed', OWNER)),
+            ('move', lambda: self.api.move_file(virtual, '/', json.dumps(['original']), virtual, '/', json.dumps(['moved']), 0, OWNER, 0, synchronous=1)),
+            ('history restore', lambda: self.api.revert_repo(virtual, self.state['virtual_initial_head'], OWNER)),
             ('parent delete', lambda: self.api.del_file(virtual, '/', json.dumps(['nested']), OWNER)),
             ('parent rename', lambda: self.api.rename_file(virtual, '/', 'nested', 'renamed-dir', OWNER)),
         ):

@@ -9,7 +9,7 @@ from pathlib import Path
 
 SOURCE = Path(__file__).resolve().parents[1] / 'scripts/scripts_cf14.0/cloudfile_bootstrap.py'
 TREE = ast.parse(SOURCE.read_text())
-METHODS = {'_checkout_repo_ids', '_seafile_conf_cloudfile_lines'}
+METHODS = {'_repo_ids', '_protection_repo_ids', '_checkout_repo_ids', '_seafile_conf_cloudfile_lines'}
 FUNCTIONS = [node for node in TREE.body if isinstance(node, ast.FunctionDef) and node.name in METHODS]
 
 
@@ -51,6 +51,18 @@ class CheckoutRepoConfigTest(unittest.TestCase):
             self.env['CF_CHECKOUT_REPOS'] = value
             with self.subTest(value=value[:40]), self.assertRaises(ValueError):
                 self.namespace['_checkout_repo_ids']()
+
+    def test_protection_scope_is_independent_of_checkout(self):
+        repo = '11111111-1111-4111-8111-111111111111'
+        self.env['CF_PROTECTION_REPOS'] = repo
+        rendered = ''.join(self.namespace['_seafile_conf_cloudfile_lines']())
+        self.assertIn('protection_repo_ids = ' + repo + '\n', rendered)
+        self.assertIn('checkout_enabled = false\n', rendered)
+        self.assertEqual(self.namespace['_checkout_repo_ids'](), ())
+        for value in ('invalid', repo + ',' + repo, repo + ','):
+            self.env['CF_PROTECTION_REPOS'] = value
+            with self.assertRaises(ValueError):
+                self.namespace['_protection_repo_ids']()
 
 
 if __name__ == '__main__':

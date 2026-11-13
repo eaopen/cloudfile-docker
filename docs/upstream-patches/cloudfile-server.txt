@@ -79,3 +79,5 @@ server/web-accesstoken-mgr.h
 # 2026-10-21 VirtualRepo 兼容：common/cf-v2-acl.c 公开链接复用 CE origin/path 映射；原生转存不再仅因虚拟库类型拒绝。缺少范围证明的受 ACL 限制操作仍保留现有边界。server/Makefile.am 删除已退役头文件引用。
 
 # 2026-11-13 文件保护 V1：server/repo-mgr.c 对配置保护范围内资料库拒绝整库删除，避免绕过 Branch 提交屏障。fileserver/option/option.go 加载独立保护范围；最终文件写入复用 cf-v2-edit-fence。
+
+# 2026-11-13 虚拟库保护修复：common/branch-mgr.c 与 fileserver/fileop.go 在虚拟 Branch 前锁源库 Branch，复核原生 VirtualRepo 映射和受影响保护文件的候选 ID；C/Go 准备阶段读取不可变文件对象，最终事务不重新做目录 diff。不改变 Checkout 租约。

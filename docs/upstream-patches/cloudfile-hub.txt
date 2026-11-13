@@ -136,3 +136,5 @@ seahub/api2/endpoints/repo_share_links.py
 seahub/api2/endpoints/repo_upload_links.py
 # 指定人员/邮箱授权管理同样绑定 token 创建者及原生对象路径；关闭态禁止新增授权。
 seahub/api2/endpoints/share_link_auth.py
+
+# 2026-11-13 文件定版在源库 Branch 锁下核对原生 VirtualRepo 的不可变文件版本；存在未合并虚拟写入返回 VIRTUAL_REPO_SYNC_PENDING，拒绝冻结旧源库版本。

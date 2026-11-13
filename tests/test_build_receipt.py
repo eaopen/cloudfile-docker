@@ -29,6 +29,7 @@ class ReceiptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / 'build-receipt.json'
             receipt.atomic_json(target, result)
+            self.assertEqual(target.stat().st_mode & 0o777, 0o644)
             loaded = receipt.load_receipt(target)
             self.assertEqual(load_manifest(target), loaded['lock'])
             self.assertEqual(loaded['lock']['docker_commit'], 'a' * 40)
@@ -75,6 +76,7 @@ class ReceiptTests(unittest.TestCase):
                             'test', str(target), 'local_storage', 'failed', '--command',
                             'bash tests/local_storage/run.sh', '--log-sha256', 'b' * 64],
                            check=True, capture_output=True)
+            self.assertEqual(target.stat().st_mode & 0o777, 0o644)
             loaded = receipt.load_receipt(target)
             self.assertEqual(loaded['tests']['local_storage']['status'], 'failed')
             self.assertEqual(loaded['tests']['local_storage']['log_sha256'], 'b' * 64)

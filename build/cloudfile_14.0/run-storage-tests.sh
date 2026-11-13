@@ -21,7 +21,9 @@ run_test() {
     [[ $status == passed ]]
 }
 if [[ ${CF_TEST_BIND_MOUNTS:-0} == 1 ]]; then
-    run_test bind_mounts 'cd fileserver && CF_TEST_BIND_MOUNTS=1 go test -v ./objstore/... -run TestLocalAtomicBindMount -count=1'
+    # TestMain writes output.data in cwd. Keep the checkout read-only and run
+    # the compiled test in its own disposable directory instead.
+    run_test bind_mounts 'work=$(mktemp -d); trap '\''rm -rf "$work"'\'' EXIT; cd fileserver; go test -c -o "$work/objstore.test" ./objstore; cd "$work"; CF_TEST_BIND_MOUNTS=1 ./objstore.test -test.v -test.run TestLocalAtomicBindMount -test.count=1'
 else
     run_test local_storage 'bash tests/local_storage/run.sh'
     run_test objstore 'cd fileserver && go test -v ./objstore/... -count=1'

@@ -325,6 +325,7 @@ class Matrix:
             for iteration in range(3):
                 path = f'/acceptance/race-{iteration}'
                 assert self.upload(self.repo, path, b'initial').status_code == 200
+                self.wait_virtual()
                 body = {'repo_id': self.repo, 'path': path, 'expected_file_id': self.file(path)}
                 before = self.head(), self.file(path)
                 with ThreadPoolExecutor(max_workers=2) as pool:

@@ -156,9 +156,9 @@ V2 内置 ACL、CE 原生 Tag 和已安装 Guard 的 Checkout 不应重新受旧
 
 不要提交 `deploy/compose/.env`、任何真实凭据、密钥、持久数据卷或镜像构建产物。文档中文，代码和 commit message 英文；上游既有风格优先。
 
-## 数据库唯一规则：当前五表
+## 数据库唯一规则：当前六表
 
-- V2 仅保留 `cf_library_storage`、`cf_dir_acl`、`cf_sso_group_map`、`cf_edit_guard`、`cf_audit_event`。新装五表一次性创建，已有卷只校验，不自动迁移或修补。
+- V2 仅保留 `cf_library_storage`、`cf_dir_acl`、`cf_sso_group_map`、`cf_edit_guard`、`cf_audit_event`、`cf_file_protection`。新装六表一次性创建，已有卷只校验，不自动迁移或修补。
 - DEV 旧数据全部放弃。存储绑定从 Seafile 原生库重新发现，ACL/共享与组织角色从客户 Provider 重同步，Guard/审计从空表开始；旧 `cf_tag`/Resource/Intent/Session/Outbox 等绝不恢复。
 - DEV 如需清表重建，仅允许停写后由人工管理员按当前 DDL 操作，不做产品级迁移/历史追溯/归档库；**绝不删除或改写 Seafile 原生文件版本和存储路由**。
 
@@ -171,12 +171,12 @@ V2 内置 ACL、CE 原生 Tag 和已安装 Guard 的 Checkout 不应重新受旧
 
 ## 当前镜像只携带 V2 初始化及运行入口
 
-- 启动调用 `cloudfile_schema.py`，只创建/校验 4+1 表；历史 `cloudfile.sql`、SchemaRunner 和旧 SQL Workers 不属于产品镜像。禁止为旧代码恢复 `cf_schema_migration` 或其他旧表。
+- 启动调用 `cloudfile_schema.py`，只创建/校验 六表 表；历史 `cloudfile.sql`、SchemaRunner 和旧 SQL Workers 不属于产品镜像。禁止为旧代码恢复 `cf_schema_migration` 或其他旧表。
 - 旧 DEV 修复/迁移材料不属于当前产品代码，不由构建、启动、升级或工作进程调用。禁止用测试历史脚本的成功状态声称当前 DEV 镜像已经升级。
 
 ## 轻量跨仓运行表检查
 
-- `tools/gates/check-sql-contracts.py` 当前只检查 4+1 DDL 与 Server/Hub/Docker/可选 Agent2 **可运行** SQL 依赖，不再生成/更新旧 001–042 checksum 台账；DEV 数据直接舍弃重建，不提供历史数据修复工具。
+- `tools/gates/check-sql-contracts.py` 当前只检查 六表 DDL 与 Server/Hub/Docker/可选 Agent2 **可运行** SQL 依赖，不再生成/更新旧 001–042 checksum 台账；DEV 数据直接舍弃重建，不提供历史数据修复工具。
 - `tools/gates/run-checks.sh` 不再将历史 001–042 数据转换、旧四表 SQL 包作为日常产品测试。禁止每次小改动启动全量编译。
 
 ## 现行 V2 权限契约：禁止“托管库”复活（2026-10-21）
@@ -185,4 +185,6 @@ V2 内置 ACL、CE 原生 Tag 和已安装 Guard 的 Checkout 不应重新受旧
 - 唯一权限链：Seafile CE 原生库资格 + Hub `Authority.effective()` 对当前身份和实际路径的 ACL/共享目录结果 + C/Go 真实文件与最终 Commit 终判。无整库资格但有 `share_mode=true` 的用户只从共享目录根进入，不得开放库根、父级或兄弟目录。
 - **坚决禁止**恢复 `cf_managed_library`、`cf_managed_library_share`、`cf_library_share_revision`、`checkLegacyLibrary`、`cf_policy_check_legacy_library`、`managed_library_guard`、`allow_legacy_managed_reads`，也禁止恢复用于断言“库有任意 ACL 行就应全库拒绝”的测试。
 - 没有可信当前用户/路径的整库同步或无范围票据，允许因该**操作缺乏授权证明**而拒绝；这不是库分类。任何有路径证明的 Web/API/Agent/下载/上传必须按实际目标裁决，不能用无关目录的 ACL 拒绝整个库。策略异常不回退宽权限。
-- 当前文档与测试应以 V2 权限终判契约及五张扩展表为准；历史文档只用于追溯，不得作为实施依据。跨仓变更必须维护防复活的源码扫描和正反权限用例。
+- 当前文档与测试应以 V2 权限终判契约及六张扩展表为准；历史文档只用于追溯，不得作为实施依据。跨仓变更必须维护防复活的源码扫描和正反权限用例。
+
+文件保护 V1 经明确授权增加第六表；已有五表卷仅通过 `tools/migrate/file-protection-v1.py` 在停写维护中显式升级，启动不自动迁移，不引入通用迁移台账。

@@ -59,7 +59,7 @@ class Cursor:
             self.rows = (('InnoDB', 'utf8mb4_bin'),)
         else:
             self.rows = tuple(
-                (name, unique, index + 1, column, None)
+                (name, unique, index + 1, column, 191 if table == 'cf_file_protection' and name == 'cf_file_protection_prefix' and column == 'path' else None)
                 for name, (unique, columns) in SCHEMA.INDEXES[table].items()
                 for index, column in enumerate(columns))
         return

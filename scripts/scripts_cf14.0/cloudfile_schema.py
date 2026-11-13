@@ -4,16 +4,19 @@ import os
 import sys
 from pathlib import Path
 
-# Exactly five V2 extension tables; CE native tables remain independent.
+# Exactly six V2 extension tables; CE native tables remain independent.
 # Table existence alone previously enabled an incompatible Guard on every upload.
 COLUMNS = {
     'cf_library_storage': 'repo_key repo_id state',
     'cf_sso_group_map': 'provider subject_type namespace external_id group_id',
     'cf_dir_acl': 'repo_id path_hash path subject_type provider namespace external_id permission inherit share_mode revision',
     'cf_edit_guard': 'repo_id path_hash path guard_id generation owner_uid owner_native_user terminal_type terminal_name checkout_ip proof_digest base_file_id lease_expires_at created_at updated_at',
+    'cf_file_protection': 'repo_id path_hash path file_id protected_by protected_at',
     'cf_audit_event': 'id repo_id object_type object_id operation operator source before after source_path target_path path_hash commit_id result failure_reason occurred_at',
 }
 INDEXES = {
+    'cf_file_protection': {'PRIMARY': (0, ('repo_id','path_hash')),
+        'cf_file_protection_prefix': (1, ('repo_id','path'))},
     'cf_library_storage': {'PRIMARY': (0, ('repo_key',)), 'library_storage_repo': (0, ('repo_id',))},
     'cf_sso_group_map': {'PRIMARY': (0, ('provider','subject_type','namespace','external_id')), 'sso_native_group': (0, ('group_id',))},
     'cf_dir_acl': {'PRIMARY': (0, ('repo_id','path_hash','subject_type','provider','namespace','external_id')),
@@ -30,7 +33,7 @@ def verify_v2_schema(connection, checkout_enabled=False):
     """Check the installed core contract without CREATE, ALTER, DML or repair.
 
     This is a startup gate, not a replacement for release SQL/data validation.
-    All five tables are installed in every new V2 deployment. Checkout runtime
+    All six tables are installed in every new V2 deployment. Checkout runtime
     activation is independent from the existence of the Guard table.
     """
     with connection.cursor() as cursor:
@@ -50,7 +53,7 @@ def verify_v2_schema(connection, checkout_enabled=False):
             columns = {name: (kind, length) for name, kind, length in cursor.fetchall()}
             if set(columns) != set(names.split()):
                 raise ValueError('core column layout mismatch')
-            if table in ('cf_dir_acl', 'cf_edit_guard') and columns['path_hash'] != ('binary', 32):
+            if table in ('cf_dir_acl', 'cf_edit_guard', 'cf_file_protection') and columns['path_hash'] != ('binary', 32):
                 raise ValueError('core path hash must be BINARY(32)')
             if table == 'cf_audit_event' and columns['path_hash'] != ('binary', 32):
                 raise ValueError('audit path hash must be BINARY(32)')
@@ -62,7 +65,7 @@ def verify_v2_schema(connection, checkout_enabled=False):
             indexes = {}
             for name, non_unique, sequence, column, prefix in cursor.fetchall():
                 unique, parts = indexes.setdefault(name, (non_unique, []))
-                if prefix is not None or unique != non_unique or sequence != len(parts) + 1:
+                if prefix != (191 if table == 'cf_file_protection' and name == 'cf_file_protection_prefix' and column == 'path' else None) or unique != non_unique or sequence != len(parts) + 1:
                     raise ValueError('core index contract mismatch')
                 parts.append(column)
             actual = {name: (unique, tuple(parts)) for name, (unique, parts) in indexes.items()}
@@ -98,7 +101,7 @@ def _connect(environment):
 def inspect_v2_schema(connection, checkout_enabled=False):
     """Classify an installed database without writes, migrations or failures.
 
-    Inspects current five-table structure without writes. No legacy
+    Inspects current six-table structure without writes. No legacy
     layout recognition, fallback, upgrade or repair is performed.
     """
     report = {
@@ -132,7 +135,7 @@ def _classify_table(cursor, table, columns, expected_names):
     defects = []
     if set(columns) != set(expected_names.split()):
         defects.append('columns')
-    if table in ('cf_dir_acl', 'cf_edit_guard') and columns.get('path_hash') != ('binary', 32):
+    if table in ('cf_dir_acl', 'cf_edit_guard', 'cf_file_protection') and columns.get('path_hash') != ('binary', 32):
         defects.append('path_hash')
     if table == 'cf_audit_event' and columns.get('path_hash') != ('binary', 32):
         defects.append('path_hash')
@@ -148,7 +151,7 @@ def _classify_table(cursor, table, columns, expected_names):
     indexes = {}
     for name, non_unique, sequence, column, prefix in cursor.fetchall():
         unique, parts = indexes.setdefault(name, (non_unique, []))
-        if prefix is not None or unique != non_unique or sequence != len(parts) + 1:
+        if prefix != (191 if table == 'cf_file_protection' and name == 'cf_file_protection_prefix' and column == 'path' else None) or unique != non_unique or sequence != len(parts) + 1:
             defects.append('index_shape')
             continue
         parts.append(column)
@@ -173,7 +176,7 @@ def _overall_status(report, required):
 
 
 def prepare_fresh_schema(shared_dir, environment=None):
-    """Mark a genuinely new Seafile volume for one-time five-table setup."""
+    """Mark a genuinely new Seafile volume for one-time six-table setup."""
     shared_dir = Path(shared_dir)
     marker = shared_dir / MARKER_NAME
     if marker.exists() or (shared_dir / 'seafile-data').exists():
@@ -205,7 +208,7 @@ def _fresh_plan(marker):
 def initialize_fresh_schema(marker, installdir, environment=None):
     """Create the reviewed V2 tables once for a new volume.
 
-    Install exactly five tables only on a new Seafile volume. No legacy
+    Install exactly six tables only on a new Seafile volume. No legacy
     layouts are recognized, upgraded or migrated. The marker is removed only
     after verified installation; a failed attempt remains available for retry.
     """
@@ -219,13 +222,14 @@ def initialize_fresh_schema(marker, installdir, environment=None):
         ddl = (sql_dir / 'cloudfile-v2.sql').read_text()
         audit_ddl = (sql_dir / 'cloudfile-v2-audit.sql').read_text()
         edit_ddl = (sql_dir / 'cloudfile-v2-edit.sql').read_text()
+        protection_ddl = (sql_dir / 'cloudfile-v2-protection.sql').read_text()
         sys.path.insert(0, str(Path(installdir) / 'seahub'))
         try:
             from cloudfile_ext.v2.schema import FreshSchema
         finally:
             sys.path.pop(0)
         connection = _connect(environment or os.environ)
-        FreshSchema(connection, ddl, edit_ddl=edit_ddl, audit_ddl=audit_ddl).install()
+        FreshSchema(connection, ddl, edit_ddl=edit_ddl, audit_ddl=audit_ddl, protection_ddl=protection_ddl).install()
         marker.unlink()
         return True
     except Exception:
@@ -246,7 +250,7 @@ def verify_development_schema(installdir=None, environment=None):
         verify_v2_schema(connection, checkout_enabled=_checkout_enabled(environment))
     except Exception:
         # No historical schema upgrade or auto-repair in current V2.
-        raise RuntimeError('CloudFile V2 five-table schema mismatch; stop writers and recreate the DEV extension schema before starting services') from None
+        raise RuntimeError('CloudFile V2 six-table schema mismatch; stop writers and run the reviewed protection migration or inspect schema drift before starting services') from None
     finally:
         if connection is not None:
             connection.close()

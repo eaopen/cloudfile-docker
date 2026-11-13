@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fast, read-only V2 4+1 table dependency gate.
+"""Fast, read-only V2 six-table table dependency gate.
 
 No historical migrations, no schema checksum ledger, no Docker/DB access.
 Check only code that actually ships in current V2 runtime; inert historical
@@ -11,9 +11,9 @@ import re
 
 TABLES = frozenset({
     'cf_library_storage', 'cf_sso_group_map', 'cf_dir_acl',
-    'cf_edit_guard', 'cf_audit_event',
+    'cf_edit_guard', 'cf_audit_event', 'cf_file_protection',
 })
-DDL = ('cloudfile-v2.sql', 'cloudfile-v2-edit.sql', 'cloudfile-v2-audit.sql')
+DDL = ('cloudfile-v2.sql', 'cloudfile-v2-edit.sql', 'cloudfile-v2-audit.sql', 'cloudfile-v2-protection.sql')
 SQL_TABLE = re.compile(
     r'\b(?:FROM|JOIN|INTO|UPDATE|TABLE|REFERENCES)\s+[`"]?(cf_[a-z0-9_]+)',
 )
@@ -29,7 +29,7 @@ def validate(server, hub, docker, agent=None):
             raise ValueError('missing or duplicate DDL: ' + name)
         observed.update(matches)
     if observed != TABLES:
-        raise ValueError('V2 DDL differs from 4+1: ' + str(sorted(observed ^ TABLES)))
+        raise ValueError('V2 DDL differs from six-table: ' + str(sorted(observed ^ TABLES)))
     if (sql_dir / 'cloudfile.sql').exists():
         raise ValueError('retired CloudFile schema re-entered Server installation')
     if (hub / 'cloudfile_extensions/schema').exists():
@@ -59,7 +59,7 @@ def validate(server, hub, docker, agent=None):
             source = path.read_text()
             if '/api/v2.1/cloudfile/agent-sessions/claim/' in source:
                 raise ValueError('Agent2 legacy SQL Session HTTP client: ' + path.name)
-    print('PASS current V2 4+1 DDL and active SQL dependencies')
+    print('PASS current V2 six-table DDL and active SQL dependencies')
 
 
 def main():

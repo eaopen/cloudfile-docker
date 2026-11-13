@@ -125,3 +125,14 @@ seahub/templates/react_app.html
 # 2026-10-21 复检修复：seahub/api2/endpoints/file_tag.py：原生标签接口复用现有 tag_native/Authority 按目标路径裁决，校验定义与绑定的库归属；旧标签读保留，写收敛 CE FileTags。
 
 # 2026-10-21 VirtualRepo 兼容：cloudfile_ext/v2/acl_runtime.py 保留 CE 虚拟库共享资格，沿 origin_repo_id/origin_path 交给同一 Authority；不暴露源库路径，不创建新的共享表或引擎。轻量 share_mode 共享继续独立按目录资格处理。
+
+# 2026-11-13 分享安全：现有外链限制覆盖原生创建、旧链接消费及内部回调；详情限所有者、撤销绑定真实库。
+# 必须在这些原生入口执行，不能只隐藏 UI；不改文件保护、ACL 或 Server 写入终判。
+seahub/share/models.py
+seahub/share/decorators.py
+seahub/share/views.py
+seahub/api2/endpoints/upload_links.py
+seahub/api2/endpoints/repo_share_links.py
+seahub/api2/endpoints/repo_upload_links.py
+# 指定人员/邮箱授权管理同样绑定 token 创建者及原生对象路径；关闭态禁止新增授权。
+seahub/api2/endpoints/share_link_auth.py

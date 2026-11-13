@@ -58,8 +58,13 @@ class Matrix:
 
     def change(self, protect, path=None):
         path = path or self.path
-        return self.p._state_change(self.admin, {'repo_id': self.repo, 'path': path,
-            'expected_file_id': self.file(path)}, protect)
+        deadline = time.monotonic() + 10
+        while True:
+            result = self.p._state_change(self.admin, {'repo_id': self.repo, 'path': path,
+                'expected_file_id': self.file(path)}, protect)
+            if result.data.get('code') != 'VIRTUAL_REPO_SYNC_PENDING' or time.monotonic() >= deadline:
+                return result
+            time.sleep(.05)
 
     def upload(self, repo, path, content, update=False):
         parent, name = path.rsplit('/', 1)
@@ -147,13 +152,18 @@ class Matrix:
         self.metrics['failed_move_destination_exists'] = bool(self.file('/acceptance/moved', target))
         self.mark('cross-repository copy editable; move rejects without changing original')
 
+    def wait_virtual(self):
+        virtual = self.state['virtual']
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if self.api.get_dir_id_by_path(virtual, '/') == self.api.get_dir_id_by_path(self.repo, '/acceptance'):
+                return
+            time.sleep(.05)
+        raise AssertionError('virtual view did not converge')
+
     def virtual(self):
         virtual = self.state['virtual']
-        # Wait for the native view to include the original; no arbitrary sleep as proof.
-        deadline = time.monotonic() + 10
-        while self.file('/original', virtual) != self.file() and time.monotonic() < deadline:
-            time.sleep(.05)
-        assert self.file('/original', virtual) == self.file(), 'virtual view not synchronized'
+        self.wait_virtual()
         before = self.head(), self.file()
         virtual_before = self.head(virtual), self.file('/original', virtual)
         response = self.upload(virtual, '/original', b'virtual bypass attempt', True)
@@ -163,7 +173,74 @@ class Matrix:
         assert response.status_code >= 400, ('virtual write accepted', response.status_code, response.text)
         self.assert_unchanged(before)
         assert (self.head(virtual), self.file('/original', virtual)) == virtual_before
-        self.mark('virtual repository cannot overwrite protected origin or diverge its view')
+        local = self.root / 'virtual-input'
+        local.write_bytes(b'virtual C overwrite')
+        for name, action in (
+            ('overwrite', lambda: self.api.put_file(virtual, str(local), '/', 'original', OWNER, None)),
+            ('delete', lambda: self.api.del_file(virtual, '/', json.dumps(['original']), OWNER)),
+            ('rename', lambda: self.api.rename_file(virtual, '/', 'original', 'renamed', OWNER)),
+        ):
+            failed = False
+            try:
+                result = action()
+                failed = result == -1
+            except Exception:
+                failed = True
+            assert failed, name + ' returned success'
+            self.assert_unchanged(before)
+            assert (self.head(virtual), self.file('/original', virtual)) == virtual_before
+        self.api.copy_file(virtual, '/', json.dumps(['original']), virtual, '/', json.dumps(['virtual-copy']), OWNER, 0, synchronous=1)
+        assert self.upload(virtual, '/virtual-copy', b'editable virtual copy', True).status_code == 200
+        self.wait_virtual()
+        assert self.file('/acceptance/virtual-copy') != before[1]
+        assert self.file() == before[1]
+        self.mark('virtual Go/C overwrite/delete/rename denied; copied file remains editable and merges')
+        self.virtual_races()
+
+    def virtual_races(self):
+        from django.db import connections
+        virtual = self.state['virtual']
+        observer = connection()
+        def protect(body):
+            try:
+                return self.p._state_change(self.admin, body, True)
+            finally:
+                connections.close_all()
+        try:
+            for i in range(3):
+                path = f'/virtual-race-{i}'
+                origin_path = '/acceptance' + path
+                assert self.upload(virtual, path, b'initial').status_code == 200
+                self.wait_virtual()
+                body = {'repo_id': self.repo, 'path': origin_path, 'expected_file_id': self.file(origin_path)}
+                blocker = connection(False)
+                try:
+                    with blocker.cursor() as c:
+                        c.execute("SELECT commit_id FROM Branch WHERE repo_id=%s AND name='master' FOR UPDATE", [self.repo]); c.fetchone()
+                    with ThreadPoolExecutor(max_workers=2) as pool:
+                        try:
+                            upload = pool.submit(self.upload, virtual, path, b'virtual upload wins', True)
+                            self.wait_branch(observer, 1, [upload])
+                            guarded = pool.submit(protect, body)
+                            self.wait_branch(observer, 2, [upload, guarded])
+                        finally:
+                            blocker.commit()
+                        response, decision = upload.result(timeout=30), guarded.result(timeout=30)
+                    assert response.status_code == 200, response.text
+                    assert decision.status_code == 409 and decision.data['code'] in ('VIRTUAL_REPO_SYNC_PENDING', 'FILE_VERSION_CHANGED'), decision.data
+                    assert not self.p.read_batch(self.repo, [origin_path])
+                    self.wait_virtual()
+                    assert self.change(True, origin_path).status_code == 200
+                    head, file_id = self.head(virtual), self.file(path, virtual)
+                    response = self.upload(virtual, path, b'protection wins', True)
+                    assert response.status_code >= 400
+                    assert (self.head(virtual), self.file(path, virtual)) == (head, file_id)
+                    assert self.change(False, origin_path).status_code == 200
+                finally:
+                    blocker.rollback(); blocker.close()
+            self.mark('three virtual upload/protect races reject stale origin protection; protected virtual writes fail')
+        finally:
+            observer.close()
 
     def webdav(self):
         from wsgidav.wsgidav_app import WsgiDAVApp

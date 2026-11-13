@@ -227,6 +227,9 @@ docker run --rm -i "${pull_arg[@]}" \
         if test -d 'seafile-server-$version'; then
             chown -hR '$(id -u):$(id -g)' 'seafile-server-$version'
         fi
+        if test -d test-results; then
+            chown -hR '$(id -u):$(id -g)' test-results
+        fi
     "
 
 echo

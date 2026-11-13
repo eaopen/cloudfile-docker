@@ -26,7 +26,7 @@ git -C "$root" rev-parse HEAD > "$evidence/test-revision.txt"
 git -C "$root" status --porcelain >> "$evidence/test-revision.txt"
 docker image inspect "$base" --format '{{.Id}} {{.Architecture}}' > "$evidence/platform.txt"
 cleanup() {
-  docker rm -f "$name-probe" "$name-db" >/dev/null 2>&1 || true
+  docker rm -fv "$name-probe" "$name-db" >/dev/null 2>&1 || true
   docker network rm "$name" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT

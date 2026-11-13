@@ -88,3 +88,7 @@ bash tests/e2e/full/run-file-protection.sh 14.0.8-protection-acceptance
 - MariaDB general log 证明普通库 HTTP 上传无 Protection SQL。1,000 个真实原生文件逐个定版后，20 次更新采样的普通库 P95 为 8.3 ms、保护库为 13.4 ms；500 文件一次提交约 225 ms。默认工程回归预算为保护库 P95 ≤ max(普通库 P95 × 3, 普通库 P95 + 100 ms)、批量提交 ≤ 10 秒。这不是生产 SLA；可用 `CF_PROTECTION_PERF_ROWS=10000` 扩大规模。
 
 **发布阻断：虚拟库写入未继承源库保护。** 在保护源库 `/acceptance/original` 后，对对应虚拟库 `/original` 发起真实 `update-api` 返回 200，虚拟库 Branch 和文件 ID 已改变，而源库 Branch/文件保持原值。矩阵对此明确失败，不跳过、不放宽断言。正式发布前必须修复原生虚拟库写入边界并重新联验；AMD64 构建成功也不能解除此阻断。Etech/Windows Agent2、DEV/PROD 验收仍另行完成。
+
+补充规模验证：相同 ARM64 运行组合、测试代码 `547f89d` 在 10,000 个真实受保护文件下，普通小库更新 P95 12.0 ms、保护库 P95 46.6 ms，500 文件批量提交 472.8 ms，均通过前述工程预算。两个目录规模不同，差值包含原生大目录处理成本，不能归因于保护 SQL 本身；普通库零 Protection SQL 另有数据库日志证据。该轮仍因虚拟库写入返回 200 而整体失败。
+
+AMD64 首轮流程 `43405168313` 已完成 C/Go/Web 编译，但暴露已有夹具问题：只读源码目录下的 Go TestMain 写入失败，容器原子写出的收据权限为 0600 导致镜像阶段读取及证据上传失败。`547f89d` 将挂载测试编译为测试二进制，在独立临时目录执行，并将非敏感来源收据设为 0644；保留源码只读挂载。修复后的 ARM64/AMD64 backend、repository、shard 挂载测试与证据上传通过。一次性 MariaDB 匿名卷随所属测试容器一并清理，不清理其他卷。

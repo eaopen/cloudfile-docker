@@ -87,7 +87,7 @@ class Matrix:
         before = self.head(), self.file()
         for update in (False, True):
             denied = self.upload(self.repo, self.path, b'blocked protocol write', update)
-            assert denied.status_code >= 400, (update, denied.status_code, denied.text)
+            assert denied.status_code == 423 and denied.json()["error"] == "FILE_PROTECTED", (update, denied.status_code, denied.text)
             self.assert_unchanged(before)
             control = self.upload(self.state['plain'], self.path, uuid4().bytes, update)
             assert control.status_code == 200, (control.status_code, control.text)
@@ -95,7 +95,7 @@ class Matrix:
         token = self.api.get_scoped_upload_token(self.repo, '/acceptance', OWNER, False)
         reply = requests.post(HTTP + '/upload-api/' + token, data={'parent_dir': '/acceptance', 'replace': '1'},
             files=[('file', ('original', b'mixed overwrite')), ('file', ('must-not-exist', b'new'))], timeout=30)
-        assert reply.status_code >= 400
+        assert reply.status_code == 423 and reply.json()["error"] == "FILE_PROTECTED"
         self.assert_unchanged(before)
         assert not self.file('/acceptance/must-not-exist')
         self.mark('mixed multipart batch containing protected original is atomic')
@@ -124,7 +124,7 @@ class Matrix:
         # A previously valid tree with no protected path exists in this repo's history.
         old = self.api.get_commit(self.repo, 1, self.state['old_head'])
         response = self.sync_attempt(self.repo, old.root_id)
-        assert response.status_code >= 400, response.text
+        assert response.status_code == 423 and response.json()["error"] == "FILE_PROTECTED", response.text
         self.assert_unchanged(before)
         plain = self.state['plain']
         oldhead = self.head(plain)
@@ -142,17 +142,18 @@ class Matrix:
         assert self.file('/acceptance/copied', target) == before[1]
         assert self.upload(target, '/acceptance/copied', b'editable copy', True).status_code == 200
         self.assert_unchanged(before)
-        failed = False
-        try:
-            result = api.move_file(self.repo, '/acceptance', json.dumps(['original']), target, '/acceptance', json.dumps(['moved']), 0, OWNER, 0, synchronous=1)
-            failed = result == -1
-        except Exception:
-            failed = True
-        self.assert_unchanged(before)
-        assert failed, 'cross-repo move reported success'
-        # A destination copy may remain after a failed native move; record it explicitly.
-        self.metrics['failed_move_destination_exists'] = bool(self.file('/acceptance/moved', target))
-        self.mark('cross-repository copy editable; move rejects without changing original')
+        target_head = self.head(target)
+        for synchronous in (0, 1):
+            try:
+                api.move_file(self.repo, '/acceptance', json.dumps(['original']), target, '/acceptance',
+                              json.dumps(['moved']), 0, OWNER, 1, synchronous=synchronous)
+            except Exception as exc:
+                assert 'CROSS_REPO_MOVE_DISABLED' in str(exc), str(exc)
+            else:
+                raise AssertionError('cross-repo move was accepted')
+            self.assert_unchanged(before)
+            assert self.head(target) == target_head and not self.file('/acceptance/moved', target)
+        self.mark('cross-repository copy editable; sync and queued moves rejected before destination write')
 
     def wait_virtual(self):
         virtual = self.state['virtual']

@@ -126,3 +126,5 @@ ARM64 最终矩阵通过 16 项基础原生场景和 11 组扩展验收，包含
 Runner 本地标签 `cloudfile/cloudfile:14.0.8-virtual-protection-fix-amd64`，image config ID 为 `sha256:40ecb363898605940ceb0fdcc6ca8dce66f885af351c59fe6c7da82860beb74f`；Registry digest 为空，未发布镜像。收据及 JSON/日志已上传为该流程的 `full-build-evidence`，来源锁与挂载证据另行上传。后续纯文档提交不改变本次已验证构建组合。
 
 结论：本轮固定修复组合已消除已复现的虚拟写入绕过和定版竞争问题，具备合并审查及后续 AMD64 发布准备依据。通用原生上传拒绝仍沿用现有 HTTP 500 错误映射，验收同时检查不可变 Branch/File ID，未将错误码本身视为安全证明。Etech/SSO、实际 Windows Agent2 与 DEV/PROD 业务验收仍未完成；不得将候选 PR、CI 镜像或隔离测试写成已上线。
+
+跨库移动（V1）：源资料库启用了文件保护或源虚拟库映射到该库时，原生接口在写目标库、排队异步任务前拒绝所有跨库移动，包括尚未定版的文件。请使用跨库复制。库内移动继续按实际路径判断。Go 文件提交确认命中保护时，上传、更新和同步 HTTP 接口返回 423，JSON 中 error 为 FILE_PROTECTED。

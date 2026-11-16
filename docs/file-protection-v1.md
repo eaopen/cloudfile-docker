@@ -4,13 +4,46 @@ Server #51、Hub #100 与 Docker #53 已合并至 dev；尚未部署，仍待业
 
 ## 配置
 
-Compose 各应用实例设置同一 `CF_PROTECTION_REPOS`，值为逗号分隔的小写标准 Repo UUID；缺省为空，不开启任何库。启动生成共享 `seafile.conf` 的 `[cloudfile] protection_repo_ids`，C/Go/Hub 读取同一份配置。此范围独立于 Checkout，不改变租约。
+运行期的库级能力存放在数据库表 `cf_repo_feature`，由 C/Go/Hub 在提交事务内读取，是**唯一事实源**。
 
-配置变更后所有 Server、Hub、后台工作进程必须同步重启。不得从范围移除仍有保护记录的资料库，也不得运行不包含保护屏障的旧版本。保护范围内整库删除一律拒绝。
+`CF_PROTECTION_REPOS` / `CF_CHECKOUT_REPOS` 已退化为一次性迁移输入：引导仍会把它们写进共享
+`seafile.conf` 的 `[cloudfile] protection_repo_ids` / `checkout_repo_ids`，供
+`tools/migrate/repo-features.py` 读取；进程在启动后首次判定库级策略时会打印
+`legacy migration input and is IGNORED at runtime` 告警。**只改这两个环境变量并重启，不会开启或
+关闭任何库的保护，也不会报错。** 这是有意的告警而非故障。
+
+开关某个库走管理接口，无需重启：
+
+    POST /api/v2.1/admin/cloudfile/repos/<uuid>/features/
+    {"protection": true}  /  {"protection": false}
+    {"checkout": true}    /  {"checkout": false}
+
+要求平台管理员且具备资料库管理权限。Checkout 另需部署级 `CF_ENABLE_CHECKOUT`（生成
+`checkout_enabled`）保持开启，库级行才生效。
+
+关闭某库 protection 之前，必须确认该库在 `cf_file_protection` 已无残留行：屏障一旦消失原件
+立即可改，而旧定版记录仍会留在表里（V1 不自动清理），后续状态查询会与内容版本不一致。
+
+不得运行不包含保护屏障的旧版本。启用了 protection 的资料库整库删除一律拒绝。
 
 ## 数据库
 
-新卷一次安装六表。已有卷启动只校验，缺保护表即拒绝启动，不自动补表。五表升级使用本仓 `tools/migrate/file-protection-v1.py`，读取匹配发行包内的四份 DDL 以及 Hub `FreshSchema`；先验证五张既有表精确结构，再只创建保护表，不改业务行和 CE 原生表，不引入迁移台账。
+新卷一次安装六表。已有卷启动只校验，缺表即拒绝启动，不自动补表。
+
+从上一版（六表含 `cf_library_storage`）升级使用本仓 `tools/migrate/repo-features.py`：把两个
+`*_repo_ids` 导入 `cf_repo_feature`、补齐 `RepoStorageId` 原生路由，最后把旧表改名为
+`retired_library_storage_v2` 保留回滚依据。**必须在换成新版二进制之前执行完**——新二进制缺
+`cf_repo_feature` 时，每一次 Branch 发布都 fail-closed，表现为全站写入失败（读取不受影响）。
+
+```sh
+python3 tools/migrate/repo-features.py --installdir /path/to/seafile-server \
+    --conf /path/to/seafile.conf            # 先检查差异，不改库
+
+python3 tools/migrate/repo-features.py --installdir /path/to/seafile-server \
+    --conf /path/to/seafile.conf --apply --writers-stopped
+```
+
+五表（保护表之前）升级仍使用本仓 `tools/migrate/file-protection-v1.py`，读取匹配发行包内的四份 DDL 以及 Hub `FreshSchema`；先验证五张既有表精确结构，再只创建保护表，不改业务行和 CE 原生表，不引入迁移台账。
 
 在独立维护进程中提供既有 `SEAFILE_MYSQL_DB_*` 环境变量，先检查：
 

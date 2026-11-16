@@ -7,7 +7,7 @@ from pathlib import Path
 # Exactly six V2 extension tables; CE native tables remain independent.
 # Table existence alone previously enabled an incompatible Guard on every upload.
 COLUMNS = {
-    'cf_library_storage': 'repo_key repo_id state',
+    'cf_repo_feature': 'repo_id feature',
     'cf_sso_group_map': 'provider subject_type namespace external_id group_id',
     'cf_dir_acl': 'repo_id path_hash path subject_type provider namespace external_id permission inherit share_mode revision',
     'cf_edit_guard': 'repo_id path_hash path guard_id generation owner_uid owner_native_user terminal_type terminal_name checkout_ip proof_digest base_file_id lease_expires_at created_at updated_at',
@@ -17,7 +17,7 @@ COLUMNS = {
 INDEXES = {
     'cf_file_protection': {'PRIMARY': (0, ('repo_id','path_hash')),
         'cf_file_protection_prefix': (1, ('repo_id','path'))},
-    'cf_library_storage': {'PRIMARY': (0, ('repo_key',)), 'library_storage_repo': (0, ('repo_id',))},
+    'cf_repo_feature': {'PRIMARY': (0, ('repo_id','feature'))},
     'cf_sso_group_map': {'PRIMARY': (0, ('provider','subject_type','namespace','external_id')), 'sso_native_group': (0, ('group_id',))},
     'cf_dir_acl': {'PRIMARY': (0, ('repo_id','path_hash','subject_type','provider','namespace','external_id')),
                    'acl_shared_subject': (1, ('provider','subject_type','namespace','external_id','share_mode','repo_id'))},

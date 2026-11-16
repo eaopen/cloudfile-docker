@@ -23,6 +23,9 @@ Server #51、Hub #100 与 Docker #53 已合并至 dev；尚未部署，仍待业
 
 关闭某库 protection 之前，必须确认该库在 `cf_file_protection` 已无残留行：屏障一旦消失原件
 立即可改，而旧定版记录仍会留在表里（V1 不自动清理），后续状态查询会与内容版本不一致。
+接口当前不强制这条校验，原因与完整后果见 Server 仓 `doc/file-protection-v1.md` 的「已知缺陷 D1」。
+
+    SELECT 1 FROM cf_file_protection WHERE repo_id = '<uuid>' LIMIT 1;   -- 有结果就不得关闭
 
 不得运行不包含保护屏障的旧版本。启用了 protection 的资料库整库删除一律拒绝。
 

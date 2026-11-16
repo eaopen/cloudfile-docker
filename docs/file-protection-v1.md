@@ -21,11 +21,13 @@ Server #51、Hub #100 与 Docker #53 已合并至 dev；尚未部署，仍待业
 要求平台管理员且具备资料库管理权限。Checkout 另需部署级 `CF_ENABLE_CHECKOUT`（生成
 `checkout_enabled`）保持开启，库级行才生效。
 
-关闭某库 protection 之前，必须确认该库在 `cf_file_protection` 已无残留行：屏障一旦消失原件
-立即可改，而旧定版记录仍会留在表里（V1 不自动清理），后续状态查询会与内容版本不一致。
-接口当前不强制这条校验，原因与完整后果见 Server 仓 `doc/file-protection-v1.md` 的「已知缺陷 D1」。
+关闭某库 protection 时，该库必须已在 `cf_file_protection` 无残留行：屏障一旦消失原件立即可改，
+而旧定版记录仍会留在表里（V1 不自动清理），后续状态查询会与内容版本不一致。
+含 D1 修复的 Hub 会拒绝这类关闭请求并返回 409，要求先逐文件解除定版；升级到该版本之前必须人工自检：
 
     SELECT 1 FROM cf_file_protection WHERE repo_id = '<uuid>' LIMIT 1;   -- 有结果就不得关闭
+
+完整背景见 Server 仓 `doc/file-protection-v1.md` 的「缺陷记录 D1」。
 
 不得运行不包含保护屏障的旧版本。启用了 protection 的资料库整库删除一律拒绝。
 

@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 
 TABLES = frozenset({
-    'cf_library_storage', 'cf_sso_group_map', 'cf_dir_acl',
+    'cf_repo_feature', 'cf_sso_group_map', 'cf_dir_acl',
     'cf_edit_guard', 'cf_audit_event', 'cf_file_protection',
 })
 DDL = ('cloudfile-v2.sql', 'cloudfile-v2-edit.sql', 'cloudfile-v2-audit.sql', 'cloudfile-v2-protection.sql')

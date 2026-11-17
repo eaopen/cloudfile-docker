@@ -18,8 +18,10 @@ Server #51、Hub #100 与 Docker #53 已合并至 dev；尚未部署，仍待业
     {"protection": true}  /  {"protection": false}
     {"checkout": true}    /  {"checkout": false}
 
-要求平台管理员且具备资料库管理权限。Checkout 另需部署级 `CF_ENABLE_CHECKOUT`（生成
-`checkout_enabled`）保持开启，库级行才生效。
+要求平台管理员且具备资料库管理权限。Checkout 与 protection 走同一张表、同一接口；
+`CF_ENABLE_CHECKOUT`（生成 `checkout_enabled`）已退化为迁移提示，不再参与判定，
+库级行写入即生效，不需要部署级开关前置。开启 `CF_ENABLE_CHECKOUT` 时进程会打印
+`checkout_enabled is a legacy hint and is IGNORED at runtime` 告警。
 
 关闭某库 protection 时，该库必须已在 `cf_file_protection` 无残留行：屏障一旦消失原件立即可改，
 而旧定版记录仍会留在表里（V1 不自动清理），后续状态查询会与内容版本不一致。

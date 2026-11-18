@@ -272,7 +272,7 @@ OIDC 与 transfer 同时启用时挂载 CSRF 保护的 `identity/v1/read-tickets
 
 当前 `dev` 没有托管库/非托管库分类、旧登记表或独立库状态开关。`cf_dir_acl` 仅保存目录路径/主体的 `r/rw/invisible` 与 `share_mode` 共享根。已认证文件操作与 C/Go 最终提交按实际目标路径授权；有可靠路径的 `upload-blks-api` 与分享链接不可被无关目录 ACL 阻断。原生整个库的同步协议若缺乏完整路径证明，仅拒绝该操作。V2 必须使用 Go FileServer。
 
-当前扩展表只有 `cf_library_storage`、`cf_dir_acl`、`cf_sso_group_map`、`cf_edit_guard`、`cf_audit_event`。历史的 `cf_managed_library`、`managed_library_guard`、`allow_legacy_managed_reads` 只见旧 Git 记录，不可恢复。现行权威详见 [V2 权限终判](docs/permission-adjudication-contract.md)。未执行 C/Go 集成或 DEV 验收时不能宣称已发布。
+当前扩展表只有 `cf_repo_feature`、`cf_dir_acl`、`cf_sso_group_map`、`cf_edit_guard`、`cf_audit_event`、`cf_file_protection`。存储路由以原生 `RepoStorageId` 为准，旧 `cf_library_storage` 经离线迁移归档为 `retired_library_storage_v2`。历史的 `cf_managed_library`、`managed_library_guard`、`allow_legacy_managed_reads` 只见旧 Git 记录，不可恢复。现行权威详见 [V2 权限终判](docs/permission-adjudication-contract.md)。未执行 C/Go 集成或 DEV 验收时不能宣称已发布。
 
 ### 仅应用重装配（CF02-08）
 

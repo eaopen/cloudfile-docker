@@ -5,8 +5,10 @@ plan  - print the classified contract (current/missing/legacy/incompatible/mixed
         plus any extra cf_* tables; never changes the database.
 check - same read-only probe, non-zero exit when the instance is not current.
 
-Both commands issue information_schema SELECTs only. Applying DDL stays a
-manual, reviewed step with database/v2/20261021-four-table-baseline/*.sql.
+Both commands issue information_schema SELECTs only. Startup may create only
+a missing empty cf_repo_feature in an otherwise exact current schema, with
+no protection records or active Guard leases. Legacy cf_library_storage layouts
+require the reviewed offline tools/migrate/repo-features.py cutover.
 """
 import argparse
 import json

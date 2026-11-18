@@ -22,11 +22,6 @@ def migrate(db, config, sql_dir, apply):
                          edit_ddl=(sql_dir / 'cloudfile-v2-edit.sql').read_text(),
                          audit_ddl=(sql_dir / 'cloudfile-v2-audit.sql').read_text(),
                          protection_ddl=(sql_dir / 'cloudfile-v2-protection.sql').read_text())
-    flags = set()
-    for feature in ('checkout','protection'):
-        ids = config.get('cloudfile',feature+'_repo_ids',fallback='').strip()
-        if ids:
-            flags.update((canonical(rid.strip()),feature) for rid in ids.split(','))
     managed = bool(config.get('cloudfile_v2','auto_local_root',fallback='').strip())
     with db.cursor() as cur:
         cur.execute('SHOW TABLES')
@@ -70,8 +65,21 @@ def migrate(db, config, sql_dir, apply):
                 schema._verify_one(cur,name)
             elif name not in ('cf_repo_feature','cf_file_protection'):
                 raise ValueError('missing prerequisite '+name)
+        # Never strand protection records or live leases when features default off.
+        for table, feature, predicate in (
+                ('cf_file_protection', 'protection', '1=1'),
+                ('cf_edit_guard', 'checkout', 't.lease_expires_at > UTC_TIMESTAMP(6)')):
+            if table not in tables:
+                continue
+            enabled = (" AND NOT EXISTS (SELECT 1 FROM cf_repo_feature f "
+                       "WHERE f.repo_id=t.repo_id AND f.feature=%s)"
+                       if 'cf_repo_feature' in tables else '')
+            cur.execute('SELECT 1 FROM ' + table + ' t WHERE ' + predicate + enabled + ' LIMIT 1',
+                        (feature,) if enabled else ())
+            if cur.fetchone():
+                raise ValueError('existing protection or active Guard requires explicit safe disposition before migration')
         if not apply:
-            return f'ready: {len(legacy)} registry rows, {len(native)} native routes, {len(flags)} features'
+            return f'ready: {len(legacy)} registry rows, {len(native)} native routes, features default off'
         for name in ('cf_file_protection','cf_repo_feature'):
             if name not in tables:
                 cur.execute(schema.ddl[name])
@@ -79,15 +87,13 @@ def migrate(db, config, sql_dir, apply):
         try:
             for rid in sorted(native):
                 cur.execute("INSERT INTO RepoStorageId(repo_id,storage_id) VALUES (%s,'cf-native')",(rid,))
-            for rid,feature in sorted(flags):
-                cur.execute("INSERT INTO cf_repo_feature VALUES (%s,%s) ON DUPLICATE KEY UPDATE feature=VALUES(feature)",(rid,feature))
             db.commit()
         except BaseException:
             db.rollback()
             raise
         cur.execute('RENAME TABLE cf_library_storage TO '+ARCHIVE)
         schema.verify()
-        return f'migrated: {len(legacy)} archived rows, {len(native)} native routes, {len(flags)} configured features'
+        return f'migrated: {len(legacy)} archived rows, {len(native)} native routes, existing feature rows preserved; new features default off'
 
 
 if __name__ == '__main__':

@@ -13,17 +13,20 @@
 | `Branch` / Commit / Repo | 原生文件版本、提交、库事实 |
 | `FileShare` / CE 分享链接 | 原生链接证明，**不取代** CloudFile 路径 ACL |
 
-## CloudFile 唯一五张扩展表
+## CloudFile 唯一六张扩展表
 
 | 表 | 唯一职责 |
 | --- | --- |
-| `cf_library_storage` | 库与存储后端绑定，由原生库存储状态识别/补全 |
+| `cf_repo_feature` | 每库显式启用的能力，默认关闭 |
+| `cf_file_protection` | 文件保护记录 |
 | `cf_dir_acl` | 目录 ACL、路径继承/覆盖和目录共享（`share_mode`） |
 | `cf_sso_group_map` | 外部组织/角色到 CE 原生组的映射 |
 | `cf_edit_guard` | 已启用独占编辑的当前 Guard，不存旧 Session |
 | `cf_audit_event` | 当前审计事件，不追溯开发期旧记录 |
 
 权限计算不需要“托管库”分类字段，也不需要额外库状态表。`cf_dir_acl` 中存在记录仅代表该路径/主体有显式规则。
+
+存储路由以原生 `RepoStorageId` 为准；旧 `cf_library_storage` 经离线迁移改名为 `retired_library_storage_v2`，归档不属于业务 `cf_*` 表。
 
 ## 授权规则
 
@@ -34,4 +37,4 @@
 
 ## 防回归
 
-不可添加第六张 `cf_*` 业务表，不得在任何接口把 `EXISTS(cf_dir_acl WHERE repo_id=?)` 当成整库管理或文件访问拒绝条件。需要保护路径不足的旧协议时，应命名并校验具体协议的能力范围。参阅 [现行权限终判契约](permission-adjudication-contract.md)。
+不可擅自添加其他 `cf_*` 业务表，不得在任何接口把 `EXISTS(cf_dir_acl WHERE repo_id=?)` 当成整库管理或文件访问拒绝条件。需要保护路径不足的旧协议时，应命名并校验具体协议的能力范围。参阅 [现行权限终判契约](permission-adjudication-contract.md)。

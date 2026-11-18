@@ -907,14 +907,14 @@ def write_cloudfile_seafile_conf():
     dir_acl_enabled -- so a new capability needs no change here.
     """
     lines = _seafile_conf_cloudfile_lines()
-    # 修改原因（2026-11-16）：这两个列表已退化为一次性迁移输入，运行期由
-    # cf_repo_feature 判定。仍生成它们是为了让 repo-features.py 有输入源，
-    # 但必须在启动日志里说清角色，否则运维会按"配置了就等于生效"判断。
+    # Legacy lists may still appear in seafile.conf for compatibility, but
+    # neither runtime checks nor repo-features.py import them. An empty
+    # cf_repo_feature means Checkout and Protection are both disabled.
     if _protection_repo_ids() or _checkout_repo_ids():
-        logwarning('CF_PROTECTION_REPOS / CF_CHECKOUT_REPOS are legacy migration inputs; '
-                   'runtime per-library capabilities come from the cf_repo_feature table. '
-                   'Import them once with tools/migrate/repo-features.py, then manage '
-                   'libraries through POST /api/v2.1/admin/cloudfile/repos/<uuid>/features/.')
+        logwarning('CF_PROTECTION_REPOS / CF_CHECKOUT_REPOS are ignored at runtime '
+                   'and during repository-feature migration; new capabilities default OFF. '
+                   'Enable explicitly through POST '
+                   '/api/v2.1/admin/cloudfile/repos/<uuid>/features/.')
     from library_storage import (auto_storage_enabled, configure_auto_storage,
                                  retained_legacy_storage, retained_legacy_switch)
     conf_path = join(topdir, 'conf', 'seafile.conf')

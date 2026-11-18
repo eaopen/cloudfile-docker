@@ -16,7 +16,7 @@
 | 文件 | 作用 |
 |---|---|
 | [权限终判契约](permission-adjudication-contract.md) | 库/目录/共享根/最终写入共用同一 V2 授权结果 |
-| [五表权限事实](permission-tables.md) | `cf_library_storage`、`cf_dir_acl`、`cf_sso_group_map`、`cf_edit_guard`、`cf_audit_event` |
+| [六表权限事实](permission-tables.md) | `cf_repo_feature`、`cf_dir_acl`、`cf_sso_group_map`、`cf_edit_guard`、`cf_audit_event`、`cf_file_protection` |
 | [ACL 语义](acl-semantics.md) | 路径规则、共享根与继承 |
 | [`upstream-patches/`](upstream-patches/) | 对上游文件所做改动的登记，供同步上游时核对 |
 

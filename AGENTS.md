@@ -158,9 +158,9 @@ V2 内置 ACL、CE 原生 Tag 和已安装 Guard 的 Checkout 不应重新受旧
 
 ## 数据库唯一规则：当前六表
 
-- V2 仅保留 `cf_library_storage`、`cf_dir_acl`、`cf_sso_group_map`、`cf_edit_guard`、`cf_audit_event`、`cf_file_protection`。新装六表一次性创建，已有卷只校验，不自动迁移或修补。
-- DEV 旧数据全部放弃。存储绑定从 Seafile 原生库重新发现，ACL/共享与组织角色从客户 Provider 重同步，Guard/审计从空表开始；旧 `cf_tag`/Resource/Intent/Session/Outbox 等绝不恢复。
-- DEV 如需清表重建，仅允许停写后由人工管理员按当前 DDL 操作，不做产品级迁移/历史追溯/归档库；**绝不删除或改写 Seafile 原生文件版本和存储路由**。
+- V2 仅保留 `cf_repo_feature`、`cf_dir_acl`、`cf_sso_group_map`、`cf_edit_guard`、`cf_audit_event`、`cf_file_protection`。新装一次创建六表；已有卷仅缺 `cf_repo_feature` 且其余五表结构完全匹配时，启动受锁补建空表，其余异常拒绝。旧 `cf_library_storage` 须停写后离线迁移，归档为 `retired_library_storage_v2`，原生 `RepoStorageId` 是存储路由真相。
+- 不得清空已有保护或 Guard 数据来绕过迁移检查；旧 `cf_tag`/Resource/Intent/Session/Outbox 等绝不恢复。
+- 需要历史布局转换时由管理员停写并使用经审查的离线迁移工具；**绝不删除或改写 Seafile 原生文件版本和存储路由**。
 
 ## Agent2 本地编辑 V2 边界
 
@@ -176,7 +176,7 @@ V2 内置 ACL、CE 原生 Tag 和已安装 Guard 的 Checkout 不应重新受旧
 
 ## 轻量跨仓运行表检查
 
-- `tools/gates/check-sql-contracts.py` 当前只检查 六表 DDL 与 Server/Hub/Docker/可选 Agent2 **可运行** SQL 依赖，不再生成/更新旧 001–042 checksum 台账；DEV 数据直接舍弃重建，不提供历史数据修复工具。
+- `tools/gates/check-sql-contracts.py` 当前只检查 六表 DDL 与 Server/Hub/Docker/可选 Agent2 **可运行** SQL 依赖，不再生成/更新旧 001–042 checksum 台账；历史布局须使用对应离线迁移工具。
 - `tools/gates/run-checks.sh` 不再将历史 001–042 数据转换、旧四表 SQL 包作为日常产品测试。禁止每次小改动启动全量编译。
 
 ## 现行 V2 权限契约：禁止“托管库”复活（2026-10-21）
@@ -187,4 +187,4 @@ V2 内置 ACL、CE 原生 Tag 和已安装 Guard 的 Checkout 不应重新受旧
 - 没有可信当前用户/路径的整库同步或无范围票据，允许因该**操作缺乏授权证明**而拒绝；这不是库分类。任何有路径证明的 Web/API/Agent/下载/上传必须按实际目标裁决，不能用无关目录的 ACL 拒绝整个库。策略异常不回退宽权限。
 - 当前文档与测试应以 V2 权限终判契约及六张扩展表为准；历史文档只用于追溯，不得作为实施依据。跨仓变更必须维护防复活的源码扫描和正反权限用例。
 
-文件保护 V1 经明确授权增加第六表；已有五表卷仅通过 `tools/migrate/file-protection-v1.py` 在停写维护中显式升级，启动不自动迁移，不引入通用迁移台账。
+历史缺保护表或含旧存储注册表的布局须停写后使用对应离线迁移工具；启动不会迁移旧注册表。

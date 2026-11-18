@@ -1,4 +1,4 @@
-"""Startup schema gate plus one-time initialization for a new volume."""
+"""Startup schema gate, fresh-volume install, and narrow empty feature-table repair."""
 import json
 import os
 import sys
@@ -241,16 +241,66 @@ def initialize_fresh_schema(marker, installdir, environment=None):
             connection.close()
 
 
+def _complete_repo_feature_schema(connection, installdir):
+    """Complete only an otherwise exact current schema under the schema lock."""
+    report = inspect_v2_schema(connection)
+    expected = {name: ('missing' if name == 'cf_repo_feature' else 'current')
+                for name in COLUMNS}
+    # Another starter may have completed the table after our outer read.
+    if report['status'] == 'current':
+        verify_v2_schema(connection)
+        return
+    if report['extra_tables'] or report['tables'] != expected:
+        raise ValueError('not an eligible repo feature upgrade')
+    sql_dir = Path(installdir) / 'sql' / 'mysql'
+    sys.path.insert(0, str(Path(installdir) / 'seahub'))
+    try:
+        from cloudfile_ext.v2.schema import FreshSchema, database_lock
+    finally:
+        sys.path.pop(0)
+    schema = FreshSchema(connection, (sql_dir / 'cloudfile-v2.sql').read_text(),
+                         edit_ddl=(sql_dir / 'cloudfile-v2-edit.sql').read_text(),
+                         audit_ddl=(sql_dir / 'cloudfile-v2-audit.sql').read_text(),
+                         protection_ddl=(sql_dir / 'cloudfile-v2-protection.sql').read_text())
+    with database_lock(connection, 'schema'):
+        # Recheck after acquiring the shared lock, including unapproved cf tables.
+        report = inspect_v2_schema(connection)
+        if report['status'] == 'current':
+            schema.verify()
+            return
+        if report['extra_tables'] or report['tables'] != expected:
+            raise ValueError('schema changed during upgrade')
+        with connection.cursor() as cursor:
+            if schema._tables(cursor) != schema.tables - {'cf_repo_feature'}:
+                raise ValueError('schema changed during upgrade')
+            for name in sorted(schema.tables - {'cf_repo_feature'}):
+                schema._verify_one(cursor, name)
+            # A new empty feature table must not disable an existing safeguard.
+            cursor.execute('SELECT 1 FROM cf_file_protection LIMIT 1')
+            if cursor.fetchone():
+                raise ValueError('existing protection requires explicit safe disposition')
+            cursor.execute('SELECT 1 FROM cf_edit_guard WHERE lease_expires_at > UTC_TIMESTAMP(6) LIMIT 1')
+            if cursor.fetchone():
+                raise ValueError('active Guard requires explicit safe disposition')
+            cursor.execute(schema.ddl['cf_repo_feature'])
+        schema.verify()
+        verify_v2_schema(connection)
+
+
 def verify_development_schema(installdir=None, environment=None):
-    """Fail startup with an operator action, never migrate a development DB."""
+    """Verify startup schema; complete only the reviewed missing feature table."""
     environment = os.environ if environment is None else environment
     connection = None
     try:
         connection = _connect(environment)
-        verify_v2_schema(connection, checkout_enabled=_checkout_enabled(environment))
+        checkout = _checkout_enabled(environment)
+        report = inspect_v2_schema(connection, checkout_enabled=checkout)
+        if report['status'] != 'current':
+            _complete_repo_feature_schema(connection, installdir)
+        verify_v2_schema(connection, checkout_enabled=checkout)
     except Exception:
-        # No historical schema upgrade or auto-repair in current V2.
-        raise RuntimeError('CloudFile V2 six-table schema mismatch; stop writers and run the reviewed protection migration or inspect schema drift before starting services') from None
+        # Other layouts require an explicit offline operator action.
+        raise RuntimeError('CloudFile V2 six-table schema mismatch: stop writers; migrate legacy cf_library_storage with tools/migrate/repo-features.py, migrate an old protection schema separately, or inspect table drift before startup') from None
     finally:
         if connection is not None:
             connection.close()

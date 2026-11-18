@@ -6,11 +6,7 @@ Server #51、Hub #100 与 Docker #53 已合并至 dev；尚未部署，仍待业
 
 运行期的库级能力存放在数据库表 `cf_repo_feature`，由 C/Go/Hub 在提交事务内读取，是**唯一事实源**。
 
-`CF_PROTECTION_REPOS` / `CF_CHECKOUT_REPOS` 已退化为一次性迁移输入：引导仍会把它们写进共享
-`seafile.conf` 的 `[cloudfile] protection_repo_ids` / `checkout_repo_ids`，供
-`tools/migrate/repo-features.py` 读取；进程在启动后首次判定库级策略时会打印
-`legacy migration input and is IGNORED at runtime` 告警。**只改这两个环境变量并重启，不会开启或
-关闭任何库的保护，也不会报错。** 这是有意的告警而非故障。
+`CF_PROTECTION_REPOS` / `CF_CHECKOUT_REPOS` 及 `seafile.conf` 中的旧列表不参与运行时判定，也不会在迁移时自动导入。升级默认不启用任何新特性；已有特性行保留。
 
 开关某个库走管理接口，无需重启：
 
@@ -35,10 +31,9 @@ Server #51、Hub #100 与 Docker #53 已合并至 dev；尚未部署，仍待业
 
 ## 数据库
 
-新卷一次安装六表。已有卷启动只校验，缺表即拒绝启动，不自动补表。
+新卷一次安装六表。已有卷仅缺 `cf_repo_feature` 且其他五表完整匹配且没有保护记录或活动租约时，在锁内补建空表；其他缺表、漂移或旧注册表拒绝启动。
 
-从上一版（六表含 `cf_library_storage`）升级使用本仓 `tools/migrate/repo-features.py`：把两个
-`*_repo_ids` 导入 `cf_repo_feature`、补齐 `RepoStorageId` 原生路由，最后把旧表改名为
+从上一版（六表含 `cf_library_storage`）升级使用本仓 `tools/migrate/repo-features.py`：不导入旧 `*_repo_ids`，核验并按需补齐 `RepoStorageId` 原生路由，最后把旧表改名为
 `retired_library_storage_v2` 保留回滚依据。**必须在换成新版二进制之前执行完**——新二进制缺
 `cf_repo_feature` 时，每一次 Branch 发布都 fail-closed，表现为全站写入失败（读取不受影响）。
 
@@ -50,7 +45,7 @@ python3 tools/migrate/repo-features.py --installdir /path/to/seafile-server \
     --conf /path/to/seafile.conf --apply --writers-stopped
 ```
 
-五表（保护表之前）升级仍使用本仓 `tools/migrate/file-protection-v1.py`，读取匹配发行包内的四份 DDL 以及 Hub `FreshSchema`；先验证五张既有表精确结构，再只创建保护表，不改业务行和 CE 原生表，不引入迁移台账。
+历史缺保护表的布局使用本仓 `tools/migrate/file-protection-v1.py`，读取匹配发行包内的四份 DDL 以及 Hub `FreshSchema`；先验证五张既有表精确结构，再只创建保护表，不改业务行和 CE 原生表，不引入迁移台账。
 
 在独立维护进程中提供既有 `SEAFILE_MYSQL_DB_*` 环境变量，先检查：
 
@@ -80,7 +75,7 @@ bash build/cloudfile_14.0/build-in-docker.sh 14.0.8-virtual-protection-fix
 
 ## 发布前验收
 
-- 六表新装、五表显式升级、重复执行、结构异常拒绝和启动只读校验。
+- 六表新装、单独缺特性表时锁内补建、历史布局显式升级、重复执行和结构异常拒绝。
 - C/Go 与 Hub 共用 MariaDB：定版与上传双向竞争，检查实际 Branch 行锁等待。
 - 覆盖、历史恢复、父目录删除/移动/改名、旧 Agent2 票据均拒绝；读取和复制到新路径可用，副本可编辑。
 - 普通库零 Protection SQL；选定库大批量提交基准和 SQL 故障拒绝。
@@ -99,7 +94,7 @@ bash build/cloudfile_14.0/build-in-docker.sh 14.0.8-virtual-protection-fix
 完整 C/Go/Web 编译、发行包校验、本地应用镜像组装通过；收据中的 local_storage、objstore 专项通过。本地镜像 `cloudfile/cloudfile:14.0.8-protection-v1-test`，ARM64 image config ID 为 `sha256:b7f1a8feeab9794357abe83a99a51b78381ca6dcf5f54a3a0e58fab635e9f95a`。未推送 Registry，这不是远端 manifest digest。后续探针与本文记录提交不改变该镜像的运行配方 SHA。
 
 - Docker 30 项定向 Python 检查、bootstrap 设置检查、六表跨仓 SQL 契约通过；Hub 5 项保护单测及 1 项 Schema 序列值回归通过；Server 独立 cf-lock 夹具修复后通过。
-- 真实 MariaDB 验证六表新装、五表启动/自动新装拒绝、显式升级、重复执行、前缀索引漂移拒绝。审计表已有数据时的自增序列比较误判已修复。
+- 历史版本曾在真实 MariaDB 验证六表新装、五表启动拒绝、显式升级、重复执行、前缀索引漂移拒绝；不代表当前特性表补建已验证。审计表已有数据时的自增序列比较误判已修复。
 - Hub 真实 SQL 验证定版、批量状态、幂等、解除和审计失败原子回滚；Go 最终屏障与 Hub HEAD CAS 分别验证两种竞争顺序，均观察到实际 Branch 行锁等待。此组 SQL 探针的身份/原生元数据是测试替身，不代表完整并发上传验收。
 - `tests/e2e/full/file_protection_native.py` 直接使用匹配发行包的 C/Go/Hub 与随机临时数据库：16 项原生场景通过，包括真实定版、原件读取、旧独占票据 Checkout 拒绝、旧普通编辑票据发布拒绝、C 覆盖/删除/移动/改名/父目录删除改名/文件及整库历史恢复拒绝、整库删除拒绝，以及副本可编辑/恢复/改名/移动/删除。解除后同一普通编辑票据可成功发布，C 写入恢复。
 - 原生探针复用真实 ACL 计算与 CE 用户，仅以测试 `native-local` 主体和管理员对象替代登录/SSO；旧票据由测试密钥按真实协议签发，不是实际 Agent2 客户端操作。
